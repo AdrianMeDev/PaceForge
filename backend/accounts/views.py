@@ -3,12 +3,12 @@ from urllib.parse import urlencode
 from django.conf import settings
 from django.shortcuts import get_object_or_404
 from rest_framework import status
-from rest_framework.permissions import IsAdminUser
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts.models import User, UserInvitation
+from accounts.permissions import IsMfaAdmin
 from accounts.serializers import (
     InvitationCreateSerializer,
     InvitationSerializer,
@@ -22,9 +22,9 @@ from accounts.services.invitations import (
 
 
 class InvitationListCreateView(APIView):
-    """Staff-only: list invitations and create new ones."""
+    """Administrators with two-factor authentication: list invitations and create new ones."""
 
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsMfaAdmin]
 
     def get(self, request: Request) -> Response:
         invitations = UserInvitation.objects.order_by("-created_at")
@@ -33,7 +33,7 @@ class InvitationListCreateView(APIView):
     def post(self, request: Request) -> Response:
         serializer = InvitationCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        assert isinstance(request.user, User)  # IsAdminUser guarantees an authenticated user
+        assert isinstance(request.user, User)  # IsMfaAdmin guarantees an authenticated user
         created = create_invitation(
             invited_by=request.user, email=serializer.validated_data["email"]
         )
@@ -47,7 +47,7 @@ class InvitationListCreateView(APIView):
 
 
 class InvitationRevokeView(APIView):
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsMfaAdmin]
 
     def post(self, request: Request, pk: str) -> Response:
         invitation = get_object_or_404(UserInvitation, pk=pk)

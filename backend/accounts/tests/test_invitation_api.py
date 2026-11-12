@@ -7,7 +7,7 @@ import pytest
 from accounts.models import User, UserInvitation
 from accounts.services.invitations import consume_invitation, create_invitation
 
-from .conftest import PASSWORD, AuthApi
+from .conftest import PASSWORD, AuthApi, enable_totp
 
 pytestmark = pytest.mark.django_db
 
@@ -16,7 +16,9 @@ URL = "/api/admin/invitations/"
 
 @pytest.fixture
 def staff_api(api: AuthApi, verified_staff: User) -> AuthApi:
-    assert api.login(verified_staff.email).status_code == HTTPStatus.OK
+    """Signed in as an administrator with two-factor authentication, as the API requires."""
+    factor = enable_totp(verified_staff)
+    assert api.login_with_totp(verified_staff.email, factor.secret).status_code == HTTPStatus.OK
     return api
 
 

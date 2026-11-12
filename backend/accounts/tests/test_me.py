@@ -28,6 +28,8 @@ def test_returns_only_the_own_account(
         "email": "athlete@example.com",
         "display_name": "",
         "is_staff": False,
+        "mfa_enabled": False,
+        "mfa_setup_required": False,
     }
     assert verified_staff.email not in response.content.decode()
 
