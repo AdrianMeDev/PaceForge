@@ -1,6 +1,6 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AuthFlow, ApiError } from '../../core/auth/auth-models';
 import { AuthStore } from '../../core/auth/auth-store';
 
@@ -11,6 +11,15 @@ const MESSAGES: Record<string, string> = {
 
 const FALLBACK_MESSAGE = 'Something went wrong. Please try again.';
 
+/** Notices other pages may ask for with `?notice=<key>`; any other value is ignored. */
+const NOTICES: Record<string, string> = {
+  'password-reset': 'Your password has been reset. You can sign in with the new password now.',
+};
+
+export function noticeFor(key: string | null): string | null {
+  return key !== null && Object.hasOwn(NOTICES, key) ? NOTICES[key] : null;
+}
+
 /** Only same-app paths are accepted as return target; anything else falls back to the start page. */
 export function safeReturnUrl(value: string | null): string {
   return value !== null && value.startsWith('/') && !value.startsWith('//') ? value : '/';
@@ -18,9 +27,9 @@ export function safeReturnUrl(value: string | null): string {
 
 @Component({
   selector: 'app-login-page',
-  imports: [ReactiveFormsModule],
+  imports: [ReactiveFormsModule, RouterLink],
   templateUrl: './login-page.html',
-  styleUrl: './login-page.css',
+  styleUrl: './auth-form.css',
 })
 export class LoginPage {
   private readonly store = inject(AuthStore);
@@ -34,7 +43,9 @@ export class LoginPage {
 
   protected readonly submitting = signal(false);
   protected readonly errors = signal<string[]>([]);
-  protected readonly notice = signal<string | null>(null);
+  protected readonly notice = signal<string | null>(
+    noticeFor(this.route.snapshot.queryParamMap.get('notice')),
+  );
   protected readonly serverUnavailable = computed(() => this.store.status() === 'unavailable');
 
   protected async submit(): Promise<void> {

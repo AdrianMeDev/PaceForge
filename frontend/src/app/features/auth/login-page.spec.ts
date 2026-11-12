@@ -3,7 +3,7 @@ import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angul
 import { LoginOutcome } from '../../core/auth/auth-models';
 import { AuthStore } from '../../core/auth/auth-store';
 import { createAuthStoreStub } from '../../core/auth/testing/auth-store-stub';
-import { LoginPage, safeReturnUrl } from './login-page';
+import { LoginPage, noticeFor, safeReturnUrl } from './login-page';
 import { query } from '../../testing/dom';
 
 describe('safeReturnUrl', () => {
@@ -21,6 +21,19 @@ describe('safeReturnUrl', () => {
   ])('falls back to the start page for %s', (url) => {
     expect(safeReturnUrl(url)).toBe('/');
   });
+});
+
+describe('noticeFor', () => {
+  it('knows the notice other pages ask for', () => {
+    expect(noticeFor('password-reset')).toContain('password has been reset');
+  });
+
+  it.each([null, '', 'unknown', '<b>hi</b>', 'toString', '__proto__', 'constructor'])(
+    'ignores %j',
+    (key) => {
+      expect(noticeFor(key)).toBeNull();
+    },
+  );
 });
 
 describe('LoginPage', () => {
@@ -84,6 +97,27 @@ describe('LoginPage', () => {
     expect(page.querySelector('input#email[type="email"]')).not.toBeNull();
     expect(page.querySelector('label[for="password"]')).not.toBeNull();
     expect(page.querySelector('input#password[type="password"]')).not.toBeNull();
+  });
+
+  it('links to the password reset', async () => {
+    await setup();
+
+    expect(query<HTMLAnchorElement>(page, '.links a').getAttribute('href')).toBe(
+      '/account/password/reset',
+    );
+  });
+
+  it('shows the notice that the password reset asks for', async () => {
+    await setup({ notice: 'password-reset' });
+
+    expect(query(page, '[role="status"]').textContent).toContain('password has been reset');
+  });
+
+  it('shows no notice for unknown values in the address', async () => {
+    await setup({ notice: '<img src=x onerror=alert(1)>' });
+
+    expect(page.querySelector('[role="status"]')).toBeNull();
+    expect(page.querySelector('img')).toBeNull();
   });
 
   it('does not call the server for an incomplete form and explains what is missing', async () => {

@@ -15,6 +15,20 @@ export const routes: Routes = [
     loadComponent: () => import('./features/auth/signup-page').then((m) => m.SignupPage),
   },
   {
+    path: 'account/password/reset',
+    title: 'Reset password',
+    canActivate: [guestGuard],
+    loadComponent: () =>
+      import('./features/auth/password-reset-request-page').then((m) => m.PasswordResetRequestPage),
+  },
+  {
+    // Open to everyone, like the verification link: it may be followed in any browser.
+    path: 'account/password/reset/key/:key',
+    title: 'Choose a new password',
+    loadComponent: () =>
+      import('./features/auth/password-reset-page').then((m) => m.PasswordResetPage),
+  },
+  {
     // Open to everyone: the link may be followed signed in or out, in any browser.
     path: 'account/verify-email/:key',
     title: 'Confirm email',

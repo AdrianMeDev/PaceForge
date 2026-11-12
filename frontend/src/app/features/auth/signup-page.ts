@@ -1,26 +1,15 @@
 import { Component, inject, signal } from '@angular/core';
-import {
-  AbstractControl,
-  NonNullableFormBuilder,
-  ReactiveFormsModule,
-  ValidationErrors,
-  Validators,
-} from '@angular/forms';
+import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { AuthApi } from '../../core/auth/auth-api';
 import { ApiError } from '../../core/auth/auth-models';
+import { passwordsMatch } from './password-match';
 
 const INVITATION_MESSAGE =
   'This invitation is invalid, has expired or was issued for a different email address.';
 const CLOSED_MESSAGE = 'Registration is closed on this server.';
 const RATE_LIMIT_MESSAGE = 'Too many attempts. Please wait a minute and try again.';
 const FALLBACK_MESSAGE = 'Something went wrong. Please try again.';
-
-function passwordsMatch(group: AbstractControl): ValidationErrors | null {
-  return group.get('password')?.value === group.get('passwordConfirm')?.value
-    ? null
-    : { passwordMismatch: true };
-}
 
 /**
  * Account creation for people who follow an invitation link
