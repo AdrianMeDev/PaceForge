@@ -160,3 +160,34 @@ def get_status(created) -> UserInvitation.Status:
 
 def test_default_mode_is_invite_only(settings) -> None:
     assert settings.REGISTRATION_MODE == "invite_only"
+
+
+def test_signup_with_an_address_that_already_has_an_account_answers_like_a_new_signup(
+    api: AuthApi, verified_staff: User, verified_user: User
+) -> None:
+    invitation = create_invitation(invited_by=verified_staff, email=verified_user.email)
+    password_hash = verified_user.password
+
+    response = signup(
+        api, invitation.token, email=verified_user.email, password="another-long-pw-1"
+    )
+
+    assert response.status_code == HTTPStatus.UNAUTHORIZED
+    assert [f["id"] for f in response.json()["data"]["flows"] if f.get("is_pending")] == [
+        "verify_email"
+    ]
+    verified_user.refresh_from_db()
+    assert verified_user.password == password_hash
+
+
+def test_the_owner_of_an_existing_address_is_pointed_to_the_password_reset(
+    api: AuthApi, verified_staff: User, verified_user: User
+) -> None:
+    invitation = create_invitation(invited_by=verified_staff, email=verified_user.email)
+
+    signup(api, invitation.token, email=verified_user.email)
+
+    [message] = mail.outbox
+    assert message.to == [verified_user.email]
+    assert "http://testserver/account/password/reset\n" in message.body
+    assert "/account/password/reset/key/" not in message.body
