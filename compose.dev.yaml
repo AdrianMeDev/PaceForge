@@ -1,0 +1,29 @@
+# Development services only. Django itself runs locally via `uv run`.
+# Copy .env.example to .env to override the defaults below.
+name: paceforge-dev
+
+services:
+  db:
+    image: postgres:17.11
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-paceforge}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-paceforge-dev}
+      POSTGRES_DB: ${POSTGRES_DB:-paceforge}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  mailpit:
+    image: axllent/mailpit:v1.33.1
+    ports:
+      - "127.0.0.1:1025:1025" # SMTP
+      - "127.0.0.1:8025:8025" # web UI
+
+volumes:
+  pgdata:

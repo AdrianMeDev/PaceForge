@@ -11,6 +11,9 @@ import environ
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 env = environ.Env()
+_env_file = BASE_DIR.parent / ".env"
+if _env_file.is_file():
+    environ.Env.read_env(_env_file)
 
 SECRET_KEY = env.str("DJANGO_SECRET_KEY")
 DEBUG = env.bool("DJANGO_DEBUG", default=False)
@@ -28,6 +31,8 @@ MIDDLEWARE = [
 ROOT_URLCONF = "config.urls"
 WSGI_APPLICATION = "config.wsgi.application"
 ASGI_APPLICATION = "config.asgi.application"
+
+DATABASES = {"default": env.db("DATABASE_URL")}
 
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "UTC"
