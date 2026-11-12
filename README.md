@@ -6,11 +6,12 @@ The long-term goal is described in `PROJECT_PLAN.md`; this repository is in earl
 **What works today:** accounts for a multi-user instance, invitation-only registration with an
 admin page for invitations, email verification, sign-in and sign-out with server-side sessions,
 password reset, two-factor authentication (authenticator app plus recovery codes, mandatory for
-administrators), and the data-isolation foundation the training features will build on.
-**Not there yet:** sending invitations by email (the administrator hands the link on) and all
-coaching features. Before an instance is exposed to the internet, read
-[Instance key](#instance-key): secrets in the database are encrypted, and the key has to be backed
-up apart from the database.
+administrators), a personal Intervals.icu connection with an API key (stored encrypted), and the
+data-isolation foundation the training features will build on.
+**Not there yet:** importing training data over that connection, sending invitations by email (the
+administrator hands the link on) and all coaching features. Before an instance is exposed to the
+internet, read [Instance key](#instance-key): secrets in the database are encrypted, and the key
+has to be backed up apart from the database.
 
 ## Layout
 
@@ -136,6 +137,33 @@ the password; a recovery code works in the same field.
   The command leaves the password and all data alone and does not end existing sessions. If a
   device was stolen, also change the password.
 
+## Connections
+
+Every user connects their own training platform on the **Connections** page
+(`/settings/connections`, also in the navigation). Intervals.icu is the first one, with a personal
+API key; there is no OAuth, because PaceForge is meant for single athletes who host it themselves
+and invite a few others. The findings behind this are in
+[`docs/phase0-intervals.md`](docs/phase0-intervals.md).
+
+1. In Intervals.icu open Settings, Developer Settings and copy your API key.
+2. In PaceForge open **Connections**, paste the key and press **Connect**. The server checks it with
+   Intervals.icu, then stores it encrypted together with your athlete id (`i…`).
+3. The page shows the status, the athlete and the time of the last check. **Check connection**
+   tests the stored key again; if Intervals.icu no longer accepts it (you created a new key there),
+   the status says **Needs attention** and you paste the new one under **Replace the API key**.
+4. **Disconnect** deletes the stored key. PaceForge cannot revoke it at Intervals.icu; create a new
+   key there if the old one should stop working.
+
+- **The key is write-only.** It is sent once, never shown again (not even in part), not returned
+  by any endpoint and not logged. Every user sees and changes only their own connection;
+  administrators have no way to read other users' keys.
+- **Limits:** saving and checking together are limited to 10 per minute per user.
+- **Nothing is imported yet.** The connection is the first step; reading training data from it
+  comes next.
+- **If the instance key is lost,** the stored keys can no longer be used. The page still opens and
+  shows **Needs attention** after a check, and each user pastes their key again.
+- `INTERVALS_API_BASE_URL` (see [Configuration](#configuration)) is only for tests and fake servers.
+
 ## Instance key
 
 Secrets that the database holds for users are encrypted with a separate instance key
@@ -206,6 +234,9 @@ Set in `.env` or in the environment. Values without a default are required.
   `npx ng serve --port 4210 --proxy-config <file>` that points `/api` to that port.
 - **Django refuses to start with `DJANGO_SECRET_KEY`, `DATABASE_URL` or `ENCRYPTION_KEY` missing.** Both are required
   and have no default; check that `.env` is in the repository root, not in `backend/`.
+- **The Connections page says "Intervals.icu cannot be reached right now".** The server could not
+  get an answer from `intervals.icu` (network, timeout, a busy service). Try again later; nothing
+  was saved or changed. "Too many attempts" means more than 10 saves or checks within a minute.
 - **An administrator cannot reach the admin pages and keeps landing on the security page.** That is
   the rule that administrators need two-factor authentication; set it up there.
 - **Sign-in is refused with "too many failed attempts".** That is the brute-force protection: five

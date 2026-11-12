@@ -19,6 +19,7 @@ describe('Shell', () => {
         provideRouter([
           { path: '', pathMatch: 'full', component: Blank },
           { path: 'settings/security', component: Blank },
+          { path: 'settings/connections', component: Blank },
           { path: 'admin/invitations', component: Blank },
         ]),
         { provide: AuthStore, useValue: store },
@@ -60,12 +61,13 @@ describe('Shell', () => {
         a.getAttribute('href'),
       ]);
 
-    it('links to the dashboard and the security page', async () => {
+    it('links to the dashboard, the security page and the connections page', async () => {
       const { page } = await setup();
 
       expect(links(page)).toEqual([
         ['Dashboard', '/'],
         ['Security', '/settings/security'],
+        ['Connections', '/settings/connections'],
       ]);
       expect(page.querySelector('nav')?.getAttribute('aria-label')).toBe('Main');
     });
@@ -76,6 +78,7 @@ describe('Shell', () => {
       expect(links(page)).toEqual([
         ['Dashboard', '/'],
         ['Security', '/settings/security'],
+        ['Connections', '/settings/connections'],
         ['Invitations', '/admin/invitations'],
       ]);
     });
@@ -103,6 +106,25 @@ describe('Shell', () => {
         (a.textContent ?? '').trim(),
       );
       expect(current).toEqual(['Invitations']);
+    });
+
+    it('shows the connections link to an administrator who still has to set up two-factor', async () => {
+      const { page } = await setup({ ...ADA, is_staff: true, mfa_setup_required: true });
+
+      expect(links(page).map(([label]) => label)).toContain('Connections');
+    });
+
+    it('marks the connections link while that page is open and nothing else', async () => {
+      const { fixture, page, navigate } = await setup();
+      navigate.mockRestore(); // these tests need real navigation
+
+      await TestBed.inject(Router).navigateByUrl('/settings/connections');
+      await fixture.whenStable();
+
+      const current = Array.from(page.querySelectorAll('nav a[aria-current="page"]')).map((a) =>
+        (a.textContent ?? '').trim(),
+      );
+      expect(current).toEqual(['Connections']);
     });
 
     it('marks the page that is open', async () => {
