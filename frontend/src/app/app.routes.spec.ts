@@ -218,4 +218,39 @@ describe('app routes', () => {
 
     expect(router.url).toBe('/');
   });
+
+  describe('invitations page', () => {
+    it('opens for administrators inside the shell', async () => {
+      store.signIn({ ...ADA, is_staff: true, mfa_enabled: true });
+
+      await harness.navigateByUrl('/admin/invitations');
+
+      expect(router.url).toBe('/admin/invitations');
+      expect(required(harness.routeNativeElement, 'the routed element').textContent).toContain(
+        'Invitations',
+      );
+    });
+
+    it('sends members to the start page', async () => {
+      store.signIn();
+
+      await harness.navigateByUrl('/admin/invitations');
+
+      expect(router.url).toBe('/');
+    });
+
+    it('sends anonymous visitors to the login with a way back', async () => {
+      await harness.navigateByUrl('/admin/invitations');
+
+      expect(router.url).toBe('/login?returnUrl=%2Fadmin%2Finvitations');
+    });
+
+    it('sends an administrator without two-factor authentication to the security page', async () => {
+      store.signIn({ ...ADA, is_staff: true, mfa_setup_required: true });
+
+      await harness.navigateByUrl('/admin/invitations');
+
+      expect(router.url).toBe('/settings/security?notice=mfa-required');
+    });
+  });
 });

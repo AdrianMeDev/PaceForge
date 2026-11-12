@@ -22,6 +22,15 @@ export const guestGuard: CanActivateFn = () => {
 };
 
 /**
+ * Pages for administrators. This is only a convenience (members are sent to the start page
+ * instead of seeing a page full of refusals); the server decides who may use the admin API.
+ */
+export const staffGuard: CanActivateFn = () => {
+  const router = inject(Router);
+  return inject(AuthStore).isStaff() ? true : router.createUrlTree(['/']);
+};
+
+/**
  * The code step of the sign-in only makes sense while the server waits for a second factor;
  * a direct visit goes back to the password step and keeps the return target.
  */

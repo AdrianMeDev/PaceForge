@@ -8,7 +8,7 @@ import {
   UrlTree,
   provideRouter,
 } from '@angular/router';
-import { authGuard, guestGuard, mfaPendingGuard, mfaSetupGuard } from './auth-guards';
+import { authGuard, guestGuard, mfaPendingGuard, mfaSetupGuard, staffGuard } from './auth-guards';
 import { AuthStore } from './auth-store';
 import { ADA, createAuthStoreStub } from './testing/auth-store-stub';
 
@@ -69,6 +69,29 @@ describe('route guards', () => {
       store.signIn();
 
       const result = run(guestGuard);
+
+      expect(router.serializeUrl(result as UrlTree)).toBe('/');
+    });
+  });
+
+  describe('staffGuard', () => {
+    it('lets administrators through', () => {
+      store.signIn({ ...ADA, is_staff: true });
+
+      expect(run(staffGuard)).toBe(true);
+    });
+
+    it('sends members to the start page', () => {
+      store.signIn(ADA);
+
+      const result = run(staffGuard);
+
+      expect(result).toBeInstanceOf(UrlTree);
+      expect(router.serializeUrl(result as UrlTree)).toBe('/');
+    });
+
+    it('sends anonymous visitors to the start page too (the auth guard comes first)', () => {
+      const result = run(staffGuard);
 
       expect(router.serializeUrl(result as UrlTree)).toBe('/');
     });

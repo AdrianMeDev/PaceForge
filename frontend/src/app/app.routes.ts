@@ -1,5 +1,11 @@
 import { Routes } from '@angular/router';
-import { authGuard, guestGuard, mfaPendingGuard, mfaSetupGuard } from './core/auth/auth-guards';
+import {
+  authGuard,
+  guestGuard,
+  mfaPendingGuard,
+  mfaSetupGuard,
+  staffGuard,
+} from './core/auth/auth-guards';
 
 export const routes: Routes = [
   {
@@ -58,6 +64,13 @@ export const routes: Routes = [
         title: 'Security',
         loadComponent: () =>
           import('./features/security/security-page').then((m) => m.SecurityPage),
+      },
+      {
+        path: 'admin/invitations',
+        title: 'Invitations',
+        canActivate: [staffGuard],
+        loadComponent: () =>
+          import('./features/admin/invitations-page').then((m) => m.InvitationsPage),
       },
     ],
   },
