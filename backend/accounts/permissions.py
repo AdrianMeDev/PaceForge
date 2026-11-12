@@ -6,6 +6,8 @@ from rest_framework.request import Request
 
 from accounts.services.mfa import has_totp
 
+MFA_REQUIRED_MESSAGE = "Two-factor authentication must be turned on for administrators."
+
 
 class IsMfaAdmin(BasePermission):
     """Administrators with an active authenticator app (TOTP).
@@ -13,9 +15,10 @@ class IsMfaAdmin(BasePermission):
     Anyone who is not an administrator gets the plain 403 of ``IsAdminUser``. An administrator
     without TOTP gets a 403 whose body carries ``"code": "mfa_required"``, so that the SPA can
     send them to the security page instead of showing a generic error.
-    """
 
-    message = "Two-factor authentication must be turned on for administrators."
+    There is deliberately no ``message`` attribute: DRF would use it for every refusal, and
+    members must not be told about the rules for administrators.
+    """
 
     def has_permission(self, request: Request, view: Any) -> bool:
         user = request.user
@@ -23,4 +26,4 @@ class IsMfaAdmin(BasePermission):
             return False
         if has_totp(user):
             return True
-        raise PermissionDenied({"detail": self.message, "code": "mfa_required"})
+        raise PermissionDenied({"detail": MFA_REQUIRED_MESSAGE, "code": "mfa_required"})

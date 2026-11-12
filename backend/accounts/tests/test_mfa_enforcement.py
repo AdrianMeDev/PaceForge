@@ -99,6 +99,20 @@ class TestAdministratorsNeedTwoFactorAuthentication:
 
 
 class TestOthersAreNotTold:
+    @pytest.mark.parametrize("with_totp", [True, False])
+    def test_members_are_not_told_about_the_rules_for_administrators(
+        self, api: AuthApi, verified_user: User, with_totp: bool
+    ) -> None:
+        if with_totp:
+            factor = enable_totp(verified_user)
+            api.login_with_totp(verified_user.email, factor.secret)
+        else:
+            api.login(verified_user.email)
+
+        body = api.call("GET", INVITATIONS).json()
+
+        assert body == {"detail": "You do not have permission to perform this action."}
+
     def test_members_get_the_plain_refusal_even_with_totp(
         self, api: AuthApi, verified_user: User
     ) -> None:
