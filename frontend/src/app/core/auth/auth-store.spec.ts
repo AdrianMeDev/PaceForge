@@ -144,6 +144,40 @@ describe('AuthStore', () => {
     });
   });
 
+  describe('verifyEmail', () => {
+    const VERIFY = `${AUTH_BASE}/auth/email/verify`;
+
+    it('loads the user when the confirmation also signed them in', async () => {
+      const outcome = store.verifyEmail('key-1');
+      const request = await nextRequest('POST', VERIFY);
+      expect(request.request.body).toEqual({ key: 'key-1' });
+      request.flush({ status: 200 }, { status: 200, statusText: 'OK' });
+      await respond('GET', ME, ADA);
+
+      expect(await outcome).toEqual({ kind: 'authenticated' });
+      expect(store.status()).toBe('authenticated');
+      expect(store.user()).toEqual(ADA);
+    });
+
+    it('leaves the visitor anonymous after a plain confirmation (401)', async () => {
+      const outcome = store.verifyEmail('key-1');
+      await respond('POST', VERIFY, UNAUTHENTICATED, 401);
+
+      expect(await outcome).toEqual({ kind: 'verified' });
+      expect(store.user()).toBeNull();
+      expect(store.isAuthenticated()).toBe(false);
+    });
+
+    it('returns the errors for an invalid or expired key', async () => {
+      const error = { code: 'invalid_or_expired_key', message: 'Expired.', param: 'key' };
+      const outcome = store.verifyEmail('stale');
+      await respond('POST', VERIFY, { status: 400, errors: [error] }, 400);
+
+      expect(await outcome).toEqual({ kind: 'invalid', errors: [error] });
+      expect(store.user()).toBeNull();
+    });
+  });
+
   describe('logout', () => {
     it('clears the user; allauth confirms logout with a 401', async () => {
       const login = store.login('ada@example.com', 'secret');

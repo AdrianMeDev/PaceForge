@@ -1,6 +1,6 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { AuthApi } from './auth-api';
-import { AuthFlow, AuthStatus, LoginOutcome, Me } from './auth-models';
+import { AuthFlow, AuthStatus, LoginOutcome, Me, VerifyEmailResult } from './auth-models';
 
 /** Single source of truth for "who is logged in", exposed as read-only signals. */
 @Injectable({ providedIn: 'root' })
@@ -49,6 +49,15 @@ export class AuthStore {
       case 'invalid':
         return result;
     }
+  }
+
+  /** Confirms an email address; if the server also signed the user in, the user is loaded. */
+  async verifyEmail(key: string): Promise<VerifyEmailResult> {
+    const result = await this.api.verifyEmail(key);
+    if (result.kind === 'authenticated') {
+      await this.loadUser();
+    }
+    return result;
   }
 
   async logout(): Promise<void> {
