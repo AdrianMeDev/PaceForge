@@ -5,7 +5,6 @@ import os
 import subprocess
 import sys
 import traceback
-from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -23,20 +22,6 @@ from integrations.intervals import (
 from .fake_intervals import FakeIntervals, running
 
 KEY = "k3y-0123456789-abcdefghij"
-
-
-@pytest.fixture(autouse=True)
-def _no_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The fake server is on localhost; an environment proxy must not get in the way."""
-    for name in ("http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY"):
-        monkeypatch.delenv(name, raising=False)
-    monkeypatch.setenv("no_proxy", "127.0.0.1")
-
-
-@pytest.fixture
-def fake() -> Iterator[FakeIntervals]:
-    with running() as server:
-        yield server
 
 
 def client(fake: FakeIntervals, key: str = KEY, **options: float) -> IntervalsClient:

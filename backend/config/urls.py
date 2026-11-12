@@ -13,4 +13,5 @@ urlpatterns = [
     path("api/auth/", include("allauth.headless.urls")),
     path("api/me/", MeView.as_view(), name="me"),
     path("api/admin/", include("accounts.urls")),
+    path("api/integrations/", include("integrations.urls")),
 ]
