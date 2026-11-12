@@ -37,14 +37,17 @@ class AuthApi:
             self.client.get(f"{AUTH_API}/config")
         return self.client.cookies["csrftoken"].value
 
-    def request(self, method: str, path: str, data: dict[str, Any] | None = None) -> HttpResponse:
+    def call(self, method: str, url: str, data: dict[str, Any] | None = None) -> HttpResponse:
         return self.client.generic(
             method,
-            f"{AUTH_API}{path}",
+            url,
             data=b"" if data is None else json.dumps(data),
             content_type="application/json",
             headers={"X-CSRFToken": self._csrf_token()},
         )
+
+    def request(self, method: str, path: str, data: dict[str, Any] | None = None) -> HttpResponse:
+        return self.call(method, f"{AUTH_API}{path}", data)
 
     def login(self, email: str, password: str = PASSWORD) -> HttpResponse:
         return self.request("POST", "/auth/login", {"email": email, "password": password})
@@ -64,6 +67,13 @@ def verified_user(db: None) -> User:
     user = User.objects.create_user("athlete@example.com", PASSWORD)
     EmailAddress.objects.create(user=user, email=user.email, primary=True, verified=True)
     return user
+
+
+@pytest.fixture
+def verified_staff(db: None) -> User:
+    admin = User.objects.create_superuser("admin@example.com", PASSWORD)
+    EmailAddress.objects.create(user=admin, email=admin.email, primary=True, verified=True)
+    return admin
 
 
 def key_from_last_mail(url_part: str) -> str:

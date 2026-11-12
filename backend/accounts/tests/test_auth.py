@@ -114,7 +114,9 @@ def test_password_reset_does_not_reveal_unknown_emails(api: AuthApi) -> None:
     assert all("/password/reset/key/" not in message.body for message in mail.outbox)
 
 
-def test_signup_is_closed(api: AuthApi) -> None:
+def test_signup_is_refused_when_registration_is_closed(api: AuthApi, settings) -> None:
+    settings.REGISTRATION_MODE = "closed"
+
     response = api.request(
         "POST", "/auth/signup", {"email": "intruder@example.com", "password": PASSWORD}
     )

@@ -9,4 +9,5 @@ def health(request: HttpRequest) -> JsonResponse:
 urlpatterns = [
     path("api/health/", health, name="health"),
     path("api/auth/", include("allauth.headless.urls")),
+    path("api/admin/", include("accounts.urls")),
 ]

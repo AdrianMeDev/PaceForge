@@ -7,6 +7,7 @@ There are deliberately no insecure defaults for secrets.
 from pathlib import Path
 
 import environ
+from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -24,6 +25,7 @@ INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
+    "rest_framework",
     "allauth",
     "allauth.account",
     "allauth.headless",
@@ -87,11 +89,25 @@ SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_SAMESITE = "Lax"
 CSRF_TRUSTED_ORIGINS = env.list("DJANGO_CSRF_TRUSTED_ORIGINS", default=[])
 
+# closed: nobody can register; invite_only: registration needs a valid invitation token;
+# open: public registration (not intended for the MVP).
+REGISTRATION_MODE = env.str("REGISTRATION_MODE", default="invite_only")
+if REGISTRATION_MODE not in {"closed", "invite_only", "open"}:
+    raise ImproperlyConfigured(f"Invalid REGISTRATION_MODE: {REGISTRATION_MODE!r}")
 INVITATION_TTL_DAYS = env.int("INVITATION_TTL_DAYS", default=7)
+
+REST_FRAMEWORK = {
+    # Session auth enforces CSRF for unsafe methods; every endpoint requires a login by default.
+    "DEFAULT_AUTHENTICATION_CLASSES": ["rest_framework.authentication.SessionAuthentication"],
+    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
+    "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
+    "DEFAULT_PARSER_CLASSES": ["rest_framework.parsers.JSONParser"],
+}
 
 # allauth: email + password, headless API for the SPA (browser client only).
 AUTHENTICATION_BACKENDS = ["allauth.account.auth_backends.AuthenticationBackend"]
 ACCOUNT_ADAPTER = "accounts.adapters.AccountAdapter"
+ACCOUNT_SIGNUP_FORM_CLASS = "accounts.forms.InvitationSignupForm"
 ACCOUNT_LOGIN_METHODS = {"email"}
 ACCOUNT_SIGNUP_FIELDS = ["email*", "password1*"]
 ACCOUNT_USER_MODEL_USERNAME_FIELD = None
