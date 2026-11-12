@@ -46,6 +46,23 @@ describe('app routes', () => {
     expect(router.url).toBe('/');
   });
 
+  it('shows the signup page for an invitation link to visitors', async () => {
+    await harness.navigateByUrl('/account/signup?invitation=tok&email=ann%40example.com');
+
+    expect(router.url).toMatch(/^\/account\/signup\?/); // not redirected to the login
+    const page = required(harness.routeNativeElement, 'the routed element');
+    expect(page.textContent).toContain('Create your account');
+    expect(page.querySelector<HTMLInputElement>('#email')?.value).toBe('ann@example.com');
+  });
+
+  it('keeps signed-in users away from the signup page', async () => {
+    store.signIn();
+
+    await harness.navigateByUrl('/account/signup?invitation=tok');
+
+    expect(router.url).toBe('/');
+  });
+
   it('redirects unknown paths to the start page', async () => {
     store.signIn();
 

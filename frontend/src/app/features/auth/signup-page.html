@@ -1,0 +1,102 @@
+<main class="auth-card">
+  <h1>Create your account</h1>
+
+  @if (!invitationToken) {
+    <p>
+      Registration is by invitation only. Please use the link from your invitation email, or ask an
+      administrator to invite you.
+    </p>
+    <p class="links"><a routerLink="/login">Back to sign in</a></p>
+  } @else if (created(); as done) {
+    <p class="notice" role="status">
+      @if (done.needsVerification) {
+        We sent a confirmation link to <strong>{{ done.email }}</strong>. Open it to verify your
+        address, then sign in.
+      } @else {
+        Your account has been created. You can sign in now.
+      }
+    </p>
+    <p class="links"><a routerLink="/login">Go to sign in</a></p>
+  } @else {
+    @for (message of errors(); track $index) {
+      <p class="alert" role="alert">{{ message }}</p>
+    }
+
+    <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
+      <div class="field">
+        <label for="email">Email address</label>
+        <input
+          id="email"
+          type="email"
+          formControlName="email"
+          autocomplete="username"
+          [readonly]="lockedEmail !== ''"
+          [attr.aria-invalid]="form.controls.email.touched && form.controls.email.invalid"
+          [attr.aria-describedby]="
+            form.controls.email.touched && form.controls.email.invalid ? 'email-error' : null
+          "
+        />
+        @if (lockedEmail) {
+          <p class="hint">This is the address your invitation was sent to.</p>
+        }
+        @if (form.controls.email.touched && form.controls.email.invalid) {
+          <p class="field-error" id="email-error">Enter a valid email address.</p>
+        }
+      </div>
+
+      <div class="field">
+        <label for="password">Password</label>
+        <input
+          id="password"
+          type="password"
+          formControlName="password"
+          autocomplete="new-password"
+          [attr.aria-invalid]="
+            (form.controls.password.touched && form.controls.password.invalid) ||
+            passwordErrors().length > 0
+          "
+          [attr.aria-describedby]="
+            (form.controls.password.touched && form.controls.password.invalid) ||
+            passwordErrors().length > 0
+              ? 'password-error'
+              : null
+          "
+        />
+        <div id="password-error">
+          @if (form.controls.password.touched && form.controls.password.invalid) {
+            <p class="field-error">Choose a password.</p>
+          }
+          @for (message of passwordErrors(); track $index) {
+            <p class="field-error">{{ message }}</p>
+          }
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="passwordConfirm">Repeat password</label>
+        <input
+          id="passwordConfirm"
+          type="password"
+          formControlName="passwordConfirm"
+          autocomplete="new-password"
+          [attr.aria-invalid]="form.controls.passwordConfirm.touched && form.invalid"
+          [attr.aria-describedby]="
+            form.controls.passwordConfirm.touched && form.invalid ? 'passwordConfirm-error' : null
+          "
+        />
+        @if (form.controls.passwordConfirm.touched && form.hasError('passwordMismatch')) {
+          <p class="field-error" id="passwordConfirm-error">The passwords do not match.</p>
+        } @else if (
+          form.controls.passwordConfirm.touched && form.controls.passwordConfirm.invalid
+        ) {
+          <p class="field-error" id="passwordConfirm-error">Repeat your password.</p>
+        }
+      </div>
+
+      <button type="submit" class="primary" [disabled]="submitting()">
+        {{ submitting() ? 'Creating account…' : 'Create account' }}
+      </button>
+    </form>
+    <p class="links">Already have an account? <a routerLink="/login">Sign in</a></p>
+  }
+</main>
