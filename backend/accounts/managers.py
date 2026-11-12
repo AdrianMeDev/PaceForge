@@ -6,14 +6,14 @@ if TYPE_CHECKING:
     from .models import User
 
 
-def _clean_email(email: str | None) -> str:
+def clean_email(email: str | None) -> str:
     """Emails are stored lower-cased and trimmed so lookups and logins are case-insensitive."""
     return (email or "").strip().lower()
 
 
 class UserManager(BaseUserManager["User"]):
     def _create_user(self, email: str, password: str | None, **extra_fields: Any) -> User:
-        email = _clean_email(email)
+        email = clean_email(email)
         if not email:
             raise ValueError("An email address is required.")
         user = self.model(email=email, **extra_fields)
@@ -33,4 +33,4 @@ class UserManager(BaseUserManager["User"]):
         return self._create_user(email, password, **extra_fields)
 
     def get_by_natural_key(self, username: str | None) -> User:
-        return self.get(email=_clean_email(username))
+        return self.get(email=clean_email(username))

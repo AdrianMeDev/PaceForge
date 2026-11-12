@@ -87,6 +87,8 @@ SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_SAMESITE = "Lax"
 CSRF_TRUSTED_ORIGINS = env.list("DJANGO_CSRF_TRUSTED_ORIGINS", default=[])
 
+INVITATION_TTL_DAYS = env.int("INVITATION_TTL_DAYS", default=7)
+
 # allauth: email + password, headless API for the SPA (browser client only).
 AUTHENTICATION_BACKENDS = ["allauth.account.auth_backends.AuthenticationBackend"]
 ACCOUNT_ADAPTER = "accounts.adapters.AccountAdapter"
