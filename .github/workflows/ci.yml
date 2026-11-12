@@ -34,6 +34,7 @@ jobs:
     env:
       # Throw-away values for the CI database and test runs only.
       DJANGO_SECRET_KEY: ci-only-secret-key-not-for-production
+      ENCRYPTION_KEY: 3VhtVIgjC8S15ZApZIqUaGw52HQvk1KVgF2w1PkHWWk=
       DATABASE_URL: postgres://paceforge:paceforge-ci@localhost:5432/paceforge
     defaults:
       run:

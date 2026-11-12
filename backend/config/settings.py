@@ -18,6 +18,10 @@ if _env_file.is_file():
 
 SECRET_KEY = env.str("DJANGO_SECRET_KEY")
 DEBUG = env.bool("DJANGO_DEBUG", default=False)
+# Instance key for secrets stored in the database (see core/encryption.py). Required, no default.
+# Several keys, comma separated: the first one encrypts, all of them decrypt (key rotation).
+# Keep it apart from database backups.
+ENCRYPTION_KEYS = [key.strip() for key in env.str("ENCRYPTION_KEY").split(",") if key.strip()]
 ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=[])
 
 INSTALLED_APPS = [

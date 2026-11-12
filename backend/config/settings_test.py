@@ -3,6 +3,8 @@
 import os
 
 os.environ.setdefault("DJANGO_SECRET_KEY", "test-only-secret-key-not-for-production")
+# A throw-away instance key; it protects nothing.
+os.environ.setdefault("ENCRYPTION_KEY", "srPGFiK_-1uuYQrhJix9QxALddGxwSw-I5bllic4QsY=")
 # Matches the defaults of the `db` service in compose.dev.yaml.
 os.environ.setdefault("DATABASE_URL", "postgres://paceforge:paceforge-dev@localhost:5432/paceforge")
 

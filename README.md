@@ -40,7 +40,10 @@ this one `.env` file; variables that are already set in your shell win over it.
 ```sh
 cp .env.example .env
 python3 -c "import secrets; print(secrets.token_urlsafe(50))"   # put the output into DJANGO_SECRET_KEY
+(cd backend && uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")   # ENCRYPTION_KEY
 ```
+
+The second key is the instance key for secrets in the database, see [Instance key](#instance-key).
 
 **2. Database and mailbox.**
 
@@ -131,6 +134,23 @@ the password; a recovery code works in the same field.
   The command leaves the password and all data alone and does not end existing sessions. If a
   device was stolen, also change the password.
 
+## Instance key
+
+Secrets that the database holds for users are encrypted with a separate instance key
+(`ENCRYPTION_KEY`, Fernet: AES with an integrity check), so a copy of the database alone reveals
+nothing. Django refuses to start without it, and the system check (`manage.py check`) names a key
+that is not valid.
+
+- **Generate it once** (from `backend/`), keep it in the environment or a secret file, never in the
+  repository: `uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`
+- **Back it up apart from the database.** A database backup without the key does not restore the
+  encrypted secrets. Whoever holds both can read them.
+- **Rotating:** put the new key first and keep the old one after it, separated by a comma
+  (`ENCRYPTION_KEY=<new>,<old>`). New values use the first key, old values stay readable. There is
+  no command yet that re-encrypts old values, so the old key must stay in the list.
+- **Losing it** makes the values encrypted with it unrecoverable. For two-factor authentication,
+  [`reset_mfa`](#two-factor-authentication) lets the user set it up again.
+
 ## Checks
 
 These are the commands the CI workflow (`.github/workflows/ci.yml`) runs.
@@ -163,6 +183,7 @@ Set in `.env` or in the environment. Values without a default are required.
 | `DJANGO_DEBUG`                 | `false`                             | `true` for development. With `false`, cookies are sent only over HTTPS.           |
 | `DJANGO_ALLOWED_HOSTS`         | empty                               | Comma-separated host names; must be set when `DJANGO_DEBUG` is `false`.           |
 | `DJANGO_CSRF_TRUSTED_ORIGINS`  | empty                               | Comma-separated origins allowed to send state-changing requests.                  |
+| `ENCRYPTION_KEY`               | –                                   | Instance key for secrets stored in the database; several keys separated by commas. Required. |
 | `REGISTRATION_MODE`            | `invite_only`                       | `closed`, `invite_only` or `open`. Anything else stops Django at startup.         |
 | `INVITATION_TTL_DAYS`          | `7`                                 | How long an invitation stays valid.                                               |
 | `SMTP_HOST`                    | empty                               | Empty: emails are printed to the Django console. Set: they are sent via SMTP.     |
@@ -180,7 +201,7 @@ Set in `.env` or in the environment. Values without a default are required.
 - **`Port 4200 is already in use` / `That port is already in use`.** Another dev server is running.
   Stop it, or start this one elsewhere: `uv run python manage.py runserver 8010` together with
   `npx ng serve --port 4210 --proxy-config <file>` that points `/api` to that port.
-- **Django refuses to start with `DJANGO_SECRET_KEY` or `DATABASE_URL` missing.** Both are required
+- **Django refuses to start with `DJANGO_SECRET_KEY`, `DATABASE_URL` or `ENCRYPTION_KEY` missing.** Both are required
   and have no default; check that `.env` is in the repository root, not in `backend/`.
 - **An administrator cannot reach the admin pages and keeps landing on the security page.** That is
   the rule that administrators need two-factor authentication; set it up there.
