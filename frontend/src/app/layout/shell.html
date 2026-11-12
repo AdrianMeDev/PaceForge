@@ -1,0 +1,8 @@
+<header class="bar">
+  <span class="brand">PaceForge</span>
+  <span class="user" data-testid="user-label">{{ userLabel() }}</span>
+  <button type="button" class="link" (click)="logout()">Sign out</button>
+</header>
+<main class="content">
+  <router-outlet />
+</main>

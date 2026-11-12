@@ -1,1 +1,78 @@
-/* You can add global styles to this file, and also import other style files */
+:root {
+  color-scheme: light dark;
+  --bg: #f4f6f8;
+  --surface: #ffffff;
+  --text: #1b1f24;
+  --muted: #5b6672;
+  --border: #ccd3da;
+  --accent: #1a5fd0;
+  --accent-text: #ffffff;
+  --danger: #a32117;
+  --danger-bg: #fdeceb;
+  --info: #0b4a99;
+  --info-bg: #e6f0fd;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12161b;
+    --surface: #1b2128;
+    --text: #e7ebef;
+    --muted: #9aa5b1;
+    --border: #36404b;
+    --accent: #6ea8ff;
+    --accent-text: #0b1220;
+    --danger: #ff9b92;
+    --danger-bg: #3a1c1a;
+    --info: #9cc4ff;
+    --info-bg: #16263d;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+  line-height: 1.5;
+}
+
+h1 {
+  margin: 0 0 1rem;
+  font-size: 1.5rem;
+}
+
+button {
+  font: inherit;
+}
+
+button.primary {
+  padding: 0.6rem 1rem;
+  border: 0;
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button.primary:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
