@@ -5,6 +5,7 @@ There are deliberately no insecure defaults for secrets.
 """
 
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import environ
 from django.core.exceptions import ImproperlyConfigured
@@ -104,6 +105,11 @@ REGISTRATION_MODE = env.str("REGISTRATION_MODE", default="invite_only")
 if REGISTRATION_MODE not in {"closed", "invite_only", "open"}:
     raise ImproperlyConfigured(f"Invalid REGISTRATION_MODE: {REGISTRATION_MODE!r}")
 INVITATION_TTL_DAYS = env.int("INVITATION_TTL_DAYS", default=7)
+
+# Where the Intervals.icu API lives. Only changed to point tests or development at a fake server.
+INTERVALS_API_BASE_URL = env.str("INTERVALS_API_BASE_URL", default="https://intervals.icu/api/v1")
+if urlsplit(INTERVALS_API_BASE_URL).scheme not in {"http", "https"}:
+    raise ImproperlyConfigured("INTERVALS_API_BASE_URL must start with http:// or https://")
 
 REST_FRAMEWORK = {
     # Session auth enforces CSRF for unsafe methods; every endpoint requires a login by default.
