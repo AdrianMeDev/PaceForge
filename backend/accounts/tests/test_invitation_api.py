@@ -50,7 +50,10 @@ def test_staff_creates_invitation_and_gets_a_link_once(staff_api: AuthApi) -> No
     assert body["status"] == "pending"
     link = urlparse(body["invite_url"])
     assert link.path == "/account/signup"
-    token = parse_qs(link.query)["invitation"][0]
+    query = parse_qs(link.query)
+    assert set(query) == {"invitation", "email"}
+    assert query["email"] == ["invitee@example.com"]  # normalised like the stored address
+    token = query["invitation"][0]
     stored = UserInvitation.objects.get(pk=body["id"])
     assert stored.token_hash != token
     assert stored.invited_by is not None
@@ -69,6 +72,16 @@ def test_link_from_the_api_works_for_signup(staff_api: AuthApi) -> None:
 
     assert response.status_code == HTTPStatus.UNAUTHORIZED  # email verification pending
     assert User.objects.filter(email="invitee@example.com").exists()
+
+
+def test_link_keeps_special_characters_of_the_email_intact(staff_api: AuthApi) -> None:
+    body = staff_api.call("POST", URL, {"email": "ann+running@example.com"}).json()
+
+    query = parse_qs(urlparse(body["invite_url"]).query)
+
+    # `+` must be percent-encoded, otherwise the signup page would read a space.
+    assert query["email"] == ["ann+running@example.com"]
+    assert "%2B" in body["invite_url"]
 
 
 def test_list_never_exposes_tokens_or_hashes(staff_api: AuthApi, verified_staff: User) -> None:

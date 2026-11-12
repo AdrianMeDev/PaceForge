@@ -38,9 +38,9 @@ class InvitationListCreateView(APIView):
             invited_by=request.user, email=serializer.validated_data["email"]
         )
         signup_path = settings.HEADLESS_FRONTEND_URLS["account_signup"]
-        invite_url = request.build_absolute_uri(
-            f"{signup_path}?{urlencode({'invitation': created.token})}"
-        )
+        # The email is no secret (the admin typed it); it lets the signup page prefill the field.
+        query = urlencode({"invitation": created.token, "email": created.invitation.email})
+        invite_url = request.build_absolute_uri(f"{signup_path}?{query}")
         # The only time the plaintext token leaves the server: the admin hands the link on.
         data = {**InvitationSerializer(created.invitation).data, "invite_url": invite_url}
         return Response(data, status=status.HTTP_201_CREATED)
