@@ -1,0 +1,198 @@
+<div class="security">
+  <h1>Security</h1>
+
+  <section class="panel" aria-labelledby="mfa-heading">
+    <h2 id="mfa-heading">Two-factor authentication</h2>
+
+    @for (message of errors(); track $index) {
+      <p class="alert" role="alert">{{ message }}</p>
+    }
+    @if (notice(); as text) {
+      <p class="notice" role="status">{{ text }}</p>
+    }
+
+    @if (reauthFor()) {
+      <p>For your security, please confirm your password to continue.</p>
+      <form [formGroup]="passwordForm" (ngSubmit)="submitPassword()" novalidate>
+        <div class="field">
+          <label for="password">Password</label>
+          <input
+            id="password"
+            type="password"
+            formControlName="password"
+            autocomplete="current-password"
+            [attr.aria-invalid]="
+              (passwordForm.controls.password.touched && passwordForm.controls.password.invalid) ||
+              passwordError() !== null
+            "
+            [attr.aria-describedby]="
+              (passwordForm.controls.password.touched && passwordForm.controls.password.invalid) ||
+              passwordError() !== null
+                ? 'password-error'
+                : null
+            "
+          />
+          <div id="password-error">
+            @if (passwordForm.controls.password.touched && passwordForm.controls.password.invalid) {
+              <p class="field-error">Enter your password.</p>
+            }
+            @if (passwordError(); as message) {
+              <p class="field-error">{{ message }}</p>
+            }
+          </div>
+        </div>
+        <div class="actions">
+          <button type="submit" class="primary" [disabled]="busy()">
+            {{ busy() ? 'Checking…' : 'Confirm password' }}
+          </button>
+          <button type="button" class="link" (click)="cancelPassword()">Cancel</button>
+        </div>
+      </form>
+    } @else {
+      @switch (view()) {
+        @case ('loading') {
+          <p role="status">Loading…</p>
+        }
+        @case ('unreachable') {
+          <p class="alert" role="alert">We could not load your security settings.</p>
+          <button type="button" class="primary" (click)="load()">Try again</button>
+        }
+        @case ('off') {
+          <p>
+            Two-factor authentication is <strong>off</strong>. With it, signing in needs a code from
+            an authenticator app in addition to your password.
+          </p>
+          @if (isStaff()) {
+            <p>Administrators have to turn it on before they can use the administration pages.</p>
+          }
+          <button type="button" class="primary" [disabled]="busy()" (click)="startSetup()">
+            Set up two-factor authentication
+          </button>
+        }
+        @case ('setup') {
+          @if (setupInfo(); as info) {
+            <ol class="steps">
+              <li>
+                <p>
+                  Scan this QR code with an authenticator app (for example your phone's password
+                  manager or a TOTP app).
+                </p>
+                <app-qr-code [value]="info.totpUrl" label="QR code for your authenticator app" />
+                <p class="hint">
+                  Cannot scan it? Enter this key in the app:
+                  <code class="secret" data-testid="secret">{{ formattedSecret() }}</code>
+                </p>
+              </li>
+              <li>
+                <p>Then enter the 6-digit code the app shows.</p>
+                <form [formGroup]="codeForm" (ngSubmit)="submitCode()" novalidate>
+                  <div class="field">
+                    <label for="code">Code</label>
+                    <input
+                      id="code"
+                      type="text"
+                      inputmode="numeric"
+                      formControlName="code"
+                      autocomplete="one-time-code"
+                      [attr.aria-invalid]="
+                        (codeForm.controls.code.touched && codeForm.controls.code.invalid) ||
+                        codeError() !== null
+                      "
+                      [attr.aria-describedby]="
+                        (codeForm.controls.code.touched && codeForm.controls.code.invalid) ||
+                        codeError() !== null
+                          ? 'code-error'
+                          : null
+                      "
+                    />
+                    <div id="code-error">
+                      @if (codeForm.controls.code.touched && codeForm.controls.code.invalid) {
+                        <p class="field-error">Enter the code from your app.</p>
+                      }
+                      @if (codeError(); as message) {
+                        <p class="field-error">{{ message }}</p>
+                      }
+                    </div>
+                  </div>
+                  <div class="actions">
+                    <button type="submit" class="primary" [disabled]="busy()">
+                      {{ busy() ? 'Checking…' : 'Turn on' }}
+                    </button>
+                    <button type="button" class="link" (click)="cancelSetup()">Cancel</button>
+                  </div>
+                </form>
+              </li>
+            </ol>
+          }
+        }
+        @case ('on') {
+          <p>Two-factor authentication is <strong>on</strong>{{ statusDetail() }}</p>
+
+          @if (confirming() === 'regenerate') {
+            <p class="alert" role="alert">
+              New recovery codes replace all your old ones; the old codes stop working.
+            </p>
+            <div class="actions">
+              <button type="button" class="primary" [disabled]="busy()" (click)="confirmAction()">
+                Generate new codes
+              </button>
+              <button type="button" class="link" (click)="cancelConfirmation()">Cancel</button>
+            </div>
+          } @else if (confirming() === 'deactivate') {
+            <p class="alert" role="alert">
+              Turning it off removes your authenticator and your recovery codes. Your account will
+              be protected by the password alone.
+            </p>
+            <div class="actions">
+              <button type="button" class="primary" [disabled]="busy()" (click)="confirmAction()">
+                Turn off
+              </button>
+              <button type="button" class="link" (click)="cancelConfirmation()">Cancel</button>
+            </div>
+          } @else {
+            <div class="actions">
+              <button type="button" class="primary" [disabled]="busy()" (click)="showCodes()">
+                Show recovery codes
+              </button>
+              <button type="button" class="secondary" (click)="ask('regenerate')">
+                Generate new recovery codes
+              </button>
+              @if (!isStaff()) {
+                <button type="button" class="secondary" (click)="ask('deactivate')">
+                  Turn off
+                </button>
+              }
+            </div>
+            @if (isStaff()) {
+              <p class="hint">Administrators have to keep two-factor authentication turned on.</p>
+            }
+          }
+        }
+        @case ('codes') {
+          @if (codes(); as set) {
+            @if (freshCodes()) {
+              <p class="notice" role="status">
+                Save these recovery codes now, for example in your password manager. Each one works
+                once if you lose access to your authenticator app.
+              </p>
+            }
+            <p>
+              <span data-testid="code-count">{{ set.unused }} of {{ set.total }}</span> recovery
+              codes are unused.
+            </p>
+            <ul class="codes" data-testid="recovery-codes">
+              @for (code of set.codes; track code) {
+                <li>{{ code }}</li>
+              }
+            </ul>
+          } @else {
+            <p>You have no recovery codes.</p>
+          }
+          <button type="button" class="primary" (click)="doneWithCodes()">
+            {{ freshCodes() ? 'I have saved them' : 'Done' }}
+          </button>
+        }
+      }
+    }
+  </section>
+</div>

@@ -146,6 +146,23 @@ describe('app routes', () => {
     expect(router.url).toBe('/');
   });
 
+  it('sends visitors from the security page to the login and remembers where they wanted to go', async () => {
+    await harness.navigateByUrl('/settings/security');
+
+    expect(router.url).toBe('/login?returnUrl=%2Fsettings%2Fsecurity');
+  });
+
+  it('shows the security page inside the shell for signed-in users', async () => {
+    store.signIn();
+
+    await harness.navigateByUrl('/settings/security');
+
+    expect(router.url).toBe('/settings/security');
+    const page = required(harness.routeNativeElement, 'the routed element');
+    expect(page.textContent).toContain('Two-factor authentication');
+    expect(page.querySelector('[data-testid="user-label"]')?.textContent).toBe('Ada');
+  });
+
   it('redirects unknown paths to the start page', async () => {
     store.signIn();
 

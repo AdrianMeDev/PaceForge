@@ -52,6 +52,12 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./features/dashboard/dashboard-page').then((m) => m.DashboardPage),
       },
+      {
+        path: 'settings/security',
+        title: 'Security',
+        loadComponent: () =>
+          import('./features/security/security-page').then((m) => m.SecurityPage),
+      },
     ],
   },
   { path: '**', redirectTo: '' },

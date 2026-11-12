@@ -27,6 +27,7 @@ export function createAuthStoreStub(initial: { status?: AuthStatus; user?: Me | 
     user: user.asReadonly(),
     pendingFlows: pendingFlows.asReadonly(),
     isAuthenticated: computed(() => status() === 'authenticated'),
+    isStaff: computed(() => user()?.is_staff ?? false),
     login: vi.fn<(email: string, password: string) => Promise<LoginOutcome>>(),
     logout: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     verifyEmail: vi.fn<(key: string) => Promise<VerifyEmailResult>>(),
