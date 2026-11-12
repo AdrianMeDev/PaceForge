@@ -10,6 +10,12 @@ from accounts.services.invitations import InvalidInvitationError, consume_invita
 
 
 class AccountAdapter(DefaultAccountAdapter):
+    def send_mail(self, template_prefix: str, email: str, context: dict[str, Any]) -> None:
+        # Mail texts differ by how people can get an account (see `unknown_account_message.txt`).
+        super().send_mail(
+            template_prefix, email, {**context, "registration_mode": settings.REGISTRATION_MODE}
+        )
+
     def is_open_for_signup(self, request: HttpRequest) -> bool:
         return settings.REGISTRATION_MODE != "closed"
 

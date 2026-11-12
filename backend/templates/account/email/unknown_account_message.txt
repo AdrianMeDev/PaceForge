@@ -1,0 +1,9 @@
+{% extends "account/email/base_message.txt" %}
+
+{% block content %}{% autoescape off %}You are receiving this email because you, or someone else, tried to access an account with email {{ email }}. However, we do not have any record of such an account in our database.
+
+This mail can be safely ignored if you did not initiate this action.
+
+{% if registration_mode == "open" %}If it was you, you can sign up for an account using the link below.
+
+{{ signup_url }}{% elif registration_mode == "closed" %}New accounts cannot be created on this server at the moment.{% else %}Accounts on this server are created by invitation. If you would like an account, please ask an administrator to invite you.{% endif %}{% endautoescape %}{% endblock content %}
