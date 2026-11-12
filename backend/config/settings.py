@@ -123,6 +123,8 @@ ACCOUNT_EMAIL_VERIFICATION = "mandatory"
 ACCOUNT_LOGOUT_ON_PASSWORD_CHANGE = True
 # Second factor: authenticator app (TOTP) plus recovery codes. WebAuthn/passkeys stay off.
 MFA_SUPPORTED_TYPES = ["totp", "recovery_codes"]
+# TOTP secrets and recovery-code seeds are stored encrypted (accounts/mfa_adapter.py).
+MFA_ADAPTER = "accounts.mfa_adapter.MFAAdapter"
 MFA_TOTP_ISSUER = "PaceForge"
 # The "app" client is CSRF-exempt and token based; only the cookie-based client is enabled.
 HEADLESS_CLIENTS = ("browser",)

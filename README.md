@@ -9,8 +9,8 @@ password reset, two-factor authentication (authenticator app plus recovery codes
 administrators), and the data-isolation foundation the training features will build on.
 **Not there yet:** sending invitations by email (the administrator hands the link on) and all
 coaching features. Before an instance is exposed to the internet, read
-[Two-factor authentication](#two-factor-authentication): the TOTP secrets are not yet encrypted in
-the database.
+[Instance key](#instance-key): secrets in the database are encrypted, and the key has to be backed
+up apart from the database.
 
 ## Layout
 
@@ -120,9 +120,11 @@ the password; a recovery code works in the same field.
 - **Recovery codes:** save them when they are shown. Generating new ones replaces all old ones.
 - **The QR code is drawn in the browser.** The authenticator URL contains the secret; it is never
   sent to a third party.
-- **Known gap:** allauth stores the TOTP secrets in the database in the clear. Encrypting them with
-  the instance key is planned together with the other stored secrets. Protect database backups
-  accordingly.
+- **Stored encrypted.** The authenticator secrets and the seed of the recovery codes are encrypted
+  with the [instance key](#instance-key); a copy of the database alone does not reveal them.
+  Without the key they cannot be used, so after losing it every user has to be reset (see below).
+  Upgrading from a version that stored them in clear text: `migrate` encrypts what is there, so set
+  `ENCRYPTION_KEY` first.
 - **Lost authenticator and recovery codes?** There is no self-service way back by design. An
   operator removes the second factor of the account (from `backend/`); the user then signs in with
   the password alone and sets it up again, and an administrator is sent to the security page:
