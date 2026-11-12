@@ -4,12 +4,18 @@ export interface Me {
   email: string;
   display_name: string;
   is_staff: boolean;
+  /** An authenticator app (TOTP) is active. */
+  mfa_enabled: boolean;
+  /** An administrator who has not turned on two-factor authentication yet. */
+  mfa_setup_required: boolean;
 }
 
 /** A step of an authentication flow, e.g. `login`, `verify_email` or `mfa_authenticate`. */
 export interface AuthFlow {
   id: string;
   is_pending?: boolean;
+  /** For `mfa_authenticate`: the kinds of second factor the account has. */
+  types?: string[];
 }
 
 /** One validation or domain error from the allauth headless API. */
@@ -70,3 +76,45 @@ export type PasswordResetKeyResult =
 /** A finished reset does not sign the user in. */
 export type PasswordResetResult =
   { kind: 'done' } | { kind: 'invalid'; errors: ApiError[] } | { kind: 'rate_limited' };
+
+/** The second step of a sign-in with two-factor authentication. */
+export type MfaAuthenticateResult =
+  | { kind: 'authenticated' }
+  | { kind: 'invalid'; errors: ApiError[] }
+  /** There is no half-finished sign-in any more (the session ran out). */
+  | { kind: 'expired' };
+
+export type ReauthenticateResult =
+  { kind: 'confirmed' } | { kind: 'invalid'; errors: ApiError[] } | { kind: 'rate_limited' };
+
+/**
+ * Turning two-factor authentication on or off and handling recovery codes need the password
+ * again, even right after signing in. The server says so with 401 and a `reauthenticate` flow;
+ * the caller asks for the password, calls `reauthenticate` and repeats the action.
+ */
+export interface ReauthenticationRequired {
+  kind: 'reauthentication_required';
+}
+
+/** `inactive` carries what the setup needs: the secret and the URL for the QR code. */
+export type TotpStatus =
+  | { kind: 'active'; createdAt: number; lastUsedAt: number | null }
+  | { kind: 'inactive'; secret: string; totpUrl: string };
+
+export type ActivateTotpResult =
+  { kind: 'activated' } | { kind: 'invalid'; errors: ApiError[] } | ReauthenticationRequired;
+
+export type DeactivateTotpResult = { kind: 'deactivated' } | ReauthenticationRequired;
+
+export interface RecoveryCodeSet {
+  /** The codes that can still be used. */
+  codes: string[];
+  total: number;
+  unused: number;
+}
+
+export type RecoveryCodesResult =
+  ({ kind: 'codes' } & RecoveryCodeSet) | { kind: 'none' } | ReauthenticationRequired;
+
+export type RegenerateRecoveryCodesResult =
+  ({ kind: 'regenerated' } & RecoveryCodeSet) | ReauthenticationRequired;

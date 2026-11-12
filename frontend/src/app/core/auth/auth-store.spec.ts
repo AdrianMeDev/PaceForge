@@ -12,7 +12,14 @@ const SESSION = `${AUTH_BASE}/auth/session`;
 const LOGIN = `${AUTH_BASE}/auth/login`;
 const ME = '/api/me/';
 
-const ADA = { id: '1', email: 'ada@example.com', display_name: 'Ada', is_staff: false };
+const ADA = {
+  id: '1',
+  email: 'ada@example.com',
+  display_name: 'Ada',
+  is_staff: false,
+  mfa_enabled: false,
+  mfa_setup_required: false,
+};
 const UNAUTHENTICATED = {
   status: 401,
   data: { flows: [{ id: 'login' }] },
@@ -175,6 +182,81 @@ describe('AuthStore', () => {
 
       expect(await outcome).toEqual({ kind: 'invalid', errors: [error] });
       expect(store.user()).toBeNull();
+    });
+  });
+
+  describe('sign-in with a second factor', () => {
+    const MFA_FLOW = {
+      id: 'mfa_authenticate',
+      is_pending: true,
+      types: ['recovery_codes', 'totp'],
+    };
+    const MFA_AUTHENTICATE = `${AUTH_BASE}/auth/2fa/authenticate`;
+
+    it('keeps the pending second step, with the kinds of factor, after the password', async () => {
+      const outcome = store.login('ada@example.com', 'secret');
+      await respond(
+        'POST',
+        LOGIN,
+        { status: 401, data: { flows: [{ id: 'login' }, MFA_FLOW] } },
+        401,
+      );
+
+      expect(await outcome).toEqual({ kind: 'pending', flows: [{ id: 'login' }, MFA_FLOW] });
+      expect(store.pendingFlows()).toEqual([MFA_FLOW]);
+      expect(store.status()).toBe('anonymous');
+    });
+
+    it('loads the user once the code is accepted', async () => {
+      const outcome = store.authenticateMfa('123456');
+      const request = await nextRequest('POST', MFA_AUTHENTICATE);
+      expect(request.request.body).toEqual({ code: '123456' });
+      request.flush({ status: 200 }, { status: 200, statusText: 'OK' });
+      await respond('GET', ME, { ...ADA, mfa_enabled: true });
+
+      expect(await outcome).toEqual({ kind: 'authenticated' });
+      expect(store.status()).toBe('authenticated');
+      expect(store.user()?.mfa_enabled).toBe(true);
+      expect(store.pendingFlows()).toEqual([]);
+    });
+
+    it('returns the errors for a wrong code and stays signed out', async () => {
+      const error = { code: 'incorrect_code', message: 'Incorrect code.', param: 'code' };
+      const outcome = store.authenticateMfa('000000');
+      await respond('POST', MFA_AUTHENTICATE, { status: 400, errors: [error] }, 400);
+
+      expect(await outcome).toEqual({ kind: 'invalid', errors: [error] });
+      expect(store.user()).toBeNull();
+      expect(store.isAuthenticated()).toBe(false);
+    });
+
+    it('forgets the pending step when the half-finished sign-in is gone', async () => {
+      const login = store.login('ada@example.com', 'secret');
+      await respond('POST', LOGIN, { status: 401, data: { flows: [MFA_FLOW] } }, 401);
+      await login;
+      expect(store.pendingFlows()).toHaveLength(1);
+
+      const outcome = store.authenticateMfa('123456');
+      await respond('POST', MFA_AUTHENTICATE, UNAUTHENTICATED, 401);
+
+      expect(await outcome).toEqual({ kind: 'expired' });
+      expect(store.pendingFlows()).toEqual([]);
+    });
+  });
+
+  describe('reloadUser', () => {
+    it('picks up changes to the account, e.g. two-factor authentication being turned on', async () => {
+      const login = store.login('ada@example.com', 'secret');
+      await respond('POST', LOGIN, {});
+      await respond('GET', ME, { ...ADA, is_staff: true, mfa_setup_required: true });
+      await login;
+      expect(store.user()?.mfa_setup_required).toBe(true);
+
+      const reload = store.reloadUser();
+      await respond('GET', ME, { ...ADA, is_staff: true, mfa_enabled: true });
+      await reload;
+
+      expect(store.user()).toMatchObject({ mfa_enabled: true, mfa_setup_required: false });
     });
   });
 

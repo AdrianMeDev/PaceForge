@@ -12,6 +12,41 @@ const EMAIL_VERIFY = `${AUTH_BASE}/auth/email/verify`;
 const PASSWORD_REQUEST = `${AUTH_BASE}/auth/password/request`;
 const PASSWORD_RESET = `${AUTH_BASE}/auth/password/reset`;
 
+const MFA_AUTHENTICATE = `${AUTH_BASE}/auth/2fa/authenticate`;
+const REAUTHENTICATE = `${AUTH_BASE}/auth/reauthenticate`;
+const TOTP = `${AUTH_BASE}/account/authenticators/totp`;
+const RECOVERY_CODES = `${AUTH_BASE}/account/authenticators/recovery-codes`;
+
+/** Signed in, but the password has to be confirmed again for this action. */
+const REAUTHENTICATION_REQUIRED = {
+  status: 401,
+  data: {
+    flows: [
+      { id: 'reauthenticate' },
+      { id: 'reauthenticate_by_code', recipients: [{ email: 'ada@example.com' }] },
+      { id: 'mfa_reauthenticate', types: ['totp'] },
+    ],
+  },
+  meta: { is_authenticated: true },
+};
+
+/** Not signed in at all: also a 401, but nothing to confirm. */
+const SIGNED_OUT = {
+  status: 401,
+  data: { flows: [{ id: 'login' }, { id: 'signup' }] },
+  meta: { is_authenticated: null },
+};
+
+const CODES = {
+  status: 200,
+  data: {
+    type: 'recovery_codes',
+    total_code_count: 10,
+    unused_code_count: 2,
+    unused_codes: ['11111111', '22222222'],
+  },
+};
+
 const SIGNUP_REQUEST = {
   email: 'ada@example.com',
   password: 'correct-horse',
@@ -360,6 +395,306 @@ describe('AuthApi account calls', () => {
     it('rejects on unexpected server errors', async () => {
       await expect(
         run(api.resetPassword('k', 'pw'), 'POST', PASSWORD_RESET, 'boom', 500),
+      ).rejects.toBeDefined();
+    });
+  });
+
+  describe('authenticateMfa', () => {
+    it('sends the code (an authenticator code or a recovery code) in the body', async () => {
+      const { request } = await run(
+        api.authenticateMfa('123456'),
+        'POST',
+        MFA_AUTHENTICATE,
+        {},
+        200,
+      );
+
+      expect(request.request.body).toEqual({ code: '123456' });
+    });
+
+    it('reports a completed sign-in', async () => {
+      const { result } = await run(
+        api.authenticateMfa('123456'),
+        'POST',
+        MFA_AUTHENTICATE,
+        {},
+        200,
+      );
+
+      expect(result).toEqual({ kind: 'authenticated' });
+    });
+
+    it.each(['incorrect_code', 'too_many_login_attempts'])(
+      'keeps the %s error with its field',
+      async (code) => {
+        const { result } = await run(
+          api.authenticateMfa('000000'),
+          'POST',
+          MFA_AUTHENTICATE,
+          error(code, 'code'),
+          400,
+        );
+
+        expect(result).toEqual({
+          kind: 'invalid',
+          errors: [{ code, message: `msg ${code}`, param: 'code' }],
+        });
+      },
+    );
+
+    it('reports that the half-finished sign-in is gone', async () => {
+      const { result } = await run(
+        api.authenticateMfa('123456'),
+        'POST',
+        MFA_AUTHENTICATE,
+        SIGNED_OUT,
+        401,
+      );
+
+      expect(result).toEqual({ kind: 'expired' });
+    });
+
+    it('rejects on unexpected server errors', async () => {
+      await expect(
+        run(api.authenticateMfa('1'), 'POST', MFA_AUTHENTICATE, 'boom', 500),
+      ).rejects.toBeDefined();
+    });
+  });
+
+  describe('reauthenticate', () => {
+    it('sends the password in the body and reports the confirmation', async () => {
+      const { result, request } = await run(
+        api.reauthenticate('secret'),
+        'POST',
+        REAUTHENTICATE,
+        {},
+        200,
+      );
+
+      expect(request.request.body).toEqual({ password: 'secret' });
+      expect(result).toEqual({ kind: 'confirmed' });
+    });
+
+    it('keeps the error for a wrong password', async () => {
+      const { result } = await run(
+        api.reauthenticate('nope'),
+        'POST',
+        REAUTHENTICATE,
+        error('incorrect_password', 'password'),
+        400,
+      );
+
+      expect(result).toEqual({
+        kind: 'invalid',
+        errors: [
+          { code: 'incorrect_password', message: 'msg incorrect_password', param: 'password' },
+        ],
+      });
+    });
+
+    it('reports the rate limit', async () => {
+      const { result } = await run(api.reauthenticate('x'), 'POST', REAUTHENTICATE, {}, 429);
+
+      expect(result).toEqual({ kind: 'rate_limited' });
+    });
+  });
+
+  describe('getTotp', () => {
+    it('reads the secret and the authenticator URL from the 404 answer when none is active', async () => {
+      const meta = {
+        secret: 'JBSWY3DP',
+        totp_url: 'otpauth://totp/ada%40example.com?secret=JBSWY3DP&issuer=PaceForge',
+      };
+
+      const { result } = await run(api.getTotp(), 'GET', TOTP, { status: 404, meta }, 404);
+
+      expect(result).toEqual({ kind: 'inactive', secret: 'JBSWY3DP', totpUrl: meta.totp_url });
+    });
+
+    it('describes an active authenticator', async () => {
+      const { result } = await run(
+        api.getTotp(),
+        'GET',
+        TOTP,
+        { status: 200, data: { type: 'totp', created_at: 1794510610.1, last_used_at: null } },
+        200,
+      );
+
+      expect(result).toEqual({ kind: 'active', createdAt: 1794510610.1, lastUsedAt: null });
+    });
+
+    it('does not mistake a 404 without setup data for "not active"', async () => {
+      await expect(run(api.getTotp(), 'GET', TOTP, { status: 404 }, 404)).rejects.toBeDefined();
+    });
+
+    it('rejects when the visitor is signed out', async () => {
+      await expect(run(api.getTotp(), 'GET', TOTP, SIGNED_OUT, 401)).rejects.toBeDefined();
+    });
+  });
+
+  describe('activateTotp', () => {
+    it('sends the code and reports the activation', async () => {
+      const { result, request } = await run(
+        api.activateTotp('123456'),
+        'POST',
+        TOTP,
+        { status: 200 },
+        200,
+      );
+
+      expect(request.request.body).toEqual({ code: '123456' });
+      expect(result).toEqual({ kind: 'activated' });
+    });
+
+    it('keeps the error for a wrong code', async () => {
+      const { result } = await run(
+        api.activateTotp('000000'),
+        'POST',
+        TOTP,
+        error('incorrect_code', 'code'),
+        400,
+      );
+
+      expect(result).toEqual({
+        kind: 'invalid',
+        errors: [{ code: 'incorrect_code', message: 'msg incorrect_code', param: 'code' }],
+      });
+    });
+
+    it('asks for the password when the server wants it confirmed again', async () => {
+      const { result } = await run(
+        api.activateTotp('123456'),
+        'POST',
+        TOTP,
+        REAUTHENTICATION_REQUIRED,
+        401,
+      );
+
+      expect(result).toEqual({ kind: 'reauthentication_required' });
+    });
+
+    it('asks for the password only for a signed-in user, whatever the flows say', async () => {
+      const notSignedIn = {
+        status: 401,
+        data: { flows: [{ id: 'reauthenticate' }] },
+        meta: { is_authenticated: false },
+      };
+
+      await expect(
+        run(api.activateTotp('123456'), 'POST', TOTP, notSignedIn, 401),
+      ).rejects.toBeDefined();
+    });
+
+    it('does not take a signed-out 401 for a password prompt', async () => {
+      await expect(
+        run(api.activateTotp('123456'), 'POST', TOTP, SIGNED_OUT, 401),
+      ).rejects.toBeDefined();
+    });
+  });
+
+  describe('deactivateTotp', () => {
+    it('reports the removal', async () => {
+      const { result } = await run(api.deactivateTotp(), 'DELETE', TOTP, { status: 200 }, 200);
+
+      expect(result).toEqual({ kind: 'deactivated' });
+    });
+
+    it('asks for the password when the server wants it confirmed again', async () => {
+      const { result } = await run(
+        api.deactivateTotp(),
+        'DELETE',
+        TOTP,
+        REAUTHENTICATION_REQUIRED,
+        401,
+      );
+
+      expect(result).toEqual({ kind: 'reauthentication_required' });
+    });
+
+    it('rejects on unexpected server errors', async () => {
+      await expect(run(api.deactivateTotp(), 'DELETE', TOTP, 'boom', 500)).rejects.toBeDefined();
+    });
+  });
+
+  describe('getRecoveryCodes', () => {
+    it('returns the unused codes with their counts', async () => {
+      const { result } = await run(api.getRecoveryCodes(), 'GET', RECOVERY_CODES, CODES, 200);
+
+      expect(result).toEqual({
+        kind: 'codes',
+        codes: ['11111111', '22222222'],
+        total: 10,
+        unused: 2,
+      });
+    });
+
+    it('returns no codes when the server does not list them', async () => {
+      const hidden = { status: 200, data: { total_code_count: 10, unused_code_count: 10 } };
+
+      const { result } = await run(api.getRecoveryCodes(), 'GET', RECOVERY_CODES, hidden, 200);
+
+      expect(result).toEqual({ kind: 'codes', codes: [], total: 10, unused: 10 });
+    });
+
+    it('reports that there are none (no authenticator set up)', async () => {
+      const { result } = await run(
+        api.getRecoveryCodes(),
+        'GET',
+        RECOVERY_CODES,
+        { status: 404 },
+        404,
+      );
+
+      expect(result).toEqual({ kind: 'none' });
+    });
+
+    it('asks for the password when the server wants it confirmed again', async () => {
+      const { result } = await run(
+        api.getRecoveryCodes(),
+        'GET',
+        RECOVERY_CODES,
+        REAUTHENTICATION_REQUIRED,
+        401,
+      );
+
+      expect(result).toEqual({ kind: 'reauthentication_required' });
+    });
+  });
+
+  describe('regenerateRecoveryCodes', () => {
+    it('posts an empty body and returns the new codes', async () => {
+      const { result, request } = await run(
+        api.regenerateRecoveryCodes(),
+        'POST',
+        RECOVERY_CODES,
+        CODES,
+        200,
+      );
+
+      expect(request.request.body).toEqual({});
+      expect(result).toEqual({
+        kind: 'regenerated',
+        codes: ['11111111', '22222222'],
+        total: 10,
+        unused: 2,
+      });
+    });
+
+    it('asks for the password when the server wants it confirmed again', async () => {
+      const { result } = await run(
+        api.regenerateRecoveryCodes(),
+        'POST',
+        RECOVERY_CODES,
+        REAUTHENTICATION_REQUIRED,
+        401,
+      );
+
+      expect(result).toEqual({ kind: 'reauthentication_required' });
+    });
+
+    it('rejects on unexpected server errors', async () => {
+      await expect(
+        run(api.regenerateRecoveryCodes(), 'POST', RECOVERY_CODES, 'boom', 500),
       ).rejects.toBeDefined();
     });
   });

@@ -1,6 +1,13 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { AuthApi } from './auth-api';
-import { AuthFlow, AuthStatus, LoginOutcome, Me, VerifyEmailResult } from './auth-models';
+import {
+  AuthFlow,
+  AuthStatus,
+  LoginOutcome,
+  Me,
+  MfaAuthenticateResult,
+  VerifyEmailResult,
+} from './auth-models';
 
 /** Single source of truth for "who is logged in", exposed as read-only signals. */
 @Injectable({ providedIn: 'root' })
@@ -49,6 +56,22 @@ export class AuthStore {
       case 'invalid':
         return result;
     }
+  }
+
+  /** Second step of a sign-in with two-factor authentication; loads the user on success. */
+  async authenticateMfa(code: string): Promise<MfaAuthenticateResult> {
+    const result = await this.api.authenticateMfa(code);
+    if (result.kind === 'authenticated') {
+      await this.loadUser();
+    } else if (result.kind === 'expired') {
+      this.setAnonymous([]);
+    }
+    return result;
+  }
+
+  /** Reads the account again after something changed it, e.g. two-factor authentication. */
+  async reloadUser(): Promise<void> {
+    await this.loadUser();
   }
 
   /** Confirms an email address; if the server also signed the user in, the user is loaded. */
