@@ -11,6 +11,11 @@
     <a routerLink="/settings/security" routerLinkActive="active" ariaCurrentWhenActive="page"
       >Security</a
     >
+    @if (isStaff()) {
+      <a routerLink="/admin/invitations" routerLinkActive="active" ariaCurrentWhenActive="page"
+        >Invitations</a
+      >
+    }
   </nav>
   <span class="user" data-testid="user-label">{{ userLabel() }}</span>
   <button type="button" class="link" (click)="logout()">Sign out</button>

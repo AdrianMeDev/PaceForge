@@ -3,12 +3,12 @@
 A self-hostable, AI-assisted endurance coach for running, cycling, swimming and strength training.
 The long-term goal is described in `PROJECT_PLAN.md`; this repository is in early development.
 
-**What works today:** accounts for a multi-user instance, invitation-only registration, email
-verification, sign-in and sign-out with server-side sessions, password reset, two-factor
-authentication (authenticator app plus recovery codes, mandatory for administrators), and the
-data-isolation foundation the training features will build on.
-**Not there yet:** the admin page for invitations (invitations are created from the Django shell for
-now) and all coaching features. Before an instance is exposed to the internet, read
+**What works today:** accounts for a multi-user instance, invitation-only registration with an
+admin page for invitations, email verification, sign-in and sign-out with server-side sessions,
+password reset, two-factor authentication (authenticator app plus recovery codes, mandatory for
+administrators), and the data-isolation foundation the training features will build on.
+**Not there yet:** sending invitations by email (the administrator hands the link on) and all
+coaching features. Before an instance is exposed to the internet, read
 [Two-factor authentication](#two-factor-authentication): the TOTP secrets are not yet encrypted in
 the database.
 
@@ -80,23 +80,14 @@ save the recovery codes (see [Two-factor authentication](#two-factor-authenticat
 
 ## Manual walkthrough: invitation to working account
 
-There is no page for creating invitations yet, so the first step uses the Django shell. The rest is
-what a new user sees.
+Administrators create invitations on the **Invitations** page. Nothing is sent by email: you get a
+link and hand it on yourself. The rest is what a new user sees.
 
-1. **Create an invitation** (from `backend/`). The last line of the output is the link; open it in
-   a private window so you stay signed in as the administrator in the other one.
-
-   ```sh
-   uv run python manage.py shell -c "
-   from urllib.parse import urlencode
-   from accounts.models import User
-   from accounts.services.invitations import create_invitation
-   created = create_invitation(invited_by=User.objects.filter(is_staff=True).first(), email='ann@example.com')
-   query = urlencode({'invitation': created.token, 'email': created.invitation.email})
-   print('http://localhost:4200/account/signup?' + query)
-   "
-   ```
-
+1. **Create an invitation.** Sign in as the administrator (with two-factor authentication turned on,
+   see above), choose **Invitations** in the navigation, enter `ann@example.com` and press **Create
+   invitation**. The link is shown **once**; press **Copy link** and send it to the person. If you
+   lose it, revoke the invitation in the list and create a new one. Open the link in a private
+   window so you stay signed in as the administrator in the other one.
 2. **Sign up.** The email address is prefilled and read-only. Choose a password. The page says a
    confirmation link was sent.
 3. **Confirm the address.** Open Mailpit (<http://localhost:8025>), open the message and follow
@@ -108,8 +99,9 @@ what a new user sees.
    page with a notice; the old password no longer works.
 
 An invitation is valid for 7 days, works once and is bound to the address it was created for. Using
-the link a second time shows "This invitation is invalid, has expired or was issued for a different
-email address."
+the link a second time, or after it was revoked, shows "This invitation is invalid, has expired or
+was issued for a different email address." The list on the Invitations page shows each invitation as
+pending, used, revoked or expired; only pending ones can be revoked.
 
 ## Two-factor authentication
 

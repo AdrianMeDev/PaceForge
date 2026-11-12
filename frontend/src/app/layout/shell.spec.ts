@@ -19,6 +19,7 @@ describe('Shell', () => {
         provideRouter([
           { path: '', pathMatch: 'full', component: Blank },
           { path: 'settings/security', component: Blank },
+          { path: 'admin/invitations', component: Blank },
         ]),
         { provide: AuthStore, useValue: store },
       ],
@@ -67,6 +68,41 @@ describe('Shell', () => {
         ['Security', '/settings/security'],
       ]);
       expect(page.querySelector('nav')?.getAttribute('aria-label')).toBe('Main');
+    });
+
+    it('shows the invitations link to administrators, last', async () => {
+      const { page } = await setup({ ...ADA, is_staff: true, mfa_enabled: true });
+
+      expect(links(page)).toEqual([
+        ['Dashboard', '/'],
+        ['Security', '/settings/security'],
+        ['Invitations', '/admin/invitations'],
+      ]);
+    });
+
+    it('does not show the invitations link to members', async () => {
+      const { page } = await setup({ ...ADA, mfa_enabled: true });
+
+      expect(links(page).map(([label]) => label)).not.toContain('Invitations');
+    });
+
+    it('shows the invitations link to an administrator who still has to set up two-factor', async () => {
+      const { page } = await setup({ ...ADA, is_staff: true, mfa_setup_required: true });
+
+      expect(links(page).map(([label]) => label)).toContain('Invitations');
+    });
+
+    it('marks the invitations link while that page is open', async () => {
+      const { fixture, page, navigate } = await setup({ ...ADA, is_staff: true });
+      navigate.mockRestore(); // these tests need real navigation
+
+      await TestBed.inject(Router).navigateByUrl('/admin/invitations');
+      await fixture.whenStable();
+
+      const current = Array.from(page.querySelectorAll('nav a[aria-current="page"]')).map((a) =>
+        (a.textContent ?? '').trim(),
+      );
+      expect(current).toEqual(['Invitations']);
     });
 
     it('marks the page that is open', async () => {

@@ -13,6 +13,7 @@ export class Shell {
   private readonly store = inject(AuthStore);
   private readonly router = inject(Router);
 
+  protected readonly isStaff = this.store.isStaff;
   protected readonly userLabel = computed(() => {
     const user = this.store.user();
     return user ? user.display_name || user.email : '';
