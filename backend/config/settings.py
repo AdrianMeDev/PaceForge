@@ -28,6 +28,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "allauth",
     "allauth.account",
+    "allauth.mfa",
     "allauth.headless",
     "accounts",
     "core",
@@ -114,6 +115,9 @@ ACCOUNT_SIGNUP_FIELDS = ["email*", "password1*"]
 ACCOUNT_USER_MODEL_USERNAME_FIELD = None
 ACCOUNT_EMAIL_VERIFICATION = "mandatory"
 ACCOUNT_LOGOUT_ON_PASSWORD_CHANGE = True
+# Second factor: authenticator app (TOTP) plus recovery codes. WebAuthn/passkeys stay off.
+MFA_SUPPORTED_TYPES = ["totp", "recovery_codes"]
+MFA_TOTP_ISSUER = "PaceForge"
 # The "app" client is CSRF-exempt and token based; only the cookie-based client is enabled.
 HEADLESS_CLIENTS = ("browser",)
 HEADLESS_ONLY = True
