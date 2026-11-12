@@ -20,3 +20,16 @@ export const guestGuard: CanActivateFn = () => {
   const router = inject(Router);
   return inject(AuthStore).isAuthenticated() ? router.createUrlTree(['/']) : true;
 };
+
+/**
+ * The code step of the sign-in only makes sense while the server waits for a second factor;
+ * a direct visit goes back to the password step and keeps the return target.
+ */
+export const mfaPendingGuard: CanActivateFn = (route) => {
+  const router = inject(Router);
+  return inject(AuthStore)
+    .pendingFlows()
+    .some((flow) => flow.id === 'mfa_authenticate')
+    ? true
+    : router.createUrlTree(['/login'], { queryParams: route.queryParams });
+};

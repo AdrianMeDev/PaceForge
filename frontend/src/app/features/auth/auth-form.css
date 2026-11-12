@@ -72,3 +72,14 @@ input[aria-invalid='true'] {
 a {
   color: var(--accent);
 }
+
+/* A button that is an action, not a navigation, but looks like the links around it. */
+button.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}

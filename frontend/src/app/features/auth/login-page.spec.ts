@@ -24,8 +24,9 @@ describe('safeReturnUrl', () => {
 });
 
 describe('noticeFor', () => {
-  it('knows the notice other pages ask for', () => {
+  it('knows the notices other pages ask for', () => {
     expect(noticeFor('password-reset')).toContain('password has been reset');
+    expect(noticeFor('sign-in-expired')).toContain('took too long');
   });
 
   it.each([null, '', 'unknown', '<b>hi</b>', 'toString', '__proto__', 'constructor'])(
@@ -209,13 +210,30 @@ describe('LoginPage', () => {
     expect(navigate).not.toHaveBeenCalled();
   });
 
-  it('reports sign-in steps that are not supported yet', async () => {
+  it('reports sign-in steps that this page does not know', async () => {
     await setup();
-    respondWith({ kind: 'pending', flows: [{ id: 'mfa_authenticate', is_pending: true }] });
+    respondWith({ kind: 'pending', flows: [{ id: 'provider_signup', is_pending: true }] });
 
     await submit();
 
     expect(alerts()).toEqual(['This account needs a sign-in step that is not supported yet.']);
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('continues with the code step when a second factor is pending, keeping the return target', async () => {
+    await setup({ returnUrl: '/training' });
+    const navigateRoute = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    respondWith({
+      kind: 'pending',
+      flows: [{ id: 'mfa_authenticate', is_pending: true, types: ['totp', 'recovery_codes'] }],
+    });
+
+    await submit();
+
+    expect(navigateRoute).toHaveBeenCalledExactlyOnceWith(['/login/mfa'], {
+      queryParamsHandling: 'preserve',
+    });
+    expect(alerts()).toEqual([]);
     expect(navigate).not.toHaveBeenCalled();
   });
 

@@ -14,6 +14,7 @@ const FALLBACK_MESSAGE = 'Something went wrong. Please try again.';
 /** Notices other pages may ask for with `?notice=<key>`; any other value is ignored. */
 const NOTICES: Record<string, string> = {
   'password-reset': 'Your password has been reset. You can sign in with the new password now.',
+  'sign-in-expired': 'Your sign-in took too long. Please sign in again.',
 };
 
 export function noticeFor(key: string | null): string | null {
@@ -75,7 +76,12 @@ export class LoginPage {
           );
           break;
         case 'pending':
-          this.showPending(outcome.flows);
+          if (outcome.flows.some((flow) => flow.id === 'mfa_authenticate')) {
+            // The password was right; the code step keeps the return target from the address.
+            await this.router.navigate(['/login/mfa'], { queryParamsHandling: 'preserve' });
+          } else {
+            this.showPending(outcome.flows);
+          }
           break;
       }
     } catch {
@@ -89,7 +95,7 @@ export class LoginPage {
     if (flows.some((flow) => flow.id === 'verify_email')) {
       this.notice.set('Please verify your email address first. We have sent you a link.');
     } else {
-      // e.g. a second factor: the account is fine, but this page cannot complete the sign-in yet.
+      // A step this page does not know: the account is fine, but the sign-in cannot be completed.
       this.errors.set(['This account needs a sign-in step that is not supported yet.']);
     }
   }

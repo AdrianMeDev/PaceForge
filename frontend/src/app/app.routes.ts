@@ -1,5 +1,5 @@
 import { Routes } from '@angular/router';
-import { authGuard, guestGuard } from './core/auth/auth-guards';
+import { authGuard, guestGuard, mfaPendingGuard } from './core/auth/auth-guards';
 
 export const routes: Routes = [
   {
@@ -7,6 +7,12 @@ export const routes: Routes = [
     title: 'Sign in',
     canActivate: [guestGuard],
     loadComponent: () => import('./features/auth/login-page').then((m) => m.LoginPage),
+  },
+  {
+    path: 'login/mfa',
+    title: 'Two-factor authentication',
+    canActivate: [guestGuard, mfaPendingGuard],
+    loadComponent: () => import('./features/auth/login-mfa-page').then((m) => m.LoginMfaPage),
   },
   {
     path: 'account/signup',

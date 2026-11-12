@@ -7,7 +7,7 @@ import {
   UrlTree,
   provideRouter,
 } from '@angular/router';
-import { authGuard, guestGuard } from './auth-guards';
+import { authGuard, guestGuard, mfaPendingGuard } from './auth-guards';
 import { AuthStore } from './auth-store';
 import { createAuthStoreStub } from './testing/auth-store-stub';
 
@@ -15,14 +15,15 @@ describe('route guards', () => {
   const store = createAuthStoreStub();
   let router: Router;
 
-  function run(guard: CanActivateFn, url = '/dashboard') {
+  function run(guard: CanActivateFn, url = '/dashboard', queryParams: Record<string, string> = {}) {
     return TestBed.runInInjectionContext(() =>
-      guard({} as ActivatedRouteSnapshot, { url } as RouterStateSnapshot),
+      guard({ queryParams } as unknown as ActivatedRouteSnapshot, { url } as RouterStateSnapshot),
     );
   }
 
   beforeEach(() => {
     store.setStatus('anonymous');
+    store.setPendingFlows([]);
     TestBed.configureTestingModule({
       providers: [provideRouter([]), { provide: AuthStore, useValue: store }],
     });
@@ -69,6 +70,26 @@ describe('route guards', () => {
       const result = run(guestGuard);
 
       expect(router.serializeUrl(result as UrlTree)).toBe('/');
+    });
+  });
+
+  describe('mfaPendingGuard', () => {
+    it('lets visitors in while the server waits for a second factor', () => {
+      store.setPendingFlows([{ id: 'mfa_authenticate', is_pending: true }]);
+
+      expect(run(mfaPendingGuard, '/login/mfa')).toBe(true);
+    });
+
+    it('sends a direct visit back to the password step and keeps the return target', () => {
+      const result = run(mfaPendingGuard, '/login/mfa', { returnUrl: '/training' });
+
+      expect(router.serializeUrl(result as UrlTree)).toBe('/login?returnUrl=%2Ftraining');
+    });
+
+    it('does not take other pending steps for a second factor', () => {
+      store.setPendingFlows([{ id: 'verify_email', is_pending: true }]);
+
+      expect(run(mfaPendingGuard, '/login/mfa')).toBeInstanceOf(UrlTree);
     });
   });
 });

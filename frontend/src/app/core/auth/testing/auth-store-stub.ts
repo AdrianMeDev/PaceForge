@@ -1,5 +1,6 @@
 import { computed, signal } from '@angular/core';
 import {
+  AuthFlow,
   AuthStatus,
   LoginOutcome,
   Me,
@@ -20,9 +21,11 @@ export const ADA: Me = {
 export function createAuthStoreStub(initial: { status?: AuthStatus; user?: Me | null } = {}) {
   const status = signal<AuthStatus>(initial.status ?? 'anonymous');
   const user = signal<Me | null>(initial.user ?? null);
+  const pendingFlows = signal<AuthFlow[]>([]);
   return {
     status: status.asReadonly(),
     user: user.asReadonly(),
+    pendingFlows: pendingFlows.asReadonly(),
     isAuthenticated: computed(() => status() === 'authenticated'),
     login: vi.fn<(email: string, password: string) => Promise<LoginOutcome>>(),
     logout: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
@@ -32,6 +35,9 @@ export function createAuthStoreStub(initial: { status?: AuthStatus; user?: Me | 
     signIn(me: Me = ADA): void {
       user.set(me);
       status.set('authenticated');
+    },
+    setPendingFlows(flows: AuthFlow[]): void {
+      pendingFlows.set(flows);
     },
     setStatus(next: AuthStatus): void {
       status.set(next);

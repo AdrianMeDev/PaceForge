@@ -121,6 +121,31 @@ describe('app routes', () => {
     },
   );
 
+  it('sends visitors without a pending second factor from the code step to the login', async () => {
+    await harness.navigateByUrl('/login/mfa?returnUrl=%2Ftraining');
+
+    expect(router.url).toBe('/login?returnUrl=%2Ftraining');
+  });
+
+  it('shows the code step while a second factor is pending', async () => {
+    store.setPendingFlows([{ id: 'mfa_authenticate', is_pending: true }]);
+
+    await harness.navigateByUrl('/login/mfa');
+
+    expect(router.url).toBe('/login/mfa');
+    const page = required(harness.routeNativeElement, 'the routed element');
+    expect(page.textContent).toContain('Two-factor authentication');
+  });
+
+  it('keeps signed-in users away from the code step', async () => {
+    store.setPendingFlows([{ id: 'mfa_authenticate', is_pending: true }]);
+    store.signIn();
+
+    await harness.navigateByUrl('/login/mfa');
+
+    expect(router.url).toBe('/');
+  });
+
   it('redirects unknown paths to the start page', async () => {
     store.signIn();
 
