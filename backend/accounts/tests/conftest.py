@@ -2,17 +2,19 @@ import json
 import re
 from collections.abc import Iterator
 from http import HTTPStatus
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import unquote
 
 import pytest
 from allauth.account.models import EmailAddress
 from django.core import mail
 from django.core.cache import cache
-from django.http import HttpResponse
 from django.test import Client
 
 from accounts.models import User
+
+if TYPE_CHECKING:
+    from django.test.client import _MonkeyPatchedWSGIResponse as HttpResponse
 
 AUTH_API = "/api/auth/browser/v1"
 PASSWORD = "correct-horse-battery-staple"
@@ -81,6 +83,7 @@ def key_from_last_mail(url_part: str) -> str:
 
     The key is percent-encoded in the URL; a router decodes the path parameter for the SPA.
     """
-    match = re.search(rf"{re.escape(url_part)}/(\S+)", mail.outbox[-1].body)
-    assert match, mail.outbox[-1].body
+    body = str(mail.outbox[-1].body)
+    match = re.search(rf"{re.escape(url_part)}/(\S+)", body)
+    assert match, body
     return unquote(match.group(1))

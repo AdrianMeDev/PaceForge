@@ -8,8 +8,12 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from accounts.models import UserInvitation
-from accounts.serializers import InvitationCreateSerializer, InvitationSerializer
+from accounts.models import User, UserInvitation
+from accounts.serializers import (
+    InvitationCreateSerializer,
+    InvitationSerializer,
+    MeSerializer,
+)
 from accounts.services.invitations import (
     InvalidInvitationError,
     create_invitation,
@@ -29,6 +33,7 @@ class InvitationListCreateView(APIView):
     def post(self, request: Request) -> Response:
         serializer = InvitationCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        assert isinstance(request.user, User)  # IsAdminUser guarantees an authenticated user
         created = create_invitation(
             invited_by=request.user, email=serializer.validated_data["email"]
         )
@@ -53,3 +58,11 @@ class InvitationRevokeView(APIView):
                 {"detail": "A used invitation cannot be revoked."}, status=status.HTTP_409_CONFLICT
             )
         return Response(InvitationSerializer(invitation).data)
+
+
+class MeView(APIView):
+    """The authenticated user's own account data; nothing else is ever returned here."""
+
+    def get(self, request: Request) -> Response:
+        assert isinstance(request.user, User)  # IsAuthenticated is the default permission
+        return Response(MeSerializer(request.user).data)

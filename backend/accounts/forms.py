@@ -17,7 +17,7 @@ class InvitationSignupForm(forms.Form):
     invitation_token = forms.CharField(required=False, strip=True)
 
     def clean(self) -> dict[str, Any]:
-        cleaned_data = super().clean()
+        cleaned_data = super().clean() or self.cleaned_data
         if settings.REGISTRATION_MODE != "invite_only" or self.errors:
             return cleaned_data
         token = cleaned_data.get("invitation_token")

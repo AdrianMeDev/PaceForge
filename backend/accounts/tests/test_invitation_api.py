@@ -53,6 +53,7 @@ def test_staff_creates_invitation_and_gets_a_link_once(staff_api: AuthApi) -> No
     token = parse_qs(link.query)["invitation"][0]
     stored = UserInvitation.objects.get(pk=body["id"])
     assert stored.token_hash != token
+    assert stored.invited_by is not None
     assert stored.invited_by.email == "admin@example.com"
 
 

@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from accounts.models import UserInvitation
+from accounts.models import User, UserInvitation
 
 
 class InvitationCreateSerializer(serializers.Serializer):
@@ -13,4 +13,11 @@ class InvitationSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserInvitation
         fields = ["id", "email", "status", "created_at", "expires_at"]
+        read_only_fields = fields
+
+
+class MeSerializer(serializers.ModelSerializer[User]):
+    class Meta:
+        model = User
+        fields = ["id", "email", "display_name", "is_staff"]
         read_only_fields = fields
