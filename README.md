@@ -128,17 +128,16 @@ the password; a recovery code works in the same field.
 - **Known gap:** allauth stores the TOTP secrets in the database in the clear. Encrypting them with
   the instance key is planned together with the other stored secrets. Protect database backups
   accordingly.
-- **Lost authenticator and recovery codes?** There is no self-service way back by design. Until a
-  management command exists, an operator can remove the second factor of an account from the Django
-  shell (from `backend/`); the user then signs in with the password and sets it up again:
+- **Lost authenticator and recovery codes?** There is no self-service way back by design. An
+  operator removes the second factor of the account (from `backend/`); the user then signs in with
+  the password alone and sets it up again, and an administrator is sent to the security page:
 
   ```sh
-  uv run python manage.py shell -c "
-  from allauth.mfa.models import Authenticator
-  from accounts.models import User
-  Authenticator.objects.filter(user=User.objects.get(email='you@example.com')).delete()
-  "
+  uv run python manage.py reset_mfa --email you@example.com
   ```
+
+  The command leaves the password and all data alone and does not end existing sessions. If a
+  device was stolen, also change the password.
 
 ## Checks
 
