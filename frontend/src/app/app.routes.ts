@@ -15,6 +15,12 @@ export const routes: Routes = [
     loadComponent: () => import('./features/auth/signup-page').then((m) => m.SignupPage),
   },
   {
+    // Open to everyone: the link may be followed signed in or out, in any browser.
+    path: 'account/verify-email/:key',
+    title: 'Confirm email',
+    loadComponent: () => import('./features/auth/verify-email-page').then((m) => m.VerifyEmailPage),
+  },
+  {
     path: '',
     canActivate: [authGuard],
     loadComponent: () => import('./layout/shell').then((m) => m.Shell),

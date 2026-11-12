@@ -1,5 +1,5 @@
 import { computed, signal } from '@angular/core';
-import { AuthStatus, LoginOutcome, Me } from '../auth-models';
+import { AuthStatus, LoginOutcome, Me, VerifyEmailResult } from '../auth-models';
 
 export const ADA: Me = { id: '1', email: 'ada@example.com', display_name: 'Ada', is_staff: false };
 
@@ -13,6 +13,7 @@ export function createAuthStoreStub(initial: { status?: AuthStatus; user?: Me | 
     isAuthenticated: computed(() => status() === 'authenticated'),
     login: vi.fn<(email: string, password: string) => Promise<LoginOutcome>>(),
     logout: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    verifyEmail: vi.fn<(key: string) => Promise<VerifyEmailResult>>(),
     signIn(me: Me = ADA): void {
       user.set(me);
       status.set('authenticated');

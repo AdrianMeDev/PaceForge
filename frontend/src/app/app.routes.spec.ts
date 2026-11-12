@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { routes } from './app.routes';
+import { AuthApi } from './core/auth/auth-api';
 import { AuthStore } from './core/auth/auth-store';
 import { createAuthStoreStub } from './core/auth/testing/auth-store-stub';
 import { required } from './testing/dom';
@@ -14,7 +15,15 @@ describe('app routes', () => {
   beforeEach(async () => {
     store = createAuthStoreStub();
     TestBed.configureTestingModule({
-      providers: [provideRouter(routes), { provide: AuthStore, useValue: store }],
+      providers: [
+        provideRouter(routes),
+        { provide: AuthStore, useValue: store },
+        // Pages that talk to the API on their own get a link that is never answered.
+        {
+          provide: AuthApi,
+          useValue: { getEmailVerification: () => new Promise<never>(() => undefined) },
+        },
+      ],
     });
     harness = await RouterTestingHarness.create();
     router = TestBed.inject(Router);
@@ -62,6 +71,21 @@ describe('app routes', () => {
 
     expect(router.url).toBe('/');
   });
+
+  it.each([false, true])(
+    'opens the email verification link for anyone (signed in: %s)',
+    async (signedIn) => {
+      if (signedIn) {
+        store.signIn();
+      }
+
+      await harness.navigateByUrl('/account/verify-email/MQ:1xRY3y:abc');
+
+      expect(router.url).toBe('/account/verify-email/MQ:1xRY3y:abc');
+      const page = required(harness.routeNativeElement, 'the routed element');
+      expect(page.textContent).toContain('Confirm your email address');
+    },
+  );
 
   it('redirects unknown paths to the start page', async () => {
     store.signIn();

@@ -1,0 +1,42 @@
+<main class="auth-card">
+  <h1>Confirm your email address</h1>
+
+  @switch (view()) {
+    @case ('checking') {
+      <p role="status">Checking your link…</p>
+    }
+    @case ('ready') {
+      @if (error(); as message) {
+        <p class="alert" role="alert">{{ message }}</p>
+      }
+      <p>
+        Please confirm that <strong>{{ email() }}</strong> is your email address.
+      </p>
+      <button type="button" class="primary" [disabled]="confirming()" (click)="confirm()">
+        {{ confirming() ? 'Confirming…' : 'Confirm email address' }}
+      </button>
+    }
+    @case ('confirmed') {
+      <p class="notice" role="status">
+        Your email address <strong>{{ email() }}</strong> is confirmed.
+      </p>
+      <p class="links">
+        <a [routerLink]="continueLink()">{{
+          continueLink() === '/' ? 'Continue' : 'Go to sign in'
+        }}</a>
+      </p>
+    }
+    @case ('invalid') {
+      <p class="alert" role="alert">This confirmation link is invalid or has expired.</p>
+      <p>
+        If you have already confirmed your address, you can sign in. If not, try to sign in and we
+        will send you a new link.
+      </p>
+      <p class="links"><a routerLink="/login">Go to sign in</a></p>
+    }
+    @case ('unreachable') {
+      <p class="alert" role="alert">We could not check the link. Please try again.</p>
+      <button type="button" class="primary" (click)="check()">Try again</button>
+    }
+  }
+</main>
