@@ -4,6 +4,7 @@ import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angula
 import { AuthApi } from '../../core/auth/auth-api';
 import { RecoveryCodeSet } from '../../core/auth/auth-models';
 import { AuthStore } from '../../core/auth/auth-store';
+import { ActivatedRoute } from '@angular/router';
 import { QrCode } from '../../shared/qr-code';
 
 type View = 'loading' | 'unreachable' | 'off' | 'setup' | 'on' | 'codes';
@@ -23,6 +24,15 @@ const WRONG_PASSWORD = 'That password is not correct.';
 const RATE_LIMIT = 'Too many attempts. Please wait a minute and try again.';
 const FALLBACK = 'Something went wrong. Please try again.';
 
+/** Notices other pages may ask for with `?notice=<key>`; any other value is ignored. */
+const NOTICES: Record<string, string> = {
+  'mfa-required': 'Administrators must turn on two-factor authentication before continuing.',
+};
+
+function noticeFor(key: string | null): string | null {
+  return key !== null && Object.hasOwn(NOTICES, key) ? NOTICES[key] : null;
+}
+
 /**
  * Where users turn their second factor on, check it, replace the recovery codes and turn it
  * off. Setting it up, replacing codes, showing codes and turning it off need the password
@@ -38,6 +48,7 @@ export class SecurityPage implements OnInit {
   private readonly api = inject(AuthApi);
   private readonly store = inject(AuthStore);
   private readonly fb = inject(NonNullableFormBuilder);
+  private readonly route = inject(ActivatedRoute);
 
   protected readonly codeForm = this.fb.group({
     code: ['', [Validators.required, Validators.pattern(/\S/)]],
@@ -47,7 +58,9 @@ export class SecurityPage implements OnInit {
   protected readonly view = signal<View>('loading');
   protected readonly busy = signal(false);
   protected readonly errors = signal<string[]>([]);
-  protected readonly notice = signal<string | null>(null);
+  protected readonly notice = signal<string | null>(
+    noticeFor(this.route.snapshot.queryParamMap.get('notice')),
+  );
   protected readonly codeError = signal<string | null>(null);
   protected readonly passwordError = signal<string | null>(null);
 

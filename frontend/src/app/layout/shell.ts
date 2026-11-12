@@ -1,11 +1,11 @@
 import { Component, computed, inject } from '@angular/core';
-import { Router, RouterOutlet } from '@angular/router';
+import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { AuthStore } from '../core/auth/auth-store';
 
 /** Frame around every page that needs a signed-in user. */
 @Component({
   selector: 'app-shell',
-  imports: [RouterOutlet],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive],
   templateUrl: './shell.html',
   styleUrl: './shell.css',
 })

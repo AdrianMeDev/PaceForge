@@ -1,15 +1,16 @@
 import { TestBed } from '@angular/core/testing';
 import {
   ActivatedRouteSnapshot,
+  CanActivateChildFn,
   CanActivateFn,
   Router,
   RouterStateSnapshot,
   UrlTree,
   provideRouter,
 } from '@angular/router';
-import { authGuard, guestGuard, mfaPendingGuard } from './auth-guards';
+import { authGuard, guestGuard, mfaPendingGuard, mfaSetupGuard } from './auth-guards';
 import { AuthStore } from './auth-store';
-import { createAuthStoreStub } from './testing/auth-store-stub';
+import { ADA, createAuthStoreStub } from './testing/auth-store-stub';
 
 describe('route guards', () => {
   const store = createAuthStoreStub();
@@ -90,6 +91,60 @@ describe('route guards', () => {
       store.setPendingFlows([{ id: 'verify_email', is_pending: true }]);
 
       expect(run(mfaPendingGuard, '/login/mfa')).toBeInstanceOf(UrlTree);
+    });
+  });
+
+  describe('mfaSetupGuard', () => {
+    const ADMIN_OFF = { ...ADA, is_staff: true, mfa_setup_required: true };
+
+    function runChild(url: string) {
+      return TestBed.runInInjectionContext(() =>
+        (mfaSetupGuard as CanActivateChildFn)(
+          {} as ActivatedRouteSnapshot,
+          { url } as RouterStateSnapshot,
+        ),
+      );
+    }
+
+    it('does not get in the way of members', () => {
+      store.signIn(ADA);
+
+      expect(runChild('/')).toBe(true);
+    });
+
+    it('does not get in the way of administrators who have turned it on', () => {
+      store.signIn({ ...ADA, is_staff: true, mfa_enabled: true });
+
+      expect(runChild('/')).toBe(true);
+    });
+
+    it.each(['/', '/training/week', '/settings'])(
+      'sends an administrator without it from %s to the security page',
+      (url) => {
+        store.signIn(ADMIN_OFF);
+
+        const result = runChild(url);
+
+        expect(router.serializeUrl(result as UrlTree)).toBe(
+          '/settings/security?notice=mfa-required',
+        );
+      },
+    );
+
+    it.each([
+      '/settings/security',
+      '/settings/security?notice=mfa-required',
+      '/settings/security#codes',
+    ])('lets an administrator without it open %s', (url) => {
+      store.signIn(ADMIN_OFF);
+
+      expect(runChild(url)).toBe(true);
+    });
+
+    it('is not fooled by a path that only starts like the security page', () => {
+      store.signIn(ADMIN_OFF);
+
+      expect(runChild('/settings/security-evil')).toBeInstanceOf(UrlTree);
     });
   });
 });

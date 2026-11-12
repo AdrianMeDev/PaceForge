@@ -1,5 +1,5 @@
 import { Routes } from '@angular/router';
-import { authGuard, guestGuard, mfaPendingGuard } from './core/auth/auth-guards';
+import { authGuard, guestGuard, mfaPendingGuard, mfaSetupGuard } from './core/auth/auth-guards';
 
 export const routes: Routes = [
   {
@@ -43,6 +43,7 @@ export const routes: Routes = [
   {
     path: '',
     canActivate: [authGuard],
+    canActivateChild: [mfaSetupGuard],
     loadComponent: () => import('./layout/shell').then((m) => m.Shell),
     children: [
       {

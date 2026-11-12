@@ -1,5 +1,17 @@
 <header class="bar">
   <span class="brand">PaceForge</span>
+  <nav class="nav" aria-label="Main">
+    <a
+      routerLink="/"
+      routerLinkActive="active"
+      ariaCurrentWhenActive="page"
+      [routerLinkActiveOptions]="{ exact: true }"
+      >Dashboard</a
+    >
+    <a routerLink="/settings/security" routerLinkActive="active" ariaCurrentWhenActive="page"
+      >Security</a
+    >
+  </nav>
   <span class="user" data-testid="user-label">{{ userLabel() }}</span>
   <button type="button" class="link" (click)="logout()">Sign out</button>
 </header>

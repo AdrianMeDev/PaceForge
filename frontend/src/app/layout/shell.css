@@ -1,6 +1,7 @@
 .bar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 1rem;
   padding: 0.75rem 1.25rem;
   background: var(--surface);
@@ -8,8 +9,30 @@
 }
 
 .brand {
-  margin-right: auto;
   font-weight: 700;
+}
+
+.nav {
+  display: flex;
+  gap: 1rem;
+  margin-right: auto;
+}
+
+.nav a {
+  padding: 0.25rem 0;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.nav a:hover {
+  color: var(--text);
+}
+
+.nav a.active {
+  border-bottom-color: var(--accent);
+  color: var(--text);
+  font-weight: 600;
 }
 
 .user {

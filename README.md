@@ -4,11 +4,13 @@ A self-hostable, AI-assisted endurance coach for running, cycling, swimming and 
 The long-term goal is described in `PROJECT_PLAN.md`; this repository is in early development.
 
 **What works today:** accounts for a multi-user instance, invitation-only registration, email
-verification, sign-in and sign-out with server-side sessions, password reset, and the data-isolation
-foundation the training features will build on.
-**Not there yet:** two-factor authentication, the admin page for invitations, and all coaching
-features. Until two-factor authentication is enforced for administrators, do not expose an
-instance to the internet.
+verification, sign-in and sign-out with server-side sessions, password reset, two-factor
+authentication (authenticator app plus recovery codes, mandatory for administrators), and the
+data-isolation foundation the training features will build on.
+**Not there yet:** the admin page for invitations (invitations are created from the Django shell for
+now) and all coaching features. Before an instance is exposed to the internet, read
+[Two-factor authentication](#two-factor-authentication): the TOTP secrets are not yet encrypted in
+the database.
 
 ## Layout
 
@@ -71,7 +73,10 @@ npm ci
 npm start                                                      # http://localhost:4200
 ```
 
-Open <http://localhost:4200> and sign in with the administrator.
+Open <http://localhost:4200> and sign in with the administrator. Administrators must turn on
+two-factor authentication before they can use anything else, so the first sign-in lands on the
+security page: scan the QR code with an authenticator app, enter the code, confirm your password and
+save the recovery codes (see [Two-factor authentication](#two-factor-authentication)).
 
 ## Manual walkthrough: invitation to working account
 
@@ -105,6 +110,35 @@ what a new user sees.
 An invitation is valid for 7 days, works once and is bound to the address it was created for. Using
 the link a second time shows "This invitation is invalid, has expired or was issued for a different
 email address."
+
+## Two-factor authentication
+
+Every user can turn on two-factor authentication on the **Security** page (`/settings/security`):
+an authenticator app (TOTP) plus ten single-use recovery codes. Signing in then asks for a code after
+the password; a recovery code works in the same field.
+
+- **Administrators have to have it.** Until it is on, an administrator is sent to the security page
+  and the administration API answers `403` with `"code": "mfa_required"`. Administrators cannot turn
+  it off in the interface.
+- **The password is asked for again** when turning it on or off, showing recovery codes or
+  generating new ones, even right after signing in.
+- **Recovery codes:** save them when they are shown. Generating new ones replaces all old ones.
+- **The QR code is drawn in the browser.** The authenticator URL contains the secret; it is never
+  sent to a third party.
+- **Known gap:** allauth stores the TOTP secrets in the database in the clear. Encrypting them with
+  the instance key is planned together with the other stored secrets. Protect database backups
+  accordingly.
+- **Lost authenticator and recovery codes?** There is no self-service way back by design. Until a
+  management command exists, an operator can remove the second factor of an account from the Django
+  shell (from `backend/`); the user then signs in with the password and sets it up again:
+
+  ```sh
+  uv run python manage.py shell -c "
+  from allauth.mfa.models import Authenticator
+  from accounts.models import User
+  Authenticator.objects.filter(user=User.objects.get(email='you@example.com')).delete()
+  "
+  ```
 
 ## Checks
 
@@ -157,6 +191,8 @@ Set in `.env` or in the environment. Values without a default are required.
   `npx ng serve --port 4210 --proxy-config <file>` that points `/api` to that port.
 - **Django refuses to start with `DJANGO_SECRET_KEY` or `DATABASE_URL` missing.** Both are required
   and have no default; check that `.env` is in the repository root, not in `backend/`.
+- **An administrator cannot reach the admin pages and keeps landing on the security page.** That is
+  the rule that administrators need two-factor authentication; set it up there.
 - **Sign-in is refused with "too many failed attempts".** That is the brute-force protection: five
   failed attempts for an address lock it for five minutes. The counters live in the server
   process, so restarting the dev server clears them.

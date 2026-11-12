@@ -1,5 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
+import { ActivatedRoute, convertToParamMap } from '@angular/router';
 import { AuthApi } from '../../core/auth/auth-api';
 import {
   ActivateTotpResult,
@@ -29,6 +30,13 @@ const MEMBER_ON: Me = { ...ADA, mfa_enabled: true };
 const ADMIN_OFF: Me = { ...ADA, is_staff: true, mfa_setup_required: true };
 const ADMIN_ON: Me = { ...ADA, is_staff: true, mfa_enabled: true };
 
+function routeWith(params: Record<string, string> = {}) {
+  return {
+    provide: ActivatedRoute,
+    useValue: { snapshot: { queryParamMap: convertToParamMap(params) } },
+  };
+}
+
 function createApiStub() {
   return {
     getTotp: vi.fn<() => Promise<TotpStatus>>(),
@@ -46,7 +54,11 @@ describe('SecurityPage', () => {
   let fixture: ComponentFixture<SecurityPage>;
   let page: HTMLElement;
 
-  async function setup(user: Me = ADA, status: TotpStatus = ACTIVE): Promise<void> {
+  async function setup(
+    user: Me = ADA,
+    status: TotpStatus = ACTIVE,
+    params: Record<string, string> = {},
+  ): Promise<void> {
     api = createApiStub();
     api.getTotp.mockResolvedValue(status);
     store = createAuthStoreStub();
@@ -56,6 +68,7 @@ describe('SecurityPage', () => {
       providers: [
         { provide: AuthApi, useValue: api },
         { provide: AuthStore, useValue: store },
+        routeWith(params),
       ],
     });
     fixture = TestBed.createComponent(SecurityPage);
@@ -168,6 +181,31 @@ describe('SecurityPage', () => {
 
       expect(text()).toContain('Two-factor authentication is off');
       expect(page.querySelector('app-qr-code')).toBeNull();
+    });
+  });
+
+  describe('the notice an administrator is sent here with', () => {
+    it('explains why they were sent here', async () => {
+      await setup(ADMIN_OFF, ACTIVE, { notice: 'mfa-required' });
+
+      expect(query(page, '[role="status"]').textContent).toContain(
+        'Administrators must turn on two-factor authentication before continuing.',
+      );
+    });
+
+    it.each(['unknown', '<b>hi</b>', 'toString', '__proto__', ''])('ignores %j', async (key) => {
+      await setup(ADMIN_OFF, ACTIVE, { notice: key });
+
+      expect(page.querySelector('[role="status"]')).toBeNull();
+      expect(page.querySelector('b')).toBeNull();
+    });
+
+    it('goes away once the setup is started', async () => {
+      await setup(ADMIN_OFF, ACTIVE, { notice: 'mfa-required' });
+
+      await openSetup();
+
+      expect(page.querySelector('[role="status"]')).toBeNull();
     });
   });
 
@@ -374,6 +412,7 @@ describe('SecurityPage', () => {
         providers: [
           { provide: AuthApi, useValue: api },
           { provide: AuthStore, useValue: store },
+          routeWith(),
         ],
       });
       fixture = TestBed.createComponent(SecurityPage);

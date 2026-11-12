@@ -1,5 +1,5 @@
 import { inject } from '@angular/core';
-import { CanActivateFn, Router } from '@angular/router';
+import { CanActivateChildFn, CanActivateFn, Router } from '@angular/router';
 import { AuthStore } from './auth-store';
 
 /**
@@ -32,4 +32,21 @@ export const mfaPendingGuard: CanActivateFn = (route) => {
     .some((flow) => flow.id === 'mfa_authenticate')
     ? true
     : router.createUrlTree(['/login'], { queryParams: route.queryParams });
+};
+
+const SECURITY_PAGE = '/settings/security';
+
+/**
+ * An administrator who has not turned on two-factor authentication may only see the security
+ * page (and sign out): the admin API refuses them anyway, this sends them to the fix instead of
+ * to error messages. Everybody else is not affected.
+ */
+export const mfaSetupGuard: CanActivateChildFn = (_route, state) => {
+  const router = inject(Router);
+  if (!inject(AuthStore).user()?.mfa_setup_required) {
+    return true;
+  }
+  return state.url.split(/[?#]/)[0] === SECURITY_PAGE
+    ? true
+    : router.createUrlTree([SECURITY_PAGE], { queryParams: { notice: 'mfa-required' } });
 };

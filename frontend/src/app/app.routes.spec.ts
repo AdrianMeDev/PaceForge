@@ -4,7 +4,7 @@ import { RouterTestingHarness } from '@angular/router/testing';
 import { routes } from './app.routes';
 import { AuthApi } from './core/auth/auth-api';
 import { AuthStore } from './core/auth/auth-store';
-import { createAuthStoreStub } from './core/auth/testing/auth-store-stub';
+import { ADA, createAuthStoreStub } from './core/auth/testing/auth-store-stub';
 import { required } from './testing/dom';
 
 describe('app routes', () => {
@@ -161,6 +161,54 @@ describe('app routes', () => {
     const page = required(harness.routeNativeElement, 'the routed element');
     expect(page.textContent).toContain('Two-factor authentication');
     expect(page.querySelector('[data-testid="user-label"]')?.textContent).toBe('Ada');
+  });
+
+  describe('an administrator without two-factor authentication', () => {
+    const ADMIN_OFF = { ...ADA, is_staff: true, mfa_setup_required: true };
+
+    beforeEach(() => store.signIn(ADMIN_OFF));
+
+    it('is sent from the start page to the security page, with the reason', async () => {
+      await harness.navigateByUrl('/');
+
+      expect(router.url).toBe('/settings/security?notice=mfa-required');
+      const page = required(harness.routeNativeElement, 'the routed element');
+      expect(page.textContent).toContain(
+        'Administrators must turn on two-factor authentication before continuing.',
+      );
+    });
+
+    it('can still open the security page', async () => {
+      await harness.navigateByUrl('/settings/security');
+
+      expect(router.url).toBe('/settings/security');
+    });
+
+    it('is sent there from the sign-in page too', async () => {
+      await harness.navigateByUrl('/login');
+
+      expect(router.url).toBe('/settings/security?notice=mfa-required');
+    });
+
+    it('is let through once it is turned on', async () => {
+      await harness.navigateByUrl('/settings/security');
+
+      store.signIn({ ...ADMIN_OFF, mfa_enabled: true, mfa_setup_required: false });
+      await harness.navigateByUrl('/');
+
+      expect(router.url).toBe('/');
+    });
+  });
+
+  it('does not hold back administrators who have it, or members', async () => {
+    store.signIn({ ...ADA, is_staff: true, mfa_enabled: true });
+    await harness.navigateByUrl('/');
+    expect(router.url).toBe('/');
+
+    store.signIn(ADA);
+    await harness.navigateByUrl('/settings/security');
+    await harness.navigateByUrl('/');
+    expect(router.url).toBe('/');
   });
 
   it('redirects unknown paths to the start page', async () => {
