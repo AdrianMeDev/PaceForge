@@ -1,0 +1,100 @@
+<section class="connections">
+  <h1>Connections</h1>
+
+  @switch (view()) {
+    @case ('loading') {
+      <p role="status">Loading…</p>
+    }
+    @case ('unreachable') {
+      <p class="alert" role="alert">Your connections could not be loaded.</p>
+      <p><button type="button" class="primary" (click)="load()">Try again</button></p>
+    }
+    @case ('signed_out') {
+      <p class="alert" role="alert">Your session has ended. Please sign in again.</p>
+      <p><a routerLink="/login">Go to sign in</a></p>
+    }
+    @case ('ready') {
+      <div class="panel">
+        <h2>Intervals.icu</h2>
+
+        @for (message of errors(); track $index) {
+          <p class="alert" role="alert">{{ message }}</p>
+        }
+        @if (notice(); as text) {
+          <p class="notice" role="status">{{ text }}</p>
+        }
+
+        @if (connection(); as current) {
+          <dl class="state">
+            <dt>Status</dt>
+            <dd data-testid="status">
+              @if (current.status === 'connected') {
+                Connected
+              } @else {
+                Needs attention: the stored key was not accepted at the last check
+              }
+            </dd>
+            <dt>Athlete</dt>
+            <dd data-testid="athlete">{{ current.athlete_id }}</dd>
+            <dt>Last checked</dt>
+            <dd data-testid="checked">{{ current.last_checked_at | date: 'medium' }}</dd>
+          </dl>
+
+          @if (confirmingRemoval()) {
+            <div class="confirm" role="group" aria-label="Remove the connection">
+              <p>
+                Remove the connection? The stored key is deleted from PaceForge. To make the key
+                itself unusable, create a new one in Intervals.icu.
+              </p>
+              <div class="actions">
+                <button type="button" class="primary" [disabled]="busy()" (click)="remove()">
+                  Yes, remove
+                </button>
+                <button type="button" class="link" (click)="cancelRemoval()">Cancel</button>
+              </div>
+            </div>
+          } @else {
+            <div class="actions">
+              <button type="button" class="secondary" [disabled]="busy()" (click)="check()">
+                Check connection
+              </button>
+              <button type="button" class="secondary" [disabled]="busy()" (click)="askRemoval()">
+                Disconnect
+              </button>
+            </div>
+          }
+        } @else {
+          <p class="hint">Not connected.</p>
+        }
+
+        <form [formGroup]="form" (ngSubmit)="connect()" novalidate>
+          <div class="field">
+            <label for="api-key">
+              {{ connection() ? 'Replace the API key' : 'API key' }}
+            </label>
+            <input
+              id="api-key"
+              type="password"
+              formControlName="apiKey"
+              autocomplete="off"
+              autocapitalize="off"
+              spellcheck="false"
+              aria-describedby="api-key-hint"
+              [attr.aria-invalid]="form.controls.apiKey.touched && form.controls.apiKey.invalid"
+            />
+            @if (form.controls.apiKey.touched && form.controls.apiKey.invalid) {
+              <p class="field-error">Enter your API key.</p>
+            }
+            <p class="hint" id="api-key-hint">
+              You find your personal API key in Intervals.icu under Settings, Developer Settings. It
+              is checked with Intervals.icu, stored encrypted and never shown again.
+            </p>
+          </div>
+          <button type="submit" class="primary" [disabled]="busy()">
+            {{ busy() ? 'Working…' : connection() ? 'Save new key' : 'Connect' }}
+          </button>
+        </form>
+      </div>
+    }
+  }
+</section>

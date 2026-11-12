@@ -66,6 +66,12 @@ export const routes: Routes = [
           import('./features/security/security-page').then((m) => m.SecurityPage),
       },
       {
+        path: 'settings/connections',
+        title: 'Connections',
+        loadComponent: () =>
+          import('./features/connections/connections-page').then((m) => m.ConnectionsPage),
+      },
+      {
         path: 'admin/invitations',
         title: 'Invitations',
         canActivate: [staffGuard],

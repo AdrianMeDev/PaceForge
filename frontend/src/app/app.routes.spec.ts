@@ -4,6 +4,7 @@ import { RouterTestingHarness } from '@angular/router/testing';
 import { routes } from './app.routes';
 import { AuthApi } from './core/auth/auth-api';
 import { AuthStore } from './core/auth/auth-store';
+import { IntervalsConnectionApi } from './core/integrations/intervals-api';
 import { ADA, createAuthStoreStub } from './core/auth/testing/auth-store-stub';
 import { required } from './testing/dom';
 
@@ -25,6 +26,10 @@ describe('app routes', () => {
             getEmailVerification: () => new Promise<never>(() => undefined),
             checkPasswordResetKey: () => new Promise<never>(() => undefined),
           },
+        },
+        {
+          provide: IntervalsConnectionApi,
+          useValue: { get: () => new Promise<never>(() => undefined) },
         },
       ],
     });
@@ -249,6 +254,41 @@ describe('app routes', () => {
       store.signIn({ ...ADA, is_staff: true, mfa_setup_required: true });
 
       await harness.navigateByUrl('/admin/invitations');
+
+      expect(router.url).toBe('/settings/security?notice=mfa-required');
+    });
+  });
+
+  describe('connections page', () => {
+    it('opens for members inside the shell', async () => {
+      store.signIn();
+
+      await harness.navigateByUrl('/settings/connections');
+
+      expect(router.url).toBe('/settings/connections');
+      expect(required(harness.routeNativeElement, 'the routed element').textContent).toContain(
+        'Connections',
+      );
+    });
+
+    it('opens for administrators who have two-factor authentication', async () => {
+      store.signIn({ ...ADA, is_staff: true, mfa_enabled: true });
+
+      await harness.navigateByUrl('/settings/connections');
+
+      expect(router.url).toBe('/settings/connections');
+    });
+
+    it('sends anonymous visitors to the login with a way back', async () => {
+      await harness.navigateByUrl('/settings/connections');
+
+      expect(router.url).toBe('/login?returnUrl=%2Fsettings%2Fconnections');
+    });
+
+    it('sends an administrator without two-factor authentication to the security page', async () => {
+      store.signIn({ ...ADA, is_staff: true, mfa_setup_required: true });
+
+      await harness.navigateByUrl('/settings/connections');
 
       expect(router.url).toBe('/settings/security?notice=mfa-required');
     });
