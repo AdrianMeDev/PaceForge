@@ -1,8 +1,8 @@
 import math
 from dataclasses import dataclass
 from functools import cache
+from importlib import resources
 from typing import Any
-from zoneinfo import available_timezones
 
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -13,8 +13,14 @@ from core.models import OwnedModel
 
 @cache
 def _time_zones() -> frozenset[str]:
-    # "Factory" is a placeholder zone of the time zone database, not a place anyone lives in.
-    return frozenset(available_timezones() - {"Factory"})
+    """The zone names of the ``tzdata`` package, the same on every host.
+
+    Not ``zoneinfo.available_timezones()``: that reads the operating system's directory, which on
+    some systems also holds names that are no places (``localtime``, ``posixrules``, the
+    ``posix/`` and ``right/`` copies). "Factory" is a placeholder of the database itself.
+    """
+    names = resources.files("tzdata").joinpath("zones").read_text().split()
+    return frozenset(names) - {"Factory"}
 
 
 def validate_time_zone(value: str) -> None:

@@ -8,6 +8,7 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 
 from accounts.models import User
+from athletes import models
 from athletes.models import RULES, AthleteProfile, ThresholdValue
 
 pytestmark = pytest.mark.django_db
@@ -99,6 +100,8 @@ class TestProfile:
             "Europe/Berlin/../Paris",
             "localtime",
             "posixrules",
+            "posix/Europe/Berlin",
+            "right/Europe/Berlin",
             "Factory",
             "+01:00",
             "CET-1",
@@ -113,6 +116,36 @@ class TestProfile:
             profile.full_clean(exclude=["owner"])
 
         assert "timezone" in raised.value.message_dict
+
+    def test_the_check_does_not_depend_on_the_operating_system(
+        self, alice: User, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A host whose zone directory holds extra names (``localtime``, ``posix/…``) must not
+        make them valid, and one that lacks the database must not make real zones invalid."""
+        import zoneinfo
+
+        monkeypatch.setattr(
+            zoneinfo,
+            "available_timezones",
+            lambda: {"localtime", "posixrules", "posix/Europe/Berlin", "Mars/Base"},
+        )
+        models._time_zones.cache_clear()
+        try:
+            for name in ("localtime", "posixrules", "posix/Europe/Berlin", "Mars/Base"):
+                with pytest.raises(ValidationError):
+                    AthleteProfile(owner=alice, timezone=name).full_clean(exclude=["owner"])
+            AthleteProfile(owner=alice, timezone="Europe/Berlin").full_clean(exclude=["owner"])
+        finally:
+            models._time_zones.cache_clear()
+
+    def test_every_name_of_the_package_is_accepted_except_the_placeholder(self) -> None:
+        from importlib import resources
+
+        names = resources.files("tzdata").joinpath("zones").read_text().split()
+        accepted = [name for name in names if name in models._time_zones()]
+
+        assert set(names) - set(accepted) == {"Factory"}
+        assert len(accepted) > 500
 
     def test_the_error_says_what_to_enter(self, alice: User) -> None:
         with pytest.raises(ValidationError) as raised:
