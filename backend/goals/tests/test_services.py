@@ -38,9 +38,11 @@ class TestTheTimeZoneOfAUser:
 
         assert services.time_zone_of(alice) == ZoneInfo("Europe/Berlin")
 
-    @pytest.mark.parametrize("name", ["Mars/Olympus", "../etc/passwd", "localtime", "nowhere"])
+    @pytest.mark.parametrize("name", ["Mars/Olympus", "../etc/passwd", "nowhere", "/etc/passwd"])
     def test_a_name_the_server_cannot_find_gives_utc(self, alice: User, name: str) -> None:
         # The profile checks the name when it is saved; this is the second line of defence.
+        # Not "localtime", "posixrules" and the like: whether such files exist depends on the
+        # host (a CI machine has them), and the profile refuses them (see athletes.models).
         AthleteProfile.objects.filter(owner=alice).delete()
         profile = AthleteProfile(owner=alice, timezone=name)
         profile.save()
