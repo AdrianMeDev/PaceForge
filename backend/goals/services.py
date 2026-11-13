@@ -1,6 +1,6 @@
 """Small helpers for goals: what "today" is for a user."""
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, tzinfo
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from accounts.models import User
@@ -11,12 +11,16 @@ def _utc_now() -> datetime:
     return datetime.now(UTC)
 
 
-def today_of(user: User) -> date:
-    """The calendar day it is for ``user`` now: in the time zone of their athlete profile, UTC if
-    there is none (or the server cannot find it)."""
+def time_zone_of(user: User) -> tzinfo:
+    """The time zone of ``user``'s athlete profile, UTC if there is none (or the server cannot
+    find it)."""
     name = AthleteProfile.objects.for_user(user).values_list("timezone", flat=True).first()
     try:
-        zone = ZoneInfo(name) if name else UTC
+        return ZoneInfo(name) if name else UTC
     except ZoneInfoNotFoundError, ValueError:
-        zone = UTC
-    return _utc_now().astimezone(zone).date()
+        return UTC
+
+
+def today_of(user: User) -> date:
+    """The calendar day it is for ``user`` now, in their time zone."""
+    return _utc_now().astimezone(time_zone_of(user)).date()
