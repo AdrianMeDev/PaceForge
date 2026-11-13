@@ -78,3 +78,38 @@ class AIProviderConfiguration(OwnedModel):
                 errors["base_url"] = "This address is not allowed on this server."
         if errors:
             raise ValidationError(errors)
+
+
+class AIUsageRecord(OwnedModel):
+    """One request to a user's AI provider, for the user's own overview.
+
+    Only the facts of the call are kept: who, which provider and model, what for, how it ended
+    and how many tokens were counted. Never the prompt, the answer or an error text from the
+    provider: they can hold training data, notes and keys.
+    """
+
+    class Purpose(models.TextChoices):
+        CHECK = "check", "Connection check"
+
+    class Outcome(models.TextChoices):
+        SUCCESS = "success", "Success"
+        INVALID_KEY = "invalid_key", "Key refused"
+        RATE_LIMITED = "rate_limited", "Rate limited"
+        UNAVAILABLE = "unavailable", "Unavailable"
+        UNEXPECTED = "unexpected", "Unexpected answer"
+
+    provider = models.CharField(max_length=30, choices=AIProviderConfiguration.Provider.choices)
+    # What was used at the time; the configuration may be changed or removed later.
+    model = models.CharField(max_length=MODEL_MAX)
+    purpose = models.CharField(max_length=20, choices=Purpose.choices)
+    outcome = models.CharField(max_length=20, choices=Outcome.choices)
+    # Counted by the provider; ``None`` where it did not say.
+    input_tokens = models.PositiveIntegerField(null=True, blank=True)
+    output_tokens = models.PositiveIntegerField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["owner", "created_at"], name="coach_usage_owner_time")]
+
+    def __str__(self) -> str:
+        return f"{self.purpose} call of user {self.owner_id} ({self.outcome})"

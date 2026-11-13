@@ -6,7 +6,7 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, connection, transaction
 
 from accounts.models import User
-from coach.models import BASE_URL_MAX, MODEL_MAX, AIProviderConfiguration
+from coach.models import BASE_URL_MAX, MODEL_MAX, AIProviderConfiguration, AIUsageRecord
 from core.encryption import PREFIX
 
 pytestmark = pytest.mark.django_db
@@ -246,3 +246,93 @@ class TestOwnership:
         alice.delete()
 
         assert AIProviderConfiguration.objects.count() == 1
+
+
+class TestUsageRecords:
+    def record(self, owner: User, **fields: Any) -> AIUsageRecord:
+        data: dict[str, Any] = {
+            "provider": "anthropic",
+            "model": "claude-sonnet-5-5",
+            "purpose": "check",
+            "outcome": "success",
+            **fields,
+        }
+        return AIUsageRecord.objects.create(owner=owner, **data)
+
+    def test_a_record_holds_only_facts(self) -> None:
+        names = {f.name for f in AIUsageRecord._meta.get_fields()}
+
+        # No prompt, no answer, no error text: the fields are listed on purpose.
+        assert names == {
+            "id",
+            "owner",
+            "provider",
+            "model",
+            "purpose",
+            "outcome",
+            "input_tokens",
+            "output_tokens",
+            "created_at",
+        }
+
+    def test_tokens_may_be_unknown(self, alice: User) -> None:
+        record = self.record(alice)
+
+        assert (record.input_tokens, record.output_tokens) == (None, None)
+
+    def test_tokens_cannot_be_negative(self, alice: User) -> None:
+        with pytest.raises(IntegrityError), transaction.atomic():
+            self.record(alice, input_tokens=-1)
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("provider", "gemini"),
+            ("purpose", "chat"),
+            ("outcome", "fine"),
+        ],
+    )
+    def test_unknown_choices_are_refused(self, alice: User, field: str, value: str) -> None:
+        record = AIUsageRecord(
+            owner=alice,
+            provider="anthropic",
+            model="m",
+            purpose="check",
+            outcome="success",
+        )
+        setattr(record, field, value)
+
+        with pytest.raises(ValidationError) as raised:
+            record.full_clean(exclude=["owner"])
+
+        assert field in raised.value.message_dict
+
+    def test_the_time_is_set_on_creation(self, alice: User) -> None:
+        assert self.record(alice).created_at is not None
+
+    def test_the_text_names_neither_the_model_nor_a_provider_text(self, alice: User) -> None:
+        text = str(self.record(alice))
+
+        assert "claude" not in text
+        assert str(alice.pk) in text
+        assert "check" in text
+
+    def test_for_user_shows_only_the_own_records(self, alice: User, bob: User) -> None:
+        mine = self.record(alice)
+        self.record(bob)
+
+        assert list(AIUsageRecord.objects.for_user(alice)) == [mine]
+        assert not AIUsageRecord.objects.for_user(AnonymousUser()).exists()
+
+    def test_records_survive_the_configuration_and_go_with_the_user(
+        self, alice: User, bob: User
+    ) -> None:
+        AIProviderConfiguration.objects.create(owner=alice, **anthropic())
+        self.record(alice)
+        self.record(bob)
+
+        AIProviderConfiguration.objects.filter(owner=alice).delete()
+        assert AIUsageRecord.objects.filter(owner=alice).count() == 1
+
+        alice.delete()
+        assert AIUsageRecord.objects.count() == 1
