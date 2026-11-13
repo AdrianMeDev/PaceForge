@@ -10,6 +10,8 @@ from urllib.parse import urlsplit
 import environ
 from django.core.exceptions import ImproperlyConfigured
 
+from coach.endpoints import parse_base_urls
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 env = environ.Env()
@@ -42,6 +44,7 @@ INSTALLED_APPS = [
     "athletes",
     "goals",
     "availability",
+    "coach",
 ]
 
 MIDDLEWARE = [
@@ -114,6 +117,18 @@ INVITATION_TTL_DAYS = env.int("INVITATION_TTL_DAYS", default=7)
 INTERVALS_API_BASE_URL = env.str("INTERVALS_API_BASE_URL", default="https://intervals.icu/api/v1")
 if urlsplit(INTERVALS_API_BASE_URL).scheme not in {"http", "https"}:
     raise ImproperlyConfigured("INTERVALS_API_BASE_URL must start with http:// or https://")
+
+# The AI providers: the OpenAI-compatible addresses (OpenAI itself, Ollama, llama.cpp ...) that
+# users may choose from. Empty: none. Users cannot enter addresses of their own, so that the
+# server cannot be pointed at internal systems.
+AI_ALLOWED_BASE_URLS = parse_base_urls(
+    "AI_ALLOWED_BASE_URLS", env.list("AI_ALLOWED_BASE_URLS", default=[])
+)
+# Where the Anthropic API lives. Only changed to point tests or development at a fake server.
+(ANTHROPIC_API_BASE_URL,) = parse_base_urls(
+    "ANTHROPIC_API_BASE_URL",
+    [env.str("ANTHROPIC_API_BASE_URL", default="https://api.anthropic.com")],
+)
 
 # The largest activity file (FIT or TCX) that is accepted, in bytes, before it is even parsed.
 ACTIVITY_UPLOAD_MAX_BYTES = env.int("ACTIVITY_UPLOAD_MAX_BYTES", default=25 * 1024 * 1024)
