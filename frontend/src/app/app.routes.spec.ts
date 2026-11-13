@@ -6,6 +6,7 @@ import { AuthApi } from './core/auth/auth-api';
 import { AuthStore } from './core/auth/auth-store';
 import { ActivitiesApi } from './core/activities/activities-api';
 import { AthleteApi } from './core/athlete/athlete-api';
+import { CoachApi } from './core/coach/coach-api';
 import { AvailabilityApi } from './core/availability/availability-api';
 import { GoalsApi } from './core/goals/goals-api';
 import { IntervalsConnectionApi } from './core/integrations/intervals-api';
@@ -33,6 +34,7 @@ describe('app routes', () => {
         },
         { provide: AvailabilityApi, useValue: { get: () => new Promise<never>(() => undefined) } },
         { provide: GoalsApi, useValue: { list: () => new Promise<never>(() => undefined) } },
+        { provide: CoachApi, useValue: { get: () => new Promise<never>(() => undefined) } },
         { provide: AthleteApi, useValue: { get: () => new Promise<never>(() => undefined) } },
         { provide: ActivitiesApi, useValue: { list: () => new Promise<never>(() => undefined) } },
         {

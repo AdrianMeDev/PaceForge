@@ -1,5 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
+import { CoachApi } from '../../core/coach/coach-api';
+import { AiProviderState, GetProviderResult } from '../../core/coach/coach-models';
 import { IntervalsConnectionApi } from '../../core/integrations/intervals-api';
 import {
   CheckConnectionResult,
@@ -21,6 +23,20 @@ const CONNECTION: IntervalsConnection = {
 };
 const INVALID: IntervalsConnection = { ...CONNECTION, status: 'invalid' };
 
+// The AI provider has a panel of its own, tested in ai-provider-panel.spec.ts.
+const NO_AI: AiProviderState = {
+  configured: false,
+  provider: null,
+  model: '',
+  base_url: null,
+  has_key: false,
+  status: null,
+  last_checked_at: null,
+  last_success_at: null,
+  allowed_base_urls: [],
+  usage: { calls: 0, input_tokens: 0, output_tokens: 0, days: 30 },
+};
+
 function createApiStub() {
   return {
     get: vi.fn<() => Promise<GetConnectionResult>>(),
@@ -32,15 +48,24 @@ function createApiStub() {
 
 describe('ConnectionsPage', () => {
   let api: ReturnType<typeof createApiStub>;
+  let coach: { get: ReturnType<typeof vi.fn<() => Promise<GetProviderResult>>> };
   let fixture: ComponentFixture<ConnectionsPage>;
   let page: HTMLElement;
 
-  async function setup(first: GetConnectionResult = { kind: 'not_connected' }) {
+  async function setup(
+    first: GetConnectionResult = { kind: 'not_connected' },
+    ai: GetProviderResult = { kind: 'ok', state: NO_AI },
+  ) {
     api = createApiStub();
     api.get.mockResolvedValue(first);
+    coach = { get: vi.fn<() => Promise<GetProviderResult>>().mockResolvedValue(ai) };
     TestBed.configureTestingModule({
       imports: [ConnectionsPage],
-      providers: [provideRouter([]), { provide: IntervalsConnectionApi, useValue: api }],
+      providers: [
+        provideRouter([]),
+        { provide: IntervalsConnectionApi, useValue: api },
+        { provide: CoachApi, useValue: coach },
+      ],
     });
     fixture = TestBed.createComponent(ConnectionsPage);
     page = fixture.nativeElement as HTMLElement;
@@ -81,7 +106,11 @@ describe('ConnectionsPage', () => {
       api.get.mockReturnValue(new Promise<never>(() => undefined));
       TestBed.configureTestingModule({
         imports: [ConnectionsPage],
-        providers: [provideRouter([]), { provide: IntervalsConnectionApi, useValue: api }],
+        providers: [
+          provideRouter([]),
+          { provide: IntervalsConnectionApi, useValue: api },
+          { provide: CoachApi, useValue: { get: () => new Promise<never>(() => undefined) } },
+        ],
       });
       fixture = TestBed.createComponent(ConnectionsPage);
       fixture.detectChanges();
@@ -137,6 +166,45 @@ describe('ConnectionsPage', () => {
 
       expect(alerts()).toEqual(['Your session has ended. Please sign in again.']);
       expect(page.querySelector('a')?.getAttribute('href')).toBe('/login');
+      expect(page.querySelector('form')).toBeNull();
+    });
+  });
+
+  describe('the AI provider', () => {
+    it('has its section below the Intervals.icu one, loaded once', async () => {
+      await setup();
+
+      const section = query(page, 'app-ai-provider-panel');
+      expect(section.textContent).toContain('AI coach');
+      expect(
+        query(page, 'form').compareDocumentPosition(section) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(coach.get).toHaveBeenCalledTimes(1);
+    });
+
+    it('is not shown while the Intervals.icu state cannot be loaded', async () => {
+      api = createApiStub();
+      api.get.mockRejectedValue(new Error('offline'));
+      TestBed.configureTestingModule({
+        imports: [ConnectionsPage],
+        providers: [
+          provideRouter([]),
+          { provide: IntervalsConnectionApi, useValue: api },
+          { provide: CoachApi, useValue: { get: vi.fn() } },
+        ],
+      });
+      fixture = TestBed.createComponent(ConnectionsPage);
+      page = fixture.nativeElement as HTMLElement;
+      await settle(fixture);
+
+      expect(page.querySelector('app-ai-provider-panel')).toBeNull();
+    });
+
+    it('ends the session of the page when the panel finds it gone', async () => {
+      await setup({ kind: 'not_connected' }, { kind: 'forbidden' });
+
+      expect(alerts()).toEqual(['Your session has ended. Please sign in again.']);
+      expect(page.querySelector('app-ai-provider-panel')).toBeNull();
       expect(page.querySelector('form')).toBeNull();
     });
   });

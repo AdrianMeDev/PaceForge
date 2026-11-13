@@ -1,0 +1,83 @@
+.panel {
+  margin-bottom: 1.5rem;
+  padding: 1.25rem 1.5rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.15rem;
+}
+
+.state {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.35rem 1rem;
+  margin: 1rem 0;
+}
+
+.state dt {
+  color: var(--muted);
+}
+
+.state dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.confirm {
+  margin-bottom: 1.25rem;
+}
+
+button.secondary {
+  padding: 0.6rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+form {
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+select {
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+select[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+.field.check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.field.check input {
+  width: auto;
+}
+
+.field.check label {
+  margin: 0;
+  font-weight: normal;
+}
