@@ -124,7 +124,7 @@ REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
     "DEFAULT_PARSER_CLASSES": ["rest_framework.parsers.JSONParser"],
     # Counters live in the process cache, like allauth's login limits (not shared by workers).
-    "DEFAULT_THROTTLE_RATES": {"provider_connection": "10/min"},
+    "DEFAULT_THROTTLE_RATES": {"provider_connection": "10/min", "activity_import": "30/min"},
 }
 
 # allauth: email + password, headless API for the SPA (browser client only).
