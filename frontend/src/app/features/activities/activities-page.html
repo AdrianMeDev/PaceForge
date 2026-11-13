@@ -1,0 +1,180 @@
+<section class="activities">
+  <h1>Activities</h1>
+
+  @switch (view()) {
+    @case ('loading') {
+      <p role="status">Loading…</p>
+    }
+    @case ('unreachable') {
+      <p class="alert" role="alert">Your activities could not be loaded.</p>
+      <p><button type="button" class="primary" (click)="load()">Try again</button></p>
+    }
+    @case ('signed_out') {
+      <p class="alert" role="alert">Your session has ended. Please sign in again.</p>
+      <p><a routerLink="/login">Go to sign in</a></p>
+    }
+    @case ('ready') {
+      <div class="panel">
+        <h2>Import</h2>
+        <div class="field">
+          <label for="file">FIT or TCX files</label>
+          <input
+            id="file"
+            type="file"
+            accept=".fit,.tcx"
+            multiple
+            aria-describedby="file-hint"
+            [disabled]="busy()"
+            (change)="select($event)"
+          />
+          <p class="hint" id="file-hint">
+            Files from your watch or an export (Garmin, COROS, Strava, …). You can choose several at
+            once. What a file contains decides, not its name.
+          </p>
+        </div>
+
+        @if (currentFile(); as name) {
+          <p role="status">Importing {{ name }}…</p>
+        }
+        @if (results().length) {
+          <ul class="results" aria-label="Import results">
+            @for (result of results(); track $index) {
+              <li [attr.data-kind]="result.outcome.kind">
+                <strong>{{ result.name }}</strong>:
+                @switch (result.outcome.kind) {
+                  @case ('imported') {
+                    Imported ({{ sport(result.outcome.activity) }},
+                    {{ distance(result.outcome.activity.distance_m) }}).
+                  }
+                  @case ('duplicate') {
+                    Already imported.
+                    @if (isListed(result.outcome.existingId)) {
+                      <button
+                        type="button"
+                        class="link"
+                        (click)="showRow(result.outcome.existingId)"
+                      >
+                        Show it in the list
+                      </button>
+                    }
+                  }
+                  @case ('rejected') {
+                    {{ result.outcome.message }}
+                  }
+                  @case ('too_large') {
+                    The file is too large.
+                  }
+                  @case ('rate_limited') {
+                    Too many imports. Please wait a minute and try again.
+                  }
+                  @case ('failed') {
+                    Something went wrong. Please try again.
+                  }
+                }
+              </li>
+            }
+          </ul>
+        }
+      </div>
+
+      @for (message of errors(); track $index) {
+        <p class="alert" role="alert">{{ message }}</p>
+      }
+      @if (notice(); as text) {
+        <p class="notice" role="status">{{ text }}</p>
+      }
+
+      <h2 class="list-title">Your activities</h2>
+      @if (page().count === 0) {
+        <p class="hint">No activities yet. Import a FIT or TCX file above.</p>
+      } @else {
+        <div class="table-wrap" [attr.aria-busy]="refreshing()">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Date</th>
+                <th scope="col">Sport</th>
+                <th scope="col">Duration</th>
+                <th scope="col">Distance</th>
+                <th scope="col">Avg. heart rate</th>
+                <th scope="col">Source</th>
+                <th scope="col"><span class="visually-hidden">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (activity of page().results; track activity.id) {
+                <tr
+                  [id]="'activity-' + activity.id"
+                  tabindex="-1"
+                  [attr.data-highlight]="highlighted() === activity.id"
+                >
+                  <td>{{ activity.start_time | date: 'medium' }}</td>
+                  <td>{{ sport(activity) }}</td>
+                  <td>{{ duration(activity) }}</td>
+                  <td>{{ distance(activity.distance_m) }}</td>
+                  <td>{{ heartRate(activity.avg_heart_rate) }}</td>
+                  <td>{{ source(activity.source) }}</td>
+                  <td class="row-actions">
+                    @if (confirming() === activity.id) {
+                      <span
+                        class="confirm"
+                        role="group"
+                        [attr.aria-label]="'Delete ' + sport(activity)"
+                      >
+                        Delete this activity and its stored file?
+                        <button
+                          type="button"
+                          class="primary"
+                          [disabled]="busy()"
+                          (click)="delete(activity)"
+                        >
+                          Yes, delete
+                        </button>
+                        <button type="button" class="link" (click)="cancelDelete()">Cancel</button>
+                      </span>
+                    } @else {
+                      <button
+                        type="button"
+                        class="secondary"
+                        [disabled]="busy()"
+                        [attr.aria-label]="
+                          'Delete ' +
+                          sport(activity) +
+                          ' of ' +
+                          (activity.start_time | date: 'medium')
+                        "
+                        (click)="askDelete(activity)"
+                      >
+                        Delete
+                      </button>
+                    }
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+
+        <nav class="paging" aria-label="Pages">
+          <button
+            type="button"
+            class="secondary"
+            [disabled]="!hasPrevious() || busy() || refreshing()"
+            (click)="goTo(previousOffset())"
+          >
+            Previous
+          </button>
+          <span data-testid="range">{{ first() }}–{{ last() }} of {{ page().count }}</span>
+          <button
+            type="button"
+            class="secondary"
+            [disabled]="!hasNext() || busy() || refreshing()"
+            (click)="goTo(nextOffset())"
+          >
+            Next
+          </button>
+        </nav>
+      }
+    }
+  }
+</section>
