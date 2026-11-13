@@ -113,9 +113,12 @@ def activity_file(
     sessions: int = 1,
     with_session_start: bool = True,
     with_record_times: bool = True,
+    samples: list[tuple[int, int | None, int | None, int | None]] | None = None,
 ) -> bytes:
     """A typical activity file. ``session`` overrides or adds raw session fields by number
-    (``None`` writes the invalid marker); the defaults describe a 65 minute, 12.77 km run."""
+    (``None`` writes the invalid marker); the defaults describe a 65 minute, 12.77 km run.
+    ``samples`` replaces the generated records: (seconds after the start, power in W, distance in
+    centimetres, heart rate), ``None`` writing the invalid marker."""
     builder = FitBuilder()
     start_fit = fit_time(start)
     id_fields: list[tuple[int, int, Any]] = [(0, ENUM, file_type), (1, UINT16, manufacturer)]
@@ -128,7 +131,17 @@ def activity_file(
             FIELD_DESCRIPTION,
             [(0, UINT8, 0), (1, UINT8, 0), (2, UINT8, 0x84), (3, STRING, "stride_x")],
         )
-    for n in range(records):
+    for offset, power, distance, heart_rate in samples or []:
+        builder.message(
+            RECORD,
+            [
+                (253, UINT32, start_fit + offset),
+                (7, UINT16, power),
+                (5, UINT32, distance),
+                (3, UINT8, heart_rate),
+            ],
+        )
+    for n in range(0 if samples is not None else records):
         fields: list[tuple[int, int, Any]] = [(3, UINT8, 140 + n % 60), (7, UINT16, 300 + n % 100)]
         if with_record_times:
             fields.insert(0, (253, UINT32, start_fit + n))
