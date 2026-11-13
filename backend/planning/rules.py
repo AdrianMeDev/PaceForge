@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from .context import PlanContext
-from .schema import Sport, WeekPlan, Workout, ZoneSystem
+from .schema import Goal, Sport, WeekPlan, Workout, ZoneSystem
 
 # The segments of a workout may differ from its duration by this much before it is an error.
 DURATION_TOLERANCE_SECONDS = 60
@@ -27,6 +27,18 @@ SPORT_ZONE_SYSTEMS: dict[Sport, frozenset[ZoneSystem]] = {
     Sport.STRENGTH: frozenset(),
 }
 
+# The rhythm of a week. A workout is hard from this zone on (whatever the zone system) or if its
+# goal is threshold or VO2max; it is easy up to this zone or without any zone.
+HARD_FROM_ZONE = 4
+EASY_UP_TO_ZONE = 2
+MAX_HARD_DAYS = 3
+MAX_WORKOUTS_PER_DAY = 2
+# The planned minutes against the average of the recent weeks, in percent: above the first it is
+# a warning, above the second an error. Without a reference (or with 0 minutes) the rule is
+# skipped.
+PROGRESSION_WARNING_PERCENT = 130
+PROGRESSION_ERROR_PERCENT = 150
+
 _WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 _ABSENCES = {"illness": "an illness", "vacation": "a vacation"}
 
@@ -34,6 +46,12 @@ _ABSENCES = {"illness": "an illness", "vacation": "a vacation"}
 class Severity(StrEnum):
     ERROR = "error"
     WARNING = "warning"
+
+
+class Intensity(StrEnum):
+    EASY = "easy"
+    MODERATE = "moderate"
+    HARD = "hard"
 
 
 @dataclass(frozen=True)
@@ -174,6 +192,148 @@ def check_week_capacity(plan: WeekPlan, context: PlanContext) -> list[Finding]:
     ]
 
 
+def intensity_of(workout: Workout) -> Intensity:
+    """How hard a workout is: hard for the goals threshold and VO2max or from zone 4 on (the
+    highest zone of the workout and its segments), easy up to zone 2 or without a zone."""
+    if workout.goal in (Goal.THRESHOLD, Goal.VO2MAX):
+        return Intensity.HARD
+    zones = [segment.zone for segment in workout.segments if segment.zone is not None]
+    if workout.zone is not None:
+        zones.append(workout.zone)
+    top = max(zones, default=None)
+    if top is not None and top >= HARD_FROM_ZONE:
+        return Intensity.HARD
+    if top is None or top <= EASY_UP_TO_ZONE:
+        return Intensity.EASY
+    return Intensity.MODERATE
+
+
+def check_hard_days(plan: WeekPlan, context: PlanContext) -> list[Finding]:
+    """No more than ``MAX_HARD_DAYS`` days with a hard workout in a week."""
+    _same_week(plan, context)
+    hard = _hard_workouts_by_day(plan, context)
+    if len(hard) <= MAX_HARD_DAYS:
+        return []
+    return [
+        Finding(
+            Severity.ERROR,
+            "too_many_hard_days",
+            f"The week has {len(hard)} hard days; at most {MAX_HARD_DAYS} are sensible.",
+            "workouts",
+        )
+    ]
+
+
+def check_hard_days_in_a_row(plan: WeekPlan, context: PlanContext) -> list[Finding]:
+    """A hard day directly after a hard day leaves no time to recover (a warning)."""
+    _same_week(plan, context)
+    hard = _hard_workouts_by_day(plan, context)
+    return [
+        Finding(
+            Severity.WARNING,
+            "hard_days_in_a_row",
+            f"{_WEEKDAYS[offset]} is a hard day directly after another hard day.",
+            f"workouts[{hard[offset][0][0]}]",
+        )
+        for offset in sorted(hard)
+        if offset - 1 in hard
+    ]
+
+
+def check_a_free_day(plan: WeekPlan, context: PlanContext) -> list[Finding]:
+    """At least one day of the week without a workout (a warning)."""
+    _same_week(plan, context)
+    days = _workouts_by_day(plan, context)
+    if len(days) < 7:
+        return []
+    return [
+        Finding(
+            Severity.WARNING,
+            "no_free_day",
+            "Every day of the week has a workout; a day to rest is missing.",
+            "workouts",
+        )
+    ]
+
+
+def check_workouts_per_day(plan: WeekPlan, context: PlanContext) -> list[Finding]:
+    """No more than ``MAX_WORKOUTS_PER_DAY`` workouts on a day (a warning, named once per day)."""
+    _same_week(plan, context)
+    found = []
+    for offset, workouts in sorted(_workouts_by_day(plan, context).items()):
+        if len(workouts) > MAX_WORKOUTS_PER_DAY:
+            found.append(
+                Finding(
+                    Severity.WARNING,
+                    "many_workouts_in_a_day",
+                    f"{_WEEKDAYS[offset]} has {len(workouts)} workouts; more than "
+                    f"{MAX_WORKOUTS_PER_DAY} in a day is a lot.",
+                    f"workouts[{workouts[MAX_WORKOUTS_PER_DAY][0]}]",
+                )
+            )
+    return found
+
+
+def check_duplicates(plan: WeekPlan, context: PlanContext) -> list[Finding]:
+    """The same workout twice on a day (same sport, goal and duration) is probably a mistake. A
+    warning for every repeat after the first."""
+    _same_week(plan, context)
+    found = []
+    for offset, workouts in sorted(_workouts_by_day(plan, context).items()):
+        seen: set[tuple[Sport, Goal, int]] = set()
+        for index, workout in workouts:
+            key = (workout.sport, workout.goal, workout.duration_minutes)
+            if key in seen:
+                found.append(
+                    Finding(
+                        Severity.WARNING,
+                        "duplicate_workout",
+                        f"{_WEEKDAYS[offset]} has the same workout twice "
+                        "(sport, goal and duration).",
+                        f"workouts[{index}]",
+                    )
+                )
+            seen.add(key)
+    return found
+
+
+def check_progression(plan: WeekPlan, context: PlanContext) -> list[Finding]:
+    """The planned minutes stay within a plausible step from the recent weeks.
+
+    The reference is the average of ``context.recent_weeks``. Above ``PROGRESSION_WARNING_PERCENT``
+    of it is a warning, above ``PROGRESSION_ERROR_PERCENT`` an error. Without a reference, or with
+    a reference of no minutes, nothing is checked: a number is not made up."""
+    _same_week(plan, context)
+    weeks = context.recent_weeks
+    reference = sum(weeks)
+    if not weeks or reference == 0:
+        return []
+    planned = sum(
+        workout.duration_minutes
+        for workout in plan.workouts
+        if context.offset(workout.day) is not None
+    )
+    # planned / (reference / weeks) > percent / 100, without dividing
+    scaled = planned * len(weeks) * 100
+    if scaled > reference * PROGRESSION_ERROR_PERCENT:
+        severity, code = Severity.ERROR, "volume_jump"
+    elif scaled > reference * PROGRESSION_WARNING_PERCENT:
+        severity, code = Severity.WARNING, "volume_increase"
+    else:
+        return []
+    average = round(reference / len(weeks))
+    percent = round(scaled / reference)
+    return [
+        Finding(
+            severity,
+            code,
+            f"The week adds up to {planned} minutes, {percent} % of the average of {average} "
+            f"minutes of the last {len(weeks)} week(s).",
+            "workouts",
+        )
+    ]
+
+
 # The checks of structure, zones and capacity, in the order their findings are listed.
 BASIC_CHECKS: tuple[Check, ...] = (
     check_inside_week,
@@ -184,9 +344,44 @@ BASIC_CHECKS: tuple[Check, ...] = (
 )
 
 
+# The checks of rhythm and progression, listed after the basic ones.
+RHYTHM_CHECKS: tuple[Check, ...] = (
+    check_hard_days,
+    check_hard_days_in_a_row,
+    check_a_free_day,
+    check_workouts_per_day,
+    check_duplicates,
+    check_progression,
+)
+
+ALL_CHECKS: tuple[Check, ...] = BASIC_CHECKS + RHYTHM_CHECKS
+
+
 def basic_checks(plan: WeekPlan, context: PlanContext) -> list[Finding]:
-    """The findings of all checks of this module, check by check."""
+    """The findings of the checks of structure, zones and capacity, check by check."""
     return [finding for check in BASIC_CHECKS for finding in check(plan, context)]
+
+
+def _workouts_by_day(plan: WeekPlan, context: PlanContext) -> dict[int, list[tuple[int, Workout]]]:
+    """The workouts of the week by their place in it, each with its place in the plan's list.
+    Workouts outside the week are left out."""
+    by_day: dict[int, list[tuple[int, Workout]]] = {}
+    for index, workout in enumerate(plan.workouts):
+        offset = context.offset(workout.day)
+        if offset is not None:
+            by_day.setdefault(offset, []).append((index, workout))
+    return by_day
+
+
+def _hard_workouts_by_day(
+    plan: WeekPlan, context: PlanContext
+) -> dict[int, list[tuple[int, Workout]]]:
+    hard = {}
+    for offset, workouts in _workouts_by_day(plan, context).items():
+        found = [(i, w) for i, w in workouts if intensity_of(w) is Intensity.HARD]
+        if found:
+            hard[offset] = found
+    return hard
 
 
 def _zone_findings(
