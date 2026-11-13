@@ -5,6 +5,8 @@ is decrypted only where it is needed to call Intervals.icu; reading the status o
 connection never touches it, so they keep working even if the instance key was lost.
 """
 
+from collections.abc import Callable
+
 from django.db import IntegrityError, transaction
 from django.db.models import QuerySet
 from django.utils import timezone
@@ -77,6 +79,24 @@ def check(user: User) -> ProviderConnection:
     else:
         _record(connection, ProviderConnection.Status.CONNECTED)
     return connection
+
+
+def with_client[T](user: User, call: Callable[[IntervalsClient], T]) -> T:
+    """Run ``call`` with a client that uses the user's own stored key, and return its result.
+
+    Raises ``NotConnectedError`` if there is no connection. A key that Intervals.icu refuses, or
+    that can no longer be decrypted, marks the connection ``invalid`` (as ``check`` does) and
+    raises ``InvalidKeyError``. If Intervals.icu cannot be reached, the error is raised and the
+    stored state stays as it was.
+    """
+    connection = _own(user).first()
+    if connection is None:
+        raise NotConnectedError
+    try:
+        return call(IntervalsClient(connection.api_key))
+    except DecryptionError, InvalidKeyError:
+        _record(connection, ProviderConnection.Status.INVALID)
+        raise InvalidKeyError("The stored key is not usable.") from None
 
 
 def disconnect(user: User) -> None:

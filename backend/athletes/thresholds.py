@@ -62,14 +62,7 @@ def set_manual(user: User, sport: str, metric: str, value: float) -> ThresholdVa
     rounded to a whole number. Values from other sources stay as they are. Raises
     ``ValidationError`` and stores nothing if the value is refused.
     """
-    candidate = ThresholdValue(
-        owner=user, sport=sport, metric=metric, source=Source.MANUAL, value=value
-    )
-    # The unique constraint is what lets a second value replace the first: do not check it here.
-    candidate.full_clean(
-        exclude=["owner", "basis"], validate_unique=False, validate_constraints=False
-    )
-    whole = math.floor(candidate.value + 0.5)
+    whole = whole_number(user, sport, metric, Source.MANUAL, value)
     _check_against_the_other_heart_rate(user, sport, metric, whole)
 
     with transaction.atomic():
@@ -78,9 +71,20 @@ def set_manual(user: User, sport: str, metric: str, value: float) -> ThresholdVa
             sport=sport,
             metric=metric,
             source=Source.MANUAL,
-            defaults={"value": float(whole), "basis": ""},
+            defaults={"value": whole, "basis": ""},
         )
     return stored
+
+
+def whole_number(user: User, sport: str, metric: str, source: str, value: float) -> float:
+    """``value`` as a whole number, after the checks every threshold goes through (sport and
+    metric must fit, the range, a real number). Raises ``ValidationError``."""
+    candidate = ThresholdValue(owner=user, sport=sport, metric=metric, source=source, value=value)
+    # The unique constraint is what lets a value replace the earlier one: do not check it here.
+    candidate.full_clean(
+        exclude=["owner", "basis"], validate_unique=False, validate_constraints=False
+    )
+    return float(math.floor(candidate.value + 0.5))
 
 
 def clear_manual(user: User, sport: str, metric: str) -> bool:

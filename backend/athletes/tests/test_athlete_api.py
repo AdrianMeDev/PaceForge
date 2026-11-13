@@ -1,3 +1,4 @@
+import base64
 import json
 from http import HTTPStatus
 from typing import Any
@@ -9,6 +10,7 @@ from accounts.models import User
 from accounts.tests.conftest import AuthApi
 from athletes.models import AthleteProfile, ThresholdValue
 from integrations.models import ProviderConnection
+from integrations.tests.fake_intervals import FakeIntervals
 
 from .conftest import make_user, signed_in
 
@@ -16,6 +18,9 @@ pytestmark = pytest.mark.django_db
 
 URL = "/api/athlete/"
 FTP = f"{URL}thresholds/ride/ftp/"
+SYNC = f"{URL}sync/"
+SETTINGS_PATH = "/api/v1/athlete/0/sport-settings"
+KEY = "k3y-0123456789-abcdefghij"
 Source = ThresholdValue.Source
 
 
@@ -55,6 +60,7 @@ class TestWhoMayCome:
             ("PATCH", URL),
             ("PUT", FTP),
             ("DELETE", FTP),
+            ("POST", SYNC),
         ],
     )
     def test_anonymous_visitors_are_refused(self, method: str, url: str) -> None:
@@ -64,7 +70,9 @@ class TestWhoMayCome:
         assert not ThresholdValue.objects.exists()
         assert not AthleteProfile.objects.exists()
 
-    @pytest.mark.parametrize(("method", "url"), [("PATCH", URL), ("PUT", FTP), ("DELETE", FTP)])
+    @pytest.mark.parametrize(
+        ("method", "url"), [("PATCH", URL), ("PUT", FTP), ("DELETE", FTP), ("POST", SYNC)]
+    )
     def test_a_request_without_the_csrf_token_is_refused(
         self, alice: User, method: str, url: str
     ) -> None:
@@ -539,3 +547,198 @@ class TestIsolation:
         touched = " ".join(q["sql"] for q in queries)
         assert "athletes_thresholdvalue" in touched
         assert "api_key" not in touched
+
+
+def connect(owner: User, key: str = KEY) -> ProviderConnection:
+    return ProviderConnection.objects.create(
+        owner=owner, provider="intervals_icu", api_key=key, athlete_id="i1"
+    )
+
+
+def settings_answer(fake: FakeIntervals, *entries: object) -> None:
+    fake.bodies[SETTINGS_PATH] = json.dumps(list(entries)).encode()
+
+
+def typical(fake: FakeIntervals) -> None:
+    settings_answer(
+        fake,
+        {"types": ["Ride", "VirtualRide"], "ftp": 262, "lthr": 165, "max_hr": 190},
+        {"types": ["Run"], "lthr": 170, "max_hr": 188, "threshold_pace": 10 / 3},
+    )
+
+
+class TestSync:
+    def test_it_reads_the_values_and_answers_with_the_whole_profile(
+        self, fake: FakeIntervals, alice: User
+    ) -> None:
+        connect(alice)
+        typical(fake)
+
+        response = signed_in(alice).call("POST", SYNC)
+
+        assert response.status_code == HTTPStatus.OK
+        data = body(response)
+        found = effective(data, "ride", "ftp")
+        assert (found["value"], found["source"]) == (262, "intervals")
+        assert found["basis"] == "Read from your Intervals.icu sport settings"
+        assert effective(data, "run", "threshold_pace")["value"] == 300
+        assert data["intervals"]["connected"] is True
+        assert data["intervals"]["synced_at"].endswith("Z")
+        assert data["sports"]["ride"]["zones"]["power"]["basis"] == "ftp"
+        assert data["sports"]["run"]["zones"]["pace"]["basis"] == "threshold_pace"
+        assert body(signed_in(alice).call("GET", URL)) == data
+
+    def test_a_typed_value_still_counts_and_intervals_is_a_candidate(
+        self, fake: FakeIntervals, alice: User
+    ) -> None:
+        connect(alice)
+        typical(fake)
+        api = signed_in(alice)
+        put(api, FTP, {"value": 255})
+
+        data = body(api.call("POST", SYNC))
+
+        threshold = data["sports"]["ride"]["thresholds"]["ftp"]
+        assert [(c["source"], c["value"]) for c in threshold["candidates"]] == [
+            ("manual", 255),
+            ("intervals", 262),
+        ]
+        assert threshold["effective"]["source"] == "manual"
+
+    def test_without_a_connection_it_is_a_404_and_nothing_is_asked(
+        self, fake: FakeIntervals, alice: User
+    ) -> None:
+        response = signed_in(alice).call("POST", SYNC)
+
+        assert response.status_code == HTTPStatus.NOT_FOUND
+        assert body(response) == {"detail": "Not connected."}
+        assert fake.requests == []
+        assert not ThresholdValue.objects.exists()
+        assert not AthleteProfile.objects.exists()
+
+    @pytest.mark.parametrize("status", [401, 403])
+    def test_a_key_that_is_refused_is_a_409_and_the_connection_needs_attention(
+        self, fake: FakeIntervals, alice: User, status: int
+    ) -> None:
+        connection = connect(alice)
+        fake.status = status
+        api = signed_in(alice)
+
+        response = api.call("POST", SYNC)
+
+        assert response.status_code == HTTPStatus.CONFLICT
+        assert body(response) == {
+            "detail": "Intervals.icu did not accept the stored API key. "
+            "Enter it again on the Connections page."
+        }
+        assert ProviderConnection.objects.defer("api_key").get(pk=connection.pk).status == "invalid"
+        assert body(api.call("GET", URL))["intervals"]["connected"] is False
+        assert not ThresholdValue.objects.exists()
+
+    @pytest.mark.parametrize("status", [429, 500, 503])
+    def test_an_unreachable_service_is_a_503_with_the_usual_text(
+        self, fake: FakeIntervals, alice: User, status: int
+    ) -> None:
+        connection = connect(alice)
+        fake.status = status
+
+        response = signed_in(alice).call("POST", SYNC)
+
+        assert response.status_code == HTTPStatus.SERVICE_UNAVAILABLE
+        assert body(response) == {
+            "detail": "Intervals.icu cannot be reached right now. Please try again later."
+        }
+        assert (
+            ProviderConnection.objects.defer("api_key").get(pk=connection.pk).status == "connected"
+        )
+        assert not ThresholdValue.objects.exists()
+
+    def test_an_odd_answer_is_a_502_with_the_usual_text(
+        self, fake: FakeIntervals, alice: User
+    ) -> None:
+        connect(alice)
+        fake.bodies[SETTINGS_PATH] = b'{"not": "a list"}'
+
+        response = signed_in(alice).call("POST", SYNC)
+
+        assert response.status_code == HTTPStatus.BAD_GATEWAY
+        assert body(response) == {
+            "detail": "Intervals.icu answered in an unexpected way. Please try again later."
+        }
+
+    def test_the_eleventh_call_within_a_minute_is_throttled_and_never_asks(
+        self, fake: FakeIntervals, alice: User
+    ) -> None:
+        connect(alice)
+        typical(fake)
+        api = signed_in(alice)
+        for _ in range(10):
+            assert api.call("POST", SYNC).status_code == HTTPStatus.OK
+
+        response = api.call("POST", SYNC)
+
+        assert response.status_code == HTTPStatus.TOO_MANY_REQUESTS
+        assert "Retry-After" in response.headers
+        assert len(fake.requests) == 10
+
+    def test_it_shares_the_counter_with_connecting_and_checking(
+        self, fake: FakeIntervals, alice: User
+    ) -> None:
+        connect(alice)
+        typical(fake)
+        api = signed_in(alice)
+        for _ in range(5):
+            api.call("POST", SYNC)
+            api.call("POST", "/api/integrations/intervals/check/")
+
+        assert api.call("POST", SYNC).status_code == HTTPStatus.TOO_MANY_REQUESTS
+        assert api.call("POST", "/api/integrations/intervals/check/").status_code == (
+            HTTPStatus.TOO_MANY_REQUESTS
+        )
+
+    def test_another_user_is_not_throttled(
+        self, fake: FakeIntervals, alice: User, bob: User
+    ) -> None:
+        connect(alice)
+        connect(bob)
+        typical(fake)
+        alices = signed_in(alice)
+        for _ in range(11):
+            alices.call("POST", SYNC)
+
+        assert signed_in(bob).call("POST", SYNC).status_code == HTTPStatus.OK
+
+    def test_it_uses_only_the_key_and_the_values_of_the_user_who_asks(
+        self, fake: FakeIntervals, alice: User, bob: User
+    ) -> None:
+        connect(alice, "alice-key-0123456789")
+        connect(bob, "bob-key-0123456789")
+        typical(fake)
+
+        data = body(signed_in(alice).call("POST", SYNC))
+
+        [request] = fake.requests
+        expected = base64.b64encode(b"API_KEY:alice-key-0123456789").decode()
+        assert request["headers"]["Authorization"] == f"Basic {expected}"
+        assert not ThresholdValue.objects.filter(owner=bob).exists()
+        assert effective(body(signed_in(bob).call("GET", URL)), "ride", "ftp") is None
+        assert effective(data, "ride", "ftp")["source"] == "intervals"
+
+    def test_a_get_is_not_allowed(self, alice: User) -> None:
+        assert signed_in(alice).call("GET", SYNC).status_code == HTTPStatus.METHOD_NOT_ALLOWED
+
+    def test_neither_the_key_nor_other_users_data_is_in_any_answer(
+        self, fake: FakeIntervals, alice: User, bob: User
+    ) -> None:
+        connect(alice, "alice-key-0123456789")
+        hold(bob, Source.INTERVALS, "ftp", 311)
+        typical(fake)
+        api = signed_in(alice)
+
+        texts = [api.call("POST", SYNC).content.decode(), api.call("GET", URL).content.decode()]
+        fake.status = 401
+        texts.append(api.call("POST", SYNC).content.decode())
+
+        for text in texts:
+            assert "alice-key-0123456789" not in text
+            assert "311" not in text

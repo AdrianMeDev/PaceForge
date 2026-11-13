@@ -2,16 +2,25 @@ from typing import Any
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.http import Http404
-from rest_framework import serializers
+from rest_framework import serializers, status
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts.models import User
+from integrations.intervals import IntervalsError, InvalidKeyError
+from integrations.services import NotConnectedError
+from integrations.throttles import ProviderConnectionThrottle
+from integrations.views import failure_response
 
 from . import thresholds
 from .models import RULES, AthleteProfile
 from .serializers import ThresholdInput, TimezoneInput, athlete_data
+from .sync import sync_from_intervals
+
+KEY_NOT_ACCEPTED = (
+    "Intervals.icu did not accept the stored API key. Enter it again on the Connections page."
+)
 
 
 def _user(request: Request) -> User:
@@ -60,6 +69,25 @@ class ThresholdView(APIView):
         _require_known(sport, metric)
         user = _user(request)
         thresholds.clear_manual(user, sport, metric)
+        return _answer(user)
+
+
+class SyncView(APIView):
+    """Read the thresholds from the user's own Intervals.icu connection."""
+
+    # The same counter as connecting and checking: all of them make the server call Intervals.icu.
+    throttle_classes = [ProviderConnectionThrottle]
+
+    def post(self, request: Request) -> Response:
+        user = _user(request)
+        try:
+            sync_from_intervals(user)
+        except NotConnectedError:
+            return Response({"detail": "Not connected."}, status=status.HTTP_404_NOT_FOUND)
+        except InvalidKeyError:
+            return Response({"detail": KEY_NOT_ACCEPTED}, status=status.HTTP_409_CONFLICT)
+        except IntervalsError as error:
+            return failure_response(error)
         return _answer(user)
 
 

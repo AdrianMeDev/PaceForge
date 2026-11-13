@@ -1,4 +1,5 @@
 from collections.abc import Iterator
+from typing import Any
 
 import pytest
 from allauth.account.models import EmailAddress
@@ -6,6 +7,15 @@ from django.core.cache import cache
 
 from accounts.models import User
 from accounts.tests.conftest import PASSWORD, AuthApi
+from integrations.tests.fake_intervals import FakeIntervals, running
+
+
+@pytest.fixture(autouse=True)
+def _no_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The fake server is on localhost; an environment proxy must not get in the way."""
+    for name in ("http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("no_proxy", "127.0.0.1")
 
 
 @pytest.fixture(autouse=True)
@@ -14,6 +24,14 @@ def _clear_cache() -> Iterator[None]:
     cache.clear()
     yield
     cache.clear()
+
+
+@pytest.fixture
+def fake(settings: Any) -> Iterator[FakeIntervals]:
+    """A fake Intervals.icu that the application talks to instead of the real one."""
+    with running() as server:
+        settings.INTERVALS_API_BASE_URL = server.url
+        yield server
 
 
 def make_user(email: str, *, staff: bool = False) -> User:
