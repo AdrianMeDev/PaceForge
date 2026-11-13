@@ -18,6 +18,8 @@ describe('Shell', () => {
       providers: [
         provideRouter([
           { path: '', pathMatch: 'full', component: Blank },
+          { path: 'activities', component: Blank },
+          { path: 'settings/profile', component: Blank },
           { path: 'settings/security', component: Blank },
           { path: 'settings/connections', component: Blank },
           { path: 'admin/invitations', component: Blank },
@@ -61,11 +63,13 @@ describe('Shell', () => {
         a.getAttribute('href'),
       ]);
 
-    it('links to the dashboard, the security page and the connections page', async () => {
+    it('links to the dashboard, the activities, the profile, the security page and the connections page', async () => {
       const { page } = await setup();
 
       expect(links(page)).toEqual([
         ['Dashboard', '/'],
+        ['Activities', '/activities'],
+        ['Profile', '/settings/profile'],
         ['Security', '/settings/security'],
         ['Connections', '/settings/connections'],
       ]);
@@ -77,6 +81,8 @@ describe('Shell', () => {
 
       expect(links(page)).toEqual([
         ['Dashboard', '/'],
+        ['Activities', '/activities'],
+        ['Profile', '/settings/profile'],
         ['Security', '/settings/security'],
         ['Connections', '/settings/connections'],
         ['Invitations', '/admin/invitations'],
@@ -106,6 +112,52 @@ describe('Shell', () => {
         (a.textContent ?? '').trim(),
       );
       expect(current).toEqual(['Invitations']);
+    });
+
+    it('shows the activities link to everyone, administrators without two-factor included', async () => {
+      for (const user of [ADA, { ...ADA, is_staff: true, mfa_setup_required: true }]) {
+        const { page, fixture } = await setup(user);
+
+        expect(links(page).map(([label]) => label)).toContain('Activities');
+        fixture.destroy();
+        TestBed.resetTestingModule();
+      }
+    });
+
+    it('marks the activities link while that page is open and nothing else', async () => {
+      const { fixture, page, navigate } = await setup();
+      navigate.mockRestore(); // these tests need real navigation
+
+      await TestBed.inject(Router).navigateByUrl('/activities');
+      await fixture.whenStable();
+
+      const current = Array.from(page.querySelectorAll('nav a[aria-current="page"]')).map((a) =>
+        (a.textContent ?? '').trim(),
+      );
+      expect(current).toEqual(['Activities']);
+    });
+
+    it('shows the profile link to everyone, administrators without two-factor included', async () => {
+      for (const user of [ADA, { ...ADA, is_staff: true, mfa_setup_required: true }]) {
+        const { page, fixture } = await setup(user);
+
+        expect(links(page).map(([label]) => label)).toContain('Profile');
+        fixture.destroy();
+        TestBed.resetTestingModule();
+      }
+    });
+
+    it('marks the profile link while that page is open and nothing else', async () => {
+      const { fixture, page, navigate } = await setup();
+      navigate.mockRestore(); // these tests need real navigation
+
+      await TestBed.inject(Router).navigateByUrl('/settings/profile');
+      await fixture.whenStable();
+
+      const current = Array.from(page.querySelectorAll('nav a[aria-current="page"]')).map((a) =>
+        (a.textContent ?? '').trim(),
+      );
+      expect(current).toEqual(['Profile']);
     });
 
     it('shows the connections link to an administrator who still has to set up two-factor', async () => {

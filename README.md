@@ -6,10 +6,13 @@ The long-term goal is described in `PROJECT_PLAN.md`; this repository is in earl
 **What works today:** accounts for a multi-user instance, invitation-only registration with an
 admin page for invitations, email verification, sign-in and sign-out with server-side sessions,
 password reset, two-factor authentication (authenticator app plus recovery codes, mandatory for
-administrators), a personal Intervals.icu connection with an API key (stored encrypted), and the
-data-isolation foundation the training features will build on.
-**Not there yet:** importing training data over that connection, sending invitations by email (the
-administrator hands the link on) and all coaching features. Before an instance is exposed to the
+administrators), a personal Intervals.icu connection with an API key (stored encrypted), importing
+activities from FIT and TCX files, an athlete profile with your time zone, your thresholds (typed in,
+read from Intervals.icu or estimated from your activities) and the training zones that follow from
+them, and the data-isolation foundation the training features will build on.
+**Not there yet:** reading activities from Intervals.icu over that connection (it can only ever
+work for activities that do not come from Strava, see [Activities](#activities)), sending
+invitations by email (the administrator hands the link on) and all coaching features. Before an instance is exposed to the
 internet, read [Instance key](#instance-key): secrets in the database are encrypted, and the key
 has to be backed up apart from the database.
 
@@ -158,11 +161,137 @@ and invite a few others. The findings behind this are in
   by any endpoint and not logged. Every user sees and changes only their own connection;
   administrators have no way to read other users' keys.
 - **Limits:** saving and checking together are limited to 10 per minute per user.
-- **Nothing is imported yet.** The connection is the first step; reading training data from it
-  comes next.
+- **Only your thresholds are read from Intervals.icu so far,** see
+  [Athlete profile](#athlete-profile). Reading activities comes next and only works for activities
+  that did not come from Strava; for everything else use the [file import](#activities).
 - **If the instance key is lost,** the stored keys can no longer be used. The page still opens and
   shows **Needs attention** after a check, and each user pastes their key again.
 - `INTERVALS_API_BASE_URL` (see [Configuration](#configuration)) is only for tests and fake servers.
+
+## Activities
+
+The **Activities** page (`/activities`, also in the navigation) is where athletes bring their
+history in: choose FIT or TCX files from a watch or from an export (Garmin, COROS, Strava, …), one
+or several at once. Intervals.icu does not hand out activities that it received from Strava, so for
+an athlete whose history lives in Strava the file import is the way in (details in
+[`docs/phase0-intervals.md`](docs/phase0-intervals.md)).
+
+1. Get the files. The menus change from time to time; if one of these is gone, look for "export
+   original" or "export FIT/TCX" in the same place.
+   - **Garmin Connect (web):** open an activity, gear icon, **Export Original** (a zip with the FIT
+     file inside: unzip it first) or **Export to TCX**.
+   - **COROS Training Hub:** open an activity, the three dots, **Export** (FIT or TCX). **Activity
+     List**, **Export Data** sends you a bulk export of FIT or TCX files by email.
+   - **Strava:** on an activity's web page, the three dots, **Export Original**. For the whole
+     history use Settings, My Account, **Download or Delete Your Account**, **Request Your
+     Archive**; it can take hours or days to arrive. The files in its `activities` folder are often
+     compressed (`.fit.gz`): unpack them first (`gunzip activities/*.gz`).
+2. Open **Activities**, press the file chooser and select the files. Each file is sent on its own
+   and gets its own line: *Imported*, *Already imported*, the reason it was refused, or *too
+   large*. The list below shows date, sport, duration, distance, average heart rate and source,
+   newest first, 20 per page.
+3. **Delete** (with a confirmation) removes the activity and the file that was stored with it.
+
+What you should know:
+
+- **The content decides, not the name.** A FIT file named `.txt` imports; a text file named `.fit`
+  does not. Compressed files (`.gz`) and zip archives are refused with "The file is neither a FIT
+  nor a TCX file": unpack them first.
+- **Only what the file reports is stored, nothing is estimated.** Sport (running, cycling,
+  swimming, strength, otherwise *other* with the file's own wording), start (UTC, shown in your
+  browser's time zone), elapsed and timer time, distance, average and maximum heart rate, average
+  power, total ascent, calories, the manufacturer and the laps. What the file does not say stays
+  empty and is shown as a dash. That is common: a TCX file has no total ascent, and many files have
+  no power. There is no elevation gain computed from the altitude track and no cadence yet.
+- **The original file is kept** (gzip-compressed, in the database), so charts and training load can
+  be built later without asking you to upload again. **This includes the GPS track**: from it,
+  home and workplace can be inferred. The database and its backups therefore hold location data and
+  need the same care. The file is never returned by the API, and deleting an activity deletes it.
+- **Duplicates are refused:** the same file, or the same run exported in another format (same start
+  and sport), answers *Already imported*. Each user has their own activities; another user may
+  import the same file.
+- **Limits:** 25 MB per file (`ACTIVITY_UPLOAD_MAX_BYTES`, see [Configuration](#configuration)),
+  30 imports per minute per user, files with several sessions (multisport) are refused. Behind a
+  reverse proxy, allow request bodies at least that large (for nginx `client_max_body_size`); the
+  proxy would otherwise answer before PaceForge can.
+- **Damaged or hostile files** are refused with a message and store nothing: FIT checksums are
+  verified, TCX documents with a `DOCTYPE` or entities are refused, and the number of records,
+  laps and nested elements is capped.
+
+## Athlete profile
+
+The **Profile** page (`/settings/profile`, also in the navigation) holds what PaceForge needs to
+know about you as an athlete: your time zone, your thresholds and the training zones that follow
+from them. Cycling has FTP, lactate threshold heart rate (LTHR) and maximum heart rate; running has
+threshold pace, LTHR and maximum heart rate. Swimming and strength training have none yet.
+
+**Where a value comes from, and which one counts.** Every threshold shows its source: **You**,
+**Intervals.icu** or **Estimated**. If there are several, the first one in that order counts and
+the others are listed as "Also known". A value you type in therefore always counts, until you press
+**Use automatic value**, which removes only your own value; nothing else is deleted.
+
+1. **Type a value.** Press **Edit** on a row, enter the number and press **Save** (or Enter). Watts
+   and beats are numbers (a comma works as the decimal point), the pace is minutes and seconds per
+   kilometre, for example `5:00`. Allowed are FTP 30 to 2000 W, heart rates 30 to 250 bpm and a pace
+   from 2:00 to 20:00 per km; values are stored as whole numbers. The lactate threshold heart rate
+   cannot be above the maximum heart rate of the same sport (compared with what you typed in or
+   Intervals.icu holds; an estimate never stops you from entering the right value).
+2. **Read from Intervals.icu.** With a working connection (see [Connections](#connections)) the
+   page reads your sport settings when it opens, if that has never happened or was more than 24
+   hours ago, and **Update from Intervals.icu** does it on demand. The settings entry that includes
+   `Ride` or `VirtualRide` is your cycling, the one with `Run` or `VirtualRun` your running;
+   swimming and "Other" are ignored. The pace is stored there in metres per second and converted.
+   Values outside the ranges above are skipped, values that Intervals.icu no longer has are
+   removed, and what you typed in or what was estimated is never touched. Reading is limited to 10
+   per minute together with connecting and checking. If Intervals.icu does not accept the stored
+   key, the page says so and the connection shows **Needs attention** on the Connections page.
+3. **Estimated values.** Where nothing else is known, PaceForge estimates from the activities you
+   imported. An estimate never overrides a value you typed in or one from Intervals.icu, and it is
+   recomputed after every import and every deletion (so it is only as fresh as the last one).
+   - **Maximum heart rate**, for running and cycling separately, from the highest heart rate of
+     each activity. Values outside 30 to 250 bpm are ignored; with at least three usable ones, the
+     highest value counts if another activity came within 3 bpm below it. A single peak without a
+     partner (a chest strap or wrist sensor glitch) is ignored; two glitches that happen to match
+     would be believed.
+   - **FTP, threshold pace and LTHR** from the best efforts inside the files, using only
+     activities of the **last 90 days**. For cycling: FTP is 95 % of the best 20-minute average
+     power, LTHR is 95 % of the average heart rate during that effort. For running: the threshold
+     pace is the pace of the best 30-minute effort and the LTHR the average heart rate during it.
+     Power from a run never becomes an FTP, and the speed of a ride never a running pace. A window
+     counts only if the data covers all of it: a pause of more than 10 seconds ends it, a shorter
+     gap of power or heart rate is bridged, nothing is interpolated. A file without power gives
+     no FTP; this is common for running and for TCX files. Training rarely contains an all-out
+     effort, so these values are **lower bounds**: the page says "At least …", and the value you
+     enter yourself or Intervals.icu supplies counts instead as soon as it exists. Values outside
+     the ranges above are not stored. The best efforts of an activity are computed when the file
+     is imported and stored in the database (not the time series, not the track); the page never
+     shows them.
+   - **Activities imported earlier** have no best efforts yet. Compute them from the stored files
+     with `cd backend && uv run python manage.py backfill_best_efforts` (optionally
+     `--email you@example.com` for one account). The command skips what is already computed, so it
+     can be run again at any time; it then refreshes the estimates of the accounts it filled and
+     prints counts only (computed, no usable series, failed, without a stored file).
+4. **Zones.** They are computed from the value that counts and shown per sport. They follow
+   published conventions, which athletes and coaches handle differently, so treat them as a
+   starting point:
+   - **Power**, 7 zones with limits at 55, 75, 90, 105, 120 and 150 percent of FTP (after Andrew
+     Coggan).
+   - **Heart rate**, 5 zones with limits at 85, 90, 95 and 100 percent of the lactate threshold
+     heart rate (after Joe Friel). Without one, five zones with limits at 60, 70, 80 and 90 percent
+     of the maximum heart rate.
+   - **Running pace**, 5 zones with limits at 129, 114, 106 and 99 percent of the threshold pace
+     (after Joe Friel). Pace is time per distance, so the zones run from slow (zone 1, 129 percent
+     and slower) to fast (zone 5, faster than 99 percent).
+
+   A zone includes its lower limit and not its upper one; the page shows the last whole value
+   ("138–187 W"), so neighbouring zones neither overlap nor leave a gap.
+5. **Time zone.** Enter a name from the time zone database, exactly spelled (`Europe/Berlin`), or
+   press **Use this device's time zone** and then **Save time zone**. An empty field removes it. It
+   is stored for the day-based planning that follows; the activities list still shows times in your
+   browser's time zone.
+
+Thresholds are personal data: every user sees and changes only their own, administrators included,
+and no answer contains another user's values.
 
 ## Instance key
 
@@ -217,6 +346,7 @@ Set in `.env` or in the environment. Values without a default are required.
 | `REGISTRATION_MODE`            | `invite_only`                       | `closed`, `invite_only` or `open`. Anything else stops Django at startup.         |
 | `INVITATION_TTL_DAYS`          | `7`                                 | How long an invitation stays valid.                                               |
 | `INTERVALS_API_BASE_URL`       | `https://intervals.icu/api/v1`      | Only for tests or a fake server: where the Intervals.icu API is. `http://` or `https://`. |
+| `ACTIVITY_UPLOAD_MAX_BYTES`    | `26214400` (25 MB)                  | Largest FIT or TCX file accepted for import, in bytes. Must be a positive integer. |
 | `SMTP_HOST`                    | empty                               | Empty: emails are printed to the Django console. Set: they are sent via SMTP.     |
 | `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_USE_TLS` | `587`, empty, empty, `true` | SMTP settings, used when `SMTP_HOST` is set. |
 | `DEFAULT_FROM_EMAIL`           | `PaceForge <noreply@localhost>`     | Sender of all emails.                                                             |
@@ -232,6 +362,20 @@ Set in `.env` or in the environment. Values without a default are required.
 - **`Port 4200 is already in use` / `That port is already in use`.** Another dev server is running.
   Stop it, or start this one elsewhere: `uv run python manage.py runserver 8010` together with
   `npx ng serve --port 4210 --proxy-config <file>` that points `/api` to that port.
+- **An import says "The file is neither a FIT nor a TCX file".** The file is compressed (`.gz`),
+  a zip archive, a GPX file or something else. Unpack it, or export FIT or TCX instead.
+- **Importing a big file fails with "413" or an error page before PaceForge answers.** A reverse
+  proxy in front limits the request body; raise its limit to the value of
+  `ACTIVITY_UPLOAD_MAX_BYTES` or more.
+- **The time zone is refused.** The name must be exactly one of the time zone database, with the
+  capitalisation shown there (`Europe/Berlin`, not `europe/berlin` or `CET`). Press **Use this
+  device's time zone** to fill the field, or pick one of the suggestions.
+- **A threshold heart rate is refused with "Cannot be above the maximum heart rate".** The value
+  you typed in, or the one from Intervals.icu, for the maximum heart rate of that sport is lower;
+  correct the maximum first.
+- **"Update from Intervals.icu" says the stored key was not accepted.** Enter the key again on the
+  Connections page (the connection shows **Needs attention** there). "Cannot be reached" and "Too
+  many attempts" go away by themselves; nothing was changed.
 - **Django refuses to start with `DJANGO_SECRET_KEY`, `DATABASE_URL` or `ENCRYPTION_KEY` missing.** Both are required
   and have no default; check that `.env` is in the repository root, not in `backend/`.
 - **The Connections page says "Intervals.icu cannot be reached right now".** The server could not

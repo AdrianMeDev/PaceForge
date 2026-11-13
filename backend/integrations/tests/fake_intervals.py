@@ -12,6 +12,8 @@ class FakeIntervals:
     def __init__(self) -> None:
         self.status = 200
         self.body: bytes = b'{"id": "i123"}'
+        # Answers for single paths (without the query), e.g. "/api/v1/athlete/0/sport-settings".
+        self.bodies: dict[str, bytes] = {}
         self.headers: dict[str, str] = {}
         self.delay = 0.0
         # Announce more bytes than are sent, then hang up: an answer that is cut off.
@@ -26,12 +28,13 @@ class FakeIntervals:
                 )
                 if outer.delay:
                     time.sleep(outer.delay)
+                body = outer.bodies.get(self.path.split("?")[0], outer.body)
                 self.send_response(outer.status)
                 for name, value in outer.headers.items():
                     self.send_header(name, value)
-                self.send_header("Content-Length", str(len(outer.body) + outer.missing_bytes))
+                self.send_header("Content-Length", str(len(body) + outer.missing_bytes))
                 self.end_headers()
-                self.wfile.write(outer.body)
+                self.wfile.write(body)
 
             def log_message(self, *args: Any) -> None:
                 pass

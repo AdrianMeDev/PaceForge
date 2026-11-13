@@ -13,7 +13,7 @@ empty instead of being estimated.
 
 import xml.parsers.expat as expat
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, Protocol
 
 from . import values
 from .types import (
@@ -41,16 +41,28 @@ _LAP_HEART_RATES = {"AverageHeartRateBpm", "MaximumHeartRateBpm"}
 
 
 def parse_tcx(data: bytes) -> ParsedActivity:
+    reader = _Reader()
+    feed(data, reader)
+    return reader.summary()
+
+
+class Handlers(Protocol):
+    def start(self, name: str, attributes: dict[str, str]) -> None: ...
+    def end(self, name: str) -> None: ...
+    def text(self, data: str) -> None: ...
+
+
+def feed(data: bytes, handlers: Handlers) -> None:
+    """Stream ``data`` through expat into ``handlers``, with the protections described above."""
     # Some exporters put a line break before the XML declaration, which strict XML forbids.
     trimmed = data.lstrip(b" \t\r\n")
     if trimmed.startswith(b"<"):
         data = trimmed
-    reader = _Reader()
     parser = expat.ParserCreate(namespace_separator="}")
     parser.buffer_text = True
-    parser.StartElementHandler = reader.start
-    parser.EndElementHandler = reader.end
-    parser.CharacterDataHandler = reader.text
+    parser.StartElementHandler = handlers.start
+    parser.EndElementHandler = handlers.end
+    parser.CharacterDataHandler = handlers.text
     parser.StartDoctypeDeclHandler = _refuse_doctype
     try:
         for offset in range(0, len(data), _CHUNK):
@@ -62,7 +74,6 @@ def parse_tcx(data: bytes) -> ParsedActivity:
         if isinstance(error, IndexError | KeyError):
             raise  # a bug in this module, not a bad file: it must not look like one
         raise InvalidFileError("The TCX file uses an encoding that is not supported.") from None
-    return reader.summary()
 
 
 def _refuse_doctype(*_: Any) -> None:

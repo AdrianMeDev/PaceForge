@@ -111,3 +111,29 @@ def big_document(trackpoints: int) -> bytes:
         "max_hr": 170,
     }
     return tcx_document(laps=[lap], points=trackpoints)
+
+
+def trackpoint_document(
+    points: list[tuple[float, float | None, int | None, int | None]], *, sport: str = "Running"
+) -> bytes:
+    """One lap with the given trackpoints: (seconds after the start, distance in metres, heart
+    rate, watts); ``None`` leaves the element out."""
+    rows = ""
+    for seconds, distance, heart_rate, watts in points:
+        rows += f"<Trackpoint><Time>{stamp(START + timedelta(seconds=seconds))}</Time>"
+        if distance is not None:
+            rows += f"<DistanceMeters>{distance}</DistanceMeters>"
+        if heart_rate is not None:
+            rows += f"<HeartRateBpm><Value>{heart_rate}</Value></HeartRateBpm>"
+        if watts is not None:
+            rows += f"<Extensions><ns3:TPX><ns3:Watts>{watts}</ns3:Watts></ns3:TPX></Extensions>"
+        rows += "</Trackpoint>"
+    lap = (
+        f'<Lap StartTime="{stamp(START)}"><TotalTimeSeconds>60</TotalTimeSeconds>'
+        f"<Track>{rows}</Track></Lap>"
+    )
+    return (
+        f'<?xml version="1.0" encoding="UTF-8"?>{_HEAD}<Activities>'
+        f'<Activity Sport="{sport}"><Id>{stamp(START)}</Id>{lap}</Activity>'
+        "</Activities></TrainingCenterDatabase>"
+    ).encode()

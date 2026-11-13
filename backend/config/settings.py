@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     "core",
     "integrations",
     "activities",
+    "athletes",
 ]
 
 MIDDLEWARE = [
@@ -112,6 +113,11 @@ INTERVALS_API_BASE_URL = env.str("INTERVALS_API_BASE_URL", default="https://inte
 if urlsplit(INTERVALS_API_BASE_URL).scheme not in {"http", "https"}:
     raise ImproperlyConfigured("INTERVALS_API_BASE_URL must start with http:// or https://")
 
+# The largest activity file (FIT or TCX) that is accepted, in bytes, before it is even parsed.
+ACTIVITY_UPLOAD_MAX_BYTES = env.int("ACTIVITY_UPLOAD_MAX_BYTES", default=25 * 1024 * 1024)
+if ACTIVITY_UPLOAD_MAX_BYTES <= 0:
+    raise ImproperlyConfigured("ACTIVITY_UPLOAD_MAX_BYTES must be a positive integer")
+
 REST_FRAMEWORK = {
     # Session auth enforces CSRF for unsafe methods; every endpoint requires a login by default.
     "DEFAULT_AUTHENTICATION_CLASSES": ["rest_framework.authentication.SessionAuthentication"],
@@ -119,7 +125,7 @@ REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
     "DEFAULT_PARSER_CLASSES": ["rest_framework.parsers.JSONParser"],
     # Counters live in the process cache, like allauth's login limits (not shared by workers).
-    "DEFAULT_THROTTLE_RATES": {"provider_connection": "10/min"},
+    "DEFAULT_THROTTLE_RATES": {"provider_connection": "10/min", "activity_import": "30/min"},
 }
 
 # allauth: email + password, headless API for the SPA (browser client only).

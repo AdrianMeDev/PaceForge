@@ -67,6 +67,30 @@ Base URL `https://intervals.icu/api/v1`. All paths below start with `/athlete/{i
   encrypted, never log it, never send it to the browser or an AI provider, and delete it when the
   connection is removed. Users can invalidate a key by creating a new one in Intervals.icu.
 
+## Sport settings: what the API gives (checked 2026-11-13, no values recorded)
+
+- `GET /athlete/0/sport-settings` answers with a JSON list, one entry per group of sport types.
+  The test account has four: cycling (`Ride`, `VirtualRide`, `MountainBikeRide`, `GravelRide`,
+  `TrackRide`, `Cyclocross`), running (`Run`, `VirtualRun`, `TrailRun`), swimming (`Swim`,
+  `OpenWaterSwim`) and `Other`. Each entry has about 70 fields (zones, zone names, display
+  settings, workout options); the four entries are about 10 KB.
+- **The thresholds** are `ftp` (a whole number, `null` for the groups without power), `lthr` and
+  `max_hr` (whole numbers) and `threshold_pace` (a decimal number or `null`). `indoor_ftp`,
+  `w_prime` and `p_max` exist and were empty.
+- **`threshold_pace` is in metres per second,** whatever `pace_units` says (that field is only
+  how Intervals.icu displays it: `MINS_KM` for running, `SECS_100M` for swimming). Seen in the
+  swimming entry, where a value below 10 stands next to `SECS_100M`. The running entry of the test
+  account had no threshold pace, so the conversion for running (`1000 / value` gives seconds per
+  kilometre) rests on that unit rule and has not been seen with a live running value.
+- **What PaceForge keeps:** per group `ride` and `run` only `ftp`, `lthr`, `max_hr` and the pace in
+  seconds per kilometre; everything else is dropped. An entry counts as cycling if its types
+  include `Ride` or `VirtualRide`, as running if they include `Run` or `VirtualRun` (an entry that
+  only has `TrailRun` does not count; one that has both is ambiguous and is skipped). Values that
+  are missing, not positive, not numbers or absurd are skipped one by one. If two entries claim the
+  same group, the first one wins per value.
+- **The sync exists now:** see "Athlete profile" in the [README](../README.md#athlete-profile) for
+  when it runs, what it stores and what it never touches.
+
 ## Activities: what the API gives (checked 2026-11-13)
 
 - **Activities that Intervals.icu received from Strava cannot be read through the API.** The list
@@ -77,7 +101,8 @@ Base URL `https://intervals.icu/api/v1`. All paths below start with `/athlete/{i
 - **Consequence for the import:** reading activities from Intervals.icu only works for activities
   that reach it by another route (a device connection such as COROS or Garmin, a file upload).
   For an athlete whose history arrives through Strava, importing files is the only way in, so the
-  FIT/TCX import comes before the Intervals.icu import.
+  FIT/TCX import comes before the Intervals.icu import. **The importer exists now:** see
+  "Activities" in the [README](../README.md#activities) for what it reads, stores and refuses.
 - **The CSV export** (`activities.csv`) lists id, start, name, type, moving and elapsed time,
   distance, elevation gain, speeds, heart rate, cadence, calories, power and load columns; it has
   not been checked with readable activities yet.
@@ -121,4 +146,5 @@ deleted in the Intervals.icu calendar; the device checks are done.
   PaceForge plan stay linked by that id. Conflicts (the user edited the event in Intervals.icu)
   need a rule, because an upsert overwrites the event.
 - **Phase 3:** zones and thresholds can be read from the sport settings instead of asking the
-  user to type them.
+  user to type them. (Thresholds are read now; the zones are computed by PaceForge itself from
+  them, not taken over from the sport settings.)

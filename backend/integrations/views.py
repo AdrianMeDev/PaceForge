@@ -31,7 +31,7 @@ def _state(connection: ProviderConnection | None) -> Response:
     return Response(ConnectionSerializer(connection).data)
 
 
-def _failure(error: IntervalsError) -> Response:
+def failure_response(error: IntervalsError) -> Response:
     """Nothing about the request goes into the answer, least of all the key."""
     if isinstance(error, IntervalsUnavailableError):
         return Response({"detail": UNAVAILABLE}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
@@ -58,7 +58,7 @@ class IntervalsConnectionView(APIView):
         except InvalidKeyError:
             raise serializers.ValidationError({"api_key": [KEY_REFUSED]}) from None
         except IntervalsError as error:
-            return _failure(error)
+            return failure_response(error)
         return _state(connection)
 
     def delete(self, request: Request) -> Response:
@@ -75,5 +75,5 @@ class IntervalsCheckView(APIView):
         except services.NotConnectedError:
             return Response({"detail": "Not connected."}, status=status.HTTP_404_NOT_FOUND)
         except IntervalsError as error:
-            return _failure(error)
+            return failure_response(error)
         return _state(connection)
