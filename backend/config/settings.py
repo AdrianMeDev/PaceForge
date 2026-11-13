@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     "goals",
     "availability",
     "coach",
+    "planning",
 ]
 
 MIDDLEWARE = [

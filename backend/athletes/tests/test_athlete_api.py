@@ -1,10 +1,13 @@
 import base64
 import json
+from collections.abc import Iterator
+from datetime import UTC, datetime
 from http import HTTPStatus
 from typing import Any
 
 import pytest
 from django.db import connection
+from django.utils import timezone
 
 from accounts.models import User
 from accounts.tests.conftest import AuthApi
@@ -36,6 +39,20 @@ def bob() -> User:
 
 def body(response: Any) -> Any:
     return json.loads(response.content)
+
+
+def numbers_in(data: Any) -> Iterator[float]:
+    """Every JSON number in ``data`` at any depth. Text, booleans and ``null`` are not numbers."""
+    if isinstance(data, bool):
+        return
+    if isinstance(data, int | float):
+        yield data
+    elif isinstance(data, dict):
+        for value in data.values():
+            yield from numbers_in(value)
+    elif isinstance(data, list):
+        for value in data:
+            yield from numbers_in(value)
 
 
 def hold(owner: User, source: str, metric: str, value: float, sport: str = "ride") -> None:
@@ -728,17 +745,35 @@ class TestSync:
         assert signed_in(alice).call("GET", SYNC).status_code == HTTPStatus.METHOD_NOT_ALLOWED
 
     def test_neither_the_key_nor_other_users_data_is_in_any_answer(
-        self, fake: FakeIntervals, alice: User, bob: User
+        self, fake: FakeIntervals, alice: User, bob: User, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        # Bob's value is looked for among the numbers of the answers, not as text: answers carry
+        # timestamps, and a number written as text turns up in those by chance (microseconds such
+        # as ".877042"). The clock below makes it do so on purpose, so that this test cannot flake.
+        bobs_value = 877
         connect(alice, "alice-key-0123456789")
-        hold(bob, Source.INTERVALS, "ftp", 311)
+        hold(bob, Source.INTERVALS, "ftp", bobs_value)
         typical(fake)
+        assert bobs_value in numbers_in(body(signed_in(bob).call("GET", URL)))  # it is findable
         api = signed_in(alice)
+        monkeypatch.setattr(
+            timezone, "now", lambda: datetime(2026, 11, 13, 12, 31, 10, 877000, UTC)
+        )
 
         texts = [api.call("POST", SYNC).content.decode(), api.call("GET", URL).content.decode()]
         fake.status = 401
         texts.append(api.call("POST", SYNC).content.decode())
 
+        assert any(str(bobs_value) in text for text in texts)  # the clock does what it should
         for text in texts:
             assert "alice-key-0123456789" not in text
-            assert "311" not in text
+            assert bobs_value not in numbers_in(json.loads(text))
+
+
+def test_numbers_in_finds_numbers_at_any_depth_and_nothing_else() -> None:
+    data = {"a": [1, {"b": 2.5, "c": [3]}], "d": "4", "e": True, "f": None, "g": {"h": -5}}
+
+    assert sorted(numbers_in(data)) == [-5, 1, 2.5, 3]
+    assert list(numbers_in(7)) == [7]
+    assert list(numbers_in("7")) == []
+    assert list(numbers_in(False)) == []

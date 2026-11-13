@@ -5,7 +5,7 @@ from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
 from accounts.models import User
-from availability.capacity import minutes_in_week, minutes_on
+from availability.capacity import WeekCapacity, minutes_in_week, minutes_on, week_capacity
 from availability.models import AvailabilitySettings, UnavailablePeriod, WeekdayMinutes
 
 pytestmark = pytest.mark.django_db
@@ -236,3 +236,94 @@ class TestAWeek:
             minutes_in_week(alice, MONDAY)
 
         assert len(queries) == 3
+
+
+class TestTheWholeWeek:
+    def test_nothing_declared_offers_nothing(self, alice: User) -> None:
+        assert week_capacity(alice, MONDAY) == WeekCapacity((0,) * 7, (None,) * 7, None, 0)
+
+    def test_the_days_the_budget_and_the_total(self, alice: User) -> None:
+        declare(alice, 60, 0, 90, 0, 0, 120, 180)
+        budget(alice, 400)
+
+        assert week_capacity(alice, MONDAY) == WeekCapacity(
+            (60, 0, 90, 0, 0, 120, 180), (None,) * 7, 400, 400
+        )
+
+    def test_a_budget_above_the_sum_is_shown_but_does_not_raise_the_total(
+        self, alice: User
+    ) -> None:
+        declare(alice, 60, 60)
+        budget(alice, 1000)
+
+        result = week_capacity(alice, MONDAY)
+
+        assert (result.budget, result.total) == (1000, 120)
+
+    def test_a_day_inside_a_period_offers_nothing_and_names_it(self, alice: User) -> None:
+        declare(alice, 60, 60, 60, 60, 60, 60, 60)
+        away(alice, MONDAY + timedelta(days=1), MONDAY + timedelta(days=2), kind="illness")
+        away(alice, SUNDAY, SUNDAY + timedelta(days=9))
+
+        result = week_capacity(alice, MONDAY)
+
+        assert result.minutes == (60, 0, 0, 60, 60, 60, 0)
+        assert result.absences == (None, "illness", "illness", None, None, None, "vacation")
+        assert result.total == 240
+
+    @pytest.mark.parametrize(
+        ("kinds", "named"),
+        [
+            (["vacation", "illness"], "illness"),
+            (["other", "vacation"], "vacation"),
+            (["other", "illness", "vacation"], "illness"),
+            (["other"], "other"),
+            (["vacation", "vacation"], "vacation"),
+        ],
+    )
+    def test_where_absences_overlap_the_one_that_says_most_is_named(
+        self, alice: User, kinds: list[str], named: str
+    ) -> None:
+        for kind in kinds:
+            away(alice, MONDAY, MONDAY, kind=kind)
+
+        assert week_capacity(alice, MONDAY).absences[0] == named
+
+    def test_a_period_ending_before_or_starting_after_the_week_is_ignored(
+        self, alice: User
+    ) -> None:
+        declare(alice, 60, 60, 60, 60, 60, 60, 60)
+        away(alice, MONDAY - timedelta(days=5), MONDAY - timedelta(days=1))
+        away(alice, NEXT_MONDAY, NEXT_MONDAY + timedelta(days=3))
+
+        assert week_capacity(alice, MONDAY).absences == (None,) * 7
+
+    @pytest.mark.parametrize("offset", [1, 2, 3, 4, 5, 6])
+    def test_a_day_that_is_not_a_monday_is_refused(self, alice: User, offset: int) -> None:
+        with pytest.raises(ValueError, match="not a Monday"):
+            week_capacity(alice, MONDAY + timedelta(days=offset))
+
+    def test_other_users_rows_are_ignored(self, alice: User, bob: User) -> None:
+        declare(bob, 120, 120, 120, 120, 120, 120, 120)
+        budget(bob, 100)
+        away(bob, MONDAY, SUNDAY)
+
+        assert week_capacity(alice, MONDAY) == WeekCapacity((0,) * 7, (None,) * 7, None, 0)
+
+    def test_it_takes_three_queries_however_full_the_week(self, alice: User) -> None:
+        declare(alice, 60, 60, 60, 60, 60, 60, 60)
+        for day in range(7):
+            away(alice, MONDAY + timedelta(days=day))
+        budget(alice, 200)
+
+        with CaptureQueriesContext(connection) as queries:
+            week_capacity(alice, MONDAY)
+
+        assert len(queries) == 3
+
+    def test_the_total_is_what_minutes_in_week_says(self, alice: User) -> None:
+        declare(alice, 60, 60, 60, 60, 60, 60, 60)
+        away(alice, MONDAY, MONDAY + timedelta(days=1))
+        budget(alice, 250)
+
+        assert minutes_in_week(alice, MONDAY) == week_capacity(alice, MONDAY).total == 250
