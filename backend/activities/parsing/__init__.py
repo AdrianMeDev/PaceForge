@@ -1,4 +1,6 @@
+from ..efforts import Sample
 from .fit import parse_fit
+from .series import fit_series, tcx_series
 from .tcx import parse_tcx
 from .types import ActivityFileError, InvalidFileError, ParsedActivity, UnsupportedFileError
 
@@ -8,6 +10,7 @@ __all__ = [
     "ParsedActivity",
     "UnsupportedFileError",
     "parse_activity_file",
+    "parse_series",
     "parse_fit",
     "parse_tcx",
 ]
@@ -25,4 +28,13 @@ def parse_activity_file(data: bytes) -> ParsedActivity:
         return parse_fit(data)
     if data.startswith(_XML_PREFIXES):
         return parse_tcx(data)
+    raise UnsupportedFileError("The file is neither a FIT nor a TCX file.")
+
+
+def parse_series(data: bytes) -> list[Sample]:
+    """The time series of a FIT or TCX file, decided by the content like ``parse_activity_file``."""
+    if len(data) >= 12 and data[8:12] == b".FIT":
+        return fit_series(data)
+    if data.startswith(_XML_PREFIXES):
+        return tcx_series(data)
     raise UnsupportedFileError("The file is neither a FIT nor a TCX file.")
