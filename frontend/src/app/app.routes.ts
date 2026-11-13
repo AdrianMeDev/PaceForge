@@ -71,6 +71,12 @@ export const routes: Routes = [
         loadComponent: () => import('./features/goals/goals-page').then((m) => m.GoalsPage),
       },
       {
+        path: 'availability',
+        title: 'Training time',
+        loadComponent: () =>
+          import('./features/availability/availability-page').then((m) => m.AvailabilityPage),
+      },
+      {
         path: 'settings/profile',
         title: 'Athlete profile',
         loadComponent: () => import('./features/athlete/athlete-page').then((m) => m.AthletePage),

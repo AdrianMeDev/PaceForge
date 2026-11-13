@@ -6,6 +6,7 @@ import { AuthApi } from './core/auth/auth-api';
 import { AuthStore } from './core/auth/auth-store';
 import { ActivitiesApi } from './core/activities/activities-api';
 import { AthleteApi } from './core/athlete/athlete-api';
+import { AvailabilityApi } from './core/availability/availability-api';
 import { GoalsApi } from './core/goals/goals-api';
 import { IntervalsConnectionApi } from './core/integrations/intervals-api';
 import { ADA, createAuthStoreStub } from './core/auth/testing/auth-store-stub';
@@ -30,6 +31,7 @@ describe('app routes', () => {
             checkPasswordResetKey: () => new Promise<never>(() => undefined),
           },
         },
+        { provide: AvailabilityApi, useValue: { get: () => new Promise<never>(() => undefined) } },
         { provide: GoalsApi, useValue: { list: () => new Promise<never>(() => undefined) } },
         { provide: AthleteApi, useValue: { get: () => new Promise<never>(() => undefined) } },
         { provide: ActivitiesApi, useValue: { list: () => new Promise<never>(() => undefined) } },
@@ -243,6 +245,29 @@ describe('app routes', () => {
     expect(page.querySelector('[data-testid="user-label"]')?.textContent).toBe('Ada');
   });
 
+  it('sends visitors from the training time page to the login and remembers where they wanted to go', async () => {
+    await harness.navigateByUrl('/availability');
+
+    expect(router.url).toBe('/login?returnUrl=%2Favailability');
+  });
+
+  it.each([
+    ['a member', ADA],
+    [
+      'an administrator with two-factor authentication',
+      { ...ADA, is_staff: true, mfa_enabled: true },
+    ],
+  ])('shows the training time page inside the shell to %s', async (_who, me) => {
+    store.signIn(me);
+
+    await harness.navigateByUrl('/availability');
+
+    expect(router.url).toBe('/availability');
+    const page = required(harness.routeNativeElement, 'the routed element');
+    expect(page.textContent).toContain('Training time');
+    expect(page.querySelector('[data-testid="user-label"]')?.textContent).toBe('Ada');
+  });
+
   describe('an administrator without two-factor authentication', () => {
     const ADMIN_OFF = { ...ADA, is_staff: true, mfa_setup_required: true };
 
@@ -272,6 +297,12 @@ describe('app routes', () => {
 
     it('is sent from the goals page to the security page, with the reason', async () => {
       await harness.navigateByUrl('/goals');
+
+      expect(router.url).toBe('/settings/security?notice=mfa-required');
+    });
+
+    it('is sent from the training time page to the security page, with the reason', async () => {
+      await harness.navigateByUrl('/availability');
 
       expect(router.url).toBe('/settings/security?notice=mfa-required');
     });

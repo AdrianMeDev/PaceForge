@@ -1,0 +1,108 @@
+<section class="availability">
+  <h1>Training time</h1>
+
+  @switch (view()) {
+    @case ('loading') {
+      <p role="status">Loading…</p>
+    }
+    @case ('unreachable') {
+      <p class="alert" role="alert">Your training time could not be loaded.</p>
+      <p><button type="button" class="primary" (click)="load()">Try again</button></p>
+    }
+    @case ('signed_out') {
+      <p class="alert" role="alert">Your session has ended. Please sign in again.</p>
+      <p><a routerLink="/login">Go to sign in</a></p>
+    }
+    @case ('ready') {
+      @for (message of errors(); track $index) {
+        <p class="alert" role="alert">{{ message }}</p>
+      }
+      @if (notice(); as text) {
+        <p class="notice" role="status">{{ text }}</p>
+      }
+
+      <form class="panel" novalidate (submit)="save($event)">
+        <h2>Per weekday</h2>
+        <p class="hint">
+          How much time can you usually train on each day? Enter minutes (90) or hours and minutes
+          (1:30). A day you leave empty counts as no time.
+        </p>
+        @if (weekdaysError(); as message) {
+          <p class="field-error" role="alert">{{ message }}</p>
+        }
+
+        <div class="days">
+          @for (index of indexes; track index) {
+            <div class="field">
+              <label [for]="'day-' + index">{{ names[index] }}</label>
+              <input
+                type="text"
+                inputmode="numeric"
+                autocomplete="off"
+                [id]="'day-' + index"
+                [value]="days()[index]"
+                [attr.aria-invalid]="dayErrors()[index] ? true : null"
+                [attr.aria-describedby]="dayErrors()[index] ? 'day-' + index + '-error' : null"
+                (input)="setDay(index, read($event))"
+              />
+              @if (dayErrors()[index]; as message) {
+                <p class="field-error" role="alert" [id]="'day-' + index + '-error'">
+                  {{ message }}
+                </p>
+              }
+            </div>
+          }
+        </div>
+
+        @if (totalText(); as sum) {
+          <p class="total" data-testid="total">Together: {{ sum }} per week</p>
+        }
+        @if (capNote(); as text) {
+          <p class="hint" data-testid="cap-note">{{ text }}</p>
+        }
+
+        <h2>Weekly budget</h2>
+        <div class="field">
+          <label for="budget">Most you want to train in a week (optional)</label>
+          <input
+            id="budget"
+            type="text"
+            inputmode="numeric"
+            autocomplete="off"
+            aria-describedby="budget-hint"
+            [value]="budget()"
+            [attr.aria-invalid]="budgetError() ? true : null"
+            (input)="budget.set(read($event))"
+          />
+          @if (budgetError(); as message) {
+            <p class="field-error" role="alert">{{ message }}</p>
+          }
+          <p class="hint" id="budget-hint">
+            Caps what the days add up to. Leave it empty for no cap.
+          </p>
+        </div>
+
+        <h2>Limitations</h2>
+        <div class="field">
+          <label for="limitations">Anything the plan should respect (optional)</label>
+          <textarea
+            id="limitations"
+            rows="4"
+            [value]="limitations()"
+            [attr.aria-invalid]="limitationsError() ? true : null"
+            (input)="limitations.set(read($event))"
+          ></textarea>
+          @if (limitationsError(); as message) {
+            <p class="field-error" role="alert">{{ message }}</p>
+          }
+        </div>
+
+        <div class="actions">
+          <button type="submit" class="primary" [disabled]="busy()">
+            {{ busy() ? 'Saving…' : 'Save' }}
+          </button>
+        </div>
+      </form>
+    }
+  }
+</section>
