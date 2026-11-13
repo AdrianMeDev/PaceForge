@@ -6,10 +6,12 @@ The long-term goal is described in `PROJECT_PLAN.md`; this repository is in earl
 **What works today:** accounts for a multi-user instance, invitation-only registration with an
 admin page for invitations, email verification, sign-in and sign-out with server-side sessions,
 password reset, two-factor authentication (authenticator app plus recovery codes, mandatory for
-administrators), a personal Intervals.icu connection with an API key (stored encrypted), and the
-data-isolation foundation the training features will build on.
-**Not there yet:** importing training data over that connection, sending invitations by email (the
-administrator hands the link on) and all coaching features. Before an instance is exposed to the
+administrators), a personal Intervals.icu connection with an API key (stored encrypted), importing
+activities from FIT and TCX files, and the data-isolation foundation the training features will
+build on.
+**Not there yet:** reading activities from Intervals.icu over that connection (it can only ever
+work for activities that do not come from Strava, see [Activities](#activities)), sending
+invitations by email (the administrator hands the link on) and all coaching features. Before an instance is exposed to the
 internet, read [Instance key](#instance-key): secrets in the database are encrypted, and the key
 has to be backed up apart from the database.
 
@@ -158,11 +160,62 @@ and invite a few others. The findings behind this are in
   by any endpoint and not logged. Every user sees and changes only their own connection;
   administrators have no way to read other users' keys.
 - **Limits:** saving and checking together are limited to 10 per minute per user.
-- **Nothing is imported yet.** The connection is the first step; reading training data from it
-  comes next.
+- **Nothing is read from Intervals.icu yet.** The connection is the first step; reading training
+  data from it comes next, and only works for activities that did not come from Strava. For
+  everything else use the [file import](#activities).
 - **If the instance key is lost,** the stored keys can no longer be used. The page still opens and
   shows **Needs attention** after a check, and each user pastes their key again.
 - `INTERVALS_API_BASE_URL` (see [Configuration](#configuration)) is only for tests and fake servers.
+
+## Activities
+
+The **Activities** page (`/activities`, also in the navigation) is where athletes bring their
+history in: choose FIT or TCX files from a watch or from an export (Garmin, COROS, Strava, …), one
+or several at once. Intervals.icu does not hand out activities that it received from Strava, so for
+an athlete whose history lives in Strava the file import is the way in (details in
+[`docs/phase0-intervals.md`](docs/phase0-intervals.md)).
+
+1. Get the files. The menus change from time to time; if one of these is gone, look for "export
+   original" or "export FIT/TCX" in the same place.
+   - **Garmin Connect (web):** open an activity, gear icon, **Export Original** (a zip with the FIT
+     file inside: unzip it first) or **Export to TCX**.
+   - **COROS Training Hub:** open an activity, the three dots, **Export** (FIT or TCX). **Activity
+     List**, **Export Data** sends you a bulk export of FIT or TCX files by email.
+   - **Strava:** on an activity's web page, the three dots, **Export Original**. For the whole
+     history use Settings, My Account, **Download or Delete Your Account**, **Request Your
+     Archive**; it can take hours or days to arrive. The files in its `activities` folder are often
+     compressed (`.fit.gz`): unpack them first (`gunzip activities/*.gz`).
+2. Open **Activities**, press the file chooser and select the files. Each file is sent on its own
+   and gets its own line: *Imported*, *Already imported*, the reason it was refused, or *too
+   large*. The list below shows date, sport, duration, distance, average heart rate and source,
+   newest first, 20 per page.
+3. **Delete** (with a confirmation) removes the activity and the file that was stored with it.
+
+What you should know:
+
+- **The content decides, not the name.** A FIT file named `.txt` imports; a text file named `.fit`
+  does not. Compressed files (`.gz`) and zip archives are refused with "The file is neither a FIT
+  nor a TCX file": unpack them first.
+- **Only what the file reports is stored, nothing is estimated.** Sport (running, cycling,
+  swimming, strength, otherwise *other* with the file's own wording), start (UTC, shown in your
+  browser's time zone), elapsed and timer time, distance, average and maximum heart rate, average
+  power, total ascent, calories, the manufacturer and the laps. What the file does not say stays
+  empty and is shown as a dash. That is common: a TCX file has no total ascent, and many files have
+  no power. There is no elevation gain computed from the altitude track and no cadence yet.
+- **The original file is kept** (gzip-compressed, in the database), so charts and training load can
+  be built later without asking you to upload again. **This includes the GPS track**: from it,
+  home and workplace can be inferred. The database and its backups therefore hold location data and
+  need the same care. The file is never returned by the API, and deleting an activity deletes it.
+- **Duplicates are refused:** the same file, or the same run exported in another format (same start
+  and sport), answers *Already imported*. Each user has their own activities; another user may
+  import the same file.
+- **Limits:** 25 MB per file (`ACTIVITY_UPLOAD_MAX_BYTES`, see [Configuration](#configuration)),
+  30 imports per minute per user, files with several sessions (multisport) are refused. Behind a
+  reverse proxy, allow request bodies at least that large (for nginx `client_max_body_size`); the
+  proxy would otherwise answer before PaceForge can.
+- **Damaged or hostile files** are refused with a message and store nothing: FIT checksums are
+  verified, TCX documents with a `DOCTYPE` or entities are refused, and the number of records,
+  laps and nested elements is capped.
 
 ## Instance key
 
@@ -233,6 +286,11 @@ Set in `.env` or in the environment. Values without a default are required.
 - **`Port 4200 is already in use` / `That port is already in use`.** Another dev server is running.
   Stop it, or start this one elsewhere: `uv run python manage.py runserver 8010` together with
   `npx ng serve --port 4210 --proxy-config <file>` that points `/api` to that port.
+- **An import says "The file is neither a FIT nor a TCX file".** The file is compressed (`.gz`),
+  a zip archive, a GPX file or something else. Unpack it, or export FIT or TCX instead.
+- **Importing a big file fails with "413" or an error page before PaceForge answers.** A reverse
+  proxy in front limits the request body; raise its limit to the value of
+  `ACTIVITY_UPLOAD_MAX_BYTES` or more.
 - **Django refuses to start with `DJANGO_SECRET_KEY`, `DATABASE_URL` or `ENCRYPTION_KEY` missing.** Both are required
   and have no default; check that `.env` is in the repository root, not in `backend/`.
 - **The Connections page says "Intervals.icu cannot be reached right now".** The server could not

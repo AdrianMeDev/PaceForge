@@ -77,7 +77,8 @@ Base URL `https://intervals.icu/api/v1`. All paths below start with `/athlete/{i
 - **Consequence for the import:** reading activities from Intervals.icu only works for activities
   that reach it by another route (a device connection such as COROS or Garmin, a file upload).
   For an athlete whose history arrives through Strava, importing files is the only way in, so the
-  FIT/TCX import comes before the Intervals.icu import.
+  FIT/TCX import comes before the Intervals.icu import. **The importer exists now:** see
+  "Activities" in the [README](../README.md#activities) for what it reads, stores and refuses.
 - **The CSV export** (`activities.csv`) lists id, start, name, type, moving and elapsed time,
   distance, elevation gain, speeds, heart rate, cadence, calories, power and load columns; it has
   not been checked with readable activities yet.
