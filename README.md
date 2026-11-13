@@ -9,8 +9,9 @@ password reset, two-factor authentication (authenticator app plus recovery codes
 administrators), a personal Intervals.icu connection with an API key (stored encrypted), importing
 activities from FIT and TCX files, an athlete profile with your time zone, your thresholds (typed in,
 read from Intervals.icu or estimated from your activities) and the training zones that follow from
-them, goals (races, threshold targets and general goals, with one main goal), and the
-data-isolation foundation the training features will build on.
+them, goals (races, threshold targets and general goals, with one main goal), your training time
+(minutes per weekday, a weekly budget, limitations, vacation and illness), and the data-isolation
+foundation the training features will build on.
 **Not there yet:** reading activities from Intervals.icu over that connection (it can only ever
 work for activities that do not come from Strava, see [Activities](#activities)), sending
 invitations by email (the administrator hands the link on) and all coaching features. Before an instance is exposed to the
@@ -331,8 +332,54 @@ off until you set it.
 **Limits.** At most 30 goals per user (finished ones included), so delete old ones when it is full.
 Titles and notes are shown as plain text, never as markup.
 
-Not there yet: your availability (training time per weekday, holidays, illness), training phases,
-and goals in the coach's context.
+Not there yet: training phases, and goals in the coach's context.
+
+## Training time
+
+The **Training time** page (`/availability`, also in the navigation) tells PaceForge how much time
+you can train. It does not plan anything yet; it is what the planning that follows will check its
+sessions against. Everything here is personal: every user sees and changes only their own, an
+administrator included.
+
+**Per weekday.** Seven fields, Monday first. Enter minutes (`90`) or hours and minutes (`1:30`,
+the minutes always with two digits and below 60); at most 24:00 (1440 minutes) per day. A field you
+leave empty counts as **no time**, and so does a user who has entered nothing: PaceForge never
+assumes that you are free. While you type, the page adds the days up ("Together: 7:30 per week").
+
+**Weekly budget.** Optional, up to 168:00 (10080 minutes). It caps what the days add up to: with
+7:30 in the fields and a budget of 5:00, a week offers 5:00. A budget below the sum is allowed on
+purpose (it is the most you *want* to train) and the page says what it means. Leave the field empty
+for no cap. The budget applies to a week, never to a single day.
+
+**Limitations.** Free text of up to 1000 characters ("no running on consecutive days"). It is kept
+and shown as plain text, never as markup, and nothing interprets it yet; it is there for the coach
+that follows.
+
+**Save** sends the weekdays, the budget and the limitations together. The page checks the limits
+first and names every problem next to its field; if the server still refuses something, its message
+appears in the same place. Nothing is saved until every field is usable.
+
+**Not available.** Below the form, the periods in which you cannot train: **vacation**,
+**illness** or **other**, with a first and a last day (both belong to the period), a note of up to
+200 characters and at most 366 days. A period of one day needs only the first day; the last day
+follows it while it is empty. Periods may overlap, may lie in the past (they stay as a record) and
+there can be at most 100 of them. Going-on and coming periods come first, the nearest first; past
+ones follow, the latest first, marked **Past**; the one that is going on is marked **Now**. Which
+day it is today depends on the time zone in your [profile](#athlete-profile), as with the goals.
+**Delete** removes a period after a question. Changing a period is possible through the API but
+not yet on the page: delete it and add it again.
+
+**What a day or a week offers.** A day inside any period offers no time; every other day offers the
+minutes of its weekday. A week offers its seven days added up, at most the weekly budget. The
+functions `minutes_on` and `minutes_in_week` in `backend/availability/capacity.py` answer this for
+the planning that will use it; they take calendar days, so which day it is stays the caller's
+business.
+
+The API is `GET` and `PATCH` on `/api/availability/` (the weekdays Monday first, the budget, the
+limitations) and `/api/availability/periods/` with list, create, read, change and delete.
+
+Not there yet: using the training time in a plan, time windows within a day, and different time
+per sport.
 
 ## Instance key
 
