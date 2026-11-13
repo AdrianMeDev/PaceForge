@@ -12,8 +12,9 @@ read from Intervals.icu or estimated from your activities) and the training zone
 them, goals (races, threshold targets and general goals, with one main goal), your training time
 (minutes per weekday, a weekly budget, limitations, vacation and illness), your own AI provider
 ([Anthropic or an OpenAI-compatible endpoint](#ai-coach-bring-your-own-key), key stored encrypted,
-with a connection check and a usage overview), and the data-isolation foundation the training
-features will build on.
+with a connection check and a usage overview), the model and the plausibility checks for a
+training week ([format and rules](docs/weekly-plan.md); no screen uses them yet), and the
+data-isolation foundation the training features will build on.
 **Not there yet:** reading activities from Intervals.icu over that connection (it can only ever
 work for activities that do not come from Strava, see [Activities](#activities)), sending
 invitations by email (the administrator hands the link on) and the coach itself: the AI provider
