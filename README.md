@@ -11,9 +11,8 @@ activities from FIT and TCX files, an athlete profile with your time zone, your 
 read from Intervals.icu or estimated from your activities) and the training zones that follow from
 them, and the data-isolation foundation the training features will build on.
 **Not there yet:** reading activities from Intervals.icu over that connection (it can only ever
-work for activities that do not come from Strava, see [Activities](#activities)), estimating FTP and
-running pace from the data inside your activity files, sending invitations by email (the
-administrator hands the link on) and all coaching features. Before an instance is exposed to the
+work for activities that do not come from Strava, see [Activities](#activities)), sending
+invitations by email (the administrator hands the link on) and all coaching features. Before an instance is exposed to the
 internet, read [Instance key](#instance-key): secrets in the database are encrypted, and the key
 has to be backed up apart from the database.
 
@@ -246,13 +245,32 @@ the others are listed as "Also known". A value you type in therefore always coun
    removed, and what you typed in or what was estimated is never touched. Reading is limited to 10
    per minute together with connecting and checking. If Intervals.icu does not accept the stored
    key, the page says so and the connection shows **Needs attention** on the Connections page.
-3. **Estimated maximum heart rate.** For running and cycling separately, PaceForge looks at the
-   highest heart rate of each imported activity. Values outside 30 to 250 bpm are ignored; with at
-   least three usable ones, the highest value counts if another activity came within 3 bpm below
-   it. A single peak without a partner (a chest strap or wrist sensor glitch) is ignored. The
-   estimate is recomputed after every import and every deletion. Two glitches that happen to match
-   would be believed, and an estimate is only as fresh as the last import or deletion; it never
-   overrides a value you typed in or one from Intervals.icu.
+3. **Estimated values.** Where nothing else is known, PaceForge estimates from the activities you
+   imported. An estimate never overrides a value you typed in or one from Intervals.icu, and it is
+   recomputed after every import and every deletion (so it is only as fresh as the last one).
+   - **Maximum heart rate**, for running and cycling separately, from the highest heart rate of
+     each activity. Values outside 30 to 250 bpm are ignored; with at least three usable ones, the
+     highest value counts if another activity came within 3 bpm below it. A single peak without a
+     partner (a chest strap or wrist sensor glitch) is ignored; two glitches that happen to match
+     would be believed.
+   - **FTP, threshold pace and LTHR** from the best efforts inside the files, using only
+     activities of the **last 90 days**. For cycling: FTP is 95 % of the best 20-minute average
+     power, LTHR is 95 % of the average heart rate during that effort. For running: the threshold
+     pace is the pace of the best 30-minute effort and the LTHR the average heart rate during it.
+     Power from a run never becomes an FTP, and the speed of a ride never a running pace. A window
+     counts only if the data covers all of it: a pause of more than 10 seconds ends it, a shorter
+     gap of power or heart rate is bridged, nothing is interpolated. A file without power gives
+     no FTP; this is common for running and for TCX files. Training rarely contains an all-out
+     effort, so these values are **lower bounds**: the page says "At least …", and the value you
+     enter yourself or Intervals.icu supplies counts instead as soon as it exists. Values outside
+     the ranges above are not stored. The best efforts of an activity are computed when the file
+     is imported and stored in the database (not the time series, not the track); the page never
+     shows them.
+   - **Activities imported earlier** have no best efforts yet. Compute them from the stored files
+     with `cd backend && uv run python manage.py backfill_best_efforts` (optionally
+     `--email you@example.com` for one account). The command skips what is already computed, so it
+     can be run again at any time; it then refreshes the estimates of the accounts it filled and
+     prints counts only (computed, no usable series, failed, without a stored file).
 4. **Zones.** They are computed from the value that counts and shown per sport. They follow
    published conventions, which athletes and coaches handle differently, so treat them as a
    starting point:
