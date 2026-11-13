@@ -9,7 +9,7 @@ import {
   ListGoalsResult,
   UpdateGoalResult,
 } from '../../core/goals/goals-models';
-import { query, required, settle } from '../../testing/dom';
+import { query, required, settle, typeInto } from '../../testing/dom';
 import { GoalsPage } from './goals-page';
 
 function goal(changes: Partial<Goal> = {}): Goal {
@@ -241,10 +241,22 @@ describe('GoalsPage', () => {
     });
 
     it('offers the right buttons for each state', () => {
-      expect(buttonsOf('ftp')).toEqual(['Mark achieved', 'Drop', 'Make main goal', 'Delete']);
-      expect(buttonsOf('main')).toEqual(['Mark achieved', 'Drop', 'Make secondary', 'Delete']);
-      expect(buttonsOf('done')).toEqual(['Reactivate', 'Delete']);
-      expect(buttonsOf('dropped')).toEqual(['Reactivate', 'Delete']);
+      expect(buttonsOf('ftp')).toEqual([
+        'Mark achieved',
+        'Drop',
+        'Make main goal',
+        'Edit',
+        'Delete',
+      ]);
+      expect(buttonsOf('main')).toEqual([
+        'Mark achieved',
+        'Drop',
+        'Make secondary',
+        'Edit',
+        'Delete',
+      ]);
+      expect(buttonsOf('done')).toEqual(['Reactivate', 'Edit', 'Delete']);
+      expect(buttonsOf('dropped')).toEqual(['Reactivate', 'Edit', 'Delete']);
     });
 
     it('names the goal in every button for assistive technology', () => {
@@ -305,7 +317,7 @@ describe('GoalsPage', () => {
       await click(button('Mark Raise FTP as achieved'));
 
       expect(card('ftp').textContent).toContain('Achieved');
-      expect(buttonsOf('ftp')).toEqual(['Reactivate', 'Delete']);
+      expect(buttonsOf('ftp')).toEqual(['Reactivate', 'Edit', 'Delete']);
     });
 
     it('lets a main goal step down', async () => {
@@ -448,6 +460,193 @@ describe('GoalsPage', () => {
       pending.resolve(updated(FTP));
       await settle(fixture);
       expect(Array.from(page.querySelectorAll('button')).some((b) => b.disabled)).toBe(false);
+    });
+  });
+
+  describe('adding and editing', () => {
+    const SAVED_GOAL = goal({ id: 'new', title: 'New goal' });
+    const formTitle = () => page.querySelector<HTMLInputElement>('#goal-title');
+
+    async function fillAndSave(title: string): Promise<void> {
+      typeInto(page, '#goal-title', title);
+      typeInto(page, '#goal-date', '2027-09-26');
+      const discipline = query<HTMLSelectElement>(page, '#goal-discipline');
+      discipline.value = 'running';
+      discipline.dispatchEvent(new Event('change'));
+      await settle(fixture);
+      query<HTMLFormElement>(page, 'form').dispatchEvent(new Event('submit', { cancelable: true }));
+      await settle(fixture);
+    }
+
+    beforeEach(() => setup(ok(MAIN, FTP)));
+
+    it('offers to add a goal and opens an empty form', async () => {
+      expect(formTitle()).toBeNull();
+
+      await click(buttonWithText('Add goal'));
+
+      expect(formTitle()?.value).toBe('');
+      expect(query(page, 'h2:not(.goal h2)').textContent).toBe('Add goal');
+      expect(page.querySelector('.panel button')).not.toBeNull();
+    });
+
+    it('hides the add button while the form is open', async () => {
+      await click(buttonWithText('Add goal'));
+
+      expect(
+        Array.from(page.querySelectorAll('button')).filter(
+          (b) => b.textContent?.trim() === 'Add goal',
+        ),
+      ).toHaveLength(1);
+      expect(page.querySelector('p > button.primary')).toBeNull();
+    });
+
+    it('closes the form again with Cancel and sends nothing', async () => {
+      await click(buttonWithText('Add goal'));
+
+      await click(buttonWithText('Cancel'));
+
+      expect(formTitle()).toBeNull();
+      expect(api.create).not.toHaveBeenCalled();
+      expect(buttonWithText('Add goal')).toBeTruthy();
+    });
+
+    it('saves a new goal, closes the form, says so and fetches the list again', async () => {
+      api.create.mockResolvedValue({ kind: 'ok', goal: SAVED_GOAL });
+      api.list.mockResolvedValue(ok(MAIN, FTP, SAVED_GOAL));
+      await click(buttonWithText('Add goal'));
+
+      await fillAndSave('New goal');
+
+      expect(api.create).toHaveBeenCalledTimes(1);
+      expect(formTitle()).toBeNull();
+      expect(text()).toContain('The goal was saved.');
+      expect(api.list).toHaveBeenCalledTimes(2);
+      expect(titles()).toEqual(['Berlin Marathon', 'Raise FTP', 'New goal']);
+    });
+
+    it('keeps the form and its entries when the server refuses', async () => {
+      api.create.mockResolvedValue({
+        kind: 'invalid',
+        errors: ['An active race cannot lie in the past.'],
+        fields: { target_date: ['An active race cannot lie in the past.'] },
+      });
+      await click(buttonWithText('Add goal'));
+
+      await fillAndSave('New goal');
+
+      expect(formTitle()?.value).toBe('New goal');
+      expect(alerts()).toEqual(['An active race cannot lie in the past.']);
+      expect(api.list).toHaveBeenCalledTimes(1);
+    });
+
+    it('opens the goal in the form with its data', async () => {
+      await click(button('Edit Raise FTP'));
+
+      expect(query(page, 'h2:not(.goal h2)').textContent).toBe('Edit goal');
+      expect(formTitle()?.value).toBe('Raise FTP');
+    });
+
+    it('sends the changes to that goal', async () => {
+      api.update.mockResolvedValue(updated(FTP));
+      await click(button('Edit Raise FTP'));
+      typeInto(page, '#goal-title', 'Raise FTP to 290');
+      typeInto(page, '#goal-value', '290');
+      query<HTMLFormElement>(page, 'form').dispatchEvent(new Event('submit', { cancelable: true }));
+      await settle(fixture);
+
+      expect(api.update).toHaveBeenCalledTimes(1);
+      expect(api.update.mock.calls[0][0]).toBe('ftp');
+      expect(api.update.mock.calls[0][1]).toMatchObject({
+        title: 'Raise FTP to 290',
+        target_value: 290,
+      });
+      expect(formTitle()).toBeNull();
+      expect(text()).toContain('The goal was saved.');
+    });
+
+    it('shows the form of the goal that was chosen last', async () => {
+      await click(button('Edit Raise FTP'));
+      await click(button('Edit Berlin Marathon'));
+
+      expect(page.querySelectorAll('form')).toHaveLength(1);
+      expect(formTitle()?.value).toBe('Berlin Marathon');
+    });
+
+    it('changes from editing to adding with an empty form', async () => {
+      await click(button('Edit Raise FTP'));
+      await click(buttonWithText('Cancel'));
+      await click(buttonWithText('Add goal'));
+
+      expect(formTitle()?.value).toBe('');
+    });
+
+    it('clears an earlier message when the form opens', async () => {
+      api.update.mockResolvedValue({ kind: 'invalid', errors: ['No.'], fields: {} });
+      await click(button('Drop Raise FTP'));
+      expect(alerts()).toEqual(['No.']);
+
+      await click(buttonWithText('Add goal'));
+
+      expect(alerts()).toEqual([]);
+    });
+
+    it('closes an open delete question when the form for a new goal opens', async () => {
+      await click(button('Delete Raise FTP'));
+      expect(text()).toContain('Delete this goal?');
+
+      await click(buttonWithText('Add goal'));
+
+      expect(text()).not.toContain('Delete this goal?');
+    });
+
+    it('clears an earlier message when a goal is opened for editing', async () => {
+      api.update.mockResolvedValue({ kind: 'invalid', errors: ['No.'], fields: {} });
+      await click(button('Drop Raise FTP'));
+      expect(alerts()).toEqual(['No.']);
+
+      await click(button('Edit Berlin Marathon'));
+
+      expect(alerts()).toEqual([]);
+    });
+
+    it('closes an open delete question when the form opens', async () => {
+      await click(button('Delete Raise FTP'));
+      expect(text()).toContain('Delete this goal?');
+
+      await click(button('Edit Berlin Marathon'));
+
+      expect(text()).not.toContain('Delete this goal?');
+    });
+
+    it('says when the goal being edited is gone, closes the form and refreshes', async () => {
+      api.update.mockResolvedValue({ kind: 'not_found' });
+      api.list.mockResolvedValue(ok(MAIN));
+      await click(button('Edit Raise FTP'));
+      query<HTMLFormElement>(page, 'form').dispatchEvent(new Event('submit', { cancelable: true }));
+      await settle(fixture);
+
+      expect(formTitle()).toBeNull();
+      expect(alerts()).toEqual(['That goal does not exist any more.']);
+      expect(titles()).toEqual(['Berlin Marathon']);
+    });
+
+    it('shows the sign-in note when the session ended while saving', async () => {
+      api.update.mockResolvedValue({ kind: 'forbidden' });
+      await click(button('Edit Raise FTP'));
+      query<HTMLFormElement>(page, 'form').dispatchEvent(new Event('submit', { cancelable: true }));
+      await settle(fixture);
+
+      expect(alerts()).toEqual(['Your session has ended. Please sign in again.']);
+      expect(formTitle()).toBeNull();
+    });
+
+    it('offers no "Add goal" on an empty list without it', async () => {
+      TestBed.resetTestingModule();
+      await setup(ok());
+
+      expect(text()).toContain('You have no goals yet.');
+      expect(buttonWithText('Add goal')).toBeTruthy();
     });
   });
 

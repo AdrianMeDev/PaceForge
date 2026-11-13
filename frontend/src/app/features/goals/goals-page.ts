@@ -1,8 +1,9 @@
 import { DatePipe } from '@angular/common';
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { GoalsApi } from '../../core/goals/goals-api';
 import { Goal, GoalChanges, GoalStatus } from '../../core/goals/goals-models';
+import { GoalForm } from './goal-form';
 import {
   KIND_LABELS,
   PRIORITY_LABELS,
@@ -31,7 +32,7 @@ const NOTICES: Record<GoalStatus, string> = {
  */
 @Component({
   selector: 'app-goals-page',
-  imports: [RouterLink, DatePipe],
+  imports: [RouterLink, DatePipe, GoalForm],
   templateUrl: './goals-page.html',
   styleUrls: ['../auth/auth-form.css', './goals-page.css'],
 })
@@ -45,6 +46,13 @@ export class GoalsPage implements OnInit {
   protected readonly notice = signal<string | null>(null);
   /** The id of the goal that is about to be deleted, waiting for the answer to "Are you sure?". */
   protected readonly confirming = signal<string | null>(null);
+
+  /** `closed`, `new` (a goal is being added) or the id of the goal being changed. */
+  protected readonly form = signal<string>('closed');
+  protected readonly formKeys = computed(() => (this.form() === 'closed' ? [] : [this.form()]));
+  protected readonly editing = computed(
+    () => this.goals().find((goal) => goal.id === this.form()) ?? null,
+  );
 
   protected readonly kindLabel = KIND_LABELS;
   protected readonly priorityLabel = PRIORITY_LABELS;
@@ -81,6 +89,41 @@ export class GoalsPage implements OnInit {
 
   protected makeSecondary(goal: Goal): Promise<void> {
     return this.change(goal, { priority: 'secondary' }, 'The goal is now a secondary goal.');
+  }
+
+  protected openAdd(): void {
+    this.clearMessages();
+    this.confirming.set(null);
+    this.form.set('new');
+  }
+
+  protected openEdit(goal: Goal): void {
+    this.clearMessages();
+    this.confirming.set(null);
+    this.form.set(goal.id);
+  }
+
+  protected closeForm(): void {
+    this.form.set('closed');
+  }
+
+  protected async saved(): Promise<void> {
+    this.form.set('closed');
+    this.clearMessages();
+    this.notice.set('The goal was saved.');
+    await this.refresh();
+  }
+
+  protected async gone(): Promise<void> {
+    this.form.set('closed');
+    this.clearMessages();
+    this.errors.set([GONE]);
+    await this.refresh();
+  }
+
+  protected signedOut(): void {
+    this.form.set('closed');
+    this.view.set('signed_out');
   }
 
   protected askDelete(goal: Goal): void {

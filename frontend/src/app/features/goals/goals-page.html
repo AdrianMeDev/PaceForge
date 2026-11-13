@@ -21,6 +21,22 @@
         <p class="notice" role="status">{{ text }}</p>
       }
 
+      @for (key of formKeys(); track key) {
+        <app-goal-form
+          [goal]="editing()"
+          (saved)="saved()"
+          (cancelled)="closeForm()"
+          (signedOut)="signedOut()"
+          (gone)="gone()"
+        />
+      } @empty {
+        <p>
+          <button type="button" class="primary" [disabled]="busy()" (click)="openAdd()">
+            Add goal
+          </button>
+        </p>
+      }
+
       @if (goals().length === 0) {
         <p class="hint">You have no goals yet.</p>
       } @else {
@@ -125,6 +141,15 @@
                       Reactivate
                     </button>
                   }
+                  <button
+                    type="button"
+                    class="link"
+                    [disabled]="busy()"
+                    [attr.aria-label]="'Edit ' + goal.title"
+                    (click)="openEdit(goal)"
+                  >
+                    Edit
+                  </button>
                   <button
                     type="button"
                     class="link"
