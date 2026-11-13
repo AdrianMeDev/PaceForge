@@ -6,6 +6,7 @@ Every function acts on the values of the user it is given and on nothing else.
 """
 
 import math
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -31,11 +32,22 @@ class Value:
     updated_at: datetime
 
 
-def candidates(user: User, sport: str, metric: str) -> list[Value]:
-    """Every value the user has for this threshold, the one that counts first."""
-    rows = ThresholdValue.objects.for_user(user).filter(sport=sport, metric=metric)
+def _in_order(rows: Iterable[ThresholdValue]) -> list[Value]:
     values = [Value(row.value, row.source, row.basis, row.updated_at) for row in rows]
     return sorted(values, key=lambda candidate: PRIORITY.index(candidate.source))
+
+
+def candidates(user: User, sport: str, metric: str) -> list[Value]:
+    """Every value the user has for this threshold, the one that counts first."""
+    return _in_order(ThresholdValue.objects.for_user(user).filter(sport=sport, metric=metric))
+
+
+def all_candidates(user: User) -> dict[tuple[str, str], list[Value]]:
+    """The candidates of every threshold the user has a value for, with one query."""
+    grouped: dict[tuple[str, str], list[ThresholdValue]] = {}
+    for row in ThresholdValue.objects.for_user(user):
+        grouped.setdefault((row.sport, row.metric), []).append(row)
+    return {key: _in_order(rows) for key, rows in grouped.items()}
 
 
 def effective(user: User, sport: str, metric: str) -> Value | None:
