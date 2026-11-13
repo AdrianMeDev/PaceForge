@@ -20,6 +20,7 @@ describe('Shell', () => {
           { path: '', pathMatch: 'full', component: Blank },
           { path: 'activities', component: Blank },
           { path: 'goals', component: Blank },
+          { path: 'availability', component: Blank },
           { path: 'settings/profile', component: Blank },
           { path: 'settings/security', component: Blank },
           { path: 'settings/connections', component: Blank },
@@ -64,13 +65,14 @@ describe('Shell', () => {
         a.getAttribute('href'),
       ]);
 
-    it('links to the dashboard, the activities, the goals, the profile, the security page and the connections page', async () => {
+    it('links to the dashboard, the activities, the goals, the training time, the profile, the security page and the connections page', async () => {
       const { page } = await setup();
 
       expect(links(page)).toEqual([
         ['Dashboard', '/'],
         ['Activities', '/activities'],
         ['Goals', '/goals'],
+        ['Training time', '/availability'],
         ['Profile', '/settings/profile'],
         ['Security', '/settings/security'],
         ['Connections', '/settings/connections'],
@@ -85,6 +87,7 @@ describe('Shell', () => {
         ['Dashboard', '/'],
         ['Activities', '/activities'],
         ['Goals', '/goals'],
+        ['Training time', '/availability'],
         ['Profile', '/settings/profile'],
         ['Security', '/settings/security'],
         ['Connections', '/settings/connections'],
@@ -161,6 +164,29 @@ describe('Shell', () => {
         (a.textContent ?? '').trim(),
       );
       expect(current).toEqual(['Goals']);
+    });
+
+    it('shows the training time link to everyone, administrators without two-factor included', async () => {
+      for (const user of [ADA, { ...ADA, is_staff: true, mfa_setup_required: true }]) {
+        const { page, fixture } = await setup(user);
+
+        expect(links(page).map(([label]) => label)).toContain('Training time');
+        fixture.destroy();
+        TestBed.resetTestingModule();
+      }
+    });
+
+    it('marks the training time link while that page is open and nothing else', async () => {
+      const { fixture, page, navigate } = await setup();
+      navigate.mockRestore(); // these tests need real navigation
+
+      await TestBed.inject(Router).navigateByUrl('/availability');
+      await fixture.whenStable();
+
+      const current = Array.from(page.querySelectorAll('nav a[aria-current="page"]')).map((a) =>
+        (a.textContent ?? '').trim(),
+      );
+      expect(current).toEqual(['Training time']);
     });
 
     it('shows the profile link to everyone, administrators without two-factor included', async () => {

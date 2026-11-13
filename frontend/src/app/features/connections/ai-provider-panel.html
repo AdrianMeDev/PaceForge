@@ -1,0 +1,211 @@
+<div class="panel">
+  <h2>AI coach</h2>
+  <p class="hint">
+    The coach works with your own AI account. Your key is stored encrypted and never shown again.
+    Checking the connection sends one short test message and nothing about your training.
+  </p>
+
+  @switch (view()) {
+    @case ('loading') {
+      <p role="status">Loading…</p>
+    }
+    @case ('unreachable') {
+      <p class="alert" role="alert">Your AI provider could not be loaded.</p>
+      <p><button type="button" class="primary" (click)="load()">Try again</button></p>
+    }
+    @case ('ready') {
+      @for (message of errors(); track $index) {
+        <p class="alert" role="alert">{{ message }}</p>
+      }
+      @if (notice(); as text) {
+        <p class="notice" role="status">{{ text }}</p>
+      }
+
+      @if (state(); as current) {
+        @if (current.configured && current.provider && current.status) {
+          <dl class="state">
+            <dt>Provider</dt>
+            <dd data-testid="provider">{{ providerLabel[current.provider] }}</dd>
+            <dt>Model</dt>
+            <dd data-testid="model">{{ current.model }}</dd>
+            @if (current.base_url) {
+              <dt>Address</dt>
+              <dd data-testid="address">{{ current.base_url }}</dd>
+            }
+            <dt>Key</dt>
+            <dd data-testid="key">{{ current.has_key ? 'Stored' : 'None' }}</dd>
+            <dt>Status</dt>
+            <dd data-testid="status">{{ statusText[current.status] }}</dd>
+            <dt>Last checked</dt>
+            <dd data-testid="checked">
+              {{ current.last_checked_at ? (current.last_checked_at | date: 'medium') : 'Never' }}
+            </dd>
+            <dt>Last success</dt>
+            <dd data-testid="success">
+              {{ current.last_success_at ? (current.last_success_at | date: 'medium') : 'Never' }}
+            </dd>
+            <dt>Last {{ current.usage.days }} days</dt>
+            <dd data-testid="usage">
+              {{ current.usage.calls | number: '1.0-0' }}
+              {{ current.usage.calls === 1 ? 'call' : 'calls' }},
+              {{ current.usage.input_tokens | number: '1.0-0' }} input and
+              {{ current.usage.output_tokens | number: '1.0-0' }} output tokens
+            </dd>
+          </dl>
+
+          @if (confirmingRemoval()) {
+            <div class="confirm" role="group" aria-label="Remove the AI provider">
+              <p>
+                Remove the AI provider? The stored key is deleted from PaceForge. To make the key
+                itself unusable, delete it with your provider.
+              </p>
+              <div class="actions">
+                <button type="button" class="primary" [disabled]="busy()" (click)="remove()">
+                  Yes, remove
+                </button>
+                <button type="button" class="link" (click)="cancelRemoval()">Cancel</button>
+              </div>
+            </div>
+          } @else {
+            <div class="actions">
+              <button type="button" class="secondary" [disabled]="busy()" (click)="check()">
+                Check connection
+              </button>
+              <button type="button" class="secondary" [disabled]="busy()" (click)="askRemoval()">
+                Remove
+              </button>
+            </div>
+            @if (unsaved()) {
+              <p class="hint" data-testid="unsaved">
+                You have changes that are not saved. The check uses the saved setup.
+              </p>
+            }
+          }
+        } @else {
+          <p class="hint" data-testid="none">No AI provider set up yet.</p>
+        }
+
+        <form novalidate (submit)="save($event)">
+          <div class="field">
+            <label for="ai-provider">Provider</label>
+            <select
+              id="ai-provider"
+              [attr.aria-invalid]="fieldErrors()['provider'] ? true : null"
+              (change)="chooseProvider(read($event))"
+            >
+              @for (kind of providers(); track kind) {
+                <option [value]="kind" [selected]="provider() === kind">
+                  {{ providerLabel[kind] }}
+                </option>
+              }
+            </select>
+            @if (fieldErrors()['provider']; as message) {
+              <p class="field-error" role="alert">{{ message }}</p>
+            }
+          </div>
+
+          <div class="field">
+            <label for="ai-model">Model</label>
+            <input
+              id="ai-model"
+              type="text"
+              autocomplete="off"
+              autocapitalize="off"
+              spellcheck="false"
+              aria-describedby="ai-model-hint"
+              [value]="model()"
+              [attr.aria-invalid]="fieldErrors()['model'] ? true : null"
+              (input)="model.set(read($event))"
+            />
+            @if (fieldErrors()['model']; as message) {
+              <p class="field-error" role="alert">{{ message }}</p>
+            }
+            <p class="hint" id="ai-model-hint">
+              The exact name of the model, as the provider writes it, for example
+              <code>claude-sonnet-5-5</code> or <code>llama3.1:8b</code>.
+            </p>
+          </div>
+
+          @if (provider() === 'openai_compatible') {
+            <div class="field">
+              <label for="ai-base-url">Address of the endpoint</label>
+              <select
+                id="ai-base-url"
+                aria-describedby="ai-base-url-hint"
+                [attr.aria-invalid]="fieldErrors()['base_url'] ? true : null"
+                (change)="baseUrl.set(read($event))"
+              >
+                @for (entry of addresses(); track entry.address) {
+                  <option [value]="entry.address" [selected]="baseUrl() === entry.address">
+                    {{ entry.address }}{{ entry.allowed ? '' : ' (not allowed any more)' }}
+                  </option>
+                }
+              </select>
+              @if (fieldErrors()['base_url']; as message) {
+                <p class="field-error" role="alert">{{ message }}</p>
+              }
+              <p class="hint" id="ai-base-url-hint">
+                Only addresses that the operator of this server has allowed can be chosen.
+              </p>
+            </div>
+          }
+
+          <div class="field">
+            <label for="ai-key">
+              {{
+                provider() === 'anthropic'
+                  ? keyKept()
+                    ? 'Replace the API key'
+                    : 'API key'
+                  : 'API key (optional)'
+              }}
+            </label>
+            <input
+              id="ai-key"
+              type="password"
+              autocomplete="off"
+              autocapitalize="off"
+              spellcheck="false"
+              aria-describedby="ai-key-hint"
+              [value]="apiKey()"
+              [disabled]="removeKey()"
+              [attr.aria-invalid]="fieldErrors()['api_key'] ? true : null"
+              (input)="apiKey.set(read($event))"
+            />
+            @if (fieldErrors()['api_key']; as message) {
+              <p class="field-error" role="alert">{{ message }}</p>
+            }
+            <p class="hint" id="ai-key-hint">
+              @if (keyKept()) {
+                A key is stored. Leave this empty to keep it.
+              } @else if (state()?.has_key) {
+                The stored key is not used for another provider or address. Enter a key if you need
+                one.
+              } @else if (provider() === 'anthropic') {
+                You create the key in the console of your Anthropic account.
+              } @else {
+                Local servers usually need no key.
+              }
+            </p>
+          </div>
+
+          @if (provider() === 'openai_compatible' && keyKept()) {
+            <div class="field check">
+              <input
+                id="ai-remove-key"
+                type="checkbox"
+                [checked]="removeKey()"
+                (change)="setRemoveKey(isChecked($event))"
+              />
+              <label for="ai-remove-key">Remove the stored key</label>
+            </div>
+          }
+
+          <button type="submit" class="primary" [disabled]="busy()">
+            {{ busy() ? 'Working…' : state()?.configured ? 'Save changes' : 'Save' }}
+          </button>
+        </form>
+      }
+    }
+  }
+</div>

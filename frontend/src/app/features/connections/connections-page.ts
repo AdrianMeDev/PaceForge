@@ -4,6 +4,7 @@ import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angula
 import { RouterLink } from '@angular/router';
 import { IntervalsConnectionApi } from '../../core/integrations/intervals-api';
 import { IntervalsConnection } from '../../core/integrations/intervals-models';
+import { AiProviderPanel } from './ai-provider-panel';
 
 type View = 'loading' | 'unreachable' | 'ready' | 'signed_out';
 
@@ -17,7 +18,7 @@ const RATE_LIMIT = 'Too many attempts. Please wait a minute and try again.';
  */
 @Component({
   selector: 'app-connections-page',
-  imports: [ReactiveFormsModule, RouterLink, DatePipe],
+  imports: [ReactiveFormsModule, RouterLink, DatePipe, AiProviderPanel],
   templateUrl: './connections-page.html',
   styleUrls: ['../auth/auth-form.css', './connections-page.css'],
 })
@@ -133,6 +134,11 @@ export class ConnectionsPage implements OnInit {
     } finally {
       this.busy.set(false);
     }
+  }
+
+  /** The AI provider panel found the session gone. */
+  protected endSession(): void {
+    this.view.set('signed_out');
   }
 
   protected askRemoval(): void {

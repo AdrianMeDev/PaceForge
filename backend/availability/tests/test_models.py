@@ -1,0 +1,281 @@
+from datetime import date, timedelta
+from typing import Any
+
+import pytest
+from django.contrib.auth.models import AnonymousUser
+from django.core.exceptions import ValidationError
+from django.db import IntegrityError, transaction
+
+from accounts.models import User
+from availability.models import (
+    DAY_MINUTES_MAX,
+    LIMITATIONS_MAX,
+    NOTE_MAX,
+    PERIOD_MAX_DAYS,
+    WEEK_MINUTES_MAX,
+    AvailabilitySettings,
+    UnavailablePeriod,
+    WeekdayMinutes,
+)
+
+pytestmark = pytest.mark.django_db
+
+DAY = date(2027, 7, 12)
+
+
+@pytest.fixture
+def alice() -> User:
+    return User.objects.create_user("alice@example.com")
+
+
+@pytest.fixture
+def bob() -> User:
+    return User.objects.create_user("bob@example.com")
+
+
+def period(**fields: Any) -> dict[str, Any]:
+    return {"kind": "vacation", "start_date": DAY, "end_date": DAY + timedelta(days=13), **fields}
+
+
+def check(model: type[Any], owner: User, **fields: Any) -> None:
+    model(owner=owner, **fields).full_clean(exclude=["owner"])
+
+
+def refused(model: type[Any], owner: User, field: str, **fields: Any) -> None:
+    with pytest.raises(ValidationError) as raised:
+        check(model, owner, **fields)
+    assert field in raised.value.message_dict, raised.value.message_dict
+
+
+def rejected_by_database(model: type[Any], **fields: Any) -> str:
+    with pytest.raises(IntegrityError) as raised, transaction.atomic():
+        model.objects.create(**fields)
+    return str(raised.value)
+
+
+class TestLimits:
+    def test_the_limits_are_the_ones_the_documentation_names(self) -> None:
+        # Written out on purpose: the other tests read the constants and would follow a change.
+        assert DAY_MINUTES_MAX == 1440
+        assert WEEK_MINUTES_MAX == 10080
+        assert LIMITATIONS_MAX == 1000
+        assert NOTE_MAX == 200
+        assert PERIOD_MAX_DAYS == 366
+
+
+class TestSettings:
+    @pytest.mark.parametrize(
+        "fields",
+        [
+            {},
+            {"weekly_budget_minutes": 0},
+            {"weekly_budget_minutes": 360},
+            {"weekly_budget_minutes": WEEK_MINUTES_MAX},
+            {"limitations": "Knee: no running on consecutive days"},
+            {"limitations": "x" * LIMITATIONS_MAX},
+        ],
+    )
+    def test_valid_settings(self, alice: User, fields: dict[str, Any]) -> None:
+        check(AvailabilitySettings, alice, **fields)
+
+    def test_defaults_are_no_budget_and_no_limitations(self, alice: User) -> None:
+        settings = AvailabilitySettings.objects.create(owner=alice)
+
+        assert settings.weekly_budget_minutes is None
+        assert settings.limitations == ""
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("weekly_budget_minutes", WEEK_MINUTES_MAX + 1),
+            ("weekly_budget_minutes", -1),
+            ("limitations", "x" * (LIMITATIONS_MAX + 1)),
+        ],
+    )
+    def test_out_of_range_values_are_refused(self, alice: User, field: str, value: Any) -> None:
+        refused(AvailabilitySettings, alice, field, **{field: value})
+
+    def test_the_database_refuses_a_budget_above_a_week(self, alice: User) -> None:
+        message = rejected_by_database(
+            AvailabilitySettings, owner=alice, weekly_budget_minutes=WEEK_MINUTES_MAX + 1
+        )
+
+        assert "availability_budget_in_range" in message
+
+    def test_a_user_has_one_settings_row(self, alice: User, bob: User) -> None:
+        AvailabilitySettings.objects.create(owner=alice)
+        AvailabilitySettings.objects.create(owner=bob)
+
+        message = rejected_by_database(AvailabilitySettings, owner=alice)
+
+        assert "availability_one_settings_per_owner" in message
+
+    def test_the_text_does_not_show_the_limitations(self, alice: User) -> None:
+        settings = AvailabilitySettings.objects.create(owner=alice, limitations="secret knee")
+
+        assert "secret" not in str(settings)
+        assert str(alice.pk) in str(settings)
+
+
+class TestWeekdays:
+    @pytest.mark.parametrize("weekday", range(7))
+    def test_every_weekday_is_valid(self, alice: User, weekday: int) -> None:
+        check(WeekdayMinutes, alice, weekday=weekday, minutes=60)
+
+    @pytest.mark.parametrize("minutes", [0, 1, 90, DAY_MINUTES_MAX])
+    def test_valid_minutes(self, alice: User, minutes: int) -> None:
+        check(WeekdayMinutes, alice, weekday=0, minutes=minutes)
+
+    @pytest.mark.parametrize("weekday", [-1, 7, 12])
+    def test_a_day_that_is_no_weekday_is_refused(self, alice: User, weekday: int) -> None:
+        refused(WeekdayMinutes, alice, "weekday", weekday=weekday, minutes=60)
+
+    @pytest.mark.parametrize("minutes", [-1, DAY_MINUTES_MAX + 1, 5000])
+    def test_more_than_a_day_is_refused(self, alice: User, minutes: int) -> None:
+        refused(WeekdayMinutes, alice, "minutes", weekday=0, minutes=minutes)
+
+    def test_the_database_refuses_more_than_a_day(self, alice: User) -> None:
+        message = rejected_by_database(
+            WeekdayMinutes, owner=alice, weekday=0, minutes=DAY_MINUTES_MAX + 1
+        )
+
+        assert "availability_minutes_in_range" in message
+
+    def test_the_database_refuses_a_day_that_is_no_weekday(self, alice: User) -> None:
+        message = rejected_by_database(WeekdayMinutes, owner=alice, weekday=7, minutes=60)
+
+        assert "availability_weekday_in_range" in message
+
+    def test_a_weekday_is_stored_once_per_user(self, alice: User, bob: User) -> None:
+        WeekdayMinutes.objects.create(owner=alice, weekday=2, minutes=60)
+        WeekdayMinutes.objects.create(owner=bob, weekday=2, minutes=30)
+
+        message = rejected_by_database(WeekdayMinutes, owner=alice, weekday=2, minutes=90)
+
+        assert "availability_one_per_day" in message
+
+    def test_minutes_default_to_none(self, alice: User) -> None:
+        assert WeekdayMinutes.objects.create(owner=alice, weekday=0).minutes == 0
+
+    def test_the_text_names_the_day(self, alice: User) -> None:
+        text = str(WeekdayMinutes(owner=alice, weekday=4, minutes=60))
+
+        assert text.startswith("Friday")
+        assert str(alice.pk) in text
+
+
+class TestPeriods:
+    @pytest.mark.parametrize("kind", ["vacation", "illness", "other"])
+    def test_every_kind_is_valid(self, alice: User, kind: str) -> None:
+        check(UnavailablePeriod, alice, **period(kind=kind))
+
+    def test_a_single_day_is_a_period(self, alice: User) -> None:
+        check(UnavailablePeriod, alice, **period(end_date=DAY))
+
+    def test_a_note_is_optional_and_limited(self, alice: User) -> None:
+        check(UnavailablePeriod, alice, **period(note=""))
+        check(UnavailablePeriod, alice, **period(note="x" * NOTE_MAX))
+        refused(UnavailablePeriod, alice, "note", **period(note="x" * (NOTE_MAX + 1)))
+
+    @pytest.mark.parametrize("kind", ["", "holiday", "VACATION"])
+    def test_an_unknown_kind_is_refused(self, alice: User, kind: str) -> None:
+        refused(UnavailablePeriod, alice, "kind", **period(kind=kind))
+
+    def test_the_end_cannot_be_before_the_start(self, alice: User) -> None:
+        refused(UnavailablePeriod, alice, "end_date", **period(end_date=DAY - timedelta(days=1)))
+
+    def test_a_period_may_last_366_days_but_not_more(self, alice: User) -> None:
+        check(
+            UnavailablePeriod,
+            alice,
+            **period(end_date=DAY + timedelta(days=PERIOD_MAX_DAYS - 1)),
+        )
+        refused(
+            UnavailablePeriod,
+            alice,
+            "end_date",
+            **period(end_date=DAY + timedelta(days=PERIOD_MAX_DAYS)),
+        )
+
+    def test_dates_are_required(self, alice: User) -> None:
+        refused(UnavailablePeriod, alice, "start_date", **period(start_date=None))
+        refused(UnavailablePeriod, alice, "end_date", **period(end_date=None))
+
+    def test_the_database_refuses_an_end_before_the_start(self, alice: User) -> None:
+        message = rejected_by_database(
+            UnavailablePeriod,
+            owner=alice,
+            **period(end_date=DAY - timedelta(days=1)),
+        )
+
+        assert "availability_period_ends_late" in message
+
+    def test_the_database_enforces_the_longest_period_to_the_day(self, alice: User) -> None:
+        UnavailablePeriod.objects.create(
+            owner=alice, **period(end_date=DAY + timedelta(days=PERIOD_MAX_DAYS - 1))
+        )
+
+        message = rejected_by_database(
+            UnavailablePeriod,
+            owner=alice,
+            **period(end_date=DAY + timedelta(days=PERIOD_MAX_DAYS)),
+        )
+
+        assert "availability_period_not_too_long" in message
+
+    def test_periods_may_overlap(self, alice: User) -> None:
+        UnavailablePeriod.objects.create(owner=alice, **period())
+        UnavailablePeriod.objects.create(owner=alice, **period(kind="illness", end_date=DAY))
+
+        assert UnavailablePeriod.objects.for_user(alice).count() == 2
+
+    def test_the_id_is_not_a_counter(self, alice: User) -> None:
+        first = UnavailablePeriod.objects.create(owner=alice, **period())
+        second = UnavailablePeriod.objects.create(owner=alice, **period())
+
+        assert first.pk != second.pk
+        assert first.pk.version == 7
+
+    def test_the_text_does_not_show_the_note(self, alice: User) -> None:
+        text = str(UnavailablePeriod(owner=alice, **period(note="secret diagnosis")))
+
+        assert "secret" not in text
+        assert "vacation" in text
+        assert str(alice.pk) in text
+
+
+class TestOwnership:
+    def test_for_user_shows_only_the_own_rows(self, alice: User, bob: User) -> None:
+        mine = UnavailablePeriod.objects.create(owner=alice, **period())
+        UnavailablePeriod.objects.create(owner=bob, **period())
+        my_day = WeekdayMinutes.objects.create(owner=alice, weekday=0, minutes=60)
+        WeekdayMinutes.objects.create(owner=bob, weekday=0, minutes=30)
+        my_settings = AvailabilitySettings.objects.create(owner=alice)
+        AvailabilitySettings.objects.create(owner=bob)
+
+        assert list(UnavailablePeriod.objects.for_user(alice)) == [mine]
+        assert list(WeekdayMinutes.objects.for_user(alice)) == [my_day]
+        assert list(AvailabilitySettings.objects.for_user(alice)) == [my_settings]
+
+    def test_an_anonymous_user_owns_nothing(self, alice: User) -> None:
+        UnavailablePeriod.objects.create(owner=alice, **period())
+        WeekdayMinutes.objects.create(owner=alice, weekday=0, minutes=60)
+        AvailabilitySettings.objects.create(owner=alice)
+
+        anonymous = AnonymousUser()
+
+        assert not UnavailablePeriod.objects.for_user(anonymous).exists()
+        assert not WeekdayMinutes.objects.for_user(anonymous).exists()
+        assert not AvailabilitySettings.objects.for_user(anonymous).exists()
+
+    def test_deleting_a_user_deletes_their_rows(self, alice: User, bob: User) -> None:
+        UnavailablePeriod.objects.create(owner=alice, **period())
+        WeekdayMinutes.objects.create(owner=alice, weekday=0, minutes=60)
+        AvailabilitySettings.objects.create(owner=alice)
+        UnavailablePeriod.objects.create(owner=bob, **period())
+
+        alice.delete()
+
+        assert UnavailablePeriod.objects.count() == 1
+        assert WeekdayMinutes.objects.count() == 0
+        assert AvailabilitySettings.objects.count() == 0

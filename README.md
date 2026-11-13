@@ -9,11 +9,15 @@ password reset, two-factor authentication (authenticator app plus recovery codes
 administrators), a personal Intervals.icu connection with an API key (stored encrypted), importing
 activities from FIT and TCX files, an athlete profile with your time zone, your thresholds (typed in,
 read from Intervals.icu or estimated from your activities) and the training zones that follow from
-them, goals (races, threshold targets and general goals, with one main goal), and the
-data-isolation foundation the training features will build on.
+them, goals (races, threshold targets and general goals, with one main goal), your training time
+(minutes per weekday, a weekly budget, limitations, vacation and illness), your own AI provider
+([Anthropic or an OpenAI-compatible endpoint](#ai-coach-bring-your-own-key), key stored encrypted,
+with a connection check and a usage overview), and the data-isolation foundation the training
+features will build on.
 **Not there yet:** reading activities from Intervals.icu over that connection (it can only ever
 work for activities that do not come from Strava, see [Activities](#activities)), sending
-invitations by email (the administrator hands the link on) and all coaching features. Before an instance is exposed to the
+invitations by email (the administrator hands the link on) and the coach itself: the AI provider
+can be set up and checked, but nothing plans with it yet. Before an instance is exposed to the
 internet, read [Instance key](#instance-key): secrets in the database are encrypted, and the key
 has to be backed up apart from the database.
 
@@ -168,6 +172,103 @@ and invite a few others. The findings behind this are in
 - **If the instance key is lost,** the stored keys can no longer be used. The page still opens and
   shows **Needs attention** after a check, and each user pastes their key again.
 - `INTERVALS_API_BASE_URL` (see [Configuration](#configuration)) is only for tests and fake servers.
+- Your AI provider is set up on the same page, in its own section: see
+  [AI coach](#ai-coach-bring-your-own-key).
+
+## AI coach (bring your own key)
+
+The coach that plans your training will use an AI model. PaceForge does not ship one: every user
+connects **their own** AI account on the **Connections** page (`/settings/connections`, section
+**AI coach**) and pays their provider directly. At the moment you can set the provider up, check
+that it works and see what you have used; nothing else calls it yet, because the planning itself
+is the next step.
+
+**Two kinds of provider.**
+
+- **Anthropic** (Claude): you need an API key from the console of your Anthropic account and the
+  name of a model, for example `claude-sonnet-5-5`.
+- **OpenAI-compatible:** OpenAI itself and everything that copies its chat completions API, such as
+  Ollama or llama.cpp for a model on your own hardware. You need the model name (`gpt-4o`,
+  `llama3.1:8b` ...) and, for OpenAI, a key; local servers usually need none. The **address** is
+  not typed in: it is chosen from the list the operator has allowed (see below), and the choice
+  only appears when that list is not empty.
+
+**Setting it up.**
+
+1. Choose the provider, enter the model name exactly as the provider writes it (letters, digits and
+   `. _ : / -`, up to 100 characters) and the key (visible characters without spaces, up to 500;
+   the field is a password field and never prefilled). Press **Save**.
+2. Press **Check connection**. PaceForge sends one request with the fixed text `Reply with the
+   single word: ok` (at most 16 tokens, no system prompt) and **nothing about you or your
+   training**, and shows how it went.
+3. Change anything later by saving again. Any change of provider, model, address or key sets the
+   status back to **Not checked yet**; saving the very same setup again changes nothing. The check
+   always uses the **saved** setup (the page says when you have unsaved changes).
+4. **Remove** deletes the setup and the stored key after a question. PaceForge cannot revoke the key
+   at your provider; delete it there if it should stop working.
+
+**The status** shows what was learned at the last call:
+
+| Status                                             | Meaning                                                          |
+| -------------------------------------------------- | ---------------------------------------------------------------- |
+| Not checked yet                                    | Nothing was tried since the setup was saved or changed.          |
+| Connected                                          | The last call worked.                                            |
+| The provider did not accept the key                | The provider answered 401 or 403, or the stored key cannot be decrypted. |
+| The provider could not be reached                  | Network error, timeout (60 seconds per step), 408 or a 5xx answer. |
+
+Two outcomes leave the status as it was and only move the time of the last check: **rate limited**
+(the page adds how long the provider asked to wait, up to an hour) and an **unexpected answer**
+(for example a wrong model name: the key may be fine, and it is no outage). Each outcome has a
+fixed text on the page; nothing the provider says is shown or stored.
+
+**The key.**
+
+- It is **write-only**: stored encrypted with the [instance key](#instance-key), sent to the
+  provider only in the header of the request, never shown again (not even in part), not returned by
+  any endpoint, not in logs and not in error messages. The page tells you only whether a key is
+  stored.
+- A stored key is kept while you change only the model. It is **never carried to another provider
+  or address**: if you switch, you enter a key again (Anthropic needs one; an OpenAI-compatible
+  endpoint can do without, and **Remove the stored key** drops it).
+- If the instance key is lost, a stored key can no longer be read. It counts as none: the next
+  check marks the key as refused (without asking the provider) and you enter the key again.
+
+**What is stored about your calls.** One record per request that reached the provider: provider,
+model, purpose, how it ended (success, key refused, rate limited, unavailable, unexpected), the
+tokens the provider counted (if it said) and the time. **Never** the prompt, the answer or an error
+text. The page shows the sum of the last 30 days: calls (failed ones included), input and output
+tokens. A request that was refused before it was sent (the address is no longer allowed) is not
+counted. Costs and budgets are not calculated yet. The records stay when you remove the setup.
+
+**Limits.** Checks are limited to 10 per minute per user, with a counter of their own (it does not
+use up the Intervals.icu limit). An answer larger than 2 MB is refused. Redirects are not followed,
+so the key can never be sent to another address.
+
+**For operators: the allowed addresses.** A user must not be able to point the server at an
+arbitrary address, because that would let it query internal systems. So OpenAI-compatible
+endpoints can only be chosen from `AI_ALLOWED_BASE_URLS`, a comma-separated list in `.env`. It is
+empty by default: no OpenAI-compatible endpoint is offered. Each entry is a base URL (for
+OpenAI-style APIs it usually ends in `/v1`) with `http://` or `https://`, a host, an optional port
+and path, and **no user name, password, query or fragment**; a bad entry stops Django at startup (the message names the entry,
+not its text). Entries are compared in a normal form (lower-case host, no trailing slash) and a
+user's choice must match one exactly. The list is checked again at every call: if you take an
+address off, it stops working at once, nothing is sent and the user sees that it is no longer
+allowed. Examples:
+
+```
+# OpenAI, and Ollama or llama.cpp on the machine that runs PaceForge
+AI_ALLOWED_BASE_URLS=https://api.openai.com/v1,http://localhost:11434/v1,http://localhost:8080/v1
+```
+
+Inside a container `localhost` is the container itself; use the host name of the other service or of
+the host. Listing an address means that **every user of the instance** may send their prompts there,
+so list only what you trust. `ANTHROPIC_API_BASE_URL` (default `https://api.anthropic.com`) is only
+for tests and fake servers.
+
+**Not verified against real providers yet.** The adapters are tested against local fake servers
+that speak the two formats; the first real connection is up to you. The OpenAI-compatible adapter
+sends `max_tokens`, which local servers and most models accept; a model that insists on another
+name for it would answer with an error, shown as an unexpected answer.
 
 ## Activities
 
@@ -331,8 +432,54 @@ off until you set it.
 **Limits.** At most 30 goals per user (finished ones included), so delete old ones when it is full.
 Titles and notes are shown as plain text, never as markup.
 
-Not there yet: your availability (training time per weekday, holidays, illness), training phases,
-and goals in the coach's context.
+Not there yet: training phases, and goals in the coach's context.
+
+## Training time
+
+The **Training time** page (`/availability`, also in the navigation) tells PaceForge how much time
+you can train. It does not plan anything yet; it is what the planning that follows will check its
+sessions against. Everything here is personal: every user sees and changes only their own, an
+administrator included.
+
+**Per weekday.** Seven fields, Monday first. Enter minutes (`90`) or hours and minutes (`1:30`,
+the minutes always with two digits and below 60); at most 24:00 (1440 minutes) per day. A field you
+leave empty counts as **no time**, and so does a user who has entered nothing: PaceForge never
+assumes that you are free. While you type, the page adds the days up ("Together: 7:30 per week").
+
+**Weekly budget.** Optional, up to 168:00 (10080 minutes). It caps what the days add up to: with
+7:30 in the fields and a budget of 5:00, a week offers 5:00. A budget below the sum is allowed on
+purpose (it is the most you *want* to train) and the page says what it means. Leave the field empty
+for no cap. The budget applies to a week, never to a single day.
+
+**Limitations.** Free text of up to 1000 characters ("no running on consecutive days"). It is kept
+and shown as plain text, never as markup, and nothing interprets it yet; it is there for the coach
+that follows.
+
+**Save** sends the weekdays, the budget and the limitations together. The page checks the limits
+first and names every problem next to its field; if the server still refuses something, its message
+appears in the same place. Nothing is saved until every field is usable.
+
+**Not available.** Below the form, the periods in which you cannot train: **vacation**,
+**illness** or **other**, with a first and a last day (both belong to the period), a note of up to
+200 characters and at most 366 days. A period of one day needs only the first day; the last day
+follows it while it is empty. Periods may overlap, may lie in the past (they stay as a record) and
+there can be at most 100 of them. Going-on and coming periods come first, the nearest first; past
+ones follow, the latest first, marked **Past**; the one that is going on is marked **Now**. Which
+day it is today depends on the time zone in your [profile](#athlete-profile), as with the goals.
+**Delete** removes a period after a question. Changing a period is possible through the API but
+not yet on the page: delete it and add it again.
+
+**What a day or a week offers.** A day inside any period offers no time; every other day offers the
+minutes of its weekday. A week offers its seven days added up, at most the weekly budget. The
+functions `minutes_on` and `minutes_in_week` in `backend/availability/capacity.py` answer this for
+the planning that will use it; they take calendar days, so which day it is stays the caller's
+business.
+
+The API is `GET` and `PATCH` on `/api/availability/` (the weekdays Monday first, the budget, the
+limitations) and `/api/availability/periods/` with list, create, read, change and delete.
+
+Not there yet: using the training time in a plan, time windows within a day, and different time
+per sport.
 
 ## Instance key
 
@@ -387,6 +534,8 @@ Set in `.env` or in the environment. Values without a default are required.
 | `REGISTRATION_MODE`            | `invite_only`                       | `closed`, `invite_only` or `open`. Anything else stops Django at startup.         |
 | `INVITATION_TTL_DAYS`          | `7`                                 | How long an invitation stays valid.                                               |
 | `INTERVALS_API_BASE_URL`       | `https://intervals.icu/api/v1`      | Only for tests or a fake server: where the Intervals.icu API is. `http://` or `https://`. |
+| `AI_ALLOWED_BASE_URLS`         | empty                               | Comma-separated base URLs of OpenAI-compatible AI endpoints that users may choose, e.g. `https://api.openai.com/v1`. Empty: none. A bad entry stops Django at startup, see [AI coach](#ai-coach-bring-your-own-key). |
+| `ANTHROPIC_API_BASE_URL`       | `https://api.anthropic.com`         | Only for tests or a fake server: where the Anthropic API is. `http://` or `https://`. |
 | `ACTIVITY_UPLOAD_MAX_BYTES`    | `26214400` (25 MB)                  | Largest FIT or TCX file accepted for import, in bytes. Must be a positive integer. |
 | `SMTP_HOST`                    | empty                               | Empty: emails are printed to the Django console. Set: they are sent via SMTP.     |
 | `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_USE_TLS` | `587`, empty, empty, `true` | SMTP settings, used when `SMTP_HOST` is set. |
