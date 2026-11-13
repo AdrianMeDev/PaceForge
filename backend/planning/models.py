@@ -5,16 +5,12 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import F, Q
 
-from availability.models import DAY_MINUTES_MAX
 from core.models import OwnedModel
 
-TITLE_MAX = 100
-NOTES_MAX = 500
+from .schema import DURATION_MAX, NOTES_MAX, RATIONALE_MAX, TITLE_MAX, ZONE_COUNT
+
 REASON_MAX = 200
-RATIONALE_MAX = 1000
-# Zones per zone system: the seven power levels, five heart rate zones, five pace zones. The
-# zones themselves are those of ``athletes.zones`` (a test keeps the two in step).
-ZONE_COUNT = {"power": 7, "heart_rate": 5, "pace": 5}
+# The other limits are those of the format in ``planning.schema``, the single source.
 
 
 class WeeklyPlan(OwnedModel):
@@ -142,7 +138,7 @@ class PlannedWorkout(OwnedModel):
             ),
             models.CheckConstraint(condition=~Q(title=""), name="planning_workout_has_a_title"),
             models.CheckConstraint(
-                condition=Q(duration_minutes__gte=1, duration_minutes__lte=DAY_MINUTES_MAX),
+                condition=Q(duration_minutes__gte=1, duration_minutes__lte=DURATION_MAX),
                 name="planning_duration_in_range",
             ),
             models.CheckConstraint(
