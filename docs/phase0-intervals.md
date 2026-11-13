@@ -67,12 +67,43 @@ Base URL `https://intervals.icu/api/v1`. All paths below start with `/athlete/{i
   encrypted, never log it, never send it to the browser or an AI provider, and delete it when the
   connection is removed. Users can invalidate a key by creating a new one in Intervals.icu.
 
+## Activities: what the API gives (checked 2026-11-13)
+
+- **Activities that Intervals.icu received from Strava cannot be read through the API.** The list
+  and the detail call return a stub with five fields (`id`, `icu_athlete_id`, `source: "STRAVA"`,
+  `start_date_local` and a `_note` saying "STRAVA activities are not available via the API");
+  the streams answer 422 "Cannot read Strava activities via the API"; the CSV export has no rows
+  for them. The test account had 50 activities, all from Strava, none readable.
+- **Consequence for the import:** reading activities from Intervals.icu only works for activities
+  that reach it by another route (a device connection such as COROS or Garmin, a file upload).
+  For an athlete whose history arrives through Strava, importing files is the only way in, so the
+  FIT/TCX import comes before the Intervals.icu import.
+- **The CSV export** (`activities.csv`) lists id, start, name, type, moving and elapsed time,
+  distance, elevation gain, speeds, heart rate, cadence, calories, power and load columns; it has
+  not been checked with readable activities yet.
+
+### Real activity files (checked 2026-11-13, no personal values recorded)
+
+| | FIT (COROS, run) | TCX (COROS, run) |
+| --- | --- | --- |
+| Size | 165 KB | 1.5 MB |
+| Content | file type activity, 1 session, 10 laps, about 3900 records, device info | 1 activity, 6 laps, about 3300 trackpoints |
+| Per record | timestamp, distance, heart rate, speed, cadence, power, altitude, GPS position, running dynamics (stance time, vertical oscillation, step length), one developer field | time, distance, heart rate, cadence, altitude, GPS position, speed (in the Garmin ActivityExtension) |
+| Not present | sub sport in the session | power, device details beyond the creator name |
+| Other | manufacturer and product ids, developer data | no `DOCTYPE` or entities |
+
+- The two files are different runs (about 12.8 km and about 10.4 km), both exported from COROS.
+- **For the importer:** every sensor value is optional (it differs by device and file), files can
+  reach several MB, TCX must be parsed safely (refuse `DOCTYPE` and entities), and developer
+  fields in FIT can be ignored.
+
 ## Open checks
 
 - [x] **Zwift:** the test ride reached Zwift (2026-11-13).
 - [x] **COROS:** the test run reached COROS (2026-11-13).
-- [ ] **Activity structure:** look at a real activity (any imported run or ride) to decide which
-      fields the import keeps.
+- [x] **Activity structure:** checked on 2026-11-13. Strava-sourced activities are not readable
+      (see "Activities"); the structure of directly synced activities is still unchecked and only
+      matters for the later Intervals.icu import.
 - [ ] **Rate limits:** find out the limits for personal keys before an automatic sync runs
       against many users.
 
