@@ -112,6 +112,11 @@ INTERVALS_API_BASE_URL = env.str("INTERVALS_API_BASE_URL", default="https://inte
 if urlsplit(INTERVALS_API_BASE_URL).scheme not in {"http", "https"}:
     raise ImproperlyConfigured("INTERVALS_API_BASE_URL must start with http:// or https://")
 
+# The largest activity file (FIT or TCX) that is accepted, in bytes, before it is even parsed.
+ACTIVITY_UPLOAD_MAX_BYTES = env.int("ACTIVITY_UPLOAD_MAX_BYTES", default=25 * 1024 * 1024)
+if ACTIVITY_UPLOAD_MAX_BYTES <= 0:
+    raise ImproperlyConfigured("ACTIVITY_UPLOAD_MAX_BYTES must be a positive integer")
+
 REST_FRAMEWORK = {
     # Session auth enforces CSRF for unsafe methods; every endpoint requires a login by default.
     "DEFAULT_AUTHENTICATION_CLASSES": ["rest_framework.authentication.SessionAuthentication"],
