@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     "core",
     "integrations",
     "activities",
+    "athletes",
 ]
 
 MIDDLEWARE = [

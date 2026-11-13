@@ -524,6 +524,7 @@ dependencies = [
     { name = "djangorestframework" },
     { name = "fitdecode" },
     { name = "psycopg", extra = ["binary"] },
+    { name = "tzdata" },
 ]
 
 [package.dev-dependencies]
@@ -546,6 +547,7 @@ requires-dist = [
     { name = "djangorestframework", specifier = ">=3.18.3" },
     { name = "fitdecode", specifier = ">=0.11.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.9" },
+    { name = "tzdata", specifier = ">=2026.6" },
 ]
 
 [package.metadata.requires-dev]
