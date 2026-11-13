@@ -1,5 +1,6 @@
 import uuid
 from datetime import timedelta
+from typing import Any
 
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -167,6 +168,13 @@ class PlannedWorkout(OwnedModel):
     def __str__(self) -> str:
         # No title and no notes: they are free text and have no business in logs.
         return f"{self.sport} workout of user {self.owner_id} on {self.day}"
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        # A plan that is no draft any more is a record of what was agreed: its workouts are never
+        # added to or changed (a change is a new version of the week).
+        if self.plan.status != WeeklyPlan.Status.DRAFT:
+            raise ValidationError("The workouts of a plan that is not a draft cannot be changed.")
+        super().save(*args, **kwargs)
 
     def clean(self) -> None:
         super().clean()

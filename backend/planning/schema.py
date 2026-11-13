@@ -156,28 +156,30 @@ def to_json(plan: WeekPlan) -> dict[str, Any]:
     return {
         "week_start": plan.week_start.isoformat(),
         "rationale": plan.rationale,
-        "workouts": [
+        "workouts": [workout_to_json(workout) for workout in plan.workouts],
+    }
+
+
+def workout_to_json(workout: Workout) -> dict[str, Any]:
+    """One workout in the format above, with every field written out."""
+    return {
+        "day": workout.day.isoformat(),
+        "sport": workout.sport.value,
+        "title": workout.title,
+        "goal": workout.goal.value,
+        "duration_minutes": workout.duration_minutes,
+        "zone_system": workout.zone_system.value if workout.zone_system else None,
+        "zone": workout.zone,
+        "notes": workout.notes,
+        "segments": [
             {
-                "day": workout.day.isoformat(),
-                "sport": workout.sport.value,
-                "title": workout.title,
-                "goal": workout.goal.value,
-                "duration_minutes": workout.duration_minutes,
-                "zone_system": workout.zone_system.value if workout.zone_system else None,
-                "zone": workout.zone,
-                "notes": workout.notes,
-                "segments": [
-                    {
-                        "kind": segment.kind.value,
-                        "seconds": segment.seconds,
-                        "repeat": segment.repeat,
-                        "zone_system": segment.zone_system.value if segment.zone_system else None,
-                        "zone": segment.zone,
-                    }
-                    for segment in workout.segments
-                ],
+                "kind": segment.kind.value,
+                "seconds": segment.seconds,
+                "repeat": segment.repeat,
+                "zone_system": segment.zone_system.value if segment.zone_system else None,
+                "zone": segment.zone,
             }
-            for workout in plan.workouts
+            for segment in workout.segments
         ],
     }
 

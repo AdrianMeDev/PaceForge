@@ -535,3 +535,37 @@ class TestOwnership:
 
         assert list(PlannedWorkout.objects.all()) == [keep]
         assert WeeklyPlan.objects.count() == 1
+
+
+class TestAPlanThatIsNoDraft:
+    @pytest.mark.parametrize("status", ["confirmed", "superseded", "discarded"])
+    def test_its_workouts_cannot_be_added(self, alice: User, status: str) -> None:
+        stamp = CONFIRMED_AT if status in {"confirmed", "superseded"} else None
+        plan = make_plan(alice, status=status, confirmed_at=stamp)
+
+        with pytest.raises(ValidationError, match="not a draft"):
+            make_workout(plan)
+
+        assert PlannedWorkout.objects.count() == 0
+
+    def test_its_workouts_cannot_be_changed(self, alice: User) -> None:
+        plan = make_plan(alice)
+        workout = make_workout(plan)
+        WeeklyPlan.objects.filter(pk=plan.pk).update(status="confirmed", confirmed_at=CONFIRMED_AT)
+        workout.plan.refresh_from_db()
+
+        workout.title = "Changed"
+        with pytest.raises(ValidationError, match="not a draft"):
+            workout.save()
+
+        workout.refresh_from_db()
+        assert workout.title == "Endurance ride"
+
+    def test_the_workouts_of_a_draft_can_be_added_and_changed(self, alice: User) -> None:
+        workout = make_workout(make_plan(alice))
+
+        workout.title = "Changed"
+        workout.save()
+
+        workout.refresh_from_db()
+        assert workout.title == "Changed"
