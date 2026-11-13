@@ -166,6 +166,23 @@ class TestRules:
         check(alice, **anthropic(model="m" * MODEL_MAX))
         refused(alice, "model", **anthropic(model="m" * (MODEL_MAX + 1)))
 
+    @pytest.mark.parametrize(
+        "key",
+        ["has space", " lead", "trail ", "line\nbreak", "tab\there", "ünï", "k\x00", "k" * 501],
+    )
+    def test_a_key_that_cannot_travel_in_a_header_is_refused(self, alice: User, key: str) -> None:
+        refused(alice, "api_key", **anthropic(api_key=key))
+        refused(alice, "api_key", **compatible(api_key=key))
+
+    @pytest.mark.parametrize("key", ["k", "sk-ant-api03-AbC_dEf-123", "!~", "k" * 500])
+    def test_a_key_of_visible_characters_is_accepted(self, alice: User, key: str) -> None:
+        check(alice, **anthropic(api_key=key))
+
+    def test_the_key_limit_is_written_out_on_purpose(self) -> None:
+        from coach.models import KEY_MAX
+
+        assert KEY_MAX == 500
+
     def test_the_address_has_a_length_limit(self, alice: User, settings: Any) -> None:
         long = "http://localhost/" + "a" * BASE_URL_MAX
         settings.AI_ALLOWED_BASE_URLS = (long,)

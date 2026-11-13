@@ -2,7 +2,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
-from django.db import connection
+from django.core.exceptions import ValidationError
+from django.db import IntegrityError, connection
 from django.db.models import QuerySet
 
 from accounts.models import User
@@ -535,3 +536,57 @@ class TestTheUsageSummary:
 
     def test_the_default_is_thirty_days(self) -> None:
         assert services.USAGE_DAYS == 30
+
+
+class TestSavingTheConfiguration:
+    def save(self, user: User, **fields: Any) -> AIProviderConfiguration:
+        data: dict[str, Any] = {
+            "provider": "anthropic",
+            "model": "claude-sonnet-5-5",
+            "base_url": "",
+            "api_key": KEY,
+        }
+        return services.save_configuration(user, **(data | fields))
+
+    def test_messages_from_the_field_checks_and_from_clean_are_all_kept(
+        self, alice: User, settings: Any
+    ) -> None:
+        settings.AI_ALLOWED_BASE_URLS = ()
+        long_address = "http://localhost/" + "a" * 300
+
+        with pytest.raises(ValidationError) as raised:
+            self.save(alice, provider="openai_compatible", base_url=long_address, api_key="")
+
+        messages = raised.value.message_dict["base_url"]
+        assert len(messages) == 2
+        assert "This address is not allowed on this server." in messages
+
+    def test_a_race_for_the_first_save_is_retried_once(
+        self, alice: User, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        real = services._save
+        calls: list[int] = []
+
+        def lose_the_race(*args: Any, **kwargs: Any) -> AIProviderConfiguration:
+            calls.append(1)
+            if len(calls) == 1:
+                raise IntegrityError("coach_one_provider_per_owner")
+            return real(*args, **kwargs)
+
+        monkeypatch.setattr(services, "_save", lose_the_race)
+
+        config = self.save(alice)
+
+        assert len(calls) == 2
+        assert config.model == "claude-sonnet-5-5"
+
+    def test_a_second_failure_is_not_hidden(
+        self, alice: User, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def always(*args: Any, **kwargs: Any) -> AIProviderConfiguration:
+            raise IntegrityError("coach_one_provider_per_owner")
+
+        monkeypatch.setattr(services, "_save", always)
+
+        with pytest.raises(IntegrityError):
+            self.save(alice)

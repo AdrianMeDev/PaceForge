@@ -1,3 +1,5 @@
+import re
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import RegexValidator
@@ -12,6 +14,9 @@ BASE_URL_MAX = 200
 # Names such as claude-sonnet-5-5, gpt-4o, llama3.1:8b or org/model-name.
 # \Z, not $: a $ also matches in front of a trailing line break.
 MODEL_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._:/-]*\Z"
+# A key travels in an HTTP header: visible ASCII only, no spaces, no line breaks.
+KEY_MAX = 500
+KEY_PATTERN = re.compile(r"[\x21-\x7e]+")
 
 
 class AIProviderConfiguration(OwnedModel):
@@ -76,6 +81,12 @@ class AIProviderConfiguration(OwnedModel):
                 errors["base_url"] = "Choose the address of the endpoint."
             elif self.base_url not in settings.AI_ALLOWED_BASE_URLS:
                 errors["base_url"] = "This address is not allowed on this server."
+        if self.api_key and (
+            len(self.api_key) > KEY_MAX or not KEY_PATTERN.fullmatch(self.api_key)
+        ):
+            errors["api_key"] = (
+                "A key has no spaces or special characters and at most 500 characters."
+            )
         if errors:
             raise ValidationError(errors)
 

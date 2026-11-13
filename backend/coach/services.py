@@ -9,7 +9,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from django.db import transaction
+from django.core.exceptions import ValidationError
+from django.db import IntegrityError, transaction
 from django.db.models import Count, QuerySet, Sum
 from django.utils import timezone
 
@@ -59,6 +60,99 @@ def _own(user: User) -> QuerySet[AIProviderConfiguration]:
 
 def get_configuration(user: User) -> AIProviderConfiguration | None:
     return _own(user).first()
+
+
+def save_configuration(
+    user: User, *, provider: str, model: str, base_url: str, api_key: str | None
+) -> AIProviderConfiguration:
+    """Create or change the user's configuration.
+
+    ``api_key`` is the new key, ``""`` for none, or ``None`` for "keep the stored one". A stored
+    key is only kept while provider and address stay the same: it must never be sent to a
+    place the user did not give it for. Anything that changes what is called (provider, model,
+    address, key) sets the status back to ``untested`` and forgets the times of the last check.
+
+    Raises Django's ``ValidationError`` (by field) and saves nothing if the result is not valid.
+    """
+    for attempt in (1, 2):
+        try:
+            with transaction.atomic():
+                return _save(user, provider, model, base_url, api_key)
+        except IntegrityError:
+            # A second request created the row first; the next round changes that one.
+            if attempt == 2:
+                raise
+    raise AssertionError("unreachable")
+
+
+def _save(
+    user: User, provider: str, model: str, base_url: str, api_key: str | None
+) -> AIProviderConfiguration:
+    existing = _own(user).select_for_update().first()
+    configuration = existing or AIProviderConfiguration(owner=user)
+    same_target = existing is not None and (existing.provider, existing.base_url) == (
+        provider,
+        base_url,
+    )
+    key_written = api_key is not None or not same_target
+    if api_key is not None:
+        configuration.api_key = api_key
+    elif not same_target:
+        configuration.api_key = ""
+    else:
+        try:
+            configuration.api_key  # noqa: B018 - decrypts: is the stored key still usable?
+        except DecryptionError:
+            configuration.api_key = ""
+            key_written = True
+
+    changed = (
+        existing is None
+        or key_written
+        or (existing.provider, existing.model, existing.base_url) != (provider, model, base_url)
+    )
+    configuration.provider = provider
+    configuration.model = model
+    configuration.base_url = base_url
+    # Not ``full_clean``: its constraint check would repeat every message of ``clean``.
+    errors = _problems(configuration)
+    if errors:
+        raise ValidationError(errors)
+
+    if changed:
+        configuration.status = Status.UNTESTED
+        configuration.last_checked_at = None
+        configuration.last_success_at = None
+    if existing is None:
+        configuration.save()
+    else:
+        fields = ["provider", "model", "base_url"]
+        if key_written:
+            fields.append("api_key")
+        if changed:
+            fields += ["status", "last_checked_at", "last_success_at"]
+        configuration.save(update_fields=fields)
+    return configuration
+
+
+def _problems(configuration: AIProviderConfiguration) -> dict[str, list[str]]:
+    """The messages of the field checks and of ``clean`` by field, empty if all is well."""
+    found: dict[str, list[str]] = {}
+    for check_it in (
+        lambda: configuration.clean_fields(exclude=["owner", "api_key"]),
+        configuration.clean,
+    ):
+        try:
+            check_it()
+        except ValidationError as error:
+            for name, messages in error.message_dict.items():
+                found.setdefault(name, []).extend(messages)
+    return found
+
+
+def remove_configuration(user: User) -> None:
+    """Remove the configuration and with it the key. The usage records stay."""
+    AIProviderConfiguration.objects.for_user(user).delete()
 
 
 def call(
