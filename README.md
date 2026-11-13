@@ -9,7 +9,8 @@ password reset, two-factor authentication (authenticator app plus recovery codes
 administrators), a personal Intervals.icu connection with an API key (stored encrypted), importing
 activities from FIT and TCX files, an athlete profile with your time zone, your thresholds (typed in,
 read from Intervals.icu or estimated from your activities) and the training zones that follow from
-them, and the data-isolation foundation the training features will build on.
+them, goals (races, threshold targets and general goals, with one main goal), and the
+data-isolation foundation the training features will build on.
 **Not there yet:** reading activities from Intervals.icu over that connection (it can only ever
 work for activities that do not come from Strava, see [Activities](#activities)), sending
 invitations by email (the administrator hands the link on) and all coaching features. Before an instance is exposed to the
@@ -292,6 +293,46 @@ the others are listed as "Also known". A value you type in therefore always coun
 
 Thresholds are personal data: every user sees and changes only their own, administrators included,
 and no answer contains another user's values.
+
+## Goals
+
+The **Goals** page (`/goals`, also in the navigation) is where you say what you are training for.
+Each user has their own goals; another user, an administrator included, never sees them.
+
+**Kinds.** Every goal has a title (up to 100 characters), optional notes (up to 1000), a priority
+and a status. The kind is chosen when the goal is added and cannot be changed afterwards.
+
+- **Race:** a discipline (running, cycling, swimming or triathlon) and the date are required. A
+  distance (the form offers the usual ones for running and triathlon, any other in km, up to
+  1000 km) and a target time (`3:45:00`, from 1 minute to 100 hours) are optional.
+- **Threshold:** raise your FTP (watts, cycling) or your threshold pace (minutes and seconds per
+  kilometre, running) to a target value. The date is optional. The value is only a target: it
+  is not compared with your profile yet.
+- **General:** a title and notes, optionally a date ("Build endurance"). Nothing else.
+
+**Main goal.** At most one **active** goal is the main goal; the others are secondary. Making
+another goal the main goal is refused with "You already have a main goal. Change it first.":
+press **Make secondary** on the current one first. A goal that is achieved or dropped no longer
+counts as the main goal for this rule.
+
+**Status.** A goal is **active**, **achieved** or **dropped**. **Mark achieved**, **Drop** and
+**Reactivate** change it; nothing is deleted by that. **Delete** removes the goal for good, after a
+question. An active race cannot lie in the past: adding one, changing its date or reactivating it
+with a past date is refused, while a past race that stays as it is (its title changes, say) is left
+alone. Mark it achieved or dropped instead.
+
+**Order and days to go.** Active goals come first, then achieved, then dropped; within each, the
+main goal first, then by date (goals without a date last), then by when they were added. Next to
+a date the page says how far away it is ("in 12 days", "tomorrow", "today", "3 days ago"). Which
+day it is **today** depends on the time zone in your [profile](#athlete-profile); without one (or
+with one this server does not know) the page uses UTC, so around midnight the count can be a day
+off until you set it.
+
+**Limits.** At most 30 goals per user (finished ones included), so delete old ones when it is full.
+Titles and notes are shown as plain text, never as markup.
+
+Not there yet: your availability (training time per weekday, holidays, illness), training phases,
+and goals in the coach's context.
 
 ## Instance key
 
