@@ -14,6 +14,7 @@ from accounts.models import User
 from accounts.tests.conftest import AuthApi
 from activities import services
 from activities.models import Activity, ActivityFile
+from athletes.models import ThresholdValue
 
 from .conftest import make_user, signed_in
 from .fit_builder import activity_file
@@ -496,3 +497,114 @@ class TestThrottling:
         assert api.call("GET", LIST).status_code == HTTPStatus.OK
         assert api.call("GET", detail_url(mine.pk)).status_code == HTTPStatus.OK
         assert api.call("DELETE", detail_url(mine.pk)).status_code == HTTPStatus.NO_CONTENT
+
+
+class TestEstimatedThresholds:
+    """Importing and deleting keep the estimated maximum heart rate up to date."""
+
+    def run_with(self, heart_rate: int, day: int) -> bytes:
+        return activity_file(start=START + timedelta(days=day), session={17: heart_rate})
+
+    def estimated(self, owner: User) -> dict[str, float]:
+        return {
+            row.sport: row.value
+            for row in ThresholdValue.objects.filter(
+                owner=owner, metric="max_hr", source="estimated"
+            )
+        }
+
+    def test_the_third_matching_run_creates_the_estimate(self, alice: User) -> None:
+        api = signed_in(alice)
+
+        for day, heart_rate in enumerate((182, 184)):
+            assert upload(api, self.run_with(heart_rate, day)).status_code == HTTPStatus.CREATED
+        assert self.estimated(alice) == {}
+        upload(api, self.run_with(171, 2))
+
+        assert self.estimated(alice) == {"run": 184}
+        shown = body(api.call("GET", "/api/athlete/"))
+        found = shown["sports"]["run"]["thresholds"]["max_hr"]["effective"]
+        assert (found["value"], found["source"]) == (184, "estimated")
+
+    def test_deleting_the_activity_that_held_it_removes_the_estimate(self, alice: User) -> None:
+        api = signed_in(alice)
+        ids = [
+            body(upload(api, self.run_with(hr, day)))["id"]
+            for day, hr in enumerate((184, 183, 150))
+        ]
+        assert self.estimated(alice) == {"run": 184}
+
+        response = api.call("DELETE", detail_url(ids[0]))
+
+        assert response.status_code == HTTPStatus.NO_CONTENT
+        assert self.estimated(alice) == {}
+
+    def test_a_refused_import_does_not_touch_the_estimates(
+        self, alice: User, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        calls: list[object] = []
+        monkeypatch.setattr(
+            "activities.views.refresh_estimates_safely", lambda user: calls.append(user)
+        )
+        api = signed_in(alice)
+        upload(api, self.run_with(184, 0))
+        calls.clear()
+
+        again = upload(api, self.run_with(184, 0))  # the same file
+        broken = upload(api, b"not an activity")
+
+        assert (again.status_code, broken.status_code) == (
+            HTTPStatus.CONFLICT,
+            HTTPStatus.BAD_REQUEST,
+        )
+        assert calls == []
+
+    def test_a_failure_while_estimating_does_not_fail_the_import(
+        self, alice: User, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def fail(user: User) -> None:
+            raise RuntimeError("database gone")
+
+        monkeypatch.setattr("athletes.estimates.refresh_estimates", fail)
+
+        response = upload(signed_in(alice), self.run_with(184, 0))
+
+        assert response.status_code == HTTPStatus.CREATED
+        assert counts() == (1, 1)
+
+    def test_a_failure_while_estimating_does_not_fail_a_deletion(
+        self, alice: User, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        api = signed_in(alice)
+        created = body(upload(api, self.run_with(184, 0)))
+
+        def fail(user: User) -> None:
+            raise RuntimeError("database gone")
+
+        monkeypatch.setattr("athletes.estimates.refresh_estimates", fail)
+        response = api.call("DELETE", detail_url(created["id"]))
+
+        assert response.status_code == HTTPStatus.NO_CONTENT
+        assert counts() == (0, 0)
+
+    def test_each_user_gets_their_own_estimate(self, alice: User, bob: User) -> None:
+        alices, bobs = signed_in(alice), signed_in(bob)
+        for day, heart_rate in enumerate((190, 189, 150)):
+            upload(alices, self.run_with(heart_rate, day))
+        for day, heart_rate in enumerate((170, 169, 150)):
+            upload(bobs, self.run_with(heart_rate, day))
+
+        assert self.estimated(alice) == {"run": 190}
+        assert self.estimated(bob) == {"run": 170}
+
+    def test_deleting_a_foreign_activity_changes_no_estimate(self, alice: User, bob: User) -> None:
+        alices, bobs = signed_in(alice), signed_in(bob)
+        ids = [
+            body(upload(alices, self.run_with(hr, day)))["id"]
+            for day, hr in enumerate((184, 183, 150))
+        ]
+
+        response = bobs.call("DELETE", detail_url(ids[0]))
+
+        assert response.status_code == HTTPStatus.NOT_FOUND
+        assert self.estimated(alice) == {"run": 184}

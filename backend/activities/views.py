@@ -10,6 +10,7 @@ from rest_framework.serializers import BaseSerializer
 from rest_framework.views import APIView
 
 from accounts.models import User
+from athletes.estimates import refresh_estimates_safely
 from core.views import OwnedModelViewSet
 
 from . import services
@@ -50,6 +51,10 @@ class ActivityViewSet(OwnedModelViewSet):
         # The laps are only needed for one activity.
         return queryset.defer("laps") if self.action == "list" else queryset
 
+    def perform_destroy(self, instance: Activity) -> None:
+        instance.delete()
+        refresh_estimates_safely(_user(self.request))
+
     def get_serializer_class(self) -> type[BaseSerializer[Any]]:
         return ActivitySerializer if self.action == "list" else ActivityDetailSerializer
 
@@ -75,4 +80,5 @@ class ActivityImportView(APIView):
             return _refused(DUPLICATE, HTTPStatus.CONFLICT, existing_id=str(duplicate.existing_id))
         except ActivityFileError as error:
             return _refused(str(error), HTTPStatus.BAD_REQUEST)
+        refresh_estimates_safely(_user(request))
         return Response(ActivitySerializer(activity).data, status=HTTPStatus.CREATED)
