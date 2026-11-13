@@ -88,6 +88,8 @@ Base URL `https://intervals.icu/api/v1`. All paths below start with `/athlete/{i
   only has `TrailRun` does not count; one that has both is ambiguous and is skipped). Values that
   are missing, not positive, not numbers or absurd are skipped one by one. If two entries claim the
   same group, the first one wins per value.
+- **The sync exists now:** see "Athlete profile" in the [README](../README.md#athlete-profile) for
+  when it runs, what it stores and what it never touches.
 
 ## Activities: what the API gives (checked 2026-11-13)
 
@@ -144,4 +146,5 @@ deleted in the Intervals.icu calendar; the device checks are done.
   PaceForge plan stay linked by that id. Conflicts (the user edited the event in Intervals.icu)
   need a rule, because an upsert overwrites the event.
 - **Phase 3:** zones and thresholds can be read from the sport settings instead of asking the
-  user to type them.
+  user to type them. (Thresholds are read now; the zones are computed by PaceForge itself from
+  them, not taken over from the sport settings.)

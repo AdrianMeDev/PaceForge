@@ -7,11 +7,13 @@ The long-term goal is described in `PROJECT_PLAN.md`; this repository is in earl
 admin page for invitations, email verification, sign-in and sign-out with server-side sessions,
 password reset, two-factor authentication (authenticator app plus recovery codes, mandatory for
 administrators), a personal Intervals.icu connection with an API key (stored encrypted), importing
-activities from FIT and TCX files, and the data-isolation foundation the training features will
-build on.
+activities from FIT and TCX files, an athlete profile with your time zone, your thresholds (typed in,
+read from Intervals.icu or estimated from your activities) and the training zones that follow from
+them, and the data-isolation foundation the training features will build on.
 **Not there yet:** reading activities from Intervals.icu over that connection (it can only ever
-work for activities that do not come from Strava, see [Activities](#activities)), sending
-invitations by email (the administrator hands the link on) and all coaching features. Before an instance is exposed to the
+work for activities that do not come from Strava, see [Activities](#activities)), estimating FTP and
+running pace from the data inside your activity files, sending invitations by email (the
+administrator hands the link on) and all coaching features. Before an instance is exposed to the
 internet, read [Instance key](#instance-key): secrets in the database are encrypted, and the key
 has to be backed up apart from the database.
 
@@ -160,9 +162,9 @@ and invite a few others. The findings behind this are in
   by any endpoint and not logged. Every user sees and changes only their own connection;
   administrators have no way to read other users' keys.
 - **Limits:** saving and checking together are limited to 10 per minute per user.
-- **Nothing is read from Intervals.icu yet.** The connection is the first step; reading training
-  data from it comes next, and only works for activities that did not come from Strava. For
-  everything else use the [file import](#activities).
+- **Only your thresholds are read from Intervals.icu so far,** see
+  [Athlete profile](#athlete-profile). Reading activities comes next and only works for activities
+  that did not come from Strava; for everything else use the [file import](#activities).
 - **If the instance key is lost,** the stored keys can no longer be used. The page still opens and
   shows **Needs attention** after a check, and each user pastes their key again.
 - `INTERVALS_API_BASE_URL` (see [Configuration](#configuration)) is only for tests and fake servers.
@@ -216,6 +218,62 @@ What you should know:
 - **Damaged or hostile files** are refused with a message and store nothing: FIT checksums are
   verified, TCX documents with a `DOCTYPE` or entities are refused, and the number of records,
   laps and nested elements is capped.
+
+## Athlete profile
+
+The **Profile** page (`/settings/profile`, also in the navigation) holds what PaceForge needs to
+know about you as an athlete: your time zone, your thresholds and the training zones that follow
+from them. Cycling has FTP, lactate threshold heart rate (LTHR) and maximum heart rate; running has
+threshold pace, LTHR and maximum heart rate. Swimming and strength training have none yet.
+
+**Where a value comes from, and which one counts.** Every threshold shows its source: **You**,
+**Intervals.icu** or **Estimated**. If there are several, the first one in that order counts and
+the others are listed as "Also known". A value you type in therefore always counts, until you press
+**Use automatic value**, which removes only your own value; nothing else is deleted.
+
+1. **Type a value.** Press **Edit** on a row, enter the number and press **Save** (or Enter). Watts
+   and beats are numbers (a comma works as the decimal point), the pace is minutes and seconds per
+   kilometre, for example `5:00`. Allowed are FTP 30 to 2000 W, heart rates 30 to 250 bpm and a pace
+   from 2:00 to 20:00 per km; values are stored as whole numbers. The lactate threshold heart rate
+   cannot be above the maximum heart rate of the same sport (compared with what you typed in or
+   Intervals.icu holds; an estimate never stops you from entering the right value).
+2. **Read from Intervals.icu.** With a working connection (see [Connections](#connections)) the
+   page reads your sport settings when it opens, if that has never happened or was more than 24
+   hours ago, and **Update from Intervals.icu** does it on demand. The settings entry that includes
+   `Ride` or `VirtualRide` is your cycling, the one with `Run` or `VirtualRun` your running;
+   swimming and "Other" are ignored. The pace is stored there in metres per second and converted.
+   Values outside the ranges above are skipped, values that Intervals.icu no longer has are
+   removed, and what you typed in or what was estimated is never touched. Reading is limited to 10
+   per minute together with connecting and checking. If Intervals.icu does not accept the stored
+   key, the page says so and the connection shows **Needs attention** on the Connections page.
+3. **Estimated maximum heart rate.** For running and cycling separately, PaceForge looks at the
+   highest heart rate of each imported activity. Values outside 30 to 250 bpm are ignored; with at
+   least three usable ones, the highest value counts if another activity came within 3 bpm below
+   it. A single peak without a partner (a chest strap or wrist sensor glitch) is ignored. The
+   estimate is recomputed after every import and every deletion. Two glitches that happen to match
+   would be believed, and an estimate is only as fresh as the last import or deletion; it never
+   overrides a value you typed in or one from Intervals.icu.
+4. **Zones.** They are computed from the value that counts and shown per sport. They follow
+   published conventions, which athletes and coaches handle differently, so treat them as a
+   starting point:
+   - **Power**, 7 zones with limits at 55, 75, 90, 105, 120 and 150 percent of FTP (after Andrew
+     Coggan).
+   - **Heart rate**, 5 zones with limits at 85, 90, 95 and 100 percent of the lactate threshold
+     heart rate (after Joe Friel). Without one, five zones with limits at 60, 70, 80 and 90 percent
+     of the maximum heart rate.
+   - **Running pace**, 5 zones with limits at 129, 114, 106 and 99 percent of the threshold pace
+     (after Joe Friel). Pace is time per distance, so the zones run from slow (zone 1, 129 percent
+     and slower) to fast (zone 5, faster than 99 percent).
+
+   A zone includes its lower limit and not its upper one; the page shows the last whole value
+   ("138–187 W"), so neighbouring zones neither overlap nor leave a gap.
+5. **Time zone.** Enter a name from the time zone database, exactly spelled (`Europe/Berlin`), or
+   press **Use this device's time zone** and then **Save time zone**. An empty field removes it. It
+   is stored for the day-based planning that follows; the activities list still shows times in your
+   browser's time zone.
+
+Thresholds are personal data: every user sees and changes only their own, administrators included,
+and no answer contains another user's values.
 
 ## Instance key
 
@@ -291,6 +349,15 @@ Set in `.env` or in the environment. Values without a default are required.
 - **Importing a big file fails with "413" or an error page before PaceForge answers.** A reverse
   proxy in front limits the request body; raise its limit to the value of
   `ACTIVITY_UPLOAD_MAX_BYTES` or more.
+- **The time zone is refused.** The name must be exactly one of the time zone database, with the
+  capitalisation shown there (`Europe/Berlin`, not `europe/berlin` or `CET`). Press **Use this
+  device's time zone** to fill the field, or pick one of the suggestions.
+- **A threshold heart rate is refused with "Cannot be above the maximum heart rate".** The value
+  you typed in, or the one from Intervals.icu, for the maximum heart rate of that sport is lower;
+  correct the maximum first.
+- **"Update from Intervals.icu" says the stored key was not accepted.** Enter the key again on the
+  Connections page (the connection shows **Needs attention** there). "Cannot be reached" and "Too
+  many attempts" go away by themselves; nothing was changed.
 - **Django refuses to start with `DJANGO_SECRET_KEY`, `DATABASE_URL` or `ENCRYPTION_KEY` missing.** Both are required
   and have no default; check that `.env` is in the repository root, not in `backend/`.
 - **The Connections page says "Intervals.icu cannot be reached right now".** The server could not
