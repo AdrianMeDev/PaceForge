@@ -10,8 +10,9 @@ from activities import services
 from activities.efforts import BestEfforts, Effort, as_json
 from activities.models import Activity, ActivityFile
 from activities.services import import_activity
+from athletes.models import ThresholdValue
 
-from .fit_builder import activity_file
+from .fit_builder import SPORT_CYCLING, activity_file
 from .tcx_builder import tcx_document, trackpoint_document
 
 pytestmark = pytest.mark.django_db
@@ -34,7 +35,9 @@ def hard_ride(minutes: int = 21, power: int = 250, start_day: int = 0) -> bytes:
 
     samples: SamplesType = [(s, power, s * 900, 155) for s in range(minutes * 60)]
     return activity_file(
-        samples=samples, start=datetime(2026, 11, 1, 6, tzinfo=UTC) + timedelta(days=start_day)
+        samples=samples,
+        sport=SPORT_CYCLING,
+        start=datetime(2026, 11, 1, 6, tzinfo=UTC) + timedelta(days=start_day),
     )
 
 
@@ -146,9 +149,10 @@ class TestBackfill:
         output = backfill()
 
         assert stored(activity)["power"]["1200"]["value"] == 250
-        assert output.strip() == (
-            "Computed 1, no usable series in 0, failed 0, without a stored file 0."
-        )
+        assert output.splitlines() == [
+            "Computed 1, no usable series in 0, failed 0, without a stored file 0.",
+            "Refreshed the estimated thresholds of 1 account(s).",
+        ]
 
     def test_it_skips_what_is_already_there(self, alice: User) -> None:
         done = import_activity(alice, hard_ride())
@@ -183,9 +187,9 @@ class TestBackfill:
             raise RuntimeError("a bug")
 
         monkeypatch.setattr(services, "parse_series", explode)
-        assert backfill().strip() == (
+        assert backfill().splitlines() == [
             "Computed 0, no usable series in 0, failed 1, without a stored file 0."
-        )
+        ]
         assert Activity.objects.get(pk=activity.pk).best_efforts is None
         monkeypatch.undo()
         assert backfill().startswith("Computed 1,")
@@ -216,6 +220,36 @@ class TestBackfill:
 
         assert backfill().startswith("Computed 2,")
         assert not Activity.objects.filter(best_efforts__isnull=True).exists()
+
+    def test_it_refreshes_the_estimated_thresholds_of_the_accounts_it_filled(
+        self, alice: User, bob: User
+    ) -> None:
+        self.missing(alice, hard_ride())
+        untouched = import_activity(bob, hard_ride(start_day=1))  # efforts already stored
+        ThresholdValue.objects.filter(owner=bob).delete()
+
+        backfill()
+
+        assert ThresholdValue.objects.filter(owner=alice, sport="ride", metric="ftp").exists()
+        assert not ThresholdValue.objects.filter(owner=bob).exists()  # nothing was filled for bob
+        assert untouched.owner == bob
+
+    def test_nothing_is_refreshed_when_nothing_was_filled(self, alice: User) -> None:
+        import_activity(alice, hard_ride())
+
+        assert "Refreshed" not in backfill()
+
+    def test_a_failing_refresh_does_not_stop_the_command(
+        self, alice: User, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self.missing(alice, hard_ride())
+
+        def explode(*args: Any, **kwargs: Any) -> Any:
+            raise RuntimeError("database gone")
+
+        monkeypatch.setattr(ThresholdValue.objects, "update_or_create", explode)
+
+        assert backfill().startswith("Computed 1,")
 
     def test_it_prints_counts_only(self, alice: User) -> None:
         self.missing(alice, hard_ride())

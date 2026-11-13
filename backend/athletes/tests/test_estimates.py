@@ -302,7 +302,7 @@ class TestOtherSourcesAndMetrics:
             owner=alice, sport="run", metric="max_hr", source="intervals", value=188
         )
         other_metric = ThresholdValue.objects.create(
-            owner=alice, sport="run", metric="lthr", source="estimated", value=165, basis="x"
+            owner=alice, sport="run", metric="lthr", source="intervals", value=165, basis="x"
         )
         kept = (manual, intervals, other_metric)
         before = {row.pk: (row.value, row.basis, row.updated_at) for row in kept}
