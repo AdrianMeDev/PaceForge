@@ -33,6 +33,10 @@ class ProviderError(Exception):
     sent or received: no exception carries the key, a prompt or an answer."""
 
 
+class EndpointNotAllowedError(ProviderError):
+    """The address is not (or no longer) one of those the operator allows. Nothing was sent."""
+
+
 class InvalidKeyError(ProviderError):
     """The provider refused the key (401 or 403)."""
 
