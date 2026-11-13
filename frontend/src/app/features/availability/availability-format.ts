@@ -1,3 +1,4 @@
+import { PeriodKind } from '../../core/availability/availability-models';
 import { Parsed } from '../goals/goal-format';
 
 export const WEEKDAY_NAMES = [
@@ -36,4 +37,48 @@ export function parseMinutes(text: string, max: number): Parsed<number> {
   return total <= max
     ? { ok: true, value: total }
     : { ok: false, error: `Enter at most ${formatMinutes(max)} (${max} minutes).` };
+}
+
+// --- periods of absence
+
+export const PERIOD_KIND_LABELS: Record<PeriodKind, string> = {
+  vacation: 'Vacation',
+  illness: 'Illness',
+  other: 'Other',
+};
+
+/** The longest period the server takes, both ends included. */
+export const PERIOD_MAX_DAYS = 366;
+
+const CALENDAR_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** `2027-07-12` that is a day of the calendar (not `2027-02-30`). */
+export function isCalendarDate(text: string): boolean {
+  return dayNumber(text) !== null;
+}
+
+/** How many days lie from `start` to `end`, both included; `null` if either is no date. */
+export function inclusiveDays(start: string, end: string): number | null {
+  const first = dayNumber(start);
+  const last = dayNumber(end);
+  return first === null || last === null ? null : last - first + 1;
+}
+
+/** `1 day`, `14 days`. */
+export function formatPeriodLength(days: number): string {
+  return days === 1 ? '1 day' : `${days} days`;
+}
+
+/** Days since 1970-01-01 of a calendar date given as text, or `null`. */
+function dayNumber(text: string): number | null {
+  if (!CALENDAR_DATE.test(text)) {
+    return null;
+  }
+  const time = Date.parse(`${text}T00:00:00Z`);
+  // A date that does not exist is rolled over by some parsers; this one must read back the same.
+  if (Number.isNaN(time) || new Date(time).toISOString().slice(0, 10) !== text) {
+    return null;
+  }
+  return time / DAY_MS;
 }

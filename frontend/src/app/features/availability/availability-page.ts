@@ -10,6 +10,7 @@ import {
   parseMinutes,
 } from './availability-format';
 import { Parsed } from '../goals/goal-format';
+import { PeriodsPanel } from './periods-panel';
 
 type View = 'loading' | 'unreachable' | 'ready' | 'signed_out';
 
@@ -31,7 +32,7 @@ function dayMinutes(text: string): Parsed<number> {
  */
 @Component({
   selector: 'app-availability-page',
-  imports: [RouterLink],
+  imports: [RouterLink, PeriodsPanel],
   templateUrl: './availability-page.html',
   styleUrls: ['../auth/auth-form.css', './availability-page.css'],
 })
@@ -98,6 +99,11 @@ export class AvailabilityPage implements OnInit {
     } catch {
       this.view.set('unreachable');
     }
+  }
+
+  /** The periods panel found the session gone. */
+  protected endSession(): void {
+    this.view.set('signed_out');
   }
 
   protected read(event: Event): string {

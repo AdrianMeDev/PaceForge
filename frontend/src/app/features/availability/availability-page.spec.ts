@@ -5,6 +5,7 @@ import {
   Availability,
   AvailabilityChanges,
   GetAvailabilityResult,
+  ListPeriodsResult,
   SaveAvailabilityResult,
 } from '../../core/availability/availability-models';
 import { query, settle, typeInto } from '../../testing/dom';
@@ -27,6 +28,10 @@ function createApiStub() {
   return {
     get: vi.fn<() => Promise<GetAvailabilityResult>>(),
     save: vi.fn<(changes: AvailabilityChanges) => Promise<SaveAvailabilityResult>>(),
+    // The periods have a panel of their own, tested in periods-panel.spec.ts.
+    listPeriods: vi
+      .fn<() => Promise<ListPeriodsResult>>()
+      .mockResolvedValue({ kind: 'ok', periods: [] }),
   };
 }
 
@@ -549,6 +554,36 @@ describe('AvailabilityPage', () => {
 
       expect(alerts()).toEqual(['Something went wrong. Please try again.']);
       expect(page.querySelector('form')).not.toBeNull();
+    });
+  });
+
+  describe('the periods', () => {
+    it('are shown below the form', async () => {
+      await setup();
+
+      const panel = query(page, 'app-periods-panel');
+      expect(panel.textContent).toContain('Not available');
+      expect(
+        query(page, 'form').compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(api.listPeriods).toHaveBeenCalledTimes(1);
+    });
+
+    it('end the session of the page when they find it gone', async () => {
+      api = createApiStub();
+      api.get.mockResolvedValue(ok(SAVED));
+      api.listPeriods.mockResolvedValue({ kind: 'forbidden' });
+      TestBed.configureTestingModule({
+        imports: [AvailabilityPage],
+        providers: [provideRouter([]), { provide: AvailabilityApi, useValue: api }],
+      });
+      fixture = TestBed.createComponent(AvailabilityPage);
+      page = fixture.nativeElement as HTMLElement;
+      await settle(fixture);
+
+      expect(alerts()).toEqual(['Your session has ended. Please sign in again.']);
+      expect(page.querySelector('form')).toBeNull();
+      expect(page.querySelector('app-periods-panel')).toBeNull();
     });
   });
 

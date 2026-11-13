@@ -1,0 +1,73 @@
+<form class="form" novalidate (submit)="submit($event)">
+  <h3>Add a period</h3>
+
+  @if (errors()['form']; as message) {
+    <p class="alert" role="alert">{{ message }}</p>
+  }
+
+  <div class="field">
+    <label for="period-kind">Kind</label>
+    <select id="period-kind" (change)="kind.set($any(read($event)))">
+      @for (entry of kinds; track entry[0]) {
+        <option [value]="entry[0]" [selected]="kind() === entry[0]">{{ entry[1] }}</option>
+      }
+    </select>
+    @if (errors()['kind']; as message) {
+      <p class="field-error" role="alert">{{ message }}</p>
+    }
+  </div>
+
+  <div class="dates">
+    <div class="field">
+      <label for="period-start">First day</label>
+      <input
+        id="period-start"
+        type="date"
+        [value]="start()"
+        [attr.aria-invalid]="errors()['start'] ? true : null"
+        [attr.aria-describedby]="errors()['start'] ? 'period-start-error' : null"
+        (input)="setStart(read($event))"
+      />
+      @if (errors()['start']; as message) {
+        <p class="field-error" id="period-start-error" role="alert">{{ message }}</p>
+      }
+    </div>
+
+    <div class="field">
+      <label for="period-end">Last day</label>
+      <input
+        id="period-end"
+        type="date"
+        [value]="end()"
+        [attr.aria-invalid]="errors()['end'] ? true : null"
+        [attr.aria-describedby]="errors()['end'] ? 'period-end-error' : null"
+        (input)="end.set(read($event))"
+      />
+      @if (errors()['end']; as message) {
+        <p class="field-error" id="period-end-error" role="alert">{{ message }}</p>
+      }
+    </div>
+  </div>
+
+  <div class="field">
+    <label for="period-note">Note (optional)</label>
+    <input
+      id="period-note"
+      type="text"
+      autocomplete="off"
+      [value]="note()"
+      [attr.aria-invalid]="errors()['note'] ? true : null"
+      (input)="note.set(read($event))"
+    />
+    @if (errors()['note']; as message) {
+      <p class="field-error" role="alert">{{ message }}</p>
+    }
+  </div>
+
+  <div class="actions">
+    <button type="submit" class="primary" [disabled]="busy()">
+      {{ busy() ? 'Saving…' : 'Add period' }}
+    </button>
+    <button type="button" class="link" (click)="cancel()">Cancel</button>
+  </div>
+</form>
