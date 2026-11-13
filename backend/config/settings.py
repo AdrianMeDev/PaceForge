@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     "integrations",
     "activities",
     "athletes",
+    "goals",
 ]
 
 MIDDLEWARE = [

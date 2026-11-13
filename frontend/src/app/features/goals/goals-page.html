@@ -1,0 +1,170 @@
+<section class="goals">
+  <h1>Goals</h1>
+
+  @switch (view()) {
+    @case ('loading') {
+      <p role="status">Loading…</p>
+    }
+    @case ('unreachable') {
+      <p class="alert" role="alert">Your goals could not be loaded.</p>
+      <p><button type="button" class="primary" (click)="load()">Try again</button></p>
+    }
+    @case ('signed_out') {
+      <p class="alert" role="alert">Your session has ended. Please sign in again.</p>
+      <p><a routerLink="/login">Go to sign in</a></p>
+    }
+    @case ('ready') {
+      @for (message of errors(); track $index) {
+        <p class="alert" role="alert">{{ message }}</p>
+      }
+      @if (notice(); as text) {
+        <p class="notice" role="status">{{ text }}</p>
+      }
+
+      @for (key of formKeys(); track key) {
+        <app-goal-form
+          [goal]="editing()"
+          (saved)="saved()"
+          (cancelled)="closeForm()"
+          (signedOut)="signedOut()"
+          (gone)="gone()"
+        />
+      } @empty {
+        <p>
+          <button type="button" class="primary" [disabled]="busy()" (click)="openAdd()">
+            Add goal
+          </button>
+        </p>
+      }
+
+      @if (goals().length === 0) {
+        <p class="hint">You have no goals yet.</p>
+      } @else {
+        <ul class="list">
+          @for (goal of goals(); track goal.id) {
+            <li
+              class="goal"
+              [attr.data-status]="goal.status"
+              [attr.data-testid]="'goal-' + goal.id"
+            >
+              <div class="head">
+                <h2>{{ goal.title }}</h2>
+                <span class="badge kind">{{ kindLabel[goal.kind] }}</span>
+                @if (goal.priority === 'main') {
+                  <span class="badge main">{{ priorityLabel.main }}</span>
+                }
+                @if (goal.status !== 'active') {
+                  <span class="badge" [attr.data-status]="goal.status">{{
+                    statusLabel[goal.status]
+                  }}</span>
+                }
+              </div>
+
+              @if (goal.target_date; as day) {
+                <p class="meta" data-testid="date">
+                  {{ day | date: 'mediumDate' }}
+                  @if (goal.days_to_go !== null) {
+                    <span class="days">({{ daysText(goal.days_to_go) }})</span>
+                  }
+                </p>
+              }
+              @if (target(goal); as text) {
+                <p class="meta" data-testid="target">{{ text }}</p>
+              }
+              @if (goal.notes) {
+                <p class="notes" data-testid="notes">{{ goal.notes }}</p>
+              }
+
+              <div class="actions">
+                @if (confirming() === goal.id) {
+                  <span class="confirm" role="group" [attr.aria-label]="'Delete ' + goal.title">
+                    Delete this goal?
+                    <button
+                      type="button"
+                      class="primary"
+                      [disabled]="busy()"
+                      (click)="delete(goal)"
+                    >
+                      Yes, delete
+                    </button>
+                    <button type="button" class="link" (click)="cancelDelete()">Cancel</button>
+                  </span>
+                } @else {
+                  @if (goal.status === 'active') {
+                    <button
+                      type="button"
+                      class="secondary"
+                      [disabled]="busy()"
+                      [attr.aria-label]="'Mark ' + goal.title + ' as achieved'"
+                      (click)="setStatus(goal, 'achieved')"
+                    >
+                      Mark achieved
+                    </button>
+                    <button
+                      type="button"
+                      class="secondary"
+                      [disabled]="busy()"
+                      [attr.aria-label]="'Drop ' + goal.title"
+                      (click)="setStatus(goal, 'dropped')"
+                    >
+                      Drop
+                    </button>
+                    @if (goal.priority === 'secondary') {
+                      <button
+                        type="button"
+                        class="secondary"
+                        [disabled]="busy()"
+                        [attr.aria-label]="'Make ' + goal.title + ' the main goal'"
+                        (click)="makeMain(goal)"
+                      >
+                        Make main goal
+                      </button>
+                    } @else {
+                      <button
+                        type="button"
+                        class="secondary"
+                        [disabled]="busy()"
+                        [attr.aria-label]="'Make ' + goal.title + ' a secondary goal'"
+                        (click)="makeSecondary(goal)"
+                      >
+                        Make secondary
+                      </button>
+                    }
+                  } @else {
+                    <button
+                      type="button"
+                      class="secondary"
+                      [disabled]="busy()"
+                      [attr.aria-label]="'Reactivate ' + goal.title"
+                      (click)="setStatus(goal, 'active')"
+                    >
+                      Reactivate
+                    </button>
+                  }
+                  <button
+                    type="button"
+                    class="link"
+                    [disabled]="busy()"
+                    [attr.aria-label]="'Edit ' + goal.title"
+                    (click)="openEdit(goal)"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    class="link"
+                    [disabled]="busy()"
+                    [attr.aria-label]="'Delete ' + goal.title"
+                    (click)="askDelete(goal)"
+                  >
+                    Delete
+                  </button>
+                }
+              </div>
+            </li>
+          }
+        </ul>
+      }
+    }
+  }
+</section>
