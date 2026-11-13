@@ -5,6 +5,7 @@ import { routes } from './app.routes';
 import { AuthApi } from './core/auth/auth-api';
 import { AuthStore } from './core/auth/auth-store';
 import { ActivitiesApi } from './core/activities/activities-api';
+import { AthleteApi } from './core/athlete/athlete-api';
 import { IntervalsConnectionApi } from './core/integrations/intervals-api';
 import { ADA, createAuthStoreStub } from './core/auth/testing/auth-store-stub';
 import { required } from './testing/dom';
@@ -28,6 +29,7 @@ describe('app routes', () => {
             checkPasswordResetKey: () => new Promise<never>(() => undefined),
           },
         },
+        { provide: AthleteApi, useValue: { get: () => new Promise<never>(() => undefined) } },
         { provide: ActivitiesApi, useValue: { list: () => new Promise<never>(() => undefined) } },
         {
           provide: IntervalsConnectionApi,
@@ -193,6 +195,29 @@ describe('app routes', () => {
     expect(page.querySelector('[data-testid="user-label"]')?.textContent).toBe('Ada');
   });
 
+  it('sends visitors from the athlete profile to the login and remembers where they wanted to go', async () => {
+    await harness.navigateByUrl('/settings/profile');
+
+    expect(router.url).toBe('/login?returnUrl=%2Fsettings%2Fprofile');
+  });
+
+  it.each([
+    ['a member', ADA],
+    [
+      'an administrator with two-factor authentication',
+      { ...ADA, is_staff: true, mfa_enabled: true },
+    ],
+  ])('shows the athlete profile inside the shell to %s', async (_who, me) => {
+    store.signIn(me);
+
+    await harness.navigateByUrl('/settings/profile');
+
+    expect(router.url).toBe('/settings/profile');
+    const page = required(harness.routeNativeElement, 'the routed element');
+    expect(page.textContent).toContain('Athlete profile');
+    expect(page.querySelector('[data-testid="user-label"]')?.textContent).toBe('Ada');
+  });
+
   describe('an administrator without two-factor authentication', () => {
     const ADMIN_OFF = { ...ADA, is_staff: true, mfa_setup_required: true };
 
@@ -210,6 +235,12 @@ describe('app routes', () => {
 
     it('is sent from the activities page to the security page, with the reason', async () => {
       await harness.navigateByUrl('/activities');
+
+      expect(router.url).toBe('/settings/security?notice=mfa-required');
+    });
+
+    it('is sent from the athlete profile to the security page, with the reason', async () => {
+      await harness.navigateByUrl('/settings/profile');
 
       expect(router.url).toBe('/settings/security?notice=mfa-required');
     });

@@ -66,6 +66,11 @@ export const routes: Routes = [
           import('./features/activities/activities-page').then((m) => m.ActivitiesPage),
       },
       {
+        path: 'settings/profile',
+        title: 'Athlete profile',
+        loadComponent: () => import('./features/athlete/athlete-page').then((m) => m.AthletePage),
+      },
+      {
         path: 'settings/security',
         title: 'Security',
         loadComponent: () =>
