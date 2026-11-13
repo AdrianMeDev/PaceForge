@@ -198,3 +198,18 @@ def _within(value: float | None, minimum: float, maximum: float) -> float | None
     if value is None or not _finite(value):
         return None
     return float(value) if minimum <= value <= maximum else None
+
+
+def as_json(found: BestEfforts) -> dict[str, dict[str, dict[str, float | None]]]:
+    """The efforts as stored on an activity: windows as text keys, numbers rounded."""
+
+    def entries(efforts: dict[int, Effort], digits: int) -> dict[str, dict[str, float | None]]:
+        return {
+            str(window): {
+                "value": round(effort.value, digits),
+                "heart_rate": None if effort.heart_rate is None else round(effort.heart_rate, 1),
+            }
+            for window, effort in sorted(efforts.items())
+        }
+
+    return {"power": entries(found.power, 1), "speed": entries(found.speed, 4)}

@@ -1,14 +1,19 @@
 """Importing an uploaded activity file: check, parse, refuse duplicates, store."""
 
 import hashlib
+import logging
+from typing import Any
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
 
 from accounts.models import User
 
+from .efforts import as_json, best_efforts
 from .models import Activity, ActivityFile
-from .parsing import ParsedActivity, parse_activity_file
+from .parsing import ActivityFileError, ParsedActivity, parse_activity_file, parse_series
+
+logger = logging.getLogger(__name__)
 
 
 class FileTooLargeError(Exception):
@@ -38,11 +43,12 @@ def import_activity(user: User, data: bytes) -> Activity:
     existing = _find_duplicate(user, source_hash, parsed)
     if existing is not None:
         raise DuplicateActivityError(existing.pk)
+    best = best_efforts_of(data)
 
     try:
         with transaction.atomic():
             activity = Activity.objects.create(
-                owner=user, source_hash=source_hash, **_fields(parsed)
+                owner=user, source_hash=source_hash, best_efforts=best, **_fields(parsed)
             )
             ActivityFile.for_activity(activity, data).save()
     except IntegrityError:
@@ -52,6 +58,21 @@ def import_activity(user: User, data: bytes) -> Activity:
             raise
         raise DuplicateActivityError(existing.pk) from None
     return activity
+
+
+def best_efforts_of(data: bytes) -> dict[str, Any] | None:
+    """The best efforts of a file, for storing. ``{}`` if the file has no usable time series (or
+    none long enough for a window);
+    ``None`` if something unexpected went wrong (logged; the backfill tries again later). Never
+    raises: an import must not fail because of it."""
+    try:
+        found = as_json(best_efforts(parse_series(data)))
+    except ActivityFileError:
+        return {}
+    except Exception:
+        logger.exception("Could not compute the best efforts of a file")
+        return None
+    return found if found["power"] or found["speed"] else {}
 
 
 def _find_duplicate(user: User, source_hash: str, parsed: ParsedActivity) -> Activity | None:

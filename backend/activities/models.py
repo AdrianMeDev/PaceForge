@@ -46,6 +46,9 @@ class Activity(OwnedModel):
     manufacturer = models.CharField(max_length=50, blank=True)
     # One entry per lap: start, seconds, distance, heart rates (whatever the file reports).
     laps = models.JSONField(default=list, blank=True)
+    # Best power and speed over fixed windows, from the file's time series (see ``efforts``).
+    # Empty when not computed yet; ``{}`` when the file has no usable series.
+    best_efforts = models.JSONField(null=True, blank=True, editable=False)
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
