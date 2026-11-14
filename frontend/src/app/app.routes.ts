@@ -77,6 +77,12 @@ export const routes: Routes = [
           import('./features/availability/availability-page').then((m) => m.AvailabilityPage),
       },
       {
+        path: 'planning',
+        title: 'Week plan',
+        loadComponent: () =>
+          import('./features/planning/planning-page').then((m) => m.PlanningPage),
+      },
+      {
         path: 'settings/profile',
         title: 'Athlete profile',
         loadComponent: () => import('./features/athlete/athlete-page').then((m) => m.AthletePage),
