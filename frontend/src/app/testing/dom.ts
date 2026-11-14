@@ -28,3 +28,13 @@ export async function settle(fixture: ComponentFixture<unknown>): Promise<void> 
   await new Promise((resolve) => setTimeout(resolve));
   await fixture.whenStable();
 }
+
+/**
+ * The day of a timestamp the way the pages show it (`Nov 13, 2026`), in the time zone of the
+ * machine, as the pages do. Worked out with `Intl` and not with Angular's pipe, so that the
+ * expectation does not share its code with what is tested, and without fixing a zone: a literal
+ * such as "Nov 13" is only right in some zones for a given time of day.
+ */
+export function dayOf(timestamp: string): string {
+  return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium' }).format(new Date(timestamp));
+}

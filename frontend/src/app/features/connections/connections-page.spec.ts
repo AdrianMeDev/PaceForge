@@ -10,7 +10,7 @@ import {
   GetConnectionResult,
   IntervalsConnection,
 } from '../../core/integrations/intervals-models';
-import { query, required, settle, typeInto } from '../../testing/dom';
+import { dayOf, query, required, settle, typeInto } from '../../testing/dom';
 import { ConnectionsPage } from './connections-page';
 
 const KEY = 'k3y-0123456789-abcdefghij';
@@ -133,7 +133,7 @@ describe('ConnectionsPage', () => {
 
       expect(testId('status')).toBe('Connected');
       expect(testId('athlete')).toBe('i555');
-      expect(testId('checked')).toContain('Nov 12, 2026');
+      expect(testId('checked')).toContain(dayOf(CONNECTION.last_checked_at));
       expect(button('Check connection')).toBeDefined();
       expect(button('Disconnect')).toBeDefined();
       expect(button('Save new key')).toBeDefined();
@@ -413,7 +413,7 @@ describe('ConnectionsPage', () => {
       await click('Check connection');
 
       expect(text()).toContain('The key works.');
-      expect(testId('checked')).toContain('Nov 13, 2026');
+      expect(testId('checked')).toContain(dayOf('2026-11-13T12:00:00Z'));
     });
 
     it('reports a key that is not accepted any more and offers the way out', async () => {

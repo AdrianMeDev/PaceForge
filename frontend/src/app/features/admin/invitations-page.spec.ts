@@ -7,7 +7,7 @@ import {
   ListInvitationsResult,
   RevokeInvitationResult,
 } from '../../core/admin/invitations-models';
-import { query, required, settle, typeInto } from '../../testing/dom';
+import { dayOf, query, required, settle, typeInto } from '../../testing/dom';
 import { InvitationsPage } from './invitations-page';
 
 const LINK = 'http://localhost:4200/account/signup?invitation=SECRET-TOKEN&email=ann%40example.com';
@@ -139,8 +139,8 @@ describe('InvitationsPage', () => {
     it('shows when it was created and when it expires', async () => {
       await setup(ok(PENDING));
 
-      expect(rows()[0].textContent).toContain('Nov 12, 2026');
-      expect(rows()[0].textContent).toContain('Nov 19, 2026');
+      expect(rows()[0].textContent).toContain(dayOf(PENDING.created_at));
+      expect(rows()[0].textContent).toContain(dayOf(PENDING.expires_at));
     });
 
     it('offers to try again when the list cannot be loaded, and then shows it', async () => {
