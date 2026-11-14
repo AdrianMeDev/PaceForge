@@ -21,7 +21,12 @@ class Command(BaseCommand):
         parser.add_argument("--email", help="Only the activities of this account.")
 
     def handle(self, *args: Any, **options: Any) -> None:
-        activities = Activity.objects.filter(best_efforts__isnull=True).order_by("pk")
+        # An activity entered by hand has no file and no series: there is nothing to compute.
+        activities = (
+            Activity.objects.filter(best_efforts__isnull=True)
+            .exclude(source=Activity.Source.MANUAL)
+            .order_by("pk")
+        )
         if options["email"]:
             email = clean_email(options["email"])
             user = User.objects.filter(email=email).first()

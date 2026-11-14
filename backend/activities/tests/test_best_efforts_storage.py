@@ -1,4 +1,5 @@
 import logging
+from datetime import UTC, datetime
 from io import StringIO
 from typing import Any
 
@@ -162,6 +163,19 @@ class TestBackfill:
 
         assert Activity.objects.get(pk=done.pk).best_efforts == {"power": {}, "speed": {"x": 1}}
         assert output.startswith("Computed 0,")
+
+    def test_an_activity_entered_by_hand_has_no_file_and_is_left_alone(self, alice: User) -> None:
+        by_hand = Activity.objects.create(
+            owner=alice,
+            source=Activity.Source.MANUAL,
+            sport=Activity.Sport.STRENGTH,
+            start_time=datetime(2026, 11, 12, 6, 30, tzinfo=UTC),
+        )
+
+        output = backfill()
+
+        assert Activity.objects.get(pk=by_hand.pk).best_efforts is None
+        assert output == "Computed 0, no usable series in 0, failed 0, without a stored file 0.\n"
 
     def test_it_can_run_twice(self, alice: User) -> None:
         self.missing(alice, hard_ride())
