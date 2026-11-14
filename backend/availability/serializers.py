@@ -52,10 +52,22 @@ class WeekdaysField(serializers.Field[list[int], list[int], list[int], Any]):
 
 
 class AvailabilityInput(serializers.Serializer[Any]):
-    """What may be sent: any of the three, the rest stays as it is."""
+    """What may be sent: any of the four, the rest stays as it is."""
 
     weekdays = WeekdaysField(required=False)
     weekly_budget_minutes = WholeNumberField(
+        min_value=0,
+        max_value=WEEK_MINUTES_MAX,
+        allow_null=True,
+        required=False,
+        error_messages={
+            "invalid": BUDGET_RANGE,
+            "min_value": BUDGET_RANGE,
+            "max_value": BUDGET_RANGE,
+        },
+    )
+    # The same range as the budget: a number of minutes in a week, or ``null`` for none.
+    typical_weekly_minutes = WholeNumberField(
         min_value=0,
         max_value=WEEK_MINUTES_MAX,
         allow_null=True,
@@ -73,13 +85,14 @@ def availability_data(
     settings: AvailabilitySettings | None, weekdays: list[WeekdayMinutes]
 ) -> dict[str, Any]:
     """The answer: the seven weekdays (Monday first, 0 where nothing is saved), the weekly budget
-    (``null`` for none) and the limitations. No row ids, no owner."""
+    and the typical week (``null`` for none) and the limitations. No row ids, no owner."""
     minutes = [0] * 7
     for row in weekdays:
         minutes[row.weekday] = row.minutes
     return {
         "weekdays": minutes,
         "weekly_budget_minutes": settings.weekly_budget_minutes if settings else None,
+        "typical_weekly_minutes": settings.typical_weekly_minutes if settings else None,
         "limitations": settings.limitations if settings else "",
     }
 

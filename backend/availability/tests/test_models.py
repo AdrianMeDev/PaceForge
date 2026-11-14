@@ -71,6 +71,9 @@ class TestSettings:
             {"weekly_budget_minutes": 0},
             {"weekly_budget_minutes": 360},
             {"weekly_budget_minutes": WEEK_MINUTES_MAX},
+            {"typical_weekly_minutes": 0},
+            {"typical_weekly_minutes": 420},
+            {"typical_weekly_minutes": WEEK_MINUTES_MAX},
             {"limitations": "Knee: no running on consecutive days"},
             {"limitations": "x" * LIMITATIONS_MAX},
         ],
@@ -82,6 +85,7 @@ class TestSettings:
         settings = AvailabilitySettings.objects.create(owner=alice)
 
         assert settings.weekly_budget_minutes is None
+        assert settings.typical_weekly_minutes is None
         assert settings.limitations == ""
 
     @pytest.mark.parametrize(
@@ -89,6 +93,8 @@ class TestSettings:
         [
             ("weekly_budget_minutes", WEEK_MINUTES_MAX + 1),
             ("weekly_budget_minutes", -1),
+            ("typical_weekly_minutes", WEEK_MINUTES_MAX + 1),
+            ("typical_weekly_minutes", -1),
             ("limitations", "x" * (LIMITATIONS_MAX + 1)),
         ],
     )
@@ -101,6 +107,25 @@ class TestSettings:
         )
 
         assert "availability_budget_in_range" in message
+
+    def test_the_database_refuses_a_typical_week_above_a_week(self, alice: User) -> None:
+        message = rejected_by_database(
+            AvailabilitySettings, owner=alice, typical_weekly_minutes=WEEK_MINUTES_MAX + 1
+        )
+
+        assert "availability_typical_week_in_range" in message
+
+    def test_both_numbers_are_named_when_both_are_too_big(self, alice: User) -> None:
+        settings = AvailabilitySettings(
+            owner=alice,
+            weekly_budget_minutes=WEEK_MINUTES_MAX + 1,
+            typical_weekly_minutes=WEEK_MINUTES_MAX + 1,
+        )
+
+        with pytest.raises(ValidationError) as raised:
+            settings.full_clean(exclude=["owner"])
+
+        assert {"weekly_budget_minutes", "typical_weekly_minutes"} <= set(raised.value.message_dict)
 
     def test_a_user_has_one_settings_row(self, alice: User, bob: User) -> None:
         AvailabilitySettings.objects.create(owner=alice)
