@@ -15,6 +15,9 @@ import {
   ListActivitiesResult,
   ManualActivityInput,
   ManualField,
+  RateActivityResult,
+  RatingField,
+  RatingInput,
   Sport,
 } from './activities-models';
 
@@ -23,10 +26,11 @@ const IMPORT_URL = `${URL}import/`;
 const MANUAL_URL = `${URL}manual/`;
 const REJECTED_FALLBACK = 'The file could not be imported.';
 const REJECTED_MANUAL = 'The session could not be saved. Please check your entries.';
+const REJECTED_RATING = 'The rating could not be saved. Please check your entries.';
 const HANDLED_ERRORS = [400, 401, 403, 404, 409, 413, 429];
 const SPORTS: readonly string[] = ['running', 'cycling', 'swimming', 'strength', 'other'];
 const SOURCES: readonly string[] = ['fit_file', 'tcx_file', 'manual'];
-const MANUAL_FIELDS: readonly string[] = [
+const MANUAL_FIELDS: readonly ManualField[] = [
   'sport',
   'date',
   'time',
@@ -35,6 +39,7 @@ const MANUAL_FIELDS: readonly string[] = [
   'rpe',
   'notes',
 ];
+const RATING_FIELDS: readonly RatingField[] = ['rpe', 'notes'];
 
 interface Reply {
   status: number;
@@ -114,11 +119,29 @@ export class ActivitiesApi {
       case 201:
         return { kind: 'entered', activity: toActivity(reply.body, reply) };
       case 400:
-        return { kind: 'invalid', ...toRefusal(reply.body) };
+        return { kind: 'invalid', ...toRefusal(reply.body, MANUAL_FIELDS, REJECTED_MANUAL) };
       case 409:
         return { kind: 'duplicate', existingId: existingIdOf(reply) };
       case 429:
         return { kind: 'rate_limited' };
+      case 401:
+      case 403:
+        return { kind: 'forbidden' };
+      default:
+        throw unexpected(reply);
+    }
+  }
+
+  /** Says how hard a session felt and adds a note; nothing else of an activity can be changed. */
+  async rate(id: string, input: RatingInput): Promise<RateActivityResult> {
+    const reply = await this.send(this.http.patch(urlOf(id), input, { observe: 'response' }));
+    switch (reply.status) {
+      case 200:
+        return { kind: 'ok', activity: toDetail(reply) };
+      case 400:
+        return { kind: 'invalid', ...toRefusal(reply.body, RATING_FIELDS, REJECTED_RATING) };
+      case 404:
+        return { kind: 'not_found' };
       case 401:
       case 403:
         return { kind: 'forbidden' };
@@ -258,24 +281,25 @@ function existingIdOf(reply: Reply): string {
  * The messages of a refusal by field. Only the fields of the form are taken over, and only text
  * messages; an answer without any of them (the JSON could not be read at all) gives its `detail`.
  */
-function toRefusal(body: unknown): {
-  errors: Partial<Record<ManualField, string[]>>;
-  message: string | null;
-} {
-  const errors: Partial<Record<ManualField, string[]>> = {};
+function toRefusal<F extends string>(
+  body: unknown,
+  fields: readonly F[],
+  fallback: string,
+): { errors: Partial<Record<F, string[]>>; message: string | null } {
+  const errors: Partial<Record<F, string[]>> = {};
   const item = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
-  for (const field of MANUAL_FIELDS) {
+  for (const field of fields) {
     const messages = item[field];
     if (Array.isArray(messages)) {
       const texts = messages.filter((m): m is string => typeof m === 'string' && m !== '');
       if (texts.length > 0) {
-        errors[field as ManualField] = texts;
+        errors[field] = texts;
       }
     }
   }
   return {
     errors,
-    message: Object.keys(errors).length > 0 ? null : (detailOf(body) ?? REJECTED_MANUAL),
+    message: Object.keys(errors).length > 0 ? null : (detailOf(body) ?? fallback),
   };
 }
 

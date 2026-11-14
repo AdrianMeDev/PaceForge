@@ -1,0 +1,32 @@
+.rating {
+  margin-top: 0.5rem;
+}
+
+.rating summary {
+  cursor: pointer;
+  color: var(--accent);
+}
+
+form {
+  margin-top: 0.6rem;
+}
+
+select,
+textarea {
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+select[aria-invalid='true'],
+textarea[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+textarea {
+  resize: vertical;
+}

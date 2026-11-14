@@ -22,6 +22,7 @@ describe('Shell', () => {
           { path: 'goals', component: Blank },
           { path: 'availability', component: Blank },
           { path: 'planning', component: Blank },
+          { path: 'review', component: Blank },
           { path: 'settings/profile', component: Blank },
           { path: 'settings/security', component: Blank },
           { path: 'settings/connections', component: Blank },
@@ -66,7 +67,7 @@ describe('Shell', () => {
         a.getAttribute('href'),
       ]);
 
-    it('links to the dashboard, the activities, the goals, the training time, the week plan, the profile, the security page and the connections page', async () => {
+    it('links to the dashboard, the activities, the goals, the training time, the week plan, the week review, the profile, the security page and the connections page', async () => {
       const { page } = await setup();
 
       expect(links(page)).toEqual([
@@ -75,6 +76,7 @@ describe('Shell', () => {
         ['Goals', '/goals'],
         ['Training time', '/availability'],
         ['Week plan', '/planning'],
+        ['Week review', '/review'],
         ['Profile', '/settings/profile'],
         ['Security', '/settings/security'],
         ['Connections', '/settings/connections'],
@@ -91,6 +93,7 @@ describe('Shell', () => {
         ['Goals', '/goals'],
         ['Training time', '/availability'],
         ['Week plan', '/planning'],
+        ['Week review', '/review'],
         ['Profile', '/settings/profile'],
         ['Security', '/settings/security'],
         ['Connections', '/settings/connections'],

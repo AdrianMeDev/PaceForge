@@ -64,6 +64,7 @@ NOT_A_SPORT = "Choose one of the sports."
 IN_THE_FUTURE = "The session cannot start in the future."
 TOO_OLD = f"Choose a date from {EARLIEST.year} on."
 CONTROL_CHARACTERS = "Must not contain control characters."
+ONLY_THE_RATING = "Only the rating (rpe) and the note (notes) can be changed."
 
 
 class WholeNumberField(serializers.IntegerField):
@@ -82,6 +83,15 @@ class TextField(serializers.CharField):
         if not isinstance(data, str):
             self.fail("invalid")
         return super().to_internal_value(data)
+
+
+def checked_note(value: str) -> str:
+    """A note may have several lines; nothing else that is invisible or reorders text."""
+    if any(
+        unicodedata.category(char) in {"Cc", "Cf", "Zl", "Zp"} and char != "\n" for char in value
+    ):
+        raise serializers.ValidationError(CONTROL_CHARACTERS)
+    return value
 
 
 class ManualActivitySerializer(serializers.Serializer[Any]):
@@ -106,13 +116,7 @@ class ManualActivitySerializer(serializers.Serializer[Any]):
         return value
 
     def validate_notes(self, value: str) -> str:
-        # A note may have several lines; nothing else that is invisible or reorders text.
-        if any(
-            unicodedata.category(char) in {"Cc", "Cf", "Zl", "Zp"} and char != "\n"
-            for char in value
-        ):
-            raise serializers.ValidationError(CONTROL_CHARACTERS)
-        return value
+        return checked_note(value)
 
     def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
         user = self.context["user"]
@@ -126,3 +130,28 @@ class ManualActivitySerializer(serializers.Serializer[Any]):
     def start_of(user: User, day: dt.date, clock: dt.time) -> dt.datetime:
         """The moment ``day`` and ``clock`` mean on the user's wall clock, in UTC."""
         return dt.datetime.combine(day, clock, tzinfo=time_zone_of(user)).astimezone(dt.UTC)
+
+
+class ActivityRatingSerializer(serializers.Serializer[Any]):
+    """What the user may change about an activity after the fact: how hard it felt and a note.
+    Nothing else is ever changed, so any other field is refused rather than ignored (a client
+    that sends one has a mistake worth showing). A ``null`` rpe and an empty ``notes`` clear them.
+    """
+
+    rpe = WholeNumberField(min_value=1, max_value=RPE_MAX, allow_null=True, required=False)
+    notes = TextField(max_length=NOTES_MAX, allow_blank=True, required=False)
+
+    def validate_notes(self, value: str) -> str:
+        return checked_note(value)
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        sent = self.initial_data
+        if not attrs or not isinstance(sent, dict) or set(sent) - set(self.fields):
+            raise serializers.ValidationError(ONLY_THE_RATING)
+        return attrs
+
+    def update(self, instance: Activity, validated_data: dict[str, Any]) -> Activity:
+        for name, value in validated_data.items():
+            setattr(instance, name, value)
+        instance.save(update_fields=list(validated_data))
+        return instance

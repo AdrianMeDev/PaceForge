@@ -1,0 +1,239 @@
+<section class="review">
+  <h1>Week review</h1>
+
+  @switch (view()) {
+    @case ('loading') {
+      <p role="status">Loading…</p>
+    }
+    @case ('unreachable') {
+      <p class="alert" role="alert">Your weeks could not be loaded.</p>
+      <p><button type="button" class="primary" (click)="load()">Try again</button></p>
+    }
+    @case ('signed_out') {
+      <p class="alert" role="alert">Your session has ended. Please sign in again.</p>
+      <p><a routerLink="/login">Go to sign in</a></p>
+    }
+    @case ('ready') {
+      <div class="field">
+        <label for="review-week">Week</label>
+        <select
+          id="review-week"
+          [disabled]="work() !== null"
+          (change)="selectWeek($any($event.target).value)"
+        >
+          @for (item of weeks(); track item.week_start) {
+            <option [value]="item.week_start" [selected]="item.week_start === selected()">
+              {{ weekOption(item) }}
+            </option>
+          }
+        </select>
+      </div>
+
+      @for (message of errors(); track $index) {
+        <p class="alert" role="alert">{{ message }}</p>
+      }
+      @if (notice(); as text) {
+        <p class="notice" role="status">{{ text }}</p>
+      }
+      @if (work() === 'opening') {
+        <p role="status" data-testid="opening">Loading the week…</p>
+      }
+
+      @if (review(); as shown) {
+        <article class="week" data-testid="week">
+          @if (shown.plan === null) {
+            <p class="hint" data-testid="no-plan">
+              There is no confirmed plan for this week. Sessions you did are listed below; to see
+              how a plan went, confirm one on the
+              <a routerLink="/planning">Week plan</a> page.
+            </p>
+          } @else {
+            <p class="summary" data-testid="summary">{{ share(shown.comparison) }}</p>
+            <ul class="statuses" aria-label="Workouts by status">
+              @for (entry of statusCounts(shown.comparison); track entry.status) {
+                <li class="badge" [attr.data-status]="entry.status">
+                  {{ status[entry.status] }}: {{ entry.count }}
+                </li>
+              }
+            </ul>
+          }
+
+          @for (day of days(); track day.date) {
+            <h2>{{ day.label }}</h2>
+            @for (workout of day.workouts; track workout.id) {
+              <div
+                class="workout"
+                [attr.data-testid]="'workout-' + workout.id"
+                [attr.data-status]="workout.status"
+              >
+                <div class="head">
+                  <h3>{{ workout.title }}</h3>
+                  <span class="badge" [attr.data-status]="workout.status" data-testid="status">{{
+                    status[workout.status]
+                  }}</span>
+                  <span class="badge">{{ sport[workout.sport] }}</span>
+                </div>
+                <p class="meta" data-testid="planned">
+                  Planned: {{ minutes(workout.duration_minutes) }}
+                </p>
+                @if (activityOf(workout); as done) {
+                  <p class="done" data-testid="matched">
+                    Done: {{ sport[done.sport] }} · {{ size(done) }} · {{ rating(done) }}
+                  </p>
+                  @if (done.notes) {
+                    <p class="notes" data-testid="matched-notes">{{ done.notes }}</p>
+                  }
+                  <app-session-rating
+                    [activity]="done"
+                    [disabled]="work() !== null"
+                    (rated)="rated()"
+                    (gone)="gone()"
+                    (signedOut)="signOut()"
+                  />
+                } @else {
+                  <p class="hint" data-testid="no-activity">
+                    {{
+                      workout.activity_origin === 'user'
+                        ? 'You said that no activity belongs to this workout.'
+                        : 'No activity found for this workout.'
+                    }}
+                  </p>
+                }
+                @if (workout.status_origin === 'user' || workout.activity_origin === 'user') {
+                  <p class="hint" data-testid="by-you">Set by you.</p>
+                }
+
+                <details class="correction">
+                  <summary>Change what belongs to this workout</summary>
+                  <div class="field">
+                    <label [for]="'activity-' + workout.id">Activity</label>
+                    <select #chosen [id]="'activity-' + workout.id" [disabled]="work() !== null">
+                      <option [value]="automatic" [selected]="choiceOf(workout) === automatic">
+                        Match automatically
+                      </option>
+                      <option [value]="none" [selected]="choiceOf(workout) === none">
+                        No activity
+                      </option>
+                      @for (item of shown.activities; track item.id) {
+                        <option [value]="item.id" [selected]="choiceOf(workout) === item.id">
+                          {{ choice(item) }}
+                        </option>
+                      }
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label [for]="'state-' + workout.id">Status</label>
+                    <select #state [id]="'state-' + workout.id" [disabled]="work() !== null">
+                      @for (item of statusChoices; track item.value) {
+                        <option
+                          [value]="item.value"
+                          [selected]="statusChoiceOf(workout) === item.value"
+                        >
+                          {{ item.label }}
+                        </option>
+                      }
+                    </select>
+                  </div>
+                  <div class="actions">
+                    <button
+                      type="button"
+                      class="primary"
+                      [attr.data-testid]="'save-' + workout.id"
+                      [disabled]="work() !== null"
+                      (click)="correct(workout, chosen.value, state.value)"
+                    >
+                      Save
+                    </button>
+                  </div>
+                </details>
+              </div>
+            }
+          }
+
+          @if (unplanned().length > 0) {
+            <h2>Not planned</h2>
+            <ul
+              class="unplanned"
+              data-testid="unplanned"
+              aria-label="Sessions that were not planned"
+            >
+              @for (item of unplanned(); track item.id) {
+                <li [attr.data-testid]="'unplanned-' + item.id">
+                  <strong>{{ dayLabel(item.day) }}</strong> · {{ sport[item.sport] }} ·
+                  {{ size(item) }} · {{ rating(item) }}
+                  @if (item.notes) {
+                    <span class="notes">{{ item.notes }}</span>
+                  }
+                  <app-session-rating
+                    [activity]="item"
+                    [disabled]="work() !== null"
+                    (rated)="rated()"
+                    (gone)="gone()"
+                    (signedOut)="signOut()"
+                  />
+                </li>
+              }
+            </ul>
+          }
+
+          @if (shown.comparison.sports.length > 0) {
+            <h2>Planned and done</h2>
+            <table class="figures" data-testid="figures">
+              <thead>
+                <tr>
+                  <th scope="col">Sport</th>
+                  <th scope="col">Planned</th>
+                  <th scope="col">Done</th>
+                  <th scope="col">Load</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (entry of shown.comparison.sports; track entry.sport) {
+                  <tr [attr.data-testid]="'figures-' + entry.sport">
+                    <th scope="row">{{ sport[entry.sport] }}</th>
+                    <td>{{ counted(entry.planned_count, entry.planned_minutes) }}</td>
+                    <td>{{ counted(entry.actual_count, entry.actual_minutes) }}</td>
+                    <td>{{ loadOf(entry) }}</td>
+                  </tr>
+                }
+              </tbody>
+              <tfoot>
+                <tr data-testid="figures-total">
+                  <th scope="row">Together</th>
+                  <td>
+                    {{
+                      counted(
+                        shown.comparison.total.planned_count,
+                        shown.comparison.total.planned_minutes
+                      )
+                    }}
+                  </td>
+                  <td>
+                    {{
+                      counted(
+                        shown.comparison.total.actual_count,
+                        shown.comparison.total.actual_minutes
+                      )
+                    }}
+                  </td>
+                  <td>{{ loadOf(shown.comparison.total) }}</td>
+                </tr>
+              </tfoot>
+            </table>
+            <p class="hint">
+              Load is minutes times how hard it felt (AU). It is not the TSS of a platform.
+            </p>
+          }
+          <app-week-feedback-form
+            [week]="shown.week_start"
+            [feedback]="shown.feedback"
+            [disabled]="work() !== null"
+            (saved)="feedbackSaved($event)"
+            (notReviewable)="notReviewable()"
+            (signedOut)="signOut()"
+          />
+        </article>
+      }
+    }
+  }
+</section>

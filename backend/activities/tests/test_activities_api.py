@@ -101,6 +101,7 @@ class TestWhoMayCome:
             ("GET", LIST),
             ("GET", detail_url(uuid4())),
             ("DELETE", detail_url(uuid4())),
+            ("PATCH", detail_url(uuid4())),
             ("POST", IMPORT),
         ],
     )
@@ -387,7 +388,11 @@ class TestOtherRequests:
 
         assert api.call("POST", LIST, {"sport": "running"}).status_code == 405
         assert api.call("PUT", detail_url(mine["id"]), {"sport": "cycling"}).status_code == 405
-        assert api.call("PATCH", detail_url(mine["id"]), {"sport": "cycling"}).status_code == 405
+        # Only the rating can be patched (see ``test_rating_api``); the sport never.
+        assert (
+            api.call("PATCH", detail_url(mine["id"]), {"sport": "cycling"}).status_code
+            == HTTPStatus.BAD_REQUEST
+        )
         assert Activity.objects.get(pk=mine["id"]).sport == "running"
 
     @pytest.mark.parametrize("ident", ["not-a-uuid", "12345", str(uuid4())])

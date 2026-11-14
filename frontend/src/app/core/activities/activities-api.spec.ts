@@ -515,6 +515,115 @@ describe('ActivitiesApi', () => {
     });
   });
 
+  describe('rate', () => {
+    const RATED = { ...SUMMARY, rpe: 6, notes: 'Hilly', load: 20, laps: LAPS };
+
+    it('patches the rating as JSON and returns the activity with its laps', async () => {
+      const { result, request } = await run(
+        api.rate(ID, { rpe: 6, notes: 'Hilly' }),
+        'PATCH',
+        `${URL}${ID}/`,
+        RATED,
+        200,
+      );
+
+      expect(request.request.body).toEqual({ rpe: 6, notes: 'Hilly' });
+      expect(result).toEqual({
+        kind: 'ok',
+        activity: expect.objectContaining({ id: ID, rpe: 6, notes: 'Hilly', load: 20, laps: LAPS }),
+      });
+    });
+
+    it('sends a cleared rating as null and an empty note', async () => {
+      const { result, request } = await run(
+        api.rate(ID, { rpe: null, notes: '' }),
+        'PATCH',
+        `${URL}${ID}/`,
+        { ...SUMMARY, laps: [] },
+        200,
+      );
+
+      expect(request.request.body).toEqual({ rpe: null, notes: '' });
+      expect(result).toEqual({
+        kind: 'ok',
+        activity: expect.objectContaining({ rpe: null, notes: '', load: null }),
+      });
+    });
+
+    it('returns the messages by field and drops everything else', async () => {
+      const { result } = await run(
+        api.rate(ID, { rpe: 11, notes: '' }),
+        'PATCH',
+        `${URL}${ID}/`,
+        { rpe: ['Ensure this value is less than or equal to 10.'], sport: ['x'] },
+        400,
+      );
+
+      expect(result).toEqual({
+        kind: 'invalid',
+        errors: { rpe: ['Ensure this value is less than or equal to 10.'] },
+        message: null,
+      });
+    });
+
+    it('has a text of its own when the refusal names no field', async () => {
+      const { result } = await run(
+        api.rate(ID, { rpe: 5, notes: '' }),
+        'PATCH',
+        `${URL}${ID}/`,
+        { non_field_errors: ['Only the rating (rpe) and the note (notes) can be changed.'] },
+        400,
+      );
+
+      expect(result).toEqual({
+        kind: 'invalid',
+        errors: {},
+        message: 'The rating could not be saved. Please check your entries.',
+      });
+    });
+
+    it('says when the activity is not there or belongs to someone else', async () => {
+      const { result } = await run(
+        api.rate(ID, { rpe: 5, notes: '' }),
+        'PATCH',
+        `${URL}${ID}/`,
+        'Not found',
+        404,
+      );
+
+      expect(result).toEqual({ kind: 'not_found' });
+    });
+
+    it.each([401, 403])('says when the session is gone (%i)', async (status) => {
+      const { result } = await run(
+        api.rate(ID, { rpe: 5, notes: '' }),
+        'PATCH',
+        `${URL}${ID}/`,
+        NO_SESSION,
+        status,
+      );
+
+      expect(result).toEqual({ kind: 'forbidden' });
+    });
+
+    it('writes the id safely into the address', async () => {
+      const { request } = await run(
+        api.rate('a/b', { rpe: 5, notes: '' }),
+        'PATCH',
+        `${URL}a%2Fb/`,
+        null,
+        404,
+      );
+
+      expect(request.request.url).toBe(`${URL}a%2Fb/`);
+    });
+
+    it('rejects an answer without laps and a server error', async () => {
+      await runFailing(api.rate(ID, { rpe: 6, notes: '' }), 'PATCH', `${URL}${ID}/`, SUMMARY, 200);
+      await runFailing(api.rate(ID, { rpe: 6, notes: '' }), 'PATCH', `${URL}${ID}/`, null, 500);
+    });
+  });
+
   describe('delete', () => {
     it('deletes the activity', async () => {
       const { result } = await run(api.delete(ID), 'DELETE', `${URL}${ID}/`, null, 204);

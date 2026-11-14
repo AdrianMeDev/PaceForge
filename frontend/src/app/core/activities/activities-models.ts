@@ -107,3 +107,21 @@ export type EnterActivityResult =
   | Forbidden;
 
 export type DeleteActivityResult = { kind: 'deleted' } | NotFound | Forbidden;
+
+/** What the user may change about an activity afterwards: how hard it felt, and a note. */
+export interface RatingInput {
+  /** 1 to 10, or `null` to clear it. */
+  rpe: number | null;
+  /** Up to 500 characters; empty clears it. */
+  notes: string;
+}
+
+export type RatingField = 'rpe' | 'notes';
+
+export type RateActivityResult =
+  /** The activity as it is now, with its load following the rating. */
+  | { kind: 'ok'; activity: ActivityDetail }
+  | NotFound
+  /** The server refused the input: the messages by field, or `message` if none is for a field. */
+  | { kind: 'invalid'; errors: Partial<Record<RatingField, string[]>>; message: string | null }
+  | Forbidden;

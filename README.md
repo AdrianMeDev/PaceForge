@@ -14,8 +14,10 @@ them, goals (races, threshold targets and general goals, with one main goal), yo
 ([Anthropic or an OpenAI-compatible endpoint](#ai-coach-bring-your-own-key), key stored encrypted,
 with a connection check and a usage overview), the model and the plausibility checks for a
 training week ([format and rules](docs/weekly-plan.md)), a **Week plan** page on which your own
-AI coach drafts a training week that you read, confirm or discard ([Week plan](#week-plan)), and
-the data-isolation foundation the training features will build on.
+AI coach drafts a training week that you read, confirm or discard ([Week plan](#week-plan)), a
+**Week review** page that shows how a week went against the confirmed plan, on which you rate your
+sessions and say how the week felt ([Week review](#week-review)), and the data-isolation foundation
+the training features will build on.
 **Not there yet:** reading activities from Intervals.icu over that connection (it can only ever
 work for activities that do not come from Strava, see [Activities](#activities)), sending
 invitations by email (the administrator hands the link on) and more of the coach: it drafts a
@@ -367,7 +369,8 @@ not record, and for the sessions that only Strava has (Intervals.icu cannot hand
   zone from the [profile](#athlete-profile); without one, UTC), the duration in whole minutes (1 to
   1440), optionally the distance in kilometres (up to 1000), **how hard it felt** on a scale from 1
   to 10 (RPE, the rating of perceived exertion) and a note of up to 500 characters. A session in
-  the future, or before the year 2000, is refused. There is no editing: delete it and enter it again.
+  the future, or before the year 2000, is refused. Apart from the rating and the note (see [Week
+  review](#week-review)) there is no editing: delete the session and enter it again.
 - **The coach counts it** like an imported activity: its duration is part of the minutes of the last
   four weeks that the plan builds on. Nothing is estimated beyond that: no heart rate, no power, no
   best efforts, so it does not change your estimated thresholds.
@@ -375,7 +378,8 @@ not record, and for the sessions that only Strava has (Intervals.icu cannot hand
   (arbitrary units; a 45 minute session at 7 is 315 AU). It is an estimate from how it felt and
   **not the training stress score (TSS)** of a power meter or a platform: the two are on different
   scales and are never added up. A session without a rating has no load, and neither does one
-  without a duration. (Imported files carry no rating yet; rating them comes with the week review.)
+  without a duration. (Imported files carry no rating at first; you can rate any activity afterwards
+  on the [Week review](#week-review) page.)
 
 #### The same session twice
 
@@ -663,6 +667,80 @@ against the real calendar by the developer, and neither has the page in a browse
 the description format (pace targets, the strength workout) is written from the documentation, and
 cycling workouts are sent as `Ride`: whether a ride reaches Zwift as a workout may depend on
 Intervals.icu treating it as `VirtualRide`. Your first real week is the first real test.
+
+## Week review
+
+The **Week review** page (`/review`, in the navigation) shows how a week went against the plan you
+confirmed. It reads the plan and what you did; it never changes the plan. Choose the **week**: the
+current week and the four before it can be reviewed (`REVIEW_WEEKS` in
+`backend/reviews/services.py`), and the page starts with the latest of them that has a confirmed
+plan. A week is a calendar week, Monday to Sunday, on the clock of the time zone of your
+[profile](#athlete-profile) (UTC without one), so a session just after midnight belongs to the day
+you lived it. A week without a confirmed plan shows what you did and a link to the plan page.
+
+**Which activity belongs to which workout.** PaceForge matches them by itself:
+
+- An activity belongs to the workout of the **same day and the same sport**. Several of one sport on
+  a day pair up in order: the workouts by their time of day, the activities by their start.
+- A workout on a day that is over and still without an activity takes one that is left over on its
+  day, whatever its sport: it was **replaced**.
+- An activity belongs to **one workout at most**. What is left over is listed under *Not planned*.
+
+**How a workout went.** Every workout has one status:
+
+| Status       | When                                                                     |
+| ------------ | ------------------------------------------------------------------------ |
+| **Done**     | an activity of its sport with at least 75 % of the planned minutes       |
+| **Partial**  | an activity of its sport with less than that                             |
+| **Replaced** | an activity of another sport                                             |
+| **Missed**   | no activity, and its day is over                                         |
+| **Open**     | no activity, and its day is not over yet (it cannot be chosen by hand)   |
+
+The 75 % is `PARTIAL_BELOW_PERCENT` in `backend/reviews/matching.py`. An activity without a duration
+counts as done: a shortfall is not guessed. The page counts the statuses and says how many of the
+workouts that are not open are done ("1 of 2 workouts done (50 %)").
+
+**Correct it.** Under *Change what belongs to this workout* you can choose an activity of the week
+for the workout, say that **no activity** belongs to it, or leave it to the automatic match, and
+set the status by hand. Setting **Done**, **Partial** or **Replaced** needs an activity; **Missed**
+frees the workout of its activity, which a later workout of the day can then take. An activity can
+be assigned by hand to one workout only; to move it, free it there first. Saving with everything
+empty goes back to the automatic match. What you set is kept beside the plan, because a confirmed
+plan is never changed; a new version of the week starts without your corrections.
+
+**Rate a session.** Every activity of the week, planned or not and imported or entered by hand, has
+*Rate this session*: how hard it felt (1 to 10, [RPE](#sessions-entered-by-hand)) and a note of up
+to 500 characters. You can change or clear it at any time. The load follows the rating (minutes
+times RPE, in AU; it is not TSS).
+
+**How the week felt.** Tiredness, motivation and pain, each from 1 to 5, and a note of up to 500
+characters. There is one feedback per week; saving replaces it, and saving with nothing in it
+removes it.
+
+**Planned and done.** A table per sport and for the week: the planned workouts and minutes, the
+activities done and their minutes (every activity of the week counts, planned or not), and the sum
+of the loads of the rated sessions, with "(1 of 2 rated)" where not every session is rated. There is
+no planned load, because workouts have none yet.
+
+**What the coach is told.** Nothing of this is sent to your AI provider yet. The plan is that the
+coach will be told numbers only (statuses, minutes, ratings, load and the three scales) and never
+your notes, which are yours.
+
+The API (all of it needs a signed-in user, and what you send replaces what was there; a field that
+is not part of a form is refused):
+
+| Request                                            | What it does                                              |
+| -------------------------------------------------- | --------------------------------------------------------- |
+| `GET /api/reviews/weeks/`                          | the weeks that can be reviewed                            |
+| `GET /api/reviews/weeks/<Monday>/`                 | one week: plan, match, activities, comparison, feedback   |
+| `PUT /api/reviews/weeks/<Monday>/workouts/<id>/`   | `activity`, `no_activity`, `status` of one workout        |
+| `PUT /api/reviews/weeks/<Monday>/feedback/`        | `fatigue`, `motivation`, `pain`, `notes` of the week      |
+| `PATCH /api/activities/<id>/`                      | `rpe` and `notes` of an activity (nothing else changes)  |
+
+The two `PUT`s answer with the whole week as the `GET` shows it.
+
+**Not verified yet.** The page is tested with test doubles for the API, and the endpoints against a
+test database; it has not been used in a browser by the developer.
 
 ## Instance key
 

@@ -83,6 +83,11 @@ export const routes: Routes = [
           import('./features/planning/planning-page').then((m) => m.PlanningPage),
       },
       {
+        path: 'review',
+        title: 'Week review',
+        loadComponent: () => import('./features/review/review-page').then((m) => m.ReviewPage),
+      },
+      {
         path: 'settings/profile',
         title: 'Athlete profile',
         loadComponent: () => import('./features/athlete/athlete-page').then((m) => m.AthletePage),
