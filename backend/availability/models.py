@@ -16,17 +16,34 @@ NOTE_MAX = 200
 PERIOD_MAX_DAYS = 366
 
 
+class Sport(models.TextChoices):
+    """The sports a plan can contain, in the order they are listed and stored. The same values as
+    ``planning.schema.Sport`` (a test keeps the two in step)."""
+
+    RUNNING = "running", "Running"
+    CYCLING = "cycling", "Cycling"
+    SWIMMING = "swimming", "Swimming"
+    STRENGTH = "strength", "Strength"
+
+
+SPORTS: tuple[str, ...] = tuple(Sport.values)
+
+
 class AvailabilitySettings(OwnedModel):
     """What a user says about their training time apart from the weekdays. One per user.
 
     The weekly budget caps what the weekdays add up to; empty means no cap. The typical week is what
     the athlete calls a normal week of training, in minutes (empty: not given): a reference for the
-    planning after a break, never a limit on what the weekdays offer. The limitations are free text
-    and are never interpreted here.
+    planning after a break, never a limit on what the weekdays offer. The sports are the ones the
+    athlete wants in a plan (empty: none chosen, which means all of them) and ``stretching`` says
+    whether stretching may be added to sessions. The limitations are free text and are never
+    interpreted here.
     """
 
     weekly_budget_minutes = models.PositiveIntegerField(null=True, blank=True)
     typical_weekly_minutes = models.PositiveIntegerField(null=True, blank=True)
+    sports = models.JSONField(default=list, blank=True)
+    stretching = models.BooleanField(default=False)
     limitations = models.CharField(max_length=LIMITATIONS_MAX, blank=True)
 
     class Meta:
@@ -55,8 +72,28 @@ class AvailabilitySettings(OwnedModel):
             minutes = getattr(self, name)
             if minutes is not None and minutes > WEEK_MINUTES_MAX:
                 errors[name] = f"Enter at most {WEEK_MINUTES_MAX} minutes (a week)."
+        sports = self.sports
+        if not (
+            isinstance(sports, list)
+            and all(isinstance(sport, str) and sport in SPORTS for sport in sports)
+            and len(set(sports)) == len(sports)
+        ):
+            errors["sports"] = "Use each of running, cycling, swimming and strength at most once."
         if errors:
             raise ValidationError(errors)
+
+    @property
+    def chosen_sports(self) -> list[str]:
+        """The sports of the plan in the order of ``SPORTS``; all of them if none was chosen."""
+        return effective_sports(self.sports)
+
+
+def effective_sports(chosen: object) -> list[str]:
+    """``chosen`` (what is stored, or nothing) as the list of sports a plan may use: the chosen
+    ones in the order of ``SPORTS``, and all of them if none was chosen."""
+    if isinstance(chosen, list) and chosen:
+        return [sport for sport in SPORTS if sport in chosen]
+    return list(SPORTS)
 
 
 class WeekdayMinutes(OwnedModel):

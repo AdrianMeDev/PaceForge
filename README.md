@@ -523,7 +523,8 @@ the planning that will use it; they take calendar days, so which day it is stays
 business.
 
 The API is `GET` and `PATCH` on `/api/availability/` (`weekdays` Monday first,
-`weekly_budget_minutes`, `typical_weekly_minutes`, `limitations`; `null` removes a number) and
+`weekly_budget_minutes`, `typical_weekly_minutes`, `sports`, `stretching`, `limitations`; `null`
+removes a number) and
 `/api/availability/periods/` with list, create, read, change and delete.
 
 Not there yet: time windows within a day, and different time per sport.
