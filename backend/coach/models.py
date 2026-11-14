@@ -102,6 +102,7 @@ class AIUsageRecord(OwnedModel):
     class Purpose(models.TextChoices):
         CHECK = "check", "Connection check"
         WEEKLY_PLAN = "weekly_plan", "Weekly plan"
+        WEEK_REVIEW = "week_review", "Week review"
 
     class Outcome(models.TextChoices):
         SUCCESS = "success", "Success"
