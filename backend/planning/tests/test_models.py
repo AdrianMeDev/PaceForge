@@ -17,6 +17,7 @@ from planning.models import (
     ZONE_COUNT,
     PlannedWorkout,
     WeeklyPlan,
+    WorkoutExport,
 )
 from planning.schema import Slot
 
@@ -616,3 +617,94 @@ class TestAPlanThatIsNoDraft:
 
         workout.refresh_from_db()
         assert workout.title == "Changed"
+
+
+def export_fields(owner: User, **fields: Any) -> dict[str, Any]:
+    return {
+        "owner": owner,
+        "week_start": MONDAY,
+        "external_id": "paceforge-1",
+        "status": "synced",
+        "event_id": 4711,
+        **fields,
+    }
+
+
+class TestWorkoutExport:
+    def test_a_synced_export(self, alice: User) -> None:
+        workout = make_workout(make_plan(alice))
+
+        export = WorkoutExport.objects.create(**export_fields(alice, workout=workout))
+
+        assert export.workout == workout
+        assert export.error_code == ""
+        assert export.pushed_at is not None
+        assert list(workout.exports.all()) == [export]
+
+    def test_a_failed_export_has_a_code_and_may_have_an_event(self, alice: User) -> None:
+        WorkoutExport.objects.create(
+            **export_fields(alice, status="failed", event_id=None, error_code="rejected")
+        )
+        WorkoutExport.objects.create(
+            **export_fields(alice, external_id="paceforge-2", status="failed", error_code="x")
+        )
+
+        assert WorkoutExport.objects.filter(status="failed").count() == 2
+
+    @pytest.mark.parametrize(
+        "changes",
+        [
+            {"status": "synced", "event_id": None},
+            {"status": "synced", "error_code": "rejected"},
+            {"status": "failed", "event_id": None, "error_code": ""},
+            {"status": "failed", "error_code": ""},
+            {"status": "pending"},
+            {"week_start": MONDAY + timedelta(days=1)},
+        ],
+    )
+    def test_the_database_refuses_an_inconsistent_state(
+        self, alice: User, changes: dict[str, Any]
+    ) -> None:
+        message = rejected_by_database(WorkoutExport, **export_fields(alice, **changes))
+
+        assert "planning_export" in message
+
+    def test_an_external_id_is_used_once_per_user(self, alice: User, bob: User) -> None:
+        WorkoutExport.objects.create(**export_fields(alice))
+        WorkoutExport.objects.create(**export_fields(bob))  # another user: fine
+
+        message = rejected_by_database(WorkoutExport, **export_fields(alice, event_id=1))
+
+        assert "planning_one_export_per_external_id" in message
+
+    def test_the_export_stays_when_the_workout_is_deleted(self, alice: User) -> None:
+        plan = make_plan(alice)
+        export = WorkoutExport.objects.create(**export_fields(alice, workout=make_workout(plan)))
+
+        plan.delete()
+
+        export.refresh_from_db()
+        assert export.workout is None
+        assert export.event_id == 4711
+
+    def test_for_user_shows_only_the_own_rows(self, alice: User, bob: User) -> None:
+        mine = WorkoutExport.objects.create(**export_fields(alice))
+        WorkoutExport.objects.create(**export_fields(bob))
+
+        assert list(WorkoutExport.objects.for_user(alice)) == [mine]
+        assert not WorkoutExport.objects.for_user(AnonymousUser()).exists()
+
+    def test_deleting_a_user_deletes_their_exports(self, alice: User, bob: User) -> None:
+        WorkoutExport.objects.create(**export_fields(alice))
+        keep = WorkoutExport.objects.create(**export_fields(bob))
+
+        alice.delete()
+
+        assert list(WorkoutExport.objects.all()) == [keep]
+
+    def test_it_shows_no_free_text(self, alice: User) -> None:
+        export = WorkoutExport.objects.create(
+            **export_fields(alice, status="failed", error_code="rejected")
+        )
+
+        assert str(export) == f"Export of user {alice.pk} for the week of {MONDAY} (failed)"

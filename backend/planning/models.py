@@ -5,6 +5,7 @@ from typing import Any
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import F, Q
+from django.utils import timezone
 
 from core.models import OwnedModel
 
@@ -215,3 +216,56 @@ class PlannedWorkout(OwnedModel):
             errors["segments"] = "Segments are a list."
         if errors:
             raise ValidationError(errors)
+
+
+class WorkoutExport(OwnedModel):
+    """What PaceForge knows about one event it put into the user's Intervals.icu calendar.
+
+    ``external_id`` is the key at Intervals.icu (the same id again updates the same event) and is
+    made from the id of the workout, so a new version of a week, whose workouts are new, has other
+    ids. The row stays when the workout is gone (the plan was deleted, or a newer version was
+    pushed instead): it is what lets the next push remove the event from the calendar.
+
+    ``error_code`` is one of the fixed codes of ``planning.push``, never what Intervals.icu said or
+    anything of the workout.
+    """
+
+    class Status(models.TextChoices):
+        SYNCED = "synced", "Synced"
+        FAILED = "failed", "Failed"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid7, editable=False)
+    # The Monday of the week the workout belongs to: all events of a week are handled together.
+    week_start = models.DateField()
+    workout = models.ForeignKey(
+        PlannedWorkout, null=True, blank=True, on_delete=models.SET_NULL, related_name="exports"
+    )
+    external_id = models.CharField(max_length=100)
+    # The id of the event at Intervals.icu; empty until the event has been created. A failed
+    # update keeps it: the event is still there.
+    event_id = models.PositiveBigIntegerField(null=True, blank=True)
+    status = models.CharField(max_length=20, choices=Status.choices)
+    error_code = models.CharField(max_length=40, blank=True)
+    # The time of the last attempt, successful or not.
+    pushed_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["owner", "external_id"], name="planning_one_export_per_external_id"
+            ),
+            models.CheckConstraint(
+                condition=Q(week_start__iso_week_day=1), name="planning_export_week_is_a_monday"
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(status="synced", event_id__isnull=False, error_code="")
+                    | (Q(status="failed") & ~Q(error_code=""))
+                ),
+                name="planning_export_state_is_consistent",
+            ),
+        ]
+        indexes = [models.Index(fields=["owner", "week_start"], name="planning_export_owner_week")]
+
+    def __str__(self) -> str:
+        return f"Export of user {self.owner_id} for the week of {self.week_start} ({self.status})"
