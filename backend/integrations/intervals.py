@@ -103,7 +103,7 @@ class IntervalsClient:
 
     def get_athlete(self) -> Athlete:
         """Check the key and return the account it belongs to (``athlete/0`` means "me")."""
-        data = self._get_json("/athlete/0")
+        data = self._request("GET", "/athlete/0")
         athlete_id = data.get("id") if isinstance(data, dict) else None
         if not isinstance(athlete_id, str) or not ATHLETE_ID.fullmatch(athlete_id):
             raise UnexpectedResponseError("The answer has no usable athlete id.")
@@ -115,7 +115,7 @@ class IntervalsClient:
         Anything that does not make sense is skipped, value by value, instead of failing the
         whole call. Where two entries claim the same sport group, the first one wins per value.
         """
-        data = self._get_json("/athlete/0/sport-settings")
+        data = self._request("GET", "/athlete/0/sport-settings")
         if not isinstance(data, list):
             raise UnexpectedResponseError("The answer is not a list of sport settings.")
         merged: dict[str, dict[str, float]] = {}
@@ -141,14 +141,23 @@ class IntervalsClient:
             if sport in merged
         ]
 
-    def _get_json(self, path: str) -> object:
+    def _request(self, method: str, path: str, payload: object = None) -> object:
+        """One call, whatever the method: the same limits and the same errors for all of them.
+
+        ``payload`` (if any) is sent as JSON. Nothing of it, and nothing of the answer, goes into an
+        error.
+        """
+        headers = {
+            "Authorization": self._authorization,
+            "Accept": "application/json",
+            "User-Agent": "PaceForge",
+        }
+        data = None
+        if payload is not None:
+            data = json.dumps(payload).encode()
+            headers["Content-Type"] = "application/json"
         request = urllib.request.Request(
-            self._base_url + path,
-            headers={
-                "Authorization": self._authorization,
-                "Accept": "application/json",
-                "User-Agent": "PaceForge",
-            },
+            self._base_url + path, data=data, headers=headers, method=method
         )
         try:
             with _opener.open(request, timeout=self._timeout) as response:
