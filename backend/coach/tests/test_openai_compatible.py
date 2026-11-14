@@ -7,7 +7,7 @@ import pytest
 
 from accounts.models import User
 from coach.models import AIProviderConfiguration
-from coach.providers import provider_for, transport
+from coach.providers import openai_compatible, provider_for, transport
 from coach.providers.anthropic import AnthropicProvider
 from coach.providers.base import (
     CoachProvider,
@@ -20,7 +20,7 @@ from coach.providers.base import (
     RateLimitedError,
     UnexpectedResponseError,
 )
-from coach.providers.openai_compatible import OpenAICompatibleProvider
+from coach.providers.openai_compatible import JSON_MODE_HOSTS, OpenAICompatibleProvider
 
 from .fake_providers import FakeProvider, running
 
@@ -64,6 +64,91 @@ def error_of(fake: FakeProvider, base: str, data: object, status: int = 200) -> 
     with pytest.raises(ProviderError) as raised:
         provider(base, KEY).complete("", HELLO, 100)
     return raised.value
+
+
+class TestJsonOutput:
+    """``response_format`` goes only to hosts known to take it, and only when it is asked for."""
+
+    JSON_MODE = {"response_format": {"type": "json_object"}}
+
+    @pytest.fixture
+    def sent(self, monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
+        bodies: list[dict[str, Any]] = []
+
+        def record(url: str, headers: dict[str, str], payload: dict[str, Any], **_: Any) -> Any:
+            bodies.append(payload)
+            return ANSWER
+
+        monkeypatch.setattr(openai_compatible, "post_json", record)
+        return bodies
+
+    def ask(self, settings: Any, address: str, json_output: bool | None) -> None:
+        settings.AI_ALLOWED_BASE_URLS = (address,)
+        kwargs = {} if json_output is None else {"json_output": json_output}
+        OpenAICompatibleProvider(address, MODEL, KEY).complete("", HELLO, 10, **kwargs)
+
+    def test_the_known_host_is_deepseek_and_only_deepseek(self) -> None:
+        assert JSON_MODE_HOSTS == {"api.deepseek.com"}
+
+    @pytest.mark.parametrize(
+        "address",
+        [
+            "https://api.deepseek.com",
+            "https://api.deepseek.com/v1",
+            "http://api.deepseek.com:8443/v1",
+        ],
+    )
+    def test_a_known_host_gets_json_mode_when_it_is_asked_for(
+        self, settings: Any, sent: list[dict[str, Any]], address: str
+    ) -> None:
+        self.ask(settings, address, True)
+
+        assert sent[0]["response_format"] == {"type": "json_object"}
+        assert sent[0]["messages"] == [{"role": "user", "content": "Hello"}]
+
+    @pytest.mark.parametrize("json_output", [False, None])
+    def test_a_known_host_gets_nothing_extra_when_it_is_not_asked_for(
+        self, settings: Any, sent: list[dict[str, Any]], json_output: bool | None
+    ) -> None:
+        self.ask(settings, "https://api.deepseek.com", json_output)
+
+        assert "response_format" not in sent[0]
+
+    @pytest.mark.parametrize(
+        "address",
+        [
+            "https://openrouter.ai/api/v1",
+            "https://api.openai.com/v1",
+            "http://localhost:11434/v1",
+            "https://api.deepseek.com.evil.example/v1",
+            "https://evil.example/api.deepseek.com",
+            "https://deepseek.com",
+        ],
+    )
+    def test_any_other_host_never_gets_it(
+        self, settings: Any, sent: list[dict[str, Any]], address: str
+    ) -> None:
+        self.ask(settings, address, True)
+
+        assert "response_format" not in sent[0]
+
+    def test_the_rest_of_the_request_is_the_same(
+        self, settings: Any, sent: list[dict[str, Any]]
+    ) -> None:
+        self.ask(settings, "https://api.deepseek.com", False)
+        self.ask(settings, "https://api.deepseek.com", True)
+
+        assert {**sent[0], **self.JSON_MODE} == sent[1]
+
+    def test_it_travels_over_a_real_connection_to_a_listed_host(
+        self, fake: FakeProvider, base: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(openai_compatible, "JSON_MODE_HOSTS", frozenset({"127.0.0.1"}))
+        fake.reply(ANSWER)
+
+        provider(base, KEY).complete("", HELLO, 10, json_output=True)
+
+        assert fake.requests[0]["json"]["response_format"] == {"type": "json_object"}
 
 
 class TestTheRequest:

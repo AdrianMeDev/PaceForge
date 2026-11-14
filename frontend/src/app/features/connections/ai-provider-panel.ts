@@ -7,6 +7,7 @@ import {
   AiProviderState,
   AiStatus,
 } from '../../core/coach/coach-models';
+import { endpointLabel } from './known-endpoints';
 
 type View = 'loading' | 'unreachable' | 'ready';
 
@@ -89,10 +90,15 @@ export class AiProviderPanel implements OnInit {
     if (state === null) {
       return [];
     }
-    const listed = state.allowed_base_urls.map((address) => ({ address, allowed: true }));
+    const entry = (address: string, allowed: boolean) => {
+      const name = endpointLabel(address);
+      const text = name === null ? address : `${name} (${address})`;
+      return { address, allowed, text: allowed ? text : `${text} (not allowed any more)` };
+    };
+    const listed = state.allowed_base_urls.map((address) => entry(address, true));
     const saved = state.base_url;
     return saved !== null && !state.allowed_base_urls.includes(saved)
-      ? [...listed, { address: saved, allowed: false }]
+      ? [...listed, entry(saved, false)]
       : listed;
   });
 

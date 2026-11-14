@@ -12,6 +12,8 @@ from django.conf import settings
 from django.urls import get_resolver
 
 from accounts.models import User
+from coach.endpoints import parse_base_urls
+from coach.providers.openai_compatible import JSON_MODE_HOSTS
 from coach.providers.transport import TIMEOUT_SECONDS
 from planning import briefing, generation, models, prompt, rules, schema
 from planning.briefing import build_briefing
@@ -299,6 +301,54 @@ class TestTheApi:
 
         assert rate == "5/min"
         assert "5 a minute" in subsection("The API")
+
+
+class TestTheJsonMode:
+    def test_the_page_lists_the_hosts_of_the_code(self) -> None:
+        match = re.search(r"JSON output is requested from these hosts: (.*?)\.\n", DOC, re.S)
+        assert match, "no list of hosts"
+
+        assert set(re.findall(r"`([^`]+)`", match.group(1))) == set(JSON_MODE_HOSTS)
+
+    def test_the_readme_names_every_such_host(self) -> None:
+        for host in JSON_MODE_HOSTS:
+            assert f"https://{host}" in README, host
+
+
+class TestTheReadmeExamples:
+    def lines(self) -> list[str]:
+        return re.findall(r"^AI_ALLOWED_BASE_URLS=(.+)$", README, re.M)
+
+    def test_there_are_examples(self) -> None:
+        assert len(self.lines()) >= 2
+
+    def test_every_address_of_every_example_is_accepted_by_the_code(self) -> None:
+        for line in self.lines():
+            entries = line.split(",")
+
+            assert len(parse_base_urls("AI_ALLOWED_BASE_URLS", entries)) == len(entries), line
+
+    def test_the_examples_show_the_services_that_the_form_names(self) -> None:
+        text = "\n".join(self.lines())
+
+        assert "https://api.deepseek.com" in text
+        assert "https://openrouter.ai/api/v1" in text
+
+
+class TestTheReadmeTable:
+    def row(self, name: str) -> str:
+        (line,) = [r for r in README.splitlines() if r.startswith(f"| {name} ")]
+        return line
+
+    def test_the_table_has_the_addresses_that_the_examples_and_the_form_use(self) -> None:
+        assert "`https://api.deepseek.com`" in self.row("DeepSeek")
+        assert "`https://openrouter.ai/api/v1`" in self.row("OpenRouter")
+
+    def test_the_addresses_of_the_table_are_accepted_by_the_code(self) -> None:
+        for name in ("DeepSeek", "OpenRouter"):
+            (address,) = re.findall(r"`(https?://[^`]+)`", self.row(name))
+
+            assert parse_base_urls("AI_ALLOWED_BASE_URLS", [address]) == (address,)
 
 
 class TestTheReadme:

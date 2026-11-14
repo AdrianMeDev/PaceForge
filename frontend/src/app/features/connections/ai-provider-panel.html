@@ -137,7 +137,7 @@
               >
                 @for (entry of addresses(); track entry.address) {
                   <option [value]="entry.address" [selected]="baseUrl() === entry.address">
-                    {{ entry.address }}{{ entry.allowed ? '' : ' (not allowed any more)' }}
+                    {{ entry.text }}
                   </option>
                 }
               </select>

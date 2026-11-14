@@ -103,6 +103,7 @@ def generate(user: User, monday: date) -> Generated:
                 SYSTEM_PROMPT,
                 messages,
                 PLAN_MAX_TOKENS,
+                json_output=True,
             )
         except ProviderError, coach.NotConfiguredError:
             if best is None or best.plan is None:

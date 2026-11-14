@@ -251,6 +251,17 @@ class TestADraftFromTheFirstAnswer:
         assert [p.status for p in plans(alice)] == [Status.DRAFT, Status.DRAFT]
 
 
+class TestJsonOutput:
+    def test_every_call_for_a_plan_asks_for_json(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        scripted = provide("Sure!", good())
+
+        generate(alice, MONDAY)
+
+        assert scripted.json_outputs == [True, True]
+
+
 class TestTheRepairRound:
     def test_an_unreadable_answer_is_told_what_was_wrong_and_may_try_again(
         self, alice: User, provide: Callable[..., Scripted]

@@ -31,7 +31,14 @@ class AnthropicProvider:
     def __repr__(self) -> str:
         return f"AnthropicProvider(model={self._model!r}, base_url={self._base_url!r})"
 
-    def complete(self, system: str, messages: Sequence[Message], max_tokens: int) -> Completion:
+    def complete(
+        self,
+        system: str,
+        messages: Sequence[Message],
+        max_tokens: int,
+        json_output: bool = False,
+    ) -> Completion:
+        # The Messages API has no JSON mode that fits a plain request: the flag is ignored.
         if not messages:
             raise ValueError("There is nothing to send.")
         if max_tokens < 1:

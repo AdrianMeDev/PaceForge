@@ -25,7 +25,16 @@ class Completion:
 
 @runtime_checkable
 class CoachProvider(Protocol):
-    def complete(self, system: str, messages: Sequence[Message], max_tokens: int) -> Completion: ...
+    """``json_output`` asks the provider to answer with a JSON object where it has a mode for it.
+    A provider without one ignores it: the caller reads the answer strictly either way."""
+
+    def complete(
+        self,
+        system: str,
+        messages: Sequence[Message],
+        max_tokens: int,
+        json_output: bool = False,
+    ) -> Completion: ...
 
 
 class ProviderError(Exception):

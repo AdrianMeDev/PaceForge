@@ -15,6 +15,11 @@ const KEY = 'sk-ant-test-0123456789-abcdefghij';
 const OTHER_KEY = 'sk-ant-other-9876543210-zyxwvutsrq';
 const LOCAL = 'http://localhost:11434/v1';
 const OPENAI = 'https://api.openai.com/v1';
+const DEEPSEEK = 'https://api.deepseek.com';
+// The form names the addresses it knows; the value of an option stays the plain address.
+const LOCAL_TEXT = `Ollama (this machine) (${LOCAL})`;
+const OPENAI_TEXT = `OpenAI (${OPENAI})`;
+const DEEPSEEK_TEXT = `DeepSeek (${DEEPSEEK})`;
 
 const NOT_SET_UP: AiProviderState = {
   configured: false,
@@ -865,9 +870,46 @@ describe('AiProviderPanel', () => {
 
       await choose('#ai-provider', 'openai_compatible');
 
-      expect(optionTexts('#ai-base-url')).toEqual([LOCAL, OPENAI]);
+      expect(optionTexts('#ai-base-url')).toEqual([LOCAL_TEXT, OPENAI_TEXT]);
       expect(value('#ai-base-url')).toBe(LOCAL);
       expect(text()).toContain('Only addresses that the operator of this server has allowed');
+    });
+
+    it('name the well-known addresses and leave any other address as it is', async () => {
+      const unknown = 'http://my-llm.local:9000/v1';
+      await setup(ok({ ...NOT_SET_UP, allowed_base_urls: [DEEPSEEK, unknown] }));
+
+      await choose('#ai-provider', 'openai_compatible');
+
+      expect(optionTexts('#ai-base-url')).toEqual([DEEPSEEK_TEXT, unknown]);
+    });
+
+    it('send the plain address of a named endpoint, never its name', async () => {
+      await setup(ok({ ...NOT_SET_UP, allowed_base_urls: [LOCAL, DEEPSEEK] }));
+      api.save.mockResolvedValue(saved({ ...COMPATIBLE, base_url: DEEPSEEK }));
+      await choose('#ai-provider', 'openai_compatible');
+      await choose('#ai-base-url', DEEPSEEK);
+      await type('#ai-model', 'deepseek-model');
+      await type('#ai-key', KEY);
+
+      await submit();
+
+      expect(api.save).toHaveBeenCalledExactlyOnceWith({
+        provider: 'openai_compatible',
+        model: 'deepseek-model',
+        base_url: DEEPSEEK,
+        api_key: KEY,
+      });
+    });
+
+    it('show a saved named endpoint that the operator has taken off the list', async () => {
+      await setup(ok({ ...COMPATIBLE, base_url: DEEPSEEK, allowed_base_urls: [LOCAL] }));
+
+      expect(optionTexts('#ai-base-url')).toEqual([
+        LOCAL_TEXT,
+        `${DEEPSEEK_TEXT} (not allowed any more)`,
+      ]);
+      expect(value('#ai-base-url')).toBe(DEEPSEEK);
     });
 
     it('send provider, model and the chosen address, without a key when none is typed', async () => {
@@ -931,7 +973,10 @@ describe('AiProviderPanel', () => {
     it('mark an address that is not allowed any more', async () => {
       await setup(ok({ ...COMPATIBLE, allowed_base_urls: [OPENAI] }));
 
-      expect(optionTexts('#ai-base-url')).toEqual([OPENAI, `${LOCAL} (not allowed any more)`]);
+      expect(optionTexts('#ai-base-url')).toEqual([
+        OPENAI_TEXT,
+        `${LOCAL_TEXT} (not allowed any more)`,
+      ]);
       expect(value('#ai-base-url')).toBe(LOCAL);
     });
 
