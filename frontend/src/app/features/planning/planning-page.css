@@ -131,3 +131,13 @@ button.secondary {
   color: var(--text);
   cursor: pointer;
 }
+
+.badge.slot {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.stretching {
+  margin: 0.3rem 0 0;
+  color: var(--muted);
+}

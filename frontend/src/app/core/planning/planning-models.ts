@@ -7,6 +7,8 @@ export type Sport = 'running' | 'cycling' | 'swimming' | 'strength';
 export type WorkoutGoal =
   'recovery' | 'endurance' | 'tempo' | 'threshold' | 'vo2max' | 'strength' | 'other';
 export type ZoneSystem = 'power' | 'heart_rate' | 'pace';
+/** When on the day a workout is done; only the order is meant, there is no clock time. */
+export type WorkoutSlot = 'morning' | 'afternoon' | 'evening';
 export type SegmentKind = 'warmup' | 'steady' | 'work' | 'recovery' | 'cooldown';
 /** A plan is a `draft` until it is decided on; only a draft can be confirmed or discarded. */
 export type PlanStatus = 'draft' | 'confirmed' | 'superseded' | 'discarded';
@@ -35,6 +37,10 @@ export interface Workout {
   zone_system: ZoneSystem | null;
   zone: number | null;
   notes: string;
+  /** When on the day; `null`: not said. */
+  slot: WorkoutSlot | null;
+  /** Stretching added to this workout in minutes (0: none): never a workout of its own. */
+  stretching_minutes: number;
   segments: Segment[];
 }
 

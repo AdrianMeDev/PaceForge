@@ -129,6 +129,9 @@
               <div class="workout" [attr.data-testid]="'workout-' + entry.number">
                 <div class="head">
                   <h4>{{ entry.workout.title }}</h4>
+                  @if (entry.workout.slot; as when) {
+                    <span class="badge slot" data-testid="slot">{{ slot[when] }}</span>
+                  }
                   <span class="badge">{{ sport[entry.workout.sport] }}</span>
                   <span class="badge">{{ goal[entry.workout.goal] }}</span>
                 </div>
@@ -144,6 +147,9 @@
                       <li>{{ segment(part) }}</li>
                     }
                   </ul>
+                }
+                @if (stretching(entry.workout.stretching_minutes); as extra) {
+                  <p class="stretching" data-testid="stretching">{{ extra }}</p>
                 }
                 @if (entry.workout.notes) {
                   <p class="notes">{{ entry.workout.notes }}</p>
