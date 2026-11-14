@@ -9,5 +9,6 @@ router.register("", views.ActivityViewSet, basename="activity")
 urlpatterns = [
     # Before the router, so that "import" is never taken for an activity id.
     path("import/", views.ActivityImportView.as_view(), name="activity-import"),
+    path("manual/", views.ManualActivityView.as_view(), name="activity-manual"),
     path("", include(router.urls)),
 ]
