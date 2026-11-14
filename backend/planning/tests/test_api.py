@@ -61,6 +61,8 @@ WORKOUT_FIELDS = {
     "zone_system",
     "zone",
     "notes",
+    "slot",
+    "stretching_minutes",
     "segments",
 }
 

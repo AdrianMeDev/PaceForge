@@ -30,6 +30,8 @@ days, a doubled volume). They do not say that a plan is *good*.
       "duration_minutes": 90,
       "zone_system": "power",
       "zone": 2,
+      "slot": "morning",
+      "stretching_minutes": 10,
       "segments": [
         { "kind": "steady", "seconds": 5400, "zone_system": "power", "zone": 2 }
       ]
@@ -83,6 +85,8 @@ A **workout**:
 | `duration_minutes` | yes | 1 to 1440. |
 | `zone_system`, `zone` | no | The target of the whole session. Both or neither. |
 | `notes` | no | Up to 500 characters, line breaks allowed. |
+| `slot` | no | When on the day: `morning`, `afternoon` or `evening`. Only the order is meant, not a clock time. |
+| `stretching_minutes` | no | Stretching added to this workout, 0 to 60 minutes (0 or left out: none). Never a workout of its own, and not part of the training time. |
 | `segments` | no | The interval structure: a list of at most 40 segments. |
 
 A **segment**:
@@ -196,6 +200,7 @@ decisions, not coaching science; better ones will come from using the feature.
 | `MAX_SEGMENTS` | 40 | Segments of a workout. |
 | `SEGMENT_SECONDS_MAX` | 86400 | Seconds of a segment. |
 | `REPEAT_MAX` | 50 | Repeats of a segment. |
+| `STRETCHING_MAX` | 60 | Minutes of stretching added to one workout. |
 
 The progression rule compares without rounding the reference: with the weeks 100 and 101 (average
 100.5) 130 percent is 130.65, so 130 planned minutes pass and 131 do not. A week exactly at a limit

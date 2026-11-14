@@ -1,6 +1,7 @@
 """The page ``docs/weekly-plan.md`` is compared with the code, so that it cannot drift."""
 
 import ast
+import dataclasses
 import json
 import re
 from datetime import date
@@ -198,10 +199,17 @@ class TestTheFormatTables:
             "| Field | Required | Meaning |"
         )
 
+    def test_every_field_of_a_workout_and_a_segment_is_named_on_the_page(self) -> None:
+        text = section("The format")
+
+        for dataclass in (schema.Workout, schema.Segment):
+            for field in dataclasses.fields(dataclass):
+                assert f"`{field.name}`" in text, field.name
+
     def test_the_enums_named_on_the_page_are_those_of_the_code(self) -> None:
         text = section("The format")
 
-        for enum in (schema.Sport, schema.Goal, schema.SegmentKind):
+        for enum in (schema.Sport, schema.Goal, schema.SegmentKind, schema.Slot):
             for member in enum:
                 assert f"`{member.value}`" in text, member
 

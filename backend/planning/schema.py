@@ -18,6 +18,8 @@ This module is pure: no database, no Django. The limits here are the single sour
       "duration_minutes": 90,
       "zone_system": "power", "zone": 2,           # optional pair: the target of the whole session
       "notes": "",                                  # optional
+      "slot": "morning",                            # optional: morning, afternoon or evening
+      "stretching_minutes": 10,                     # optional: added to the session, no session
       "segments": [                                 # optional: the interval structure
         {"kind": "warmup", "seconds": 600, "zone_system": "power", "zone": 1},
         {"kind": "work", "seconds": 300, "repeat": 4, "zone_system": "power", "zone": 4}
@@ -43,6 +45,7 @@ MAX_WORKOUTS = 28
 MAX_SEGMENTS = 40
 SEGMENT_SECONDS_MAX = 86_400
 REPEAT_MAX = 50
+STRETCHING_MAX = 60  # minutes of stretching added to one workout
 # Zones per zone system: the seven power levels, five heart rate zones, five pace zones. The zones
 # themselves are those of ``athletes.zones`` (a test keeps the two in step).
 ZONE_COUNT = {"power": 7, "heart_rate": 5, "pace": 5}
@@ -69,6 +72,15 @@ class ZoneSystem(StrEnum):
     POWER = "power"
     HEART_RATE = "heart_rate"
     PACE = "pace"
+
+
+class Slot(StrEnum):
+    """When on the day a workout is done. Only the order is meant: a morning workout comes before
+    an afternoon one, there is no clock time."""
+
+    MORNING = "morning"
+    AFTERNOON = "afternoon"
+    EVENING = "evening"
 
 
 class SegmentKind(StrEnum):
@@ -102,6 +114,11 @@ class Workout:
     zone_system: ZoneSystem | None = None
     zone: int | None = None
     notes: str = ""
+    # When on the day; ``None``: not said.
+    slot: Slot | None = None
+    # Stretching added to this workout, in minutes (0: none). It is never a workout of its own and
+    # does not count as training time.
+    stretching_minutes: int = 0
 
 
 @dataclass(frozen=True)
@@ -171,6 +188,8 @@ def workout_to_json(workout: Workout) -> dict[str, Any]:
         "zone_system": workout.zone_system.value if workout.zone_system else None,
         "zone": workout.zone,
         "notes": workout.notes,
+        "slot": workout.slot.value if workout.slot else None,
+        "stretching_minutes": workout.stretching_minutes,
         "segments": [
             {
                 "kind": segment.kind.value,
@@ -212,7 +231,7 @@ class _Reader:
             data,
             path,
             {"day", "sport", "title", "goal", "duration_minutes"},
-            {"zone_system", "zone", "notes", "segments"},
+            {"zone_system", "zone", "notes", "segments", "slot", "stretching_minutes"},
         )
         if item is None:
             return None
@@ -224,6 +243,11 @@ class _Reader:
             item.get("duration_minutes", _MISSING), f"{path}.duration_minutes", 1, DURATION_MAX
         )
         notes = self._text(item.get("notes", ""), f"{path}.notes", NOTES_MAX, True, True)
+        raw_slot = item.get("slot")
+        slot = None if raw_slot is None else self._choice(raw_slot, Slot, f"{path}.slot")
+        stretching = self._integer(
+            item.get("stretching_minutes", 0), f"{path}.stretching_minutes", 0, STRETCHING_MAX
+        )
         system, zone, zone_ok = self._zone(item, path)
         raw_segments = self._list(item.get("segments", []), f"{path}.segments", MAX_SEGMENTS)
         segments = [
@@ -237,6 +261,8 @@ class _Reader:
             or goal is None
             or minutes is None
             or notes is None
+            or (raw_slot is not None and slot is None)
+            or stretching is None
             or not zone_ok
             or raw_segments is None
             or any(segment is None for segment in segments)
@@ -252,6 +278,8 @@ class _Reader:
             zone_system=system,
             zone=zone,
             notes=notes,
+            slot=slot,
+            stretching_minutes=stretching,
         )
 
     def _segment(self, data: object, path: str) -> Segment | None:
@@ -384,3 +412,14 @@ def _forbidden(char: str, multiline: bool) -> bool:
     if char == "\n" and multiline:
         return False
     return unicodedata.category(char) == "Cc"
+
+
+# The order of the times of day within a day; a workout without a time comes after those with one.
+_SLOT_ORDER = {Slot.MORNING: 0, Slot.AFTERNOON: 1, Slot.EVENING: 2}
+
+
+def order_key(workout: Workout) -> tuple[date, int]:
+    """Where a workout stands in the week: by day, then by time of day (workouts without one last).
+    Sorting is stable, so workouts with the same key keep the order they were given in."""
+    rank = _SLOT_ORDER[workout.slot] if workout.slot else len(_SLOT_ORDER)
+    return workout.day, rank

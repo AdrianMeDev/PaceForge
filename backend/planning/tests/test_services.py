@@ -18,6 +18,7 @@ from planning.schema import (
     Goal,
     Segment,
     SegmentKind,
+    Slot,
     Sport,
     WeekPlan,
     Workout,
@@ -356,6 +357,30 @@ class TestLoading:
         PlannedWorkout.objects.filter(plan=plan, title="Stored second").update(position=2)
 
         assert [w.title for w in load(alice, plan.pk).workouts] == ["Stored second", "Stored first"]
+
+    def test_the_canonical_form_puts_the_morning_before_the_evening_of_a_day(self) -> None:
+        plan = WeekPlan(
+            MONDAY,
+            (
+                workout(MONDAY, 1, 10, slot=Slot.EVENING),
+                workout(MONDAY, 1, 20, slot=Slot.MORNING),
+                workout(MONDAY, 0, 30, slot=Slot.EVENING),
+                workout(MONDAY, 1, 40, slot=Slot.AFTERNOON),
+                workout(MONDAY, 1, 50),
+                workout(MONDAY, 1, 60, slot=Slot.MORNING),
+            ),
+        )
+
+        # day 0 first; day 1: morning (in the order given), afternoon, evening, then no time
+        assert [w.duration_minutes for w in canonical(plan).workouts] == [30, 20, 60, 40, 10, 50]
+        assert canonical(canonical(plan)) == canonical(plan)
+
+    def test_the_canonical_form_keeps_stretching_and_time_of_day(self) -> None:
+        plan = WeekPlan(MONDAY, (workout(MONDAY, 0, 30, slot=Slot.MORNING, stretching_minutes=10),))
+
+        (result,) = canonical(plan).workouts
+
+        assert (result.slot, result.stretching_minutes) == (Slot.MORNING, 10)
 
     def test_the_canonical_form_sorts_by_day_and_keeps_the_order_within_a_day(self) -> None:
         plan = WeekPlan(

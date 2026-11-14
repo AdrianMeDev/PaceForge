@@ -21,7 +21,7 @@ from accounts.models import User
 
 from .context import build_context
 from .models import REASON_MAX, PlannedWorkout, WeeklyPlan
-from .schema import WeekPlan, parse_week_plan, workout_to_json
+from .schema import WeekPlan, order_key, parse_week_plan, workout_to_json
 from .validation import Report, validate_week
 
 Status = WeeklyPlan.Status
@@ -48,12 +48,13 @@ def _now() -> datetime:
 
 
 def canonical(plan: WeekPlan) -> WeekPlan:
-    """The plan with its workouts in the order they are stored and read back: by day, and within
-    a day in the order given. Validate this form, so that the paths of the findings (such as
-    ``workouts[2]``) are the places in what is stored."""
+    """The plan with its workouts in the order they are stored and read back: by day, within a
+    day by time of day (a workout without one last) and otherwise in the order given. Validate
+    this form, so that the paths of the findings (such as ``workouts[2]``) are the places in
+    what is stored."""
     return WeekPlan(
         plan.week_start,
-        tuple(sorted(plan.workouts, key=lambda workout: workout.day)),
+        tuple(sorted(plan.workouts, key=order_key)),
         plan.rationale,
     )
 
