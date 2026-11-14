@@ -77,6 +77,14 @@
         }
       </div>
 
+      <app-manual-activity-form
+        [listedIds]="listedIds()"
+        [disabled]="busy()"
+        (entered)="entered()"
+        (signedOut)="signOut()"
+        (locate)="showRow($event)"
+      />
+
       @for (message of errors(); track $index) {
         <p class="alert" role="alert">{{ message }}</p>
       }
@@ -86,7 +94,9 @@
 
       <h2 class="list-title">Your activities</h2>
       @if (page().count === 0) {
-        <p class="hint">No activities yet. Import a FIT or TCX file above.</p>
+        <p class="hint">
+          No activities yet. Import a FIT or TCX file above, or enter a session by hand.
+        </p>
       } @else {
         <div class="table-wrap" [attr.aria-busy]="refreshing()">
           <table>
@@ -97,6 +107,8 @@
                 <th scope="col">Duration</th>
                 <th scope="col">Distance</th>
                 <th scope="col">Avg. heart rate</th>
+                <th scope="col">RPE</th>
+                <th scope="col">Load</th>
                 <th scope="col">Source</th>
                 <th scope="col"><span class="visually-hidden">Actions</span></th>
               </tr>
@@ -113,6 +125,8 @@
                   <td>{{ duration(activity) }}</td>
                   <td>{{ distance(activity.distance_m) }}</td>
                   <td>{{ heartRate(activity.avg_heart_rate) }}</td>
+                  <td>{{ rpeText(activity.rpe) }}</td>
+                  <td>{{ loadText(activity.load) }}</td>
                   <td>{{ source(activity.source) }}</td>
                   <td class="row-actions">
                     @if (confirming() === activity.id) {
@@ -121,7 +135,7 @@
                         role="group"
                         [attr.aria-label]="'Delete ' + sport(activity)"
                       >
-                        Delete this activity and its stored file?
+                        Delete this activity and its stored file, if it has one?
                         <button
                           type="button"
                           class="primary"

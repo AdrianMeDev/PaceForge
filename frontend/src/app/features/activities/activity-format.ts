@@ -18,8 +18,24 @@ export function sportLabel(activity: Pick<Activity, 'sport' | 'source_sport'>): 
     : label;
 }
 
+const SOURCE_LABELS: Record<Activity['source'], string> = {
+  fit_file: 'FIT',
+  tcx_file: 'TCX',
+  manual: 'Entered by hand',
+};
+
 export function sourceLabel(source: Activity['source']): string {
-  return source === 'fit_file' ? 'FIT' : 'TCX';
+  return SOURCE_LABELS[source];
+}
+
+/** `7` for the rating of the user, `–` where they gave none. */
+export function formatRpe(rpe: number | null): string {
+  return rpe === null ? MISSING : String(rpe);
+}
+
+/** `315 AU`: minutes times RPE. It is not the TSS of a platform and is never added to one. */
+export function formatLoad(load: number | null): string {
+  return load === null ? MISSING : `${load} AU`;
 }
 
 /** `55:29` below an hour, `1:05:05` from an hour on. */

@@ -8,6 +8,9 @@ from django.utils import timezone
 
 from core.models import OwnedModel
 
+NOTES_MAX = 500
+RPE_MAX = 10
+
 
 class Activity(OwnedModel):
     """A finished activity with the summary values its source file reports.
@@ -19,6 +22,8 @@ class Activity(OwnedModel):
     class Source(models.TextChoices):
         FIT_FILE = "fit_file", "FIT file"
         TCX_FILE = "tcx_file", "TCX file"
+        # Entered by hand: no file, so no hash, and the user's own RPE and note.
+        MANUAL = "manual", "Entered by hand"
 
     class Sport(models.TextChoices):
         RUNNING = "running"
@@ -30,7 +35,8 @@ class Activity(OwnedModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid7, editable=False)
     source = models.CharField(max_length=20, choices=Source.choices)
     # SHA-256 (hex) of the uploaded file: the same file cannot be imported twice by one user.
-    source_hash = models.CharField(max_length=64)
+    # Empty for an activity entered by hand, which has no file.
+    source_hash = models.CharField(max_length=64, blank=True)
     sport = models.CharField(max_length=20, choices=Sport.choices)
     # The sport as the file calls it, kept when ``sport`` had to fall back to ``other``.
     source_sport = models.CharField(max_length=50, blank=True)
@@ -44,6 +50,10 @@ class Activity(OwnedModel):
     total_ascent_m = models.PositiveIntegerField(null=True, blank=True)
     calories = models.PositiveIntegerField(null=True, blank=True)
     manufacturer = models.CharField(max_length=50, blank=True)
+    # How hard the user felt the session was, 1 (very easy) to 10 (maximal); empty: not said.
+    rpe = models.PositiveSmallIntegerField(null=True, blank=True)
+    # The user's own note on the session (free text: shown as text, never interpreted).
+    notes = models.CharField(max_length=NOTES_MAX, blank=True)
     # One entry per lap: start, seconds, distance, heart rates (whatever the file reports).
     laps = models.JSONField(default=list, blank=True)
     # Best power and speed over fixed windows, from the file's time series (see ``efforts``).
@@ -55,7 +65,20 @@ class Activity(OwnedModel):
         ordering = ["-start_time"]
         constraints = [
             models.UniqueConstraint(
-                fields=["owner", "source_hash"], name="activities_one_per_file_and_owner"
+                fields=["owner", "source_hash"],
+                condition=~Q(source_hash=""),
+                name="activities_one_per_file_and_owner",
+            ),
+            # A file has a hash and nothing else has one.
+            models.CheckConstraint(
+                condition=(
+                    Q(source="manual", source_hash="") | (~Q(source="manual") & ~Q(source_hash=""))
+                ),
+                name="activities_hash_goes_with_a_file",
+            ),
+            models.CheckConstraint(
+                condition=Q(rpe__isnull=True) | Q(rpe__gte=1, rpe__lte=RPE_MAX),
+                name="activities_rpe_in_range",
             ),
             # The same run exported as FIT and as TCX has the same start and sport.
             models.UniqueConstraint(

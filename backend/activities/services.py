@@ -2,6 +2,7 @@
 
 import hashlib
 import logging
+from datetime import datetime
 from typing import Any
 
 from django.conf import settings
@@ -9,6 +10,7 @@ from django.db import IntegrityError, transaction
 
 from accounts.models import User
 
+from .duplicates import duration_of, find_duplicate
 from .efforts import as_json, best_efforts
 from .models import Activity, ActivityFile
 from .parsing import ActivityFileError, ParsedActivity, parse_activity_file, parse_series
@@ -60,6 +62,47 @@ def import_activity(user: User, data: bytes) -> Activity:
     return activity
 
 
+def enter_activity(
+    user: User,
+    *,
+    sport: str,
+    start: datetime,
+    duration_minutes: int,
+    distance_km: float | None = None,
+    rpe: int | None = None,
+    notes: str = "",
+) -> Activity:
+    """Store a session the user entered by hand. It has no file, hence no series and no best
+    efforts (``{}``: nothing to compute later).
+
+    Raises ``DuplicateActivityError`` if the user has this session already (see ``duplicates``,
+    which counts a file, a sync and an entry alike); in that case nothing is stored.
+    """
+    seconds = duration_minutes * 60.0
+    existing = find_duplicate(user, sport, start, seconds)
+    if existing is not None:
+        raise DuplicateActivityError(existing.pk)
+    try:
+        with transaction.atomic():
+            return Activity.objects.create(
+                owner=user,
+                source=Activity.Source.MANUAL,
+                sport=sport,
+                start_time=start,
+                timer_seconds=seconds,
+                distance_m=None if distance_km is None else distance_km * 1000,
+                rpe=rpe,
+                notes=notes,
+                best_efforts={},
+            )
+    except IntegrityError:
+        # Another request stored the same start between the check above and the insert.
+        existing = find_duplicate(user, sport, start, seconds)
+        if existing is None:
+            raise
+        raise DuplicateActivityError(existing.pk) from None
+
+
 def best_efforts_of(data: bytes) -> dict[str, Any] | None:
     """The best efforts of a file, for storing. ``{}`` if the file has no usable time series (or
     none long enough for a window);
@@ -76,11 +119,13 @@ def best_efforts_of(data: bytes) -> dict[str, Any] | None:
 
 
 def _find_duplicate(user: User, source_hash: str, parsed: ParsedActivity) -> Activity | None:
-    """The same file, or the same run exported in another format (same start and sport)."""
-    own = Activity.objects.filter(owner=user)
-    return (
-        own.filter(source_hash=source_hash).first()
-        or own.filter(start_time=parsed.start_time, sport=parsed.sport).first()
+    """The same file, or the same session from another source (see ``duplicates``): the run
+    exported in another format, or the one that was entered by hand."""
+    return Activity.objects.filter(owner=user, source_hash=source_hash).first() or find_duplicate(
+        user,
+        parsed.sport,
+        parsed.start_time,
+        duration_of(parsed.timer_seconds, parsed.elapsed_seconds),
     )
 
 

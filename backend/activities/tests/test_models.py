@@ -309,3 +309,91 @@ class TestTheFile:
 
         assert "secret-track-data" not in shown
         assert "17 bytes" in shown
+
+
+def by_hand(owner: User, **fields: Any) -> Activity:
+    values: dict[str, Any] = {
+        "owner": owner,
+        "source": Activity.Source.MANUAL,
+        "sport": Activity.Sport.STRENGTH,
+        "start_time": START,
+        **fields,
+    }
+    return Activity.objects.create(**values)
+
+
+class TestEnteredByHand:
+    def test_it_needs_no_file_and_may_have_an_rpe_and_a_note(self, alice: User) -> None:
+        found = by_hand(alice, timer_seconds=2700, rpe=7, notes="Legs were heavy")
+
+        found.refresh_from_db()
+        assert (found.source_hash, found.rpe, found.notes) == ("", 7, "Legs were heavy")
+
+    def test_rpe_and_note_are_empty_by_default(self, alice: User) -> None:
+        found = by_hand(alice)
+
+        assert (found.rpe, found.notes) == (None, "")
+
+    def test_activities_without_a_hash_do_not_clash_on_the_empty_hash(self, alice: User) -> None:
+        # Two sessions at the same time but in other sports: only the hash could tell them apart.
+        by_hand(alice, sport=Activity.Sport.STRENGTH)
+        by_hand(alice, sport=Activity.Sport.OTHER)
+
+        assert Activity.objects.filter(source_hash="").count() == 2
+
+    def test_two_by_hand_with_different_starts_are_fine(self, alice: User) -> None:
+        by_hand(alice)
+        by_hand(alice, start_time=START + timedelta(days=1))
+
+        assert Activity.objects.count() == 2
+
+    def test_the_same_start_and_sport_is_still_one_activity(self, alice: User) -> None:
+        by_hand(alice)
+
+        with pytest.raises(IntegrityError), transaction.atomic():
+            by_hand(alice)
+
+    @pytest.mark.parametrize("rpe", [1, 5, 10])
+    def test_an_rpe_from_1_to_10_is_stored(self, alice: User, rpe: int) -> None:
+        assert by_hand(alice, rpe=rpe).rpe == rpe
+
+    @pytest.mark.parametrize("rpe", [0, 11, 100])
+    def test_an_rpe_outside_1_to_10_is_refused_by_the_database(self, alice: User, rpe: int) -> None:
+        with pytest.raises(IntegrityError, match="activities_rpe_in_range"), transaction.atomic():
+            by_hand(alice, rpe=rpe)
+
+    def test_a_manual_activity_must_not_have_a_hash(self, alice: User) -> None:
+        with (
+            pytest.raises(IntegrityError, match="activities_hash_goes_with_a_file"),
+            transaction.atomic(),
+        ):
+            by_hand(alice, source_hash=hash_of(1))
+
+    @pytest.mark.parametrize("source", [Activity.Source.FIT_FILE, Activity.Source.TCX_FILE])
+    def test_a_file_activity_must_have_a_hash(self, alice: User, source: str) -> None:
+        with (
+            pytest.raises(IntegrityError, match="activities_hash_goes_with_a_file"),
+            transaction.atomic(),
+        ):
+            by_hand(alice, source=source, source_hash="")
+
+    def test_a_hash_is_still_used_once_per_user(self, alice: User, bob: User) -> None:
+        activity(alice, n=1)
+        activity(bob, n=1)
+
+        with pytest.raises(IntegrityError), transaction.atomic():
+            activity(alice, n=1, start=START + timedelta(days=1))
+
+    def test_a_note_longer_than_the_limit_is_refused_by_validation(self, alice: User) -> None:
+        found = Activity(
+            owner=alice,
+            source=Activity.Source.MANUAL,
+            sport=Activity.Sport.STRENGTH,
+            start_time=START,
+            notes="x" * 501,
+        )
+
+        with pytest.raises(ValidationError) as raised:
+            found.full_clean(exclude=["owner", "id"])
+
+        assert "notes" in raised.value.message_dict

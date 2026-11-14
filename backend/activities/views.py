@@ -17,7 +17,11 @@ from . import services
 from .models import Activity
 from .pagination import ActivityPagination
 from .parsing import ActivityFileError
-from .serializers import ActivityDetailSerializer, ActivitySerializer
+from .serializers import (
+    ActivityDetailSerializer,
+    ActivitySerializer,
+    ManualActivitySerializer,
+)
 from .throttles import ActivityImportThrottle
 
 NO_FILE = "No file was uploaded."
@@ -81,4 +85,31 @@ class ActivityImportView(APIView):
         except ActivityFileError as error:
             return _refused(str(error), HTTPStatus.BAD_REQUEST)
         refresh_estimates_safely(_user(request))
+        return Response(ActivitySerializer(activity).data, status=HTTPStatus.CREATED)
+
+
+class ManualActivityView(APIView):
+    """Enter a session by hand: for what no watch recorded, such as strength training, and for the
+    sessions that only Strava has. It counts like an imported activity."""
+
+    throttle_classes = [ActivityImportThrottle]
+    http_method_names = ["post", "options"]
+
+    def post(self, request: Request) -> Response:
+        user = _user(request)
+        serializer = ManualActivitySerializer(data=request.data, context={"user": user})
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        try:
+            activity = services.enter_activity(
+                user,
+                sport=data["sport"],
+                start=data["start"],
+                duration_minutes=data["duration_minutes"],
+                distance_km=data.get("distance_km"),
+                rpe=data.get("rpe"),
+                notes=data.get("notes", ""),
+            )
+        except services.DuplicateActivityError as duplicate:
+            return _refused(DUPLICATE, HTTPStatus.CONFLICT, existing_id=str(duplicate.existing_id))
         return Response(ActivitySerializer(activity).data, status=HTTPStatus.CREATED)

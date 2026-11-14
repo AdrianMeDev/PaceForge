@@ -3,6 +3,8 @@ import {
   formatDistance,
   formatDuration,
   formatHeartRate,
+  formatLoad,
+  formatRpe,
   sourceLabel,
   sportLabel,
 } from './activity-format';
@@ -70,5 +72,24 @@ describe('activity formatting', () => {
   it('names the source formats', () => {
     expect(sourceLabel('fit_file')).toBe('FIT');
     expect(sourceLabel('tcx_file')).toBe('TCX');
+  });
+
+  describe('formatRpe and formatLoad', () => {
+    it('shows the rating as it is and a dash for none', () => {
+      expect(formatRpe(7)).toBe('7');
+      expect(formatRpe(null)).toBe(MISSING);
+    });
+
+    it('shows the load in arbitrary units and a dash for none', () => {
+      expect(formatLoad(315)).toBe('315 AU');
+      expect(formatLoad(0)).toBe('0 AU');
+      expect(formatLoad(null)).toBe(MISSING);
+    });
+  });
+
+  describe('sourceLabel', () => {
+    it('names a session entered by hand', () => {
+      expect(sourceLabel('manual')).toBe('Entered by hand');
+    });
   });
 });
