@@ -63,13 +63,16 @@ class PlannedItem:
 @dataclass(frozen=True)
 class ActivityItem:
     """An activity of the week, on the local day the athlete lived it. ``minutes`` is ``None``
-    where the activity has no duration."""
+    where the activity has no duration. ``rpe`` and ``load`` are not used by the match; they ride
+    along for the comparison of the week."""
 
     id: UUID
     day: date
     start: datetime
     sport: str
     minutes: float | None
+    rpe: int | None = None
+    load: int | None = None
 
 
 @dataclass(frozen=True)
