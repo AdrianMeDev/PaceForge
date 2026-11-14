@@ -12,7 +12,10 @@ import {
   ListWeeksResult,
   PlanVersion,
   PlannableWeek,
+  PushOutcome,
+  PushPlanResult,
   WeekPlan,
+  WorkoutExport,
 } from '../../core/planning/planning-models';
 import { query, settle } from '../../testing/dom';
 import { PlanningPage } from './planning-page';
@@ -61,6 +64,7 @@ function plan(changes: Partial<WeekPlan> = {}): WeekPlan {
         slot: null,
         stretching_minutes: 0,
         target: null,
+        export: null,
         segments: [],
       },
       {
@@ -75,6 +79,7 @@ function plan(changes: Partial<WeekPlan> = {}): WeekPlan {
         slot: null,
         stretching_minutes: 0,
         target: null,
+        export: null,
         segments: [],
       },
       {
@@ -89,6 +94,7 @@ function plan(changes: Partial<WeekPlan> = {}): WeekPlan {
         slot: null,
         stretching_minutes: 0,
         target: null,
+        export: null,
         segments: [
           { kind: 'warmup', seconds: 900, repeat: 1, zone_system: 'pace', zone: 2, target: null },
           { kind: 'work', seconds: 600, repeat: 3, zone_system: 'pace', zone: 4, target: null },
@@ -96,6 +102,7 @@ function plan(changes: Partial<WeekPlan> = {}): WeekPlan {
       },
     ],
     report: { valid: false, findings: [MISMATCH] },
+    export: null,
     ...changes,
   };
 }
@@ -125,6 +132,30 @@ const CONFIRMED = plan({
   confirmed_at: '2026-11-13T23:28:07.353166Z',
   report: null,
 });
+
+const AT = '2026-11-14T08:00:00Z';
+const SYNCED: WorkoutExport = { status: 'synced', error_code: '', pushed_at: AT };
+const FAILED: WorkoutExport = { status: 'failed', error_code: 'rejected', pushed_at: AT };
+const NOT_SENT: WorkoutExport = { status: 'not_sent', error_code: '', pushed_at: null };
+
+/** A confirmed plan whose three workouts are in the given states. */
+function sentPlan(states: [WorkoutExport, WorkoutExport, WorkoutExport], older = 0): WeekPlan {
+  const count = (status: string) => states.filter((state) => state.status === status).length;
+  return plan({
+    id: CONFIRMED_ID,
+    version: 1,
+    status: 'confirmed',
+    confirmed_at: '2026-11-13T23:28:07.353166Z',
+    report: null,
+    workouts: plan().workouts.map((workout, index) => ({ ...workout, export: states[index] })),
+    export: {
+      synced: count('synced'),
+      failed: count('failed'),
+      not_sent: count('not_sent'),
+      older,
+    },
+  });
+}
 
 function version(changes: Partial<PlanVersion> = {}): PlanVersion {
   return {
@@ -169,7 +200,8 @@ function createStubs() {
       weeks: vi.fn<() => Promise<ListWeeksResult>>(),
       generate: vi.fn<(week: string) => Promise<GenerateResult>>(),
       get: vi.fn<(id: string) => Promise<GetPlanResult>>(),
-      confirm: vi.fn<(id: string) => Promise<ConfirmPlanResult>>(),
+      confirm: vi.fn<(id: string, push?: boolean) => Promise<ConfirmPlanResult>>(),
+      push: vi.fn<(id: string) => Promise<PushPlanResult>>(),
       discard: vi.fn<(id: string) => Promise<DiscardPlanResult>>(),
     },
     coach: { get: vi.fn<() => Promise<GetProviderResult>>() },
@@ -897,11 +929,12 @@ describe('PlanningPage', () => {
       stubs.planning.confirm.mockResolvedValue({
         kind: 'ok',
         plan: { ...VALID, status: 'confirmed', report: null, confirmed_at: '2026-11-14T08:00:00Z' },
+        push: null,
       });
 
       await click('confirm');
 
-      expect(stubs.planning.confirm).toHaveBeenCalledExactlyOnceWith(DRAFT_ID);
+      expect(stubs.planning.confirm).toHaveBeenCalledExactlyOnceWith(DRAFT_ID, false);
       expect(notice()).toBe('The plan is confirmed.');
       expect(byId('status')?.textContent?.trim()).toBe('Confirmed');
       expect(byId('confirm')).toBeNull();
@@ -1019,6 +1052,291 @@ describe('PlanningPage', () => {
       expect(byId('confirm')).toBeNull();
       await fixture.componentInstance['confirm']();
       expect(stubs.planning.confirm).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('sending to Intervals.icu', () => {
+    const MIXED = sentPlan([SYNCED, FAILED, NOT_SENT]);
+    const ALL_SYNCED = sentPlan([SYNCED, SYNCED, SYNCED]);
+    const NOTHING = sentPlan([NOT_SENT, NOT_SENT, NOT_SENT]);
+    const pushed = (plan: WeekPlan): PushPlanResult => ({
+      kind: 'ok',
+      plan,
+      push: { ok: true, synced: 3, failed: 0, removed: 0, left_behind: 0 },
+    });
+
+    const open = (shown: WeekPlan) =>
+      setup({
+        weeks: ok(weeks([CONFIRMED_VERSION])),
+        plans: { [CONFIRMED_ID]: { kind: 'ok', plan: shown } },
+      });
+
+    it('says where every workout stands and how the week stands', async () => {
+      await open(MIXED);
+
+      expect(byId('export-summary')?.textContent?.trim()).toBe(
+        '1 of 3 workouts in Intervals.icu. 1 could not be sent. 1 not sent yet.',
+      );
+      const states = Array.from(page.querySelectorAll('[data-testid="export"]')).map((e) =>
+        e.textContent?.trim(),
+      );
+      expect(states).toEqual([
+        'In Intervals.icu',
+        'Not sent: Intervals.icu did not accept this workout.',
+        'Not sent to Intervals.icu yet',
+      ]);
+    });
+
+    it('marks every state so that it can be styled', async () => {
+      await open(MIXED);
+
+      const marks = Array.from(page.querySelectorAll('[data-testid="export"]')).map((e) =>
+        e.getAttribute('data-status'),
+      );
+      expect(marks).toEqual(['synced', 'failed', 'not_sent']);
+    });
+
+    it('offers to send a week that was not sent yet', async () => {
+      await open(NOTHING);
+
+      expect(byId('export-summary')?.textContent?.trim()).toBe('Not sent to Intervals.icu yet.');
+      expect(button('send').textContent?.trim()).toBe('Send to Intervals.icu');
+    });
+
+    it('offers to send again once something was sent or failed', async () => {
+      await open(MIXED);
+
+      expect(button('send').textContent?.trim()).toBe('Send again');
+    });
+
+    it('warns about the events of an older version', async () => {
+      await open(sentPlan([NOT_SENT, NOT_SENT, NOT_SENT], 3));
+
+      expect(byId('export-summary')?.textContent).toContain(
+        'Events of an older version are still in Intervals.icu; sending replaces them.',
+      );
+    });
+
+    it('shows nothing about Intervals.icu for a plan that is not sent', async () => {
+      await setup();
+
+      expect(byId('export')).toBeNull();
+      expect(byId('export-summary')).toBeNull();
+      expect(byId('send')).toBeNull();
+    });
+
+    it('sends the plan, shows what came of it and the new state', async () => {
+      await open(MIXED);
+      stubs.planning.push.mockResolvedValue(pushed(ALL_SYNCED));
+
+      await click('send');
+
+      expect(stubs.planning.push).toHaveBeenCalledExactlyOnceWith(CONFIRMED_ID);
+      expect(notice()).toBe('3 workouts were sent to Intervals.icu.');
+      expect(byId('export-summary')?.textContent?.trim()).toBe('3 of 3 workouts in Intervals.icu.');
+      expect(alerts()).toEqual([]);
+    });
+
+    it('tells what was removed and what failed', async () => {
+      await open(NOTHING);
+      stubs.planning.push.mockResolvedValue({
+        kind: 'ok',
+        plan: MIXED,
+        push: { ok: true, synced: 1, failed: 1, removed: 1, left_behind: 2 },
+      });
+
+      await click('send');
+
+      expect(notice()).toBe(
+        '1 workout was sent to Intervals.icu. 1 workout could not be sent. ' +
+          '1 event of an older version removed. 2 events could not be removed yet.',
+      );
+    });
+
+    it.each([
+      ['not_connected', 'Intervals.icu is not connected. Connect it on the Connections page.'],
+      ['invalid_key', 'Intervals.icu did not accept the stored API key. Connect it again.'],
+    ] as const)('says how to go on if it is %s', async (problem, message) => {
+      await open(NOTHING);
+      stubs.planning.push.mockResolvedValue({ kind: 'problem', problem, message });
+
+      await click('send');
+
+      expect(alerts()).toEqual([message]);
+      expect(byId('needs-connection')?.querySelector('a')?.getAttribute('href')).toBe(
+        '/settings/connections',
+      );
+    });
+
+    it('shows other problems without a way to connect', async () => {
+      await open(NOTHING);
+      stubs.planning.push.mockResolvedValue({
+        kind: 'problem',
+        problem: 'unexpected',
+        message: 'Intervals.icu answered in an unexpected way. Please try again later.',
+      });
+
+      await click('send');
+
+      expect(alerts()).toEqual([
+        'Intervals.icu answered in an unexpected way. Please try again later.',
+      ]);
+      expect(byId('needs-connection')).toBeNull();
+    });
+
+    it('clears the last problem when sending again', async () => {
+      await open(NOTHING);
+      stubs.planning.push.mockResolvedValueOnce({
+        kind: 'problem',
+        problem: 'not_connected',
+        message: 'Not connected.',
+      });
+      await click('send');
+      stubs.planning.push.mockResolvedValue(pushed(ALL_SYNCED));
+
+      await click('send');
+
+      expect(alerts()).toEqual([]);
+      expect(byId('needs-connection')).toBeNull();
+    });
+
+    it('says when the plan is gone', async () => {
+      await open(NOTHING);
+      stubs.planning.push.mockResolvedValue({ kind: 'not_found' });
+
+      await click('send');
+
+      expect(alerts()).toEqual(['That plan does not exist any more.']);
+      expect(byId('send')).toBeNull();
+      expect(stubs.planning.weeks).toHaveBeenCalledTimes(2);
+    });
+
+    it('says when too much was sent in a short time', async () => {
+      await open(NOTHING);
+      stubs.planning.push.mockResolvedValue({ kind: 'rate_limited' });
+
+      await click('send');
+
+      expect(alerts()).toEqual([
+        'Too many sends in a short time. Please wait a minute and try again.',
+      ]);
+    });
+
+    it('says when the session has ended', async () => {
+      await open(NOTHING);
+      stubs.planning.push.mockResolvedValue({ kind: 'forbidden' });
+
+      await click('send');
+
+      expect(alerts()).toEqual(['Your session has ended. Please sign in again.']);
+    });
+
+    it('says so when the call fails', async () => {
+      await open(NOTHING);
+      stubs.planning.push.mockRejectedValue(new Error('network'));
+
+      await click('send');
+
+      expect(alerts()).toEqual(['Something went wrong. Please try again.']);
+      expect(button('send').disabled).toBe(false);
+    });
+
+    it('waits for one thing at a time while it sends', async () => {
+      await open(NOTHING);
+      const pending = deferred<PushPlanResult>();
+      stubs.planning.push.mockReturnValue(pending.promise);
+
+      button('send').click();
+      await settle(fixture);
+
+      expect(byId('sending')?.textContent).toContain('Sending the week to Intervals.icu');
+      expect(button('send').disabled).toBe(true);
+      expect(select().disabled).toBe(true);
+      await fixture.componentInstance['send']();
+      expect(stubs.planning.push).toHaveBeenCalledTimes(1);
+
+      pending.resolve(pushed(ALL_SYNCED));
+      await settle(fixture);
+      expect(byId('sending')).toBeNull();
+      expect(button('send').disabled).toBe(false);
+    });
+
+    it('does nothing for a plan that is not confirmed', async () => {
+      await setup();
+
+      await fixture.componentInstance['send']();
+
+      expect(stubs.planning.push).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('confirming and sending', () => {
+    const confirmed = (push: PushOutcome | null): ConfirmPlanResult => ({
+      kind: 'ok',
+      plan: sentPlan([NOT_SENT, NOT_SENT, NOT_SENT]),
+      push,
+    });
+
+    beforeEach(() => setup({ plans: { [DRAFT_ID]: { kind: 'ok', plan: VALID } } }));
+
+    const checkbox = () => query<HTMLInputElement>(page, '[data-testid="send-after-confirm"]');
+
+    it('does not send unless it is asked to', async () => {
+      expect(checkbox().checked).toBe(false);
+      stubs.planning.confirm.mockResolvedValue(confirmed(null));
+
+      await click('confirm');
+
+      expect(stubs.planning.confirm).toHaveBeenCalledExactlyOnceWith(DRAFT_ID, false);
+      expect(notice()).toBe('The plan is confirmed.');
+    });
+
+    it('sends the week right after confirming it when asked to', async () => {
+      checkbox().click();
+      await settle(fixture);
+      stubs.planning.confirm.mockResolvedValue(
+        confirmed({ ok: true, synced: 3, failed: 0, removed: 0, left_behind: 0 }),
+      );
+
+      await click('confirm');
+
+      expect(stubs.planning.confirm).toHaveBeenCalledExactlyOnceWith(DRAFT_ID, true);
+      expect(notice()).toBe('The plan is confirmed. 3 workouts were sent to Intervals.icu.');
+      expect(stubs.planning.push).not.toHaveBeenCalled();
+    });
+
+    it('keeps the plan confirmed when Intervals.icu is a problem, and says how to go on', async () => {
+      checkbox().click();
+      await settle(fixture);
+      stubs.planning.confirm.mockResolvedValue(
+        confirmed({
+          ok: false,
+          problem: 'not_connected',
+          message: 'Intervals.icu is not connected. Connect it on the Connections page.',
+        }),
+      );
+
+      await click('confirm');
+
+      expect(notice()).toBe('The plan is confirmed.');
+      expect(byId('status')?.textContent?.trim()).toBe('Confirmed');
+      expect(alerts()).toEqual([
+        'Intervals.icu is not connected. Connect it on the Connections page.',
+      ]);
+      expect(byId('needs-connection')).not.toBeNull();
+      expect(byId('send')).not.toBeNull();
+    });
+
+    it('can not be changed while it waits', async () => {
+      const pending = deferred<ConfirmPlanResult>();
+      stubs.planning.confirm.mockReturnValue(pending.promise);
+
+      button('confirm').click();
+      await settle(fixture);
+
+      expect(checkbox().disabled).toBe(true);
+      pending.resolve(confirmed(null));
+      await settle(fixture);
     });
   });
 

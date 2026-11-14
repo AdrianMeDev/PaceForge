@@ -1,8 +1,11 @@
 import {
+  ExportSummary,
   PlanStatus,
+  PushOutcome,
   Segment,
   SegmentKind,
   Sport,
+  WorkoutExport,
   WorkoutGoal,
   WorkoutSlot,
   ZoneSystem,
@@ -148,4 +151,68 @@ export function findingPlace(path: string): string {
 /** "+ 10 min stretching": what is added to a workout; empty for none. Never a workout. */
 export function stretchingText(minutes: number): string {
   return minutes > 0 ? `+ ${minutes} min stretching` : '';
+}
+
+const EXPORT_ERRORS = {
+  rejected: 'Intervals.icu did not accept this workout.',
+  unavailable: 'Intervals.icu could not be reached.',
+  unexpected: 'Intervals.icu answered in an unexpected way.',
+} as const;
+
+function count(amount: number, one: string, many: string): string {
+  return `${amount} ${amount === 1 ? one : many}`;
+}
+
+/** Where one workout stands: "In Intervals.icu", "Not sent yet" or why it failed. */
+export function exportText(state: WorkoutExport): string {
+  switch (state.status) {
+    case 'synced':
+      return 'In Intervals.icu';
+    case 'failed':
+      return `Not sent: ${state.error_code === '' ? EXPORT_ERRORS.unexpected : EXPORT_ERRORS[state.error_code]}`;
+    default:
+      return 'Not sent to Intervals.icu yet';
+  }
+}
+
+/** How the week stands with Intervals.icu, in a sentence or two. */
+export function exportSummaryText(summary: ExportSummary): string {
+  const total = summary.synced + summary.failed + summary.not_sent;
+  const parts: string[] = [];
+  if (total > 0 && summary.not_sent === total) {
+    parts.push('Not sent to Intervals.icu yet.');
+  } else if (total > 0) {
+    parts.push(`${summary.synced} of ${count(total, 'workout', 'workouts')} in Intervals.icu.`);
+    if (summary.failed > 0) {
+      parts.push(`${summary.failed} could not be sent.`);
+    }
+    if (summary.not_sent > 0) {
+      parts.push(`${summary.not_sent} not sent yet.`);
+    }
+  }
+  if (summary.older > 0) {
+    parts.push('Events of an older version are still in Intervals.icu; sending replaces them.');
+  }
+  return parts.join(' ');
+}
+
+/** What a push did, for the notice above the plan. */
+export function pushText(outcome: PushOutcome): string {
+  if (!outcome.ok) {
+    return outcome.message;
+  }
+  const parts: string[] = [];
+  if (outcome.synced > 0) {
+    parts.push(`${count(outcome.synced, 'workout was', 'workouts were')} sent to Intervals.icu.`);
+  }
+  if (outcome.failed > 0) {
+    parts.push(`${count(outcome.failed, 'workout', 'workouts')} could not be sent.`);
+  }
+  if (outcome.removed > 0) {
+    parts.push(`${count(outcome.removed, 'event', 'events')} of an older version removed.`);
+  }
+  if (outcome.left_behind > 0) {
+    parts.push(`${count(outcome.left_behind, 'event', 'events')} could not be removed yet.`);
+  }
+  return parts.length === 0 ? 'There was nothing to send.' : parts.join(' ');
 }

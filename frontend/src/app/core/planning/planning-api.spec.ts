@@ -22,6 +22,7 @@ const DRAFT = {
   status: 'draft',
   reason: 'Drafted by the coach',
   rationale: 'Base week with one tempo session.',
+  export: null,
   parent: null,
   created_at: '2026-11-13T23:27:53.638352Z',
   confirmed_at: null,
@@ -38,6 +39,7 @@ const DRAFT = {
       slot: null,
       stretching_minutes: 0,
       target: null,
+      export: null,
       segments: [],
     },
     {
@@ -52,6 +54,7 @@ const DRAFT = {
       slot: null,
       stretching_minutes: 0,
       target: null,
+      export: null,
       segments: [],
     },
     {
@@ -66,6 +69,7 @@ const DRAFT = {
       slot: null,
       stretching_minutes: 0,
       target: null,
+      export: null,
       segments: [
         { kind: 'warmup', seconds: 900, repeat: 1, zone_system: 'power', zone: 2, target: null },
         { kind: 'work', seconds: 600, repeat: 3, zone_system: 'power', zone: 4, target: null },
@@ -93,6 +97,7 @@ const CONFIRMED = {
   status: 'confirmed',
   reason: 'by hand',
   rationale: 'Easy week',
+  export: null,
   parent: null,
   created_at: '2026-11-13T23:28:07.281568Z',
   confirmed_at: '2026-11-13T23:28:07.353166Z',
@@ -109,6 +114,7 @@ const CONFIRMED = {
       slot: null,
       stretching_minutes: 0,
       target: null,
+      export: null,
       segments: [],
     },
   ],
@@ -184,6 +190,25 @@ function altered(source: object, ...edits: Edit[]): unknown {
     }
   }
   return copy;
+}
+
+/** A confirmed plan as the server answers after confirming (no report, not sent yet). */
+function CONFIRMED_ANSWER() {
+  return {
+    ...DRAFT,
+    status: 'confirmed',
+    report: null,
+    confirmed_at: CONFIRMED.confirmed_at,
+    export: { synced: 0, failed: 0, not_sent: 3, older: 0 },
+    workouts: DRAFT.workouts.map((workout) => ({ ...workout, export: exported('not_sent') })),
+  };
+}
+
+const SENT_AT = '2026-11-14T08:00:00Z';
+
+/** The `export` of a workout as the server writes it. */
+function exported(status: string, error_code = '', pushed_at: string | null = null) {
+  return { status, error_code, pushed_at };
 }
 
 const WORKOUT = ['workouts', 0] as const;
@@ -310,6 +335,40 @@ const WRONG_PLANS: [string, unknown][] = [
     altered(DRAFT, [[...WORKOUT, 'target'], { low: 138.5, high: 188, unit: 'W' }]),
   ],
   ['no target on a segment', altered(DRAFT, [[...SEGMENT, 'target'], REMOVE])],
+  ['no export', altered(DRAFT, [[...WORKOUT, 'export'], REMOVE])],
+  ['a text as export', altered(DRAFT, [[...WORKOUT, 'export'], 'synced'])],
+  ['an unknown export status', altered(DRAFT, [[...WORKOUT, 'export'], exported('queued')])],
+  [
+    'a failure without a code',
+    altered(DRAFT, [[...WORKOUT, 'export'], exported('failed', '', SENT_AT)]),
+  ],
+  [
+    'a code without a failure',
+    altered(DRAFT, [[...WORKOUT, 'export'], exported('synced', 'rejected', SENT_AT)]),
+  ],
+  [
+    'an unknown error code',
+    altered(DRAFT, [[...WORKOUT, 'export'], exported('failed', 'boom', SENT_AT)]),
+  ],
+  [
+    'a workout that was sent at no time',
+    altered(DRAFT, [[...WORKOUT, 'export'], exported('synced', '', null)]),
+  ],
+  [
+    'a workout that was not sent but has a time',
+    altered(DRAFT, [[...WORKOUT, 'export'], exported('not_sent', '', SENT_AT)]),
+  ],
+  [
+    'a time of sending that is no time',
+    altered(DRAFT, [[...WORKOUT, 'export'], exported('synced', '', 'yesterday')]),
+  ],
+  ['no summary of the export', altered(DRAFT, [['export'], REMOVE])],
+  ['a text as summary', altered(DRAFT, [['export'], 'none'])],
+  [
+    'a summary with a negative count',
+    altered(DRAFT, [['export'], { synced: -1, failed: 0, not_sent: 0, older: 0 }]),
+  ],
+  ['a summary without a count', altered(DRAFT, [['export'], { synced: 1 }])],
   ['no notes', altered(DRAFT, [[...WORKOUT, 'notes'], REMOVE])],
   ['a number as notes', altered(DRAFT, [[...WORKOUT, 'notes'], 5])],
   ['no segments', altered(DRAFT, [[...WORKOUT, 'segments'], REMOVE])],
@@ -949,7 +1008,7 @@ describe('PlanningApi', () => {
       );
 
       expect(request.request.body).toEqual({});
-      expect(result).toEqual({ kind: 'ok', plan: CONFIRMED_DRAFT });
+      expect(result).toEqual({ kind: 'ok', plan: CONFIRMED_DRAFT, push: null });
     });
 
     it('returns all findings if the plan has errors', async () => {
@@ -1018,6 +1077,179 @@ describe('PlanningApi', () => {
 
     it('rejects when the network fails', async () => {
       await failsOnTheNetwork(api.confirm(DRAFT_ID), URL);
+    });
+  });
+
+  describe('confirm and send', () => {
+    const URL = `/api/planning/plans/${DRAFT_ID}/confirm/`;
+    const SENT = {
+      ...CONFIRMED_ANSWER(),
+      push: { ok: true, synced: 2, failed: 0, removed: 0, left_behind: 0 },
+    };
+
+    it('asks for the push only when told to', async () => {
+      const { request } = await run(api.confirm(DRAFT_ID, true), 'POST', URL, SENT, 200);
+
+      expect(request.request.body).toEqual({ push: true });
+    });
+
+    it('returns what the push did', async () => {
+      const { result } = await run(api.confirm(DRAFT_ID, true), 'POST', URL, SENT, 200);
+
+      expect(result).toMatchObject({
+        kind: 'ok',
+        push: { ok: true, synced: 2, failed: 0, removed: 0, left_behind: 0 },
+      });
+    });
+
+    it('returns a problem with Intervals.icu as part of the confirmed plan', async () => {
+      const problem = {
+        ok: false,
+        problem: 'not_connected',
+        message: 'Intervals.icu is not connected. Connect it on the Connections page.',
+      };
+
+      const { result } = await run(
+        api.confirm(DRAFT_ID, true),
+        'POST',
+        URL,
+        { ...CONFIRMED_ANSWER(), push: problem },
+        200,
+      );
+
+      expect(result).toMatchObject({ kind: 'ok', push: problem });
+    });
+
+    it('ignores a push result nobody asked for', async () => {
+      const { result } = await run(api.confirm(DRAFT_ID), 'POST', URL, SENT, 200);
+
+      expect(result).toMatchObject({ kind: 'ok', push: null });
+    });
+
+    it.each([
+      ['no result', undefined],
+      ['a text as result', 'sent'],
+      ['no ok', { synced: 1, failed: 0, removed: 0, left_behind: 0 }],
+      ['a negative count', { ok: true, synced: -1, failed: 0, removed: 0, left_behind: 0 }],
+      ['a missing count', { ok: true, synced: 1, failed: 0, removed: 0 }],
+      ['an unknown problem', { ok: false, problem: 'boom', message: 'x' }],
+      ['a problem without text', { ok: false, problem: 'not_connected' }],
+    ])('rejects a push with %s', async (_name, push) => {
+      await runFailing(
+        api.confirm(DRAFT_ID, true),
+        'POST',
+        URL,
+        { ...CONFIRMED_ANSWER(), push } as object,
+        200,
+      );
+    });
+  });
+
+  describe('push', () => {
+    const URL = `/api/planning/plans/${DRAFT_ID}/push/`;
+    const OK = { ok: true, synced: 1, failed: 1, removed: 2, left_behind: 0 };
+    const SYNCED = {
+      ...CONFIRMED_ANSWER(),
+      export: { synced: 1, failed: 1, not_sent: 0, older: 0 },
+      push: OK,
+    };
+
+    it('posts to the push address and returns the plan with the result', async () => {
+      const { result, request } = await run(api.push(DRAFT_ID), 'POST', URL, SYNCED, 200);
+
+      expect(request.request.body).toEqual({});
+      expect(result).toMatchObject({
+        kind: 'ok',
+        push: OK,
+        plan: { export: { synced: 1, failed: 1, not_sent: 0, older: 0 } },
+      });
+    });
+
+    it('reads the export state of every workout', async () => {
+      const answer = altered(
+        SYNCED,
+        [[...WORKOUT, 'export'], exported('failed', 'rejected', SENT_AT)],
+        [['workouts', 1, 'export'], exported('synced', '', SENT_AT)],
+      );
+
+      const { result } = await run(api.push(DRAFT_ID), 'POST', URL, answer as object, 200);
+
+      const workouts = (result as { plan: WeekPlan }).plan.workouts;
+      expect(workouts[0].export).toEqual({
+        status: 'failed',
+        error_code: 'rejected',
+        pushed_at: SENT_AT,
+      });
+      expect(workouts[1].export).toEqual({ status: 'synced', error_code: '', pushed_at: SENT_AT });
+      expect(workouts[2].export).toEqual({ status: 'not_sent', error_code: '', pushed_at: null });
+    });
+
+    it.each([
+      [409, 'not_confirmed'],
+      [409, 'not_connected'],
+      [502, 'invalid_key'],
+      [502, 'unexpected'],
+    ])('tells the problem behind %i %s', async (status, code) => {
+      const { result } = await run(
+        api.push(DRAFT_ID),
+        'POST',
+        URL,
+        { detail: `Text for ${code}.`, code },
+        status,
+      );
+
+      expect(result).toEqual({ kind: 'problem', problem: code, message: `Text for ${code}.` });
+    });
+
+    it.each([
+      [409, 'not_connected'],
+      [502, 'unexpected'],
+    ])(
+      'keeps the meaning of %i if the answer is not from the server (%s)',
+      async (status, problem) => {
+        const { result } = await run(api.push(DRAFT_ID), 'POST', URL, '<html>nope</html>', status);
+
+        expect(result).toEqual({
+          kind: 'problem',
+          problem,
+          message: 'The week could not be sent to Intervals.icu. Please try again later.',
+        });
+      },
+    );
+
+    it('says when there is no such plan', async () => {
+      const { result } = await run(api.push(DRAFT_ID), 'POST', URL, NOT_FOUND, 404);
+
+      expect(result).toEqual({ kind: 'not_found' });
+    });
+
+    it('says when too many pushes were made', async () => {
+      const { result } = await run(api.push(DRAFT_ID), 'POST', URL, { detail: 'slow down' }, 429);
+
+      expect(result).toEqual({ kind: 'rate_limited' });
+    });
+
+    it.each([401, 403])('says when the session is gone (%i)', async (status) => {
+      const { result } = await run(api.push(DRAFT_ID), 'POST', URL, NO_SESSION, status);
+
+      expect(result).toEqual({ kind: 'forbidden' });
+    });
+
+    it('sends nothing for an id that is no uuid', async () => {
+      expect(await api.push('12')).toEqual({ kind: 'not_found' });
+      backend.expectNone(() => true);
+    });
+
+    it('rejects an answer without the result of the push', async () => {
+      await runFailing(api.push(DRAFT_ID), 'POST', URL, CONFIRMED_ANSWER() as object, 200);
+    });
+
+    it.each([400, 422, 500])('rejects the unexpected status %i', async (status) => {
+      await runFailing(api.push(DRAFT_ID), 'POST', URL, 'oops', status);
+    });
+
+    it('rejects when the network fails', async () => {
+      await failsOnTheNetwork(api.push(DRAFT_ID), URL);
     });
   });
 

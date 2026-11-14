@@ -7,6 +7,9 @@ import {
   dayLabel,
   findingPlace,
   minutesText,
+  exportSummaryText,
+  exportText,
+  pushText,
   rangeText,
   segmentText,
   stretchingText,
@@ -224,5 +227,73 @@ describe('findingPlace', () => {
     ['xworkouts[1]', 'Week'],
   ])('puts "%s" at %s', (path, expected) => {
     expect(findingPlace(path)).toBe(expected);
+  });
+});
+
+describe('exportText', () => {
+  it.each([
+    [{ status: 'synced', error_code: '', pushed_at: 't' }, 'In Intervals.icu'],
+    [{ status: 'not_sent', error_code: '', pushed_at: null }, 'Not sent to Intervals.icu yet'],
+    [
+      { status: 'failed', error_code: 'rejected', pushed_at: 't' },
+      'Not sent: Intervals.icu did not accept this workout.',
+    ],
+    [
+      { status: 'failed', error_code: 'unavailable', pushed_at: 't' },
+      'Not sent: Intervals.icu could not be reached.',
+    ],
+    [
+      { status: 'failed', error_code: 'unexpected', pushed_at: 't' },
+      'Not sent: Intervals.icu answered in an unexpected way.',
+    ],
+  ] as const)('writes %j as "%s"', (state, expected) => {
+    expect(exportText(state)).toBe(expected);
+  });
+});
+
+describe('exportSummaryText', () => {
+  it.each([
+    [{ synced: 0, failed: 0, not_sent: 3, older: 0 }, 'Not sent to Intervals.icu yet.'],
+    [{ synced: 3, failed: 0, not_sent: 0, older: 0 }, '3 of 3 workouts in Intervals.icu.'],
+    [{ synced: 1, failed: 0, not_sent: 0, older: 0 }, '1 of 1 workout in Intervals.icu.'],
+    [
+      { synced: 1, failed: 1, not_sent: 1, older: 0 },
+      '1 of 3 workouts in Intervals.icu. 1 could not be sent. 1 not sent yet.',
+    ],
+    [
+      { synced: 0, failed: 2, not_sent: 0, older: 0 },
+      '0 of 2 workouts in Intervals.icu. 2 could not be sent.',
+    ],
+    [
+      { synced: 0, failed: 0, not_sent: 2, older: 4 },
+      'Not sent to Intervals.icu yet. Events of an older version are still in Intervals.icu; sending replaces them.',
+    ],
+    [{ synced: 0, failed: 0, not_sent: 0, older: 0 }, ''],
+  ])('writes %j as "%s"', (summary, expected) => {
+    expect(exportSummaryText(summary)).toBe(expected);
+  });
+});
+
+describe('pushText', () => {
+  it.each([
+    [
+      { synced: 4, failed: 0, removed: 0, left_behind: 0 },
+      '4 workouts were sent to Intervals.icu.',
+    ],
+    [{ synced: 1, failed: 0, removed: 0, left_behind: 0 }, '1 workout was sent to Intervals.icu.'],
+    [
+      { synced: 2, failed: 1, removed: 3, left_behind: 1 },
+      '2 workouts were sent to Intervals.icu. 1 workout could not be sent. ' +
+        '3 events of an older version removed. 1 event could not be removed yet.',
+    ],
+    [{ synced: 0, failed: 0, removed: 0, left_behind: 0 }, 'There was nothing to send.'],
+  ])('writes %j as "%s"', (outcome, expected) => {
+    expect(pushText({ ok: true, ...outcome })).toBe(expected);
+  });
+
+  it('gives the text of the server for a problem', () => {
+    expect(pushText({ ok: false, problem: 'not_connected', message: 'Not connected.' })).toBe(
+      'Not connected.',
+    );
   });
 });

@@ -39,6 +39,11 @@
           <a routerLink="/availability">Training time</a> page, then draft the week again.
         </p>
       }
+      @if (needsConnection()) {
+        <p class="hint" data-testid="needs-connection">
+          <a routerLink="/settings/connections">Connect Intervals.icu</a>, then send the week again.
+        </p>
+      }
       @if (problems().length > 0) {
         <ul class="problems" aria-label="What was wrong with the answer">
           @for (problem of problems(); track $index) {
@@ -67,6 +72,9 @@
             {{ versions().length === 0 ? 'Draft a plan with my coach' : 'Draft a new version' }}
           </button>
         </p>
+      }
+      @if (work() === 'sending') {
+        <p role="status" data-testid="sending">Sending the week to Intervals.icu…</p>
       }
       @if (work() === 'generating') {
         <p role="status" data-testid="generating">
@@ -123,6 +131,21 @@
             }
           }
 
+          @if (shown.export; as summary) {
+            <p class="hint" data-testid="export-summary">{{ sentSummary(summary) }}</p>
+            <div class="actions">
+              <button
+                type="button"
+                class="primary"
+                data-testid="send"
+                [disabled]="work() !== null"
+                (click)="send()"
+              >
+                {{ summary.synced + summary.failed === 0 ? 'Send to Intervals.icu' : 'Send again' }}
+              </button>
+            </div>
+          }
+
           @for (day of days(); track day.date) {
             <h3>{{ day.label }}</h3>
             @for (entry of day.workouts; track entry.number) {
@@ -157,6 +180,11 @@
                 @if (entry.workout.notes) {
                   <p class="notes">{{ entry.workout.notes }}</p>
                 }
+                @if (entry.workout.export; as state) {
+                  <p class="export" [attr.data-status]="state.status" data-testid="export">
+                    {{ sent(state) }}
+                  </p>
+                }
               </div>
             }
           } @empty {
@@ -174,6 +202,16 @@
                 A plan with errors cannot be confirmed. Draft a new version or discard this one.
               </p>
             }
+            <label class="check">
+              <input
+                type="checkbox"
+                data-testid="send-after-confirm"
+                [checked]="sendAfterConfirm()"
+                [disabled]="work() !== null"
+                (change)="sendAfterConfirm.set($any($event.target).checked)"
+              />
+              Send the week to Intervals.icu right away
+            </label>
             <div class="actions">
               <button
                 type="button"

@@ -5,12 +5,18 @@ import { API_BASE } from '../api/api-providers';
 import {
   ConfirmPlanResult,
   DiscardPlanResult,
+  ExportError,
+  ExportStatus,
+  ExportSummary,
   Finding,
   GenerateResult,
   GetPlanResult,
   ListWeeksResult,
   PlanProblem,
   PlanStatus,
+  PushOutcome,
+  PushPlanResult,
+  PushProblem,
   PlanVersion,
   PlannableWeek,
   ProviderProblem,
@@ -22,6 +28,7 @@ import {
   Sport,
   WeekPlan,
   Workout,
+  WorkoutExport,
   WorkoutGoal,
   WorkoutSlot,
   ZoneTarget,
@@ -30,6 +37,7 @@ import {
 
 const BASE = `${API_BASE}/planning`;
 const HANDLED_ERRORS = [401, 403, 404, 409, 422, 429, 502, 503];
+const PUSH_FALLBACK = 'The week could not be sent to Intervals.icu. Please try again later.';
 const FALLBACK_TEXT = 'The AI provider could not be used right now. Please try again later.';
 
 const SPORTS: readonly string[] = ['running', 'cycling', 'swimming', 'strength'];
@@ -55,6 +63,14 @@ const PROBLEMS: readonly string[] = [
   'not_allowed',
 ];
 const TARGET_UNITS: readonly string[] = ['W', 'bpm', 's/km'];
+const EXPORT_STATUSES: readonly string[] = ['not_sent', 'synced', 'failed'];
+const EXPORT_ERRORS: readonly string[] = ['', 'rejected', 'unavailable', 'unexpected'];
+const PUSH_PROBLEMS: readonly string[] = [
+  'not_confirmed',
+  'not_connected',
+  'invalid_key',
+  'unexpected',
+];
 // The zones of each zone system: the seven power levels, five heart rate zones, five pace zones.
 const ZONE_COUNT: Record<string, number> = { power: 7, heart_rate: 5, pace: 5 };
 const DURATION_MAX = 1440;
@@ -148,17 +164,27 @@ export class PlanningApi {
     }
   }
 
-  /** Confirms a draft; the checks run again with the data of this moment. */
-  async confirm(id: string): Promise<ConfirmPlanResult> {
+  /**
+   * Confirms a draft; the checks run again with the data of this moment. With `push` the week
+   * is sent to Intervals.icu right after (only when asked for); the plan is confirmed whatever
+   * the sending does, and the result says how it went.
+   */
+  async confirm(id: string, push = false): Promise<ConfirmPlanResult> {
     if (!UUID.test(id)) {
       return { kind: 'not_found' };
     }
     const reply = await this.send(
-      this.http.post(`${BASE}/plans/${id}/confirm/`, {}, { observe: 'response' }),
+      this.http.post(`${BASE}/plans/${id}/confirm/`, push ? { push: true } : {}, {
+        observe: 'response',
+      }),
     );
     switch (reply.status) {
       case 200:
-        return { kind: 'ok', plan: toPlan(reply.body, reply) };
+        return {
+          kind: 'ok',
+          plan: toPlan(reply.body, reply),
+          push: push ? toPush(reply.body, reply) : null,
+        };
       case 404:
         return { kind: 'not_found' };
       case 409:
@@ -168,6 +194,39 @@ export class PlanningApi {
           kind: 'not_confirmable',
           findings: toFindings(asObject(reply.body, reply), reply),
         };
+      case 401:
+      case 403:
+        return { kind: 'forbidden' };
+      default:
+        throw unexpected(reply);
+    }
+  }
+
+  /** Sends a confirmed plan to the user's Intervals.icu calendar (one call per workout). */
+  async push(id: string): Promise<PushPlanResult> {
+    if (!UUID.test(id)) {
+      return { kind: 'not_found' };
+    }
+    const reply = await this.send(
+      this.http.post(`${BASE}/plans/${id}/push/`, {}, { observe: 'response' }),
+    );
+    switch (reply.status) {
+      case 200:
+        return { kind: 'ok', plan: toPlan(reply.body, reply), push: toPush(reply.body, reply) };
+      case 404:
+        return { kind: 'not_found' };
+      case 409:
+      case 502: {
+        const code = codeOf(reply.body);
+        const problem: PushProblem = isOneOf<PushProblem>(code, PUSH_PROBLEMS)
+          ? code
+          : reply.status === 409
+            ? 'not_connected'
+            : 'unexpected';
+        return { kind: 'problem', problem, message: textOf(reply.body, PUSH_FALLBACK) };
+      }
+      case 429:
+        return { kind: 'rate_limited' };
       case 401:
       case 403:
         return { kind: 'forbidden' };
@@ -282,6 +341,7 @@ function toPlan(raw: unknown, reply: Reply): WeekPlan {
     confirmed_at: confirmedAt,
     workouts: workouts.map((workout: unknown) => toWorkout(workout, reply)),
     report: status === 'draft' ? toReport(item['report'], reply) : null,
+    export: toSummary(item['export'], reply),
   };
 }
 
@@ -290,6 +350,7 @@ function toWorkout(raw: unknown, reply: Reply): Workout {
   const { day, sport, title, goal, duration_minutes, notes, slot, stretching_minutes } = item;
   const target = toTarget(item['zone_system'], item['zone']);
   const range = toRange(item['target']);
+  const sent = toExport(item['export']);
   const segments = item['segments'];
   if (
     !isDate(day) ||
@@ -302,6 +363,7 @@ function toWorkout(raw: unknown, reply: Reply): Workout {
     duration_minutes > DURATION_MAX ||
     target === null ||
     range === undefined ||
+    sent === undefined ||
     typeof notes !== 'string' ||
     (slot !== null && !isOneOf<WorkoutSlot>(slot, SLOTS)) ||
     !isCount(stretching_minutes) ||
@@ -318,6 +380,7 @@ function toWorkout(raw: unknown, reply: Reply): Workout {
     duration_minutes,
     ...target,
     target: range,
+    export: sent,
     notes,
     slot,
     stretching_minutes,
@@ -343,6 +406,69 @@ function toSegment(raw: unknown, reply: Reply): Segment {
     throw unexpected(reply);
   }
   return { kind, seconds, repeat, ...target, target: range };
+}
+
+/** What is known about the event of a workout: `null` for a plan that is not sent. */
+function toExport(raw: unknown): WorkoutExport | null | undefined {
+  if (raw === null) {
+    return null;
+  }
+  if (typeof raw !== 'object' || Array.isArray(raw)) {
+    return undefined;
+  }
+  const { status, error_code, pushed_at } = raw as Record<string, unknown>;
+  if (
+    !isOneOf<ExportStatus>(status, EXPORT_STATUSES) ||
+    !isOneOf<ExportError>(error_code, EXPORT_ERRORS) ||
+    // A code goes with a failure and with nothing else.
+    (error_code !== '') !== (status === 'failed') ||
+    (pushed_at !== null && !isTimestamp(pushed_at)) ||
+    // A workout that was never sent has no time of sending.
+    (status === 'not_sent') !== (pushed_at === null)
+  ) {
+    return undefined;
+  }
+  return { status, error_code, pushed_at };
+}
+
+function toSummary(raw: unknown, reply: Reply): ExportSummary | null {
+  if (raw === null) {
+    return null;
+  }
+  const { synced, failed, not_sent, older } = asObject(raw, reply);
+  if (!isCount(synced) || !isCount(failed) || !isCount(not_sent) || !isCount(older)) {
+    throw unexpected(reply);
+  }
+  return { synced, failed, not_sent, older };
+}
+
+/** The result of a push that the answer carries. */
+function toPush(body: unknown, reply: Reply): PushOutcome {
+  const raw = asObject(body, reply)['push'];
+  const item = asObject(raw, reply);
+  if (item['ok'] === true) {
+    const { synced, failed, removed, left_behind } = item;
+    if (!isCount(synced) || !isCount(failed) || !isCount(removed) || !isCount(left_behind)) {
+      throw unexpected(reply);
+    }
+    return { ok: true, synced, failed, removed, left_behind };
+  }
+  const { problem, message } = item;
+  if (
+    item['ok'] !== false ||
+    !isOneOf<PushProblem>(problem, PUSH_PROBLEMS) ||
+    typeof message !== 'string'
+  ) {
+    throw unexpected(reply);
+  }
+  return { ok: false, problem, message };
+}
+
+/** The `detail` of an error answer for users, or `fallback` if there is none. */
+function textOf(body: unknown, fallback: string): string {
+  const detail =
+    typeof body === 'object' && body !== null ? (body as Record<string, unknown>)['detail'] : null;
+  return typeof detail === 'string' && detail !== '' ? detail : fallback;
 }
 
 function toReport(raw: unknown, reply: Reply): Report {
