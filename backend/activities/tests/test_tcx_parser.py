@@ -553,7 +553,10 @@ class TestFormatDetection:
             b"{}",
             b"PK\x03\x04" + b"\x00" * 50,
             b"\x00" * 100,
-            os.urandom(300),
+            # Fixed, not os.urandom: the format is decided by the first bytes, and random ones
+            # start with "<", a space or a byte order mark now and then, which makes this case
+            # fail by chance.
+            random.Random(1).randbytes(300),
             b"\x89PNG\r\n\x1a\n" + b"x" * 20,
         ],
     )

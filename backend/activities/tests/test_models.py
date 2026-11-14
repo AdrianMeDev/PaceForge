@@ -1,4 +1,4 @@
-import os
+import random
 import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -236,7 +236,8 @@ class TestTheValues:
 
 class TestTheFile:
     def test_the_content_comes_back_byte_for_byte(self, alice: User) -> None:
-        content = os.urandom(5000) + b"\x00\x00" + b".FIT" * 100
+        # Incompressible bytes, but the same every run, so that a failure can be repeated.
+        content = random.Random(1).randbytes(5000) + b"\x00\x00" + b".FIT" * 100
         mine = activity(alice)
 
         ActivityFile.for_activity(mine, content).save()
