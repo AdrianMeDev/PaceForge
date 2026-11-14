@@ -1,13 +1,20 @@
 """The page ``docs/weekly-plan.md`` is compared with the code, so that it cannot drift."""
 
+import ast
 import json
 import re
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 import pytest
+from django.conf import settings
+from django.urls import get_resolver
 
-from planning import models, rules, schema
+from accounts.models import User
+from coach.providers.transport import TIMEOUT_SECONDS
+from planning import briefing, generation, models, prompt, rules, schema
+from planning.briefing import build_briefing
 from planning.context import PlanContext
 from planning.rules import SPORT_ZONE_SYSTEMS
 from planning.schema import Sport, ZoneSystem, parse_week_plan
@@ -25,6 +32,31 @@ def section(heading: str) -> str:
     return match.group(1)
 
 
+def subsection(heading: str) -> str:
+    """The text of a ``###`` section of the page, up to the next heading."""
+    match = re.search(rf"^### {re.escape(heading)}\n(.*?)(?=^#{{2,3}} |\Z)", DOC, re.S | re.M)
+    assert match, f"no subsection {heading!r}"
+    return match.group(1)
+
+
+def integer_constants(module: object) -> dict[str, int]:
+    """The ``NAME = 123`` assignments of a module's own source (not what it imports)."""
+    tree = ast.parse(Path(module.__file__).read_text())  # type: ignore[attr-defined]
+    found = {}
+    for node in tree.body:
+        if (
+            isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+            and node.targets[0].id.isupper()
+            and isinstance(node.value, ast.Constant)
+            and isinstance(node.value.value, int)
+            and not isinstance(node.value.value, bool)
+        ):
+            found[node.targets[0].id] = node.value.value
+    return found
+
+
 def rows(text: str) -> list[list[str]]:
     """The body rows of the tables in ``text``, cells without backticks."""
     found = []
@@ -32,7 +64,11 @@ def rows(text: str) -> list[list[str]]:
         if not line.startswith("|") or set(line.replace("|", "").strip()) <= {"-", " "}:
             continue
         found.append([cell.strip().replace("`", "") for cell in line.strip("|").split("|")])
-    return [row for row in found if row[0] not in {"Field", "Code", "Constant", "System", "Status"}]
+    return [
+        row
+        for row in found
+        if row[0] not in {"Field", "Code", "Constant", "System", "Status", "Key", "Endpoint"}
+    ]
 
 
 def example() -> object:
@@ -177,12 +213,110 @@ class TestTheFormatTables:
         assert keys(example()) <= documented
 
 
+class TestTheBriefing:
+    @pytest.mark.django_db
+    def test_the_table_lists_exactly_the_keys_the_coach_is_told(self) -> None:
+        user = User.objects.create_user("docs@example.com")
+
+        told = set(build_briefing(user, date(2027, 7, 12)))
+
+        assert {row[0] for row in rows(subsection("What the coach is told"))} == told
+
+    def test_the_page_names_what_is_never_sent(self) -> None:
+        text = subsection("What the coach is told")
+
+        for word in ("limitations", "e-mail", "never"):
+            assert word in text, word
+
+
+class TestTheDraftingLimits:
+    MODULES = (briefing, generation, prompt)
+
+    def test_every_documented_limit_has_the_value_in_the_code(self) -> None:
+        code = {k: v for module in self.MODULES for k, v in integer_constants(module).items()}
+
+        documented = {r[0]: int(r[1]) for r in rows(subsection("The drafting limits"))}
+
+        for name, value in documented.items():
+            assert code[name] == value, name
+
+    def test_every_limit_of_the_drafting_is_documented(self) -> None:
+        code = {name for module in self.MODULES for name in integer_constants(module)}
+
+        assert code == {r[0] for r in rows(subsection("The drafting limits"))}
+
+    def test_the_time_a_draft_may_take_is_attempts_times_the_timeout(self) -> None:
+        text = subsection("Time and the web server")
+
+        assert generation.ATTEMPTS * TIMEOUT_SECONDS == 120
+        assert "60 seconds" in text
+        assert "= 120" in text
+        assert "150 seconds" in text
+
+
+class TestTheApi:
+    def in_the_code(self) -> set[tuple[str, str]]:
+        found = set()
+        resolver: Any = get_resolver()
+        for pattern in resolver.url_patterns:
+            if "planning" not in str(pattern.pattern):
+                continue
+            for inner in pattern.url_patterns:
+                path = "/api/planning/" + re.sub(r"<[a-z]+:[a-z_]+>", "<>", str(inner.pattern))
+                view: Any = inner.callback
+                for method in view.view_class.http_method_names:
+                    if method in {"get", "post"}:
+                        found.add((method.upper(), path))
+        return found
+
+    def test_the_table_lists_every_endpoint_with_its_method(self) -> None:
+        text = subsection("The API")
+        documented = set()
+        for row in rows(text[: text.index("| Code |")]):
+            method, path = row[0].split(" ", 1)
+            documented.add((method, re.sub(r"<[A-Za-z]+>", "<>", path)))
+
+        assert documented == self.in_the_code()
+
+    def test_the_table_lists_every_error_with_its_status(self) -> None:
+        source = (Path(rules.__file__).parent / "views.py").read_text()
+        code = {
+            (code, status)
+            for status, code in re.findall(
+                r'_error\(\s*status\.HTTP_(\d+)_[A-Z_]+,\s*"([a-z_]+)"', source
+            )
+        }
+
+        text = subsection("The API")
+        error_table = text[text.index("| Code |") :]
+        documented = {(row[0], row[1]) for row in rows(error_table)}
+
+        assert documented == code
+
+    def test_the_limit_of_requests_is_the_documented_one(self) -> None:
+        framework: Any = settings.REST_FRAMEWORK
+        rate = framework["DEFAULT_THROTTLE_RATES"]["planning_generate"]
+
+        assert rate == "5/min"
+        assert "5 a minute" in subsection("The API")
+
+
 class TestTheReadme:
     def test_it_points_to_the_page(self) -> None:
         assert "docs/weekly-plan.md" in README
 
+    def test_it_describes_the_week_plan_page(self) -> None:
+        assert "## Week plan" in README
+        assert "/planning" in README
+        assert "Drafting with the coach" in README
+
     def test_the_page_exists_and_is_not_empty(self) -> None:
         assert len(DOC) > 3000
+
+
+def test_the_page_names_the_function_that_drafts() -> None:
+    assert "planning.generation.generate(user, monday)" in DOC
+    assert callable(generation.generate)
 
 
 def test_the_page_names_every_public_service_function() -> None:
