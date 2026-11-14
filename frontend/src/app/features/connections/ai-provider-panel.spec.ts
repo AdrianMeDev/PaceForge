@@ -8,7 +8,7 @@ import {
   RemoveProviderResult,
   SaveProviderResult,
 } from '../../core/coach/coach-models';
-import { query, required, settle, typeInto } from '../../testing/dom';
+import { dayOf, query, required, settle, typeInto } from '../../testing/dom';
 import { AiProviderPanel } from './ai-provider-panel';
 
 const KEY = 'sk-ant-test-0123456789-abcdefghij';
@@ -498,9 +498,9 @@ describe('AiProviderPanel', () => {
       expect(testId('model')).toBe('claude-sonnet-5-5');
       expect(testId('key')).toBe('Stored');
       expect(testId('status')).toBe('Connected');
-      // the time of day depends on the time zone of the browser, the day does not (at noon UTC)
-      expect(testId('checked')).toContain('Nov 13, 2026');
-      expect(testId('success')).toContain('Nov 13, 2026');
+      // the day is the one of the machine's time zone, worked out independently of the page
+      expect(testId('checked')).toContain(dayOf(CONNECTED.last_checked_at as string));
+      expect(testId('success')).toContain(dayOf(CONNECTED.last_success_at as string));
       expect(testId('usage')).toBe('1,234 calls, 9,000 input and 1 output tokens');
       expect(text()).toContain('Last 30 days');
     });
