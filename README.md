@@ -485,11 +485,24 @@ assumes that you are free. While you type, the page adds the days up ("Together:
 purpose (it is the most you *want* to train) and the page says what it means. Leave the field empty
 for no cap. The budget applies to a week, never to a single day.
 
-**Limitations.** Free text of up to 1000 characters ("no running on consecutive days"). It is kept
-and shown as plain text, never as markup, and nothing interprets it yet; it is there for the coach
-that follows.
+**A normal week.** Optional, in the same form (`6:00`), up to 168:00. What a normal week of
+training is, or was before a break, for you. It adds no time to your days and caps nothing. The
+[Week plan](#week-plan) uses it as a reference for how far a week may rise: the rule compares the
+planned minutes with what you have done in the last four weeks, and after a break that is a low
+yardstick (an average of 108 minutes allows about 140, which is how a coach ends up with sessions of
+30 minutes). With a normal week of 6:00 the yardstick is that instead, as long as it is higher than
+your recent weeks. The coach is told the number and that it is where a return to training is
+headed, not where it starts. It is **your word and your responsibility**: 130 % of a normal week is
+a big first week after a long break, so enter what you really want to build up to. An operator who
+wants more care can lower `TYPICAL_VOLUME_PERCENT` in `backend/planning/rules.py` (100 counts the
+whole week, 70 would count 70 % of it).
 
-**Save** sends the weekdays, the budget and the limitations together. The page checks the limits
+**Limitations.** Free text of up to 1000 characters ("no running on consecutive days"). It is kept
+and shown as plain text, never as markup. Nothing interprets it, and it is not sent to the coach
+either: it is free text about you, and the only free text the coach sees is the title and notes of
+your goals.
+
+**Save** sends the weekdays, the budget, the normal week and the limitations together. The page checks the limits
 first and names every problem next to its field; if the server still refuses something, its message
 appears in the same place. Nothing is saved until every field is usable.
 
@@ -509,11 +522,11 @@ functions `minutes_on` and `minutes_in_week` in `backend/availability/capacity.p
 the planning that will use it; they take calendar days, so which day it is stays the caller's
 business.
 
-The API is `GET` and `PATCH` on `/api/availability/` (the weekdays Monday first, the budget, the
-limitations) and `/api/availability/periods/` with list, create, read, change and delete.
+The API is `GET` and `PATCH` on `/api/availability/` (`weekdays` Monday first,
+`weekly_budget_minutes`, `typical_weekly_minutes`, `limitations`; `null` removes a number) and
+`/api/availability/periods/` with list, create, read, change and delete.
 
-Not there yet: time windows within a day, and different time per sport. The limitations you write
-here are not sent to the coach and not checked.
+Not there yet: time windows within a day, and different time per sport.
 
 ## Week plan
 
@@ -533,9 +546,18 @@ links to the Connections page.
    Drafting again makes a **new version** of the week; all versions stay in the list, and
    confirming a draft replaces the version that was confirmed before.
 
+**After a break.** If the plans look too small, enter **A normal week** on the
+[Training time](#training-time) page: the limit for how far a week may rise then follows what you
+are used to and not only the last four weeks.
+
+**No time.** If the week offers no training time at all (nothing on any day, a weekly budget of 0,
+or away the whole week), the page says "You have no training time for this week." with a link to
+the Training time page. Nothing is sent to your provider then, so it costs nothing.
+
 The coach is told only a fixed set of facts: the week and today, the minutes you can train on each
 day and your absences, your weekly budget, your zone tables, your active goals (title and notes),
-the minutes you trained in the last four weeks and a summary of last week's confirmed plan. **Not**
+the minutes you trained in the last four weeks, your normal week if you gave one and a summary of
+last week's confirmed plan. **Not**
 your name, e-mail address, activities' names, the limitations you wrote on the training time page
 or anything of other users. A goal's title and notes are free text, and a model can be influenced by
 text; whatever it answers still has to pass the strict reading and the checks before it is a draft,

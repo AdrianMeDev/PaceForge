@@ -16,7 +16,12 @@ pytestmark = pytest.mark.django_db
 
 URL = "/api/availability/"
 MONDAY = date(2027, 7, 12)
-EMPTY = {"weekdays": [0] * 7, "weekly_budget_minutes": None, "limitations": ""}
+EMPTY = {
+    "weekdays": [0] * 7,
+    "weekly_budget_minutes": None,
+    "typical_weekly_minutes": None,
+    "limitations": "",
+}
 WEEK = [60, 0, 90, 0, 0, 120, 180]
 
 
@@ -90,7 +95,12 @@ class TestReading:
         api = signed_in(alice)
         save(api, {"weekdays": WEEK, "weekly_budget_minutes": 300, "limitations": "Knee"})
 
-        assert set(read(api)) == {"weekdays", "weekly_budget_minutes", "limitations"}
+        assert set(read(api)) == {
+            "weekdays",
+            "weekly_budget_minutes",
+            "typical_weekly_minutes",
+            "limitations",
+        }
 
     def test_the_weekdays_come_monday_first_and_missing_ones_are_zero(self, alice: User) -> None:
         WeekdayMinutes.objects.create(owner=alice, weekday=0, minutes=60)
@@ -119,6 +129,7 @@ class TestSaving:
         assert body(response) == {
             "weekdays": WEEK,
             "weekly_budget_minutes": 300,
+            "typical_weekly_minutes": None,
             "limitations": "No running",
         }
         assert read(api) == body(response)
@@ -130,7 +141,12 @@ class TestSaving:
 
         save(api, {"weekdays": WEEK})
 
-        assert read(api) == {"weekdays": WEEK, "weekly_budget_minutes": 300, "limitations": "Knee"}
+        assert read(api) == {
+            "weekdays": WEEK,
+            "weekly_budget_minutes": 300,
+            "typical_weekly_minutes": None,
+            "limitations": "Knee",
+        }
 
     def test_the_budget_alone_leaves_the_rest_as_it_was(self, alice: User) -> None:
         api = signed_in(alice)
@@ -138,7 +154,12 @@ class TestSaving:
 
         save(api, {"weekly_budget_minutes": 240})
 
-        assert read(api) == {"weekdays": WEEK, "weekly_budget_minutes": 240, "limitations": "Knee"}
+        assert read(api) == {
+            "weekdays": WEEK,
+            "weekly_budget_minutes": 240,
+            "typical_weekly_minutes": None,
+            "limitations": "Knee",
+        }
 
     def test_the_limitations_alone_leave_the_rest_as_it_was(self, alice: User) -> None:
         api = signed_in(alice)
@@ -146,7 +167,74 @@ class TestSaving:
 
         save(api, {"limitations": "Knee"})
 
-        assert read(api) == {"weekdays": WEEK, "weekly_budget_minutes": 300, "limitations": "Knee"}
+        assert read(api) == {
+            "weekdays": WEEK,
+            "weekly_budget_minutes": 300,
+            "typical_weekly_minutes": None,
+            "limitations": "Knee",
+        }
+
+    def test_the_typical_week_can_be_set_changed_and_removed(self, alice: User) -> None:
+        api = signed_in(alice)
+
+        assert body(save(api, {"typical_weekly_minutes": 360}))["typical_weekly_minutes"] == 360
+        assert body(save(api, {"typical_weekly_minutes": 420}))["typical_weekly_minutes"] == 420
+        assert body(save(api, {"typical_weekly_minutes": None}))["typical_weekly_minutes"] is None
+        assert rows() == (0, 1)
+
+    @pytest.mark.parametrize("minutes", [0, 1, 10080])
+    def test_the_limits_of_the_typical_week_are_accepted(self, alice: User, minutes: int) -> None:
+        response = save(signed_in(alice), {"typical_weekly_minutes": minutes})
+
+        assert response.status_code == HTTPStatus.OK
+        assert body(response)["typical_weekly_minutes"] == minutes
+
+    def test_a_typical_week_of_zero_is_not_the_same_as_none(self, alice: User) -> None:
+        api = signed_in(alice)
+        save(api, {"typical_weekly_minutes": 0})
+
+        assert read(api)["typical_weekly_minutes"] == 0
+
+    def test_the_typical_week_alone_leaves_the_rest_as_it_was(self, alice: User) -> None:
+        api = signed_in(alice)
+        save(api, {"weekdays": WEEK, "weekly_budget_minutes": 300, "limitations": "Knee"})
+
+        save(api, {"typical_weekly_minutes": 360})
+
+        assert read(api) == {
+            "weekdays": WEEK,
+            "weekly_budget_minutes": 300,
+            "typical_weekly_minutes": 360,
+            "limitations": "Knee",
+        }
+
+    def test_the_other_settings_leave_the_typical_week_as_it_was(self, alice: User) -> None:
+        api = signed_in(alice)
+        save(api, {"typical_weekly_minutes": 360})
+
+        save(api, {"weekly_budget_minutes": 200, "limitations": "Knee"})
+
+        assert read(api)["typical_weekly_minutes"] == 360
+
+    def test_it_says_nothing_about_what_the_week_offers(self, alice: User) -> None:
+        api = signed_in(alice)
+        save(api, {"weekdays": WEEK, "typical_weekly_minutes": 5000})
+
+        assert minutes_in_week(alice, MONDAY) == sum(WEEK)
+
+    def test_the_typical_week_of_another_user_is_not_seen(self, alice: User, bob: User) -> None:
+        AvailabilitySettings.objects.create(owner=bob, typical_weekly_minutes=900)
+
+        assert read(signed_in(alice))["typical_weekly_minutes"] is None
+
+    def test_a_refusal_keeps_the_typical_week(self, alice: User) -> None:
+        api = signed_in(alice)
+        save(api, {"typical_weekly_minutes": 360})
+
+        save(api, {"typical_weekly_minutes": 999999, "weekly_budget_minutes": 100})
+
+        assert read(api)["typical_weekly_minutes"] == 360
+        assert read(api)["weekly_budget_minutes"] is None
 
     def test_null_removes_the_budget(self, alice: User) -> None:
         api = signed_in(alice)
@@ -175,7 +263,12 @@ class TestSaving:
         save(api, {"weekdays": [30] * 7, "weekly_budget_minutes": 100})
 
         assert rows() == (7, 1)
-        assert read(api) == {"weekdays": [30] * 7, "weekly_budget_minutes": 100, "limitations": ""}
+        assert read(api) == {
+            "weekdays": [30] * 7,
+            "weekly_budget_minutes": 100,
+            "typical_weekly_minutes": None,
+            "limitations": "",
+        }
 
     def test_the_limits_themselves_are_accepted(self, alice: User) -> None:
         response = save(
@@ -218,6 +311,7 @@ class TestSaving:
         assert read(bob_api) == {
             "weekdays": [10] * 7,
             "weekly_budget_minutes": 50,
+            "typical_weekly_minutes": None,
             "limitations": "Bob",
         }
 
@@ -270,6 +364,17 @@ class TestRefusals:
         assert list(body(response)) == ["weekly_budget_minutes"]
         assert rows() == (0, 0)
 
+    @pytest.mark.parametrize("typical", [-1, 10081, "300", 300.5, True, [], {}])
+    def test_an_unusable_typical_week_is_refused(self, alice: User, typical: Any) -> None:
+        response = save(signed_in(alice), {"typical_weekly_minutes": typical})
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert list(body(response)) == ["typical_weekly_minutes"]
+        assert body(response)["typical_weekly_minutes"] == [
+            "Enter whole minutes between 0 and 10080."
+        ]
+        assert rows() == (0, 0)
+
     @pytest.mark.parametrize("limitations", [5, ["Knee"], None, True, {"a": 1}, "x" * 1001])
     def test_unusable_limitations_are_refused(self, alice: User, limitations: Any) -> None:
         response = save(signed_in(alice), {"limitations": limitations})
@@ -315,15 +420,30 @@ class TestRefusals:
         )
 
         assert response.status_code == HTTPStatus.BAD_REQUEST
-        assert read(api) == {"weekdays": WEEK, "weekly_budget_minutes": 300, "limitations": "Knee"}
+        assert read(api) == {
+            "weekdays": WEEK,
+            "weekly_budget_minutes": 300,
+            "typical_weekly_minutes": None,
+            "limitations": "Knee",
+        }
 
     def test_every_problem_is_named_at_once(self, alice: User) -> None:
         response = save(
             signed_in(alice),
-            {"weekdays": [0] * 3, "weekly_budget_minutes": -5, "limitations": "x" * 1001},
+            {
+                "weekdays": [0] * 3,
+                "weekly_budget_minutes": -5,
+                "typical_weekly_minutes": 10081,
+                "limitations": "x" * 1001,
+            },
         )
 
-        assert set(body(response)) == {"weekdays", "weekly_budget_minutes", "limitations"}
+        assert set(body(response)) == {
+            "weekdays",
+            "weekly_budget_minutes",
+            "typical_weekly_minutes",
+            "limitations",
+        }
 
     def test_the_messages_say_what_is_allowed(self, alice: User) -> None:
         api = signed_in(alice)

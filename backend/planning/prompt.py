@@ -27,6 +27,7 @@ from .rules import (
     MAX_WORKOUTS_PER_DAY,
     PROGRESSION_ERROR_PERCENT,
     PROGRESSION_WARNING_PERCENT,
+    TYPICAL_VOLUME_PERCENT,
     Finding,
 )
 from .schema import (
@@ -108,9 +109,13 @@ within {DURATION_TOLERANCE_SECONDS} seconds. (error)
 higher; it is easy up to zone {EASY_UP_TO_ZONE}. At most {MAX_HARD_DAYS} days of the week have a \
 hard workout. (error) Do not put hard days back to back, keep at least one day free and at most \
 {MAX_WORKOUTS_PER_DAY} workouts on a day. (warnings)
-- The minutes of the week stay below {PROGRESSION_WARNING_PERCENT} percent of the average of \
-"recent_weeks_minutes" (warning), and never reach {PROGRESSION_ERROR_PERCENT} percent. (error) \
-Without recent weeks there is no such limit; then plan carefully.
+- The minutes of the week stay below {PROGRESSION_WARNING_PERCENT} percent of the reference \
+(warning), and never reach {PROGRESSION_ERROR_PERCENT} percent. (error) The reference is the \
+higher of the average of "recent_weeks_minutes" and {TYPICAL_VOLUME_PERCENT} percent of \
+"typical_weekly_minutes", which is what the athlete calls a normal week (it may be null). That \
+second number is where a return to training is headed, not where it starts: after a break climb \
+towards it over several weeks, and prefer a few sessions of a useful length to many very short \
+ones. Without either there is no such limit; then plan carefully.
 - Plan for the athlete's goals, the main goal first, and use "previous_week_plan" to vary and \
 progress the week. Fewer workouts than the time allows is fine.
 """

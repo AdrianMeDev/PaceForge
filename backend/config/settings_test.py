@@ -10,6 +10,12 @@ os.environ.setdefault("DATABASE_URL", "postgres://paceforge:paceforge-dev@localh
 
 from .settings import *  # noqa: E402, F403
 
+# The AI settings are the defaults here, whatever the operator wrote into `.env` (a machine that
+# allows DeepSeek must not turn tests red): tests that need an address list their own, and the
+# real defaults are tested against a fresh read of `settings.py` (coach/tests/test_endpoints.py).
+AI_ALLOWED_BASE_URLS = ()
+ANTHROPIC_API_BASE_URL = "https://api.anthropic.com"
+
 # Concrete OwnedModel for the core tests; its tables are created without migrations.
 INSTALLED_APPS = [*INSTALLED_APPS, "core.tests.sample"]  # noqa: F405
 

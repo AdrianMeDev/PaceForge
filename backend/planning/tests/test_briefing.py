@@ -68,6 +68,7 @@ ALLOWED_KEYS = {
     "target_value",
     "goals_not_shown",
     "recent_weeks_minutes",
+    "typical_weekly_minutes",
     "previous_week_plan",
     "day",
     "goal",
@@ -148,6 +149,7 @@ class TestTheBriefingOfAUserWithNothing:
             "goals": [],
             "goals_not_shown": 0,
             "recent_weeks_minutes": [],
+            "typical_weekly_minutes": None,
             "previous_week_plan": [],
         }
 
@@ -370,8 +372,36 @@ class TestTheGoals:
             "goals",
             "goals_not_shown",
             "recent_weeks_minutes",
+            "typical_weekly_minutes",
             "previous_week_plan",
         ]
+
+
+class TestTheTypicalWeek:
+    def test_it_is_told_as_the_athlete_gave_it(self, alice: User) -> None:
+        AvailabilitySettings.objects.create(owner=alice, typical_weekly_minutes=360)
+
+        assert build_briefing(alice, MONDAY)["typical_weekly_minutes"] == 360
+
+    def test_it_is_null_when_nothing_was_given(self, alice: User) -> None:
+        assert build_briefing(alice, MONDAY)["typical_weekly_minutes"] is None
+        AvailabilitySettings.objects.create(owner=alice, weekly_budget_minutes=300)
+        assert build_briefing(alice, MONDAY)["typical_weekly_minutes"] is None
+
+    def test_zero_says_nothing_and_is_not_told(self, alice: User) -> None:
+        AvailabilitySettings.objects.create(owner=alice, typical_weekly_minutes=0)
+
+        assert build_briefing(alice, MONDAY)["typical_weekly_minutes"] is None
+
+    def test_the_typical_week_of_another_user_is_not_told(self, alice: User, bob: User) -> None:
+        AvailabilitySettings.objects.create(owner=bob, typical_weekly_minutes=900)
+
+        assert build_briefing(alice, MONDAY)["typical_weekly_minutes"] is None
+
+    def test_it_is_in_the_text_the_coach_gets(self, alice: User) -> None:
+        AvailabilitySettings.objects.create(owner=alice, typical_weekly_minutes=360)
+
+        assert '"typical_weekly_minutes":360' in to_json(build_briefing(alice, MONDAY))
 
 
 class TestTheRecentWeeks:

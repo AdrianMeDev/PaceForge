@@ -82,6 +82,29 @@
           </p>
         </div>
 
+        <h2>A normal week</h2>
+        <div class="field">
+          <label for="typical">What a normal week of training is for you (optional)</label>
+          <input
+            id="typical"
+            type="text"
+            inputmode="numeric"
+            autocomplete="off"
+            aria-describedby="typical-hint"
+            [value]="typical()"
+            [attr.aria-invalid]="typicalError() ? true : null"
+            (input)="typical.set(read($event))"
+          />
+          @if (typicalError(); as message) {
+            <p class="field-error" role="alert">{{ message }}</p>
+          }
+          <p class="hint" id="typical-hint">
+            Hours and minutes per week, for example 6:00. After a break your coach uses it to see
+            how far you can build up again; the plan still starts gently. It adds no time to your
+            days and is no promise. Leave it empty if you would rather not say.
+          </p>
+        </div>
+
         <h2>Limitations</h2>
         <div class="field">
           <label for="limitations">Anything the plan should respect (optional)</label>

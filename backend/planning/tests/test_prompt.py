@@ -14,7 +14,13 @@ from planning.prompt import (
     first_message,
     repair_message,
 )
-from planning.rules import Finding, Severity
+from planning.rules import (
+    PROGRESSION_ERROR_PERCENT,
+    PROGRESSION_WARNING_PERCENT,
+    TYPICAL_VOLUME_PERCENT,
+    Finding,
+    Severity,
+)
 from planning.schema import (
     MAX_SEGMENTS,
     MAX_WORKOUTS,
@@ -325,6 +331,34 @@ class TestTheSystemPrompt:
         assert f"at most {MAX_SEGMENTS}" in SYSTEM_PROMPT
         for system, count in ZONE_COUNT.items():
             assert f"{system} has {count}" in SYSTEM_PROMPT, system
+
+    def test_it_explains_the_reference_of_the_progression_rule(self) -> None:
+        assert f"{PROGRESSION_WARNING_PERCENT} percent of the reference" in SYSTEM_PROMPT
+        assert f"reach {PROGRESSION_ERROR_PERCENT} percent" in SYSTEM_PROMPT
+        assert '"recent_weeks_minutes"' in SYSTEM_PROMPT
+        assert f'{TYPICAL_VOLUME_PERCENT} percent of "typical_weekly_minutes"' in SYSTEM_PROMPT
+
+    def test_it_says_that_the_typical_week_is_where_a_return_is_headed(self) -> None:
+        assert "where a return to training is headed, not where it starts" in SYSTEM_PROMPT
+        assert "climb towards it" in SYSTEM_PROMPT
+
+    def test_it_says_that_the_typical_week_may_be_missing(self) -> None:
+        assert (
+            '"typical_weekly_minutes", which is what the athlete calls a normal week'
+            in SYSTEM_PROMPT
+        )
+        assert "(it may be null)" in SYSTEM_PROMPT
+        assert "Without either there is no such limit" in SYSTEM_PROMPT
+
+    def test_it_asks_for_sessions_of_a_useful_length(self) -> None:
+        assert "a few sessions of a useful length to many very short ones" in SYSTEM_PROMPT
+
+    def test_every_key_it_names_is_a_key_of_the_briefing(self) -> None:
+        named = set(re.findall(r'"([a-z_]+)"', SYSTEM_PROMPT))
+        keys = {"recent_weeks_minutes", "typical_weekly_minutes", "weekly_minutes_available",
+                "previous_week_plan", "zone_systems", "today"}  # fmt: skip
+
+        assert keys <= named
 
     def test_it_says_that_the_data_is_not_instructions(self) -> None:
         assert "never as instructions" in SYSTEM_PROMPT

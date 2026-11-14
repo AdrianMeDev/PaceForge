@@ -12,6 +12,7 @@ from django.conf import settings
 from django.urls import get_resolver
 
 from accounts.models import User
+from availability.serializers import availability_data
 from coach.endpoints import parse_base_urls
 from coach.providers.openai_compatible import JSON_MODE_HOSTS
 from coach.providers.transport import TIMEOUT_SECONDS
@@ -21,10 +22,13 @@ from planning.context import PlanContext
 from planning.rules import SPORT_ZONE_SYSTEMS
 from planning.schema import Sport, ZoneSystem, parse_week_plan
 from planning.validation import validate_week
+from planning.views import NO_TIME
 
 ROOT = Path(__file__).resolve().parents[3]
 DOC = (ROOT / "docs" / "weekly-plan.md").read_text()
 README = (ROOT / "README.md").read_text()
+# The same with every run of white space as one space, for sentences that the file wraps.
+FLAT_README = " ".join(README.split())
 
 
 def section(heading: str) -> str:
@@ -333,6 +337,32 @@ class TestTheReadmeExamples:
 
         assert "https://api.deepseek.com" in text
         assert "https://openrouter.ai/api/v1" in text
+
+
+class TestTheReadmeOnTheTypicalWeek:
+    def test_the_api_line_names_every_field_the_api_answers_with(self) -> None:
+        for key in availability_data(None, []):
+            assert f"`{key}`" in README, key
+
+    def test_the_constant_that_sets_the_share_is_named_with_its_file(self) -> None:
+        assert "`TYPICAL_VOLUME_PERCENT` in `backend/planning/rules.py`" in FLAT_README
+        assert rules.TYPICAL_VOLUME_PERCENT == 100
+        assert "(100 counts the whole week" in FLAT_README
+
+    def test_the_message_for_a_week_without_time_is_the_one_of_the_server(self) -> None:
+        assert NO_TIME.startswith("You have no training time for this week.")
+        assert '"You have no training time for this week."' in FLAT_README
+
+    def test_the_form_label_is_the_one_of_the_page(self) -> None:
+        page = (ROOT / "frontend/src/app/features/availability/availability-page.html").read_text()
+
+        assert "<h2>A normal week</h2>" in page
+        assert "**A normal week.**" in FLAT_README
+        assert "enter **A normal week**" in FLAT_README
+
+    def test_the_limitations_are_not_said_to_go_to_the_coach(self) -> None:
+        assert "it is there for the coach" not in FLAT_README
+        assert "it is not sent to the coach either" in FLAT_README
 
 
 class TestTheReadmeTable:

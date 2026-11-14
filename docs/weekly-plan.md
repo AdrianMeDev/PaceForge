@@ -139,7 +139,12 @@ Each plan is checked against the facts of its user for that week, collected when
 - **Recent volume.** The minutes of each of the up to 4 calendar weeks before the plan's week in
   which the athlete has an activity with a duration (timer time, elapsed time as a fallback), the
   weeks cut in the user's time zone. Weeks without such an activity are left out, not counted as
-  zero. Without any, the progression rule is skipped.
+  zero. Without any (and without a typical week, next), the progression rule is skipped.
+- **The typical week.** What the athlete calls a normal week of training, entered on the training
+  time page (optional). It is a reference and not a limit, and it adds no time to the days. The
+  progression rule uses the **higher** of the recent average and the typical week
+  (`TYPICAL_VOLUME_PERCENT` of it), so that someone coming back from a break is not held to the few
+  weeks since. It is the athlete's own word and their responsibility.
 
 ## The rules
 
@@ -157,12 +162,12 @@ user to weigh.
 | `day_in_absence` | error | A workout on a day of vacation, illness or another absence. |
 | `week_over_capacity` | error | The week adds up to more than the user offers, the weekly budget included. |
 | `too_many_hard_days` | error | More hard days than the limit. A day counts once. |
-| `volume_jump` | error | The planned minutes are above the error limit of the recent average. |
+| `volume_jump` | error | The planned minutes are above the error limit of the reference (the recent average, or the typical week if that is higher). |
 | `hard_days_in_a_row` | warning | A hard day directly after a hard day. |
 | `no_free_day` | warning | Every day of the week has a workout. |
 | `many_workouts_in_a_day` | warning | More workouts on a day than the limit. |
 | `duplicate_workout` | warning | The same sport, goal and duration twice on a day. |
-| `volume_increase` | warning | The planned minutes are above the warning limit of the recent average. |
+| `volume_increase` | warning | The planned minutes are above the warning limit of the reference (the recent average, or the typical week if that is higher). |
 
 Workouts outside the week are ignored by every rule except `outside_week`. Nothing is checked
 against the next or the previous week, so Sunday and the following Monday are not "in a row".
@@ -180,8 +185,9 @@ decisions, not coaching science; better ones will come from using the feature.
 | `EASY_UP_TO_ZONE` | 2 | Up to this zone a workout is easy. |
 | `MAX_HARD_DAYS` | 3 | Hard days a week. |
 | `MAX_WORKOUTS_PER_DAY` | 2 | Workouts a day before the warning. |
-| `PROGRESSION_WARNING_PERCENT` | 130 | Planned minutes in percent of the recent average: warning above. |
-| `PROGRESSION_ERROR_PERCENT` | 150 | Planned minutes in percent of the recent average: error above. |
+| `PROGRESSION_WARNING_PERCENT` | 130 | Planned minutes in percent of the reference: warning above. |
+| `PROGRESSION_ERROR_PERCENT` | 150 | Planned minutes in percent of the reference: error above. |
+| `TYPICAL_VOLUME_PERCENT` | 100 | How much of the typical week counts as a reference (100: all of it). A lower number, say 70, makes the first weeks back more careful. |
 | `TITLE_MAX` | 100 | Characters of a title. |
 | `NOTES_MAX` | 500 | Characters of notes. |
 | `RATIONALE_MAX` | 1000 | Characters of the rationale. |
@@ -191,10 +197,12 @@ decisions, not coaching science; better ones will come from using the feature.
 | `SEGMENT_SECONDS_MAX` | 86400 | Seconds of a segment. |
 | `REPEAT_MAX` | 50 | Repeats of a segment. |
 
-The progression rule compares without rounding the average: with the weeks 100 and 101 (average
+The progression rule compares without rounding the reference: with the weeks 100 and 101 (average
 100.5) 130 percent is 130.65, so 130 planned minutes pass and 131 do not. A week exactly at a limit
-passes it. There is no absolute allowance yet: a recent average of 60 minutes makes a 100-minute
-week an error.
+passes it. There is no absolute allowance: a recent average of 60 minutes makes a 100-minute week an
+error, unless the athlete has given a typical week that is higher. With a recent average of 108 and
+a typical week of 360 minutes the limits are 468 (warning above) and 540 (error above) instead of
+140 and 162. The message of a finding says which of the two was the reference.
 
 ## Saving, versions and confirming
 
@@ -226,7 +234,9 @@ the user can be shown what is wrong. Its statuses:
 `planning.generation.generate(user, monday)` asks the user's own AI provider for a draft of a week:
 
 1. A **briefing** is built from the data of the user (below) and sent with the fixed system prompt
-   (`planning/prompt.py`), which describes the format and the rules above.
+   (`planning/prompt.py`), which describes the format and the rules above. If the week offers no
+   training time at all (no minutes on any day, a weekly budget of 0, or away all week) nothing is
+   sent: there is nothing to plan, and the answer is `no_time` (below).
 2. The answer has to be **one JSON object** and nothing else (one code fence around it is
    tolerated). It is read by the strict parser; a repeated key, `NaN`, a huge number or an answer
    of more than the answer limit is refused, and so is a plan for another week.
@@ -266,6 +276,7 @@ without this page.
 | `goals` | The active goals, the main goal first, then the nearest date. |
 | `goals_not_shown` | How many active goals were left out because of the limit. |
 | `recent_weeks_minutes` | Minutes done in each of the up to 4 weeks before, latest first. |
+| `typical_weekly_minutes` | What the athlete calls a normal week, in minutes; `null` if not given (or 0). The progression rule's reference is the higher of this and the recent average. |
 | `previous_week_plan` | The confirmed plan of the week before: day, sport, goal, minutes. |
 
 What is **never** sent: names, e-mail addresses, ids, the title or notes of past plans, the names
@@ -320,6 +331,7 @@ without a code is the limit of PaceForge itself.
 | `week_not_plannable` | 404 | The week is not one of the weeks that can be planned (also: not a date). |
 | `not_found` | 404 | There is no such plan. |
 | `not_configured` | 409 | The user has not set up an AI provider. |
+| `no_time` | 409 | The week offers no training time at all; the coach is not asked and nothing is recorded. |
 | `not_a_draft` | 409 | Only a draft can be confirmed or discarded. |
 | `not_usable` | 422 | The coach gave no readable plan, even after the repair; the problems come along. |
 | `not_confirmable` | 422 | The plan has errors; the findings come along. |
@@ -336,7 +348,7 @@ without a code is the limit of PaceForge itself.
   the user. The only free text the coach sees is the title and notes of the goals.
 - There is **no time of day**: two workouts on one day add up, they cannot overlap.
 - Whether a plan is *good* training: the rules only keep out what is impossible or plainly unwise.
-- Anything about the weeks before or after the plan beyond the recent average.
+- Anything about the weeks before or after the plan beyond the recent average and the typical week.
 
 ## From code
 

@@ -19,11 +19,14 @@ PERIOD_MAX_DAYS = 366
 class AvailabilitySettings(OwnedModel):
     """What a user says about their training time apart from the weekdays. One per user.
 
-    The weekly budget caps what the weekdays add up to; empty means no cap. The limitations are
-    free text for the coach and are never interpreted here.
+    The weekly budget caps what the weekdays add up to; empty means no cap. The typical week is what
+    the athlete calls a normal week of training, in minutes (empty: not given): a reference for the
+    planning after a break, never a limit on what the weekdays offer. The limitations are free text
+    and are never interpreted here.
     """
 
     weekly_budget_minutes = models.PositiveIntegerField(null=True, blank=True)
+    typical_weekly_minutes = models.PositiveIntegerField(null=True, blank=True)
     limitations = models.CharField(max_length=LIMITATIONS_MAX, blank=True)
 
     class Meta:
@@ -34,6 +37,11 @@ class AvailabilitySettings(OwnedModel):
                 | Q(weekly_budget_minutes__lte=WEEK_MINUTES_MAX),
                 name="availability_budget_in_range",
             ),
+            models.CheckConstraint(
+                condition=Q(typical_weekly_minutes__isnull=True)
+                | Q(typical_weekly_minutes__lte=WEEK_MINUTES_MAX),
+                name="availability_typical_week_in_range",
+            ),
         ]
 
     def __str__(self) -> str:
@@ -42,11 +50,13 @@ class AvailabilitySettings(OwnedModel):
 
     def clean(self) -> None:
         super().clean()
-        budget = self.weekly_budget_minutes
-        if budget is not None and budget > WEEK_MINUTES_MAX:
-            raise ValidationError(
-                {"weekly_budget_minutes": f"Enter at most {WEEK_MINUTES_MAX} minutes (a week)."}
-            )
+        errors = {}
+        for name in ("weekly_budget_minutes", "typical_weekly_minutes"):
+            minutes = getattr(self, name)
+            if minutes is not None and minutes > WEEK_MINUTES_MAX:
+                errors[name] = f"Enter at most {WEEK_MINUTES_MAX} minutes (a week)."
+        if errors:
+            raise ValidationError(errors)
 
 
 class WeekdayMinutes(OwnedModel):

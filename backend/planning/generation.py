@@ -43,6 +43,11 @@ class WeekNotPlannable(Exception):
     """The week is not one of ``plannable_weeks``."""
 
 
+class NoTimeAvailable(Exception):
+    """The week offers no training time at all: nothing on any day, a weekly budget of 0, or away
+    the whole week. There is nothing to plan, so the coach is not asked (and nothing is paid)."""
+
+
 class PlanNotUsable(Exception):
     """The coach did not give a readable plan, not even after being told what was wrong.
     ``problems`` says what was wrong with the last answer (fixed texts, nothing of the answer)."""
@@ -87,13 +92,17 @@ def plannable_weeks(user: User) -> tuple[date, ...]:
 def generate(user: User, monday: date) -> Generated:
     """Draft the week that starts on ``monday`` with the coach of ``user``.
 
-    Raises ``WeekNotPlannable``, ``coach.services.NotConfiguredError`` (no provider chosen),
+    Raises ``WeekNotPlannable``, ``NoTimeAvailable`` (checked before anything is sent, so before
+    the provider is even looked at), ``coach.services.NotConfiguredError`` (no provider chosen),
     the errors of the provider (``coach.providers.base.ProviderError``) if it could not be
     reached or refused, and ``PlanNotUsable`` if no readable plan came of it.
     """
     if monday not in plannable_weeks(user):
         raise WeekNotPlannable
-    messages = [first_message(build_briefing(user, monday))]
+    briefing = build_briefing(user, monday)
+    if briefing["weekly_minutes_available"] == 0:
+        raise NoTimeAvailable
+    messages = [first_message(briefing)]
     best: _Attempt | None = None
     for attempt_number in range(1, ATTEMPTS + 1):
         try:

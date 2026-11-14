@@ -33,6 +33,12 @@
       @for (message of errors(); track $index) {
         <p class="alert" role="alert">{{ message }}</p>
       }
+      @if (noTime()) {
+        <p class="hint" data-testid="no-time">
+          Enter the minutes you can train on the
+          <a routerLink="/availability">Training time</a> page, then draft the week again.
+        </p>
+      }
       @if (problems().length > 0) {
         <ul class="problems" aria-label="What was wrong with the answer">
           @for (problem of problems(); track $index) {

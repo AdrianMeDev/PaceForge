@@ -37,6 +37,9 @@ class PlanContext:
     # Minutes done in each of the up to ``RECENT_WEEKS`` weeks before this one that have data,
     # the latest week first. Empty: there is no reference.
     recent_weeks: tuple[int, ...]
+    # What the athlete calls a normal week, in minutes (``None``: not said). The progression rule
+    # takes it as the reference when it is higher than the recent weeks.
+    typical_weekly_minutes: int | None = None
 
     def offset(self, day: date) -> int | None:
         """The place of ``day`` in the week (Monday is 0), ``None`` if it lies outside."""
@@ -57,6 +60,7 @@ def build_context(user: User, monday: date) -> PlanContext:
         weekly_minutes=capacity.total,
         zone_systems=usable_zone_systems(held),
         recent_weeks=recent_weekly_minutes(_recent_activities(user, monday, zone), zone, monday),
+        typical_weekly_minutes=capacity.typical_weekly_minutes,
     )
 
 

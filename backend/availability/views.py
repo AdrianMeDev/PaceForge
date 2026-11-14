@@ -53,7 +53,9 @@ class AvailabilityView(APIView):
                     update_fields=["minutes"],
                 )
             settings_fields = [
-                name for name in ("weekly_budget_minutes", "limitations") if name in data
+                name
+                for name in ("weekly_budget_minutes", "typical_weekly_minutes", "limitations")
+                if name in data
             ]
             if settings_fields:
                 settings, _ = AvailabilitySettings.objects.get_or_create(owner=user)

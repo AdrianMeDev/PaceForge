@@ -28,6 +28,9 @@ class WeekCapacity:
     budget: int | None
     # The days added up, at most the budget.
     total: int
+    # What the user calls a normal week of training, ``None`` if not said. A reference for the
+    # planning, not a limit: it changes nothing about what the week offers.
+    typical_weekly_minutes: int | None = None
 
 
 def week_capacity(user: User, monday: date) -> WeekCapacity:
@@ -36,17 +39,19 @@ def week_capacity(user: User, monday: date) -> WeekCapacity:
         raise ValueError(f"{monday} is not a Monday")
     days = _load(user, monday, 7)
     minutes = tuple(offered for offered, _ in days)
-    budget = (
+    row = (
         AvailabilitySettings.objects.for_user(user)
-        .values_list("weekly_budget_minutes", flat=True)
+        .values_list("weekly_budget_minutes", "typical_weekly_minutes")
         .first()
     )
+    budget, typical = row if row is not None else (None, None)
     total = sum(minutes)
     return WeekCapacity(
         minutes=minutes,
         absences=tuple(kind for _, kind in days),
         budget=budget,
         total=total if budget is None else min(total, budget),
+        typical_weekly_minutes=typical,
     )
 
 

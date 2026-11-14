@@ -621,6 +621,44 @@ describe('PlanningPage', () => {
       expect(byId('no-provider')).toBeTruthy();
     });
 
+    it('says when the week offers no time and where to enter it', async () => {
+      await setup();
+      stubs.planning.generate.mockResolvedValue({ kind: 'no_time' });
+
+      await click('generate');
+
+      expect(alerts()).toEqual(['You have no training time for this week.']);
+      const link = query<HTMLAnchorElement>(page, '[data-testid="no-time"] a');
+      expect(link.getAttribute('href')).toBe('/availability');
+      expect(byId('generate')).toBeTruthy();
+      expect(byId('no-provider')).toBeNull();
+    });
+
+    it('takes the hint about the training time away with the next try', async () => {
+      await setup();
+      stubs.planning.generate.mockResolvedValueOnce({ kind: 'no_time' });
+      await click('generate');
+      stubs.planning.generate.mockResolvedValueOnce({ kind: 'rate_limited' });
+
+      await click('generate');
+
+      expect(byId('no-time')).toBeNull();
+      expect(alerts()).toEqual([
+        'Too many plans were requested. Please wait a minute and try again.',
+      ]);
+    });
+
+    it('takes the hint about the training time away when another week is chosen', async () => {
+      await setup();
+      stubs.planning.generate.mockResolvedValue({ kind: 'no_time' });
+      await click('generate');
+
+      await choose(LATER);
+
+      expect(byId('no-time')).toBeNull();
+      expect(alerts()).toEqual([]);
+    });
+
     it('says when the coach gave nothing usable, and what was wrong', async () => {
       await setup();
       stubs.planning.generate.mockResolvedValue({

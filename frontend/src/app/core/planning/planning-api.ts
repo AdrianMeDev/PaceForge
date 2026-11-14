@@ -104,7 +104,9 @@ export class PlanningApi {
       case 404:
         return { kind: 'not_plannable' };
       case 409:
-        return { kind: 'not_configured' };
+        // Two reasons share the status; the code tells them apart. Anything else (a proxy's page,
+        // an answer of another shape) keeps meaning what 409 meant before: no provider.
+        return codeOf(reply.body) === 'no_time' ? { kind: 'no_time' } : { kind: 'not_configured' };
       case 422:
         return { kind: 'not_usable', problems: toProblems(reply) };
       case 429:
@@ -358,6 +360,15 @@ function toFindings(item: Record<string, unknown>, reply: Reply): Finding[] {
     }
     return { severity, code, message, path };
   });
+}
+
+/** The `code` of an error answer, `null` if the body is no object with a text there. */
+function codeOf(body: unknown): string | null {
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+    return null;
+  }
+  const code = (body as Record<string, unknown>)['code'];
+  return typeof code === 'string' ? code : null;
 }
 
 function toProblems(reply: Reply): PlanProblem[] {

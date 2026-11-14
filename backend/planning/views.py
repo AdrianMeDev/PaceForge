@@ -21,7 +21,7 @@ from coach.services import NotConfiguredError
 from coach.views import PROBLEMS
 
 from . import services
-from .generation import PlanNotUsable, WeekNotPlannable, generate, plannable_weeks
+from .generation import NoTimeAvailable, PlanNotUsable, WeekNotPlannable, generate, plannable_weeks
 from .models import WeeklyPlan
 from .serializers import finding_data, plan_data, summary_data
 from .throttles import PlanGenerateThrottle
@@ -31,6 +31,7 @@ from .validation import Report
 # coach's answer goes into an error.
 NOT_CONFIGURED = "No AI provider is set up."
 NOT_PLANNABLE = "This week cannot be planned."
+NO_TIME = "You have no training time for this week. Enter it on the Training time page."
 NOT_FOUND = "There is no such plan."
 NOT_A_DRAFT = "Only a draft can be confirmed or discarded."
 NOT_CONFIRMABLE = "The plan has errors and cannot be confirmed."
@@ -100,6 +101,8 @@ class GenerateView(APIView):
             generated = generate(user, monday)
         except WeekNotPlannable:
             return _error(status.HTTP_404_NOT_FOUND, "week_not_plannable", NOT_PLANNABLE)
+        except NoTimeAvailable:
+            return _error(status.HTTP_409_CONFLICT, "no_time", NO_TIME)
         except NotConfiguredError:
             return _error(status.HTTP_409_CONFLICT, "not_configured", NOT_CONFIGURED)
         except PlanNotUsable as error:

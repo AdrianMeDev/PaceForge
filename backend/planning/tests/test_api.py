@@ -318,10 +318,41 @@ class TestGenerating:
         assert not WeeklyPlan.objects.exists()
 
     def test_without_a_provider_it_is_a_conflict(self, bob: User) -> None:
+        WeekdayMinutes.objects.create(owner=bob, weekday=0, minutes=60)
+
         response = signed_in(bob).call("POST", generate_url())
 
         assert response.status_code == HTTPStatus.CONFLICT
         assert body(response) == {"detail": "No AI provider is set up.", "code": "not_configured"}
+
+    def test_a_week_without_time_is_a_conflict_of_its_own_and_nothing_is_asked(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        scripted = provide(good())
+        WeekdayMinutes.objects.filter(owner=alice).update(minutes=0)
+
+        response = signed_in(alice).call("POST", generate_url())
+
+        assert response.status_code == HTTPStatus.CONFLICT
+        assert body(response) == {
+            "detail": (
+                "You have no training time for this week. Enter it on the Training time page."
+            ),
+            "code": "no_time",
+        }
+        assert scripted.calls == []
+        assert not AIUsageRecord.objects.exists()
+        assert not WeeklyPlan.objects.exists()
+
+    def test_the_two_conflicts_are_told_apart(self, alice: User, bob: User) -> None:
+        # alice has a provider but no time, bob has time but no provider
+        WeekdayMinutes.objects.filter(owner=alice).update(minutes=0)
+        WeekdayMinutes.objects.create(owner=bob, weekday=0, minutes=60)
+
+        no_time = body(signed_in(alice).call("POST", generate_url()))["code"]
+        no_provider = body(signed_in(bob).call("POST", generate_url()))["code"]
+
+        assert (no_time, no_provider) == ("no_time", "not_configured")
 
     @pytest.mark.parametrize(
         ("error", "http_status", "code"),

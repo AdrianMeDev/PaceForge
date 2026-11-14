@@ -524,6 +524,42 @@ describe('PlanningApi', () => {
       expect(result).toEqual({ kind: 'not_configured' });
     });
 
+    it('says when the week offers no training time', async () => {
+      const { result } = await run(
+        api.generate('2026-11-16'),
+        'POST',
+        URL,
+        {
+          detail: 'You have no training time for this week. Enter it on the Training time page.',
+          code: 'no_time',
+        },
+        409,
+      );
+
+      expect(result).toEqual({ kind: 'no_time' });
+    });
+
+    it.each([
+      ['no body', null],
+      ['a page of a proxy', PROXY_PAGE],
+      ['a list as body', []],
+      ['no code', { detail: 'Something.' }],
+      ['a number as code', { code: 5 }],
+      ['an unknown code', { code: 'weird' }],
+      ['the code of the provider', { code: 'not_configured' }],
+      ['the code in other letters', { code: 'NO_TIME' }],
+    ])('keeps a 409 with %s as "no provider"', async (_name, body) => {
+      const { result } = await run(
+        api.generate('2026-11-16'),
+        'POST',
+        URL,
+        body as object | null,
+        409,
+      );
+
+      expect(result).toEqual({ kind: 'not_configured' });
+    });
+
     it('says when the coach gave nothing usable, and what was wrong', async () => {
       const problems = [{ path: '', message: 'The answer is not one JSON object.' }];
 

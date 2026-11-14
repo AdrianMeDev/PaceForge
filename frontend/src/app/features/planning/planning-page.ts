@@ -24,6 +24,7 @@ const FALLBACK = 'Something went wrong. Please try again.';
 const GONE = 'That plan does not exist any more.';
 const REFRESH_FAILED = 'The list of plans could not be refreshed. Please try again.';
 const NOT_PLANNABLE = 'This week cannot be planned.';
+const NO_TIME = 'You have no training time for this week.';
 const NOT_USABLE = 'The coach did not give a plan that could be used. Please try again.';
 const TOO_MANY = 'Too many plans were requested. Please wait a minute and try again.';
 const NOT_A_DRAFT = 'That plan is not a draft any more.';
@@ -63,6 +64,8 @@ export class PlanningPage implements OnInit {
   protected readonly notice = signal<string | null>(null);
   /** What was wrong with the answer of the coach, when it could not be used. */
   protected readonly problems = signal<PlanProblem[]>([]);
+  /** The week offers no training time: the page says where to enter it. */
+  protected readonly noTime = signal(false);
 
   protected readonly week = computed(
     () => this.weeks().find((week) => week.week_start === this.selected()) ?? null,
@@ -148,6 +151,10 @@ export class PlanningPage implements OnInit {
           break;
         case 'not_configured':
           this.configured.set(false);
+          break;
+        case 'no_time':
+          this.errors.set([NO_TIME]);
+          this.noTime.set(true);
           break;
         case 'not_usable':
           this.errors.set([NOT_USABLE]);
@@ -311,5 +318,6 @@ export class PlanningPage implements OnInit {
     this.errors.set([]);
     this.notice.set(null);
     this.problems.set([]);
+    this.noTime.set(false);
   }
 }

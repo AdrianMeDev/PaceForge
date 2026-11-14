@@ -153,12 +153,14 @@ function periodUrl(id: string): string {
 function toAvailability(raw: unknown, reply: Reply): Availability {
   const item = asObject(raw, reply);
   const budget = item['weekly_budget_minutes'];
+  const typical = item['typical_weekly_minutes'];
   const weekdays = item['weekdays'];
   if (
     !Array.isArray(weekdays) ||
     weekdays.length !== 7 ||
     !weekdays.every(isMinutes) ||
     (budget !== null && !isMinutes(budget)) ||
+    (typical !== null && !isMinutes(typical)) ||
     typeof item['limitations'] !== 'string'
   ) {
     throw unexpected(reply);
@@ -166,6 +168,7 @@ function toAvailability(raw: unknown, reply: Reply): Availability {
   return {
     weekdays: [...(weekdays as number[])],
     weekly_budget_minutes: budget,
+    typical_weekly_minutes: typical,
     limitations: item['limitations'],
   };
 }

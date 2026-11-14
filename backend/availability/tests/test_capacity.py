@@ -238,6 +238,63 @@ class TestAWeek:
         assert len(queries) == 3
 
 
+def typical(user: User, minutes: int | None) -> None:
+    AvailabilitySettings.objects.create(owner=user, typical_weekly_minutes=minutes)
+
+
+class TestTheTypicalWeek:
+    def test_it_comes_with_the_week(self, alice: User) -> None:
+        declare(alice, 60, 60)
+        typical(alice, 360)
+
+        result = week_capacity(alice, MONDAY)
+
+        assert result.typical_weekly_minutes == 360
+
+    def test_it_is_none_without_a_settings_row_and_without_the_value(self, alice: User) -> None:
+        assert week_capacity(alice, MONDAY).typical_weekly_minutes is None
+
+        budget(alice, 100)
+
+        assert week_capacity(alice, MONDAY).typical_weekly_minutes is None
+
+    def test_it_changes_nothing_about_what_the_week_offers(self, alice: User) -> None:
+        declare(alice, 60, 0, 90)
+        typical(alice, 5000)
+
+        result = week_capacity(alice, MONDAY)
+
+        assert (result.minutes, result.budget, result.total) == ((60, 0, 90, 0, 0, 0, 0), None, 150)
+
+    def test_it_is_kept_next_to_a_budget(self, alice: User) -> None:
+        AvailabilitySettings.objects.create(
+            owner=alice, weekly_budget_minutes=100, typical_weekly_minutes=360
+        )
+
+        result = week_capacity(alice, MONDAY)
+
+        assert (result.budget, result.typical_weekly_minutes) == (100, 360)
+
+    def test_a_typical_week_of_zero_is_kept_as_zero(self, alice: User) -> None:
+        typical(alice, 0)
+
+        assert week_capacity(alice, MONDAY).typical_weekly_minutes == 0
+
+    def test_the_typical_week_of_another_user_is_not_seen(self, alice: User, bob: User) -> None:
+        typical(bob, 900)
+
+        assert week_capacity(alice, MONDAY).typical_weekly_minutes is None
+
+    def test_it_still_takes_three_queries(self, alice: User) -> None:
+        declare(alice, 60, 60)
+        typical(alice, 360)
+
+        with CaptureQueriesContext(connection) as queries:
+            week_capacity(alice, MONDAY)
+
+        assert len(queries) == 3
+
+
 class TestTheWholeWeek:
     def test_nothing_declared_offers_nothing(self, alice: User) -> None:
         assert week_capacity(alice, MONDAY) == WeekCapacity((0,) * 7, (None,) * 7, None, 0)

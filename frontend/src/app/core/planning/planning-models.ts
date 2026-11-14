@@ -112,6 +112,8 @@ export type GenerateResult =
   | { kind: 'not_plannable' }
   /** No AI provider is set up. */
   | { kind: 'not_configured' }
+  /** The week offers no training time at all; nothing was asked of the coach. */
+  | { kind: 'no_time' }
   /** The coach gave no readable plan, even after being told what was wrong. */
   | { kind: 'not_usable'; problems: PlanProblem[] }
   /** The provider refused or could not be reached; `message` is the server's text for users. */
