@@ -9,15 +9,17 @@ export type PeriodStatus = 'current' | 'upcoming' | 'past';
 /**
  * The time a user can train. `weekdays` are the minutes per day, Monday first (always seven
  * numbers, 0 where nothing was entered); the weekly budget caps what they add up to and is `null`
- * for no cap; the limitations are free text.
+ * for no cap; the typical week is what the user calls a normal week of training, a reference for
+ * the planning after a break (`null`: not given), never a limit; the limitations are free text.
  */
 export interface Availability {
   weekdays: number[];
   weekly_budget_minutes: number | null;
+  typical_weekly_minutes: number | null;
   limitations: string;
 }
 
-/** What is sent to save the availability: any of the three, the rest stays as it is. */
+/** What is sent to save the availability: any of the four, the rest stays as it is. */
 export type AvailabilityChanges = Partial<Availability>;
 
 /**

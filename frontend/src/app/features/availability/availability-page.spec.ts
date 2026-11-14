@@ -14,11 +14,13 @@ import { AvailabilityPage } from './availability-page';
 const SAVED: Availability = {
   weekdays: [60, 0, 90, 0, 0, 120, 180],
   weekly_budget_minutes: 300,
+  typical_weekly_minutes: 360,
   limitations: 'No running on consecutive days',
 };
 const NOTHING: Availability = {
   weekdays: [0, 0, 0, 0, 0, 0, 0],
   weekly_budget_minutes: null,
+  typical_weekly_minutes: null,
   limitations: '',
 };
 
@@ -152,6 +154,7 @@ describe('AvailabilityPage', () => {
     it('shows the saved values as hours and minutes', () => {
       expect(days()).toEqual(['1:00', '0:00', '1:30', '0:00', '0:00', '2:00', '3:00']);
       expect(value('#budget')).toBe('5:00');
+      expect(value('#typical')).toBe('6:00');
       expect(value('#limitations')).toBe('No running on consecutive days');
     });
 
@@ -172,6 +175,7 @@ describe('AvailabilityPage', () => {
     it('sees zeros, no budget and no limitations', () => {
       expect(days()).toEqual(Array(7).fill('0:00'));
       expect(value('#budget')).toBe('');
+      expect(value('#typical')).toBe('');
       expect(value('#limitations')).toBe('');
       expect(total()).toBe('Together: 0:00 per week');
       expect(capNote()).toBeNull();
@@ -222,6 +226,17 @@ describe('AvailabilityPage', () => {
       expect(capNote()).toContain('(0:30)');
     });
 
+    it('does not compare the typical week with the days or the budget', async () => {
+      await type('#day-0', '60');
+
+      await type('#typical', '40:00');
+      expect(capNote()).toBeNull();
+
+      await type('#budget', '0:30');
+      expect(capNote()).toContain('weekly budget');
+      expect(capNote()).not.toContain('typical');
+    });
+
     it('says nothing for an empty or unusable budget', async () => {
       await type('#day-0', '60');
       await type('#budget', 'abc');
@@ -243,11 +258,12 @@ describe('AvailabilityPage', () => {
   describe('saving', () => {
     beforeEach(() => setup(ok(NOTHING)));
 
-    it('sends the three together, minutes as numbers', async () => {
+    it('sends everything together, minutes as numbers', async () => {
       await type('#day-0', '90');
       await type('#day-2', '1:30');
       await type('#day-6', '180');
       await type('#budget', '5:00');
+      await type('#typical', '8:30');
       await type('#limitations', 'Knee');
 
       await save();
@@ -255,6 +271,7 @@ describe('AvailabilityPage', () => {
       expect(api.save).toHaveBeenCalledExactlyOnceWith({
         weekdays: [90, 0, 90, 0, 0, 0, 180],
         weekly_budget_minutes: 300,
+        typical_weekly_minutes: 510,
         limitations: 'Knee',
       });
     });
@@ -267,8 +284,18 @@ describe('AvailabilityPage', () => {
       expect(api.save).toHaveBeenCalledExactlyOnceWith({
         weekdays: [0, 0, 0, 0, 0, 0, 0],
         weekly_budget_minutes: null,
+        typical_weekly_minutes: null,
         limitations: '',
       });
+    });
+
+    it('sends a typical week of zero as zero and an empty one as null', async () => {
+      await type('#typical', '0');
+      await save();
+      await type('#typical', '');
+      await save();
+
+      expect(api.save.mock.calls.map(([sent]) => sent.typical_weekly_minutes)).toEqual([0, null]);
     });
 
     it('sends a budget of zero as zero', async () => {
@@ -284,6 +311,7 @@ describe('AvailabilityPage', () => {
         await type(`#day-${i}`, '24:00');
       }
       await type('#budget', '168:00');
+      await type('#typical', '168:00');
       await type('#limitations', 'x'.repeat(1000));
 
       await save();
@@ -291,6 +319,7 @@ describe('AvailabilityPage', () => {
       expect(api.save).toHaveBeenCalledTimes(1);
       expect(api.save.mock.calls[0][0].weekdays).toEqual(Array(7).fill(1440));
       expect(api.save.mock.calls[0][0].weekly_budget_minutes).toBe(10080);
+      expect(api.save.mock.calls[0][0].typical_weekly_minutes).toBe(10080);
     });
 
     it('shows what the server has now and says it was saved', async () => {
@@ -396,6 +425,17 @@ describe('AvailabilityPage', () => {
       expect(query(page, '#budget').getAttribute('aria-invalid')).toBe('true');
     });
 
+    it.each(['abc', '168:01', '10081'])('refuses "%s" as a typical week', async (input) => {
+      await type('#typical', input);
+
+      await save();
+
+      expect(api.save).not.toHaveBeenCalled();
+      expect(alerts()).toHaveLength(1);
+      expect(query(page, '#typical').getAttribute('aria-invalid')).toBe('true');
+      expect(query(page, '#budget').getAttribute('aria-invalid')).toBeNull();
+    });
+
     it('refuses limitations of more than 1000 characters', async () => {
       await type('#limitations', 'x'.repeat(1001));
 
@@ -460,6 +500,20 @@ describe('AvailabilityPage', () => {
 
       expect(alerts()).toEqual(['Enter whole minutes between 0 and 10080.']);
       expect(query(page, '#budget').getAttribute('aria-invalid')).toBe('true');
+    });
+
+    it('shows a message about the typical week next to it', async () => {
+      api.save.mockResolvedValue({
+        kind: 'invalid',
+        errors: ['Enter whole minutes between 0 and 10080.'],
+        fields: { typical_weekly_minutes: ['Enter whole minutes between 0 and 10080.'] },
+      });
+
+      await save();
+
+      expect(alerts()).toEqual(['Enter whole minutes between 0 and 10080.']);
+      expect(query(page, '#typical').getAttribute('aria-invalid')).toBe('true');
+      expect(query(page, '#budget').getAttribute('aria-invalid')).toBeNull();
     });
 
     it('shows a message about the limitations next to them', async () => {

@@ -26,7 +26,8 @@ function dayMinutes(text: string): Parsed<number> {
 
 /**
  * How much time the user can train: minutes per weekday, an optional weekly budget that caps what
- * the days add up to, and limitations as free text. Everything is saved together with one Save.
+ * the days add up to, optionally what a normal week of training is for them (a reference for the
+ * planning after a break, no limit), and limitations as free text. Everything is saved together with one Save.
  * What is checked here is what the server checks too, so that the message appears next to the
  * field; the server's own messages are shown the same way.
  */
@@ -43,6 +44,7 @@ export class AvailabilityPage implements OnInit {
   /** What is in the seven day fields, Monday first. */
   protected readonly days = signal<string[]>(DAYS.map(() => ''));
   protected readonly budget = signal('');
+  protected readonly typical = signal('');
   protected readonly limitations = signal('');
   protected readonly busy = signal(false);
   protected readonly errors = signal<string[]>([]);
@@ -50,6 +52,7 @@ export class AvailabilityPage implements OnInit {
   protected readonly dayErrors = signal<(string | null)[]>(NO_ERRORS);
   protected readonly weekdaysError = signal<string | null>(null);
   protected readonly budgetError = signal<string | null>(null);
+  protected readonly typicalError = signal<string | null>(null);
   protected readonly limitationsError = signal<string | null>(null);
 
   protected readonly names = WEEKDAY_NAMES;
@@ -174,6 +177,19 @@ export class AvailabilityPage implements OnInit {
       usable = false;
     }
 
+    let typicalWeek: number | null = null;
+    const typicalText = this.typical().trim();
+    const typical = typicalText === '' ? null : parseMinutes(typicalText, WEEK_MAX_MINUTES);
+    if (typical === null) {
+      this.typicalError.set(null);
+    } else if (typical.ok) {
+      typicalWeek = typical.value;
+      this.typicalError.set(null);
+    } else {
+      this.typicalError.set(typical.error);
+      usable = false;
+    }
+
     if (this.limitations().length > LIMITATIONS_MAX) {
       this.limitationsError.set(`Use at most ${LIMITATIONS_MAX} characters.`);
       usable = false;
@@ -182,7 +198,12 @@ export class AvailabilityPage implements OnInit {
     }
 
     return usable
-      ? { weekdays, weekly_budget_minutes: weeklyBudget, limitations: this.limitations() }
+      ? {
+          weekdays,
+          weekly_budget_minutes: weeklyBudget,
+          typical_weekly_minutes: typicalWeek,
+          limitations: this.limitations(),
+        }
       : null;
   }
 
@@ -194,10 +215,16 @@ export class AvailabilityPage implements OnInit {
         ? ''
         : formatMinutes(availability.weekly_budget_minutes),
     );
+    this.typical.set(
+      availability.typical_weekly_minutes === null
+        ? ''
+        : formatMinutes(availability.typical_weekly_minutes),
+    );
     this.limitations.set(availability.limitations);
     this.dayErrors.set(NO_ERRORS);
     this.weekdaysError.set(null);
     this.budgetError.set(null);
+    this.typicalError.set(null);
     this.limitationsError.set(null);
   }
 
@@ -205,8 +232,9 @@ export class AvailabilityPage implements OnInit {
     const join = (name: string): string | null => fields[name]?.join(' ') ?? null;
     this.weekdaysError.set(join('weekdays'));
     this.budgetError.set(join('weekly_budget_minutes'));
+    this.typicalError.set(join('typical_weekly_minutes'));
     this.limitationsError.set(join('limitations'));
-    const known = ['weekdays', 'weekly_budget_minutes', 'limitations'];
+    const known = ['weekdays', 'weekly_budget_minutes', 'typical_weekly_minutes', 'limitations'];
     const rest = Object.entries(fields)
       .filter(([name]) => !known.includes(name))
       .flatMap(([, texts]) => texts);

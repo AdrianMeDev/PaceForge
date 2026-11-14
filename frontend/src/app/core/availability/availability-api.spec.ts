@@ -16,11 +16,13 @@ const ID = '01a1d563-8869-7740-90ae-aadc415bbbeb';
 const AVAILABILITY = {
   weekdays: [60, 0, 90, 0, 0, 120, 180],
   weekly_budget_minutes: 300,
+  typical_weekly_minutes: 360,
   limitations: 'No running <b>x</b>',
 };
 const NOTHING_SAVED = {
   weekdays: [0, 0, 0, 0, 0, 0, 0],
   weekly_budget_minutes: null,
+  typical_weekly_minutes: null,
   limitations: '',
 };
 const UPCOMING = {
@@ -131,6 +133,10 @@ describe('AvailabilityApi', () => {
     ['a text as budget', altered(AVAILABILITY, [['weekly_budget_minutes'], '300'])],
     ['a fraction as budget', altered(AVAILABILITY, [['weekly_budget_minutes'], 300.5])],
     ['a negative budget', altered(AVAILABILITY, [['weekly_budget_minutes'], -5])],
+    ['no typical week', altered(AVAILABILITY, [['typical_weekly_minutes'], REMOVE])],
+    ['a text as typical week', altered(AVAILABILITY, [['typical_weekly_minutes'], '360'])],
+    ['a fraction as typical week', altered(AVAILABILITY, [['typical_weekly_minutes'], 360.5])],
+    ['a negative typical week', altered(AVAILABILITY, [['typical_weekly_minutes'], -5])],
     ['no limitations', altered(AVAILABILITY, [['limitations'], REMOVE])],
     ['a number as limitations', altered(AVAILABILITY, [['limitations'], 5])],
     ['null as limitations', altered(AVAILABILITY, [['limitations'], null])],
@@ -224,10 +230,44 @@ describe('AvailabilityApi', () => {
       expect(result).toEqual({ kind: 'ok', availability: AVAILABILITY });
     });
 
+    it('patches the typical week alone, and a removed one as null', async () => {
+      const set = await run(
+        api.save({ typical_weekly_minutes: 360 }),
+        'PATCH',
+        URL,
+        AVAILABILITY,
+        200,
+      );
+      const cleared = await run(
+        api.save({ typical_weekly_minutes: null }),
+        'PATCH',
+        URL,
+        NOTHING_SAVED,
+        200,
+      );
+
+      expect(set.request.request.body).toEqual({ typical_weekly_minutes: 360 });
+      expect(cleared.request.request.body).toEqual({ typical_weekly_minutes: null });
+      expect(cleared.result).toEqual({ kind: 'ok', availability: NOTHING_SAVED });
+    });
+
+    it('takes over a typical week of zero, which is no week', async () => {
+      const { result } = await run(
+        api.get(),
+        'GET',
+        URL,
+        altered(AVAILABILITY, [['typical_weekly_minutes'], 0]) as object,
+        200,
+      );
+
+      expect(result).toMatchObject({ availability: { typical_weekly_minutes: 0 } });
+    });
+
     it('sends everything as it is, a removed budget as null', async () => {
       const changes = {
         weekdays: [60, 0, 90, 0, 0, 120, 180],
         weekly_budget_minutes: null,
+        typical_weekly_minutes: null,
         limitations: 'Knee',
       };
 
