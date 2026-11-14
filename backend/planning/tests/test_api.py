@@ -23,6 +23,9 @@ from coach.providers.base import (
 )
 from coach.views import PROBLEMS
 from goals import services as goal_services
+from integrations.intervals import InvalidKeyError as IntervalsKeyError
+from integrations.intervals import RejectedError
+from integrations.models import ProviderConnection
 from planning import services
 from planning.models import PlannedWorkout, WeeklyPlan
 from planning.schema import (
@@ -38,6 +41,7 @@ from planning.schema import (
 )
 
 from .conftest import make_user, signed_in
+from .fake_calendar import Calendar
 from .scripted import Scripted
 
 pytestmark = pytest.mark.django_db
@@ -61,6 +65,7 @@ PLAN_FIELDS = {
     "confirmed_at",
     "workouts",
     "report",
+    "export",
 }
 WORKOUT_FIELDS = {
     "day",
@@ -75,6 +80,7 @@ WORKOUT_FIELDS = {
     "stretching_minutes",
     "segments",
     "target",
+    "export",
 }
 
 
@@ -146,6 +152,7 @@ ENDPOINTS = [
     ("POST", generate_url()),
     ("GET", plan_url(uuid4())),
     ("POST", plan_url(uuid4(), "confirm/")),
+    ("POST", plan_url(uuid4(), "push/")),
     ("POST", plan_url(uuid4(), "discard/")),
 ]
 
@@ -685,3 +692,282 @@ class TestDiscarding:
         assert response.status_code == HTTPStatus.NOT_FOUND
         plan.refresh_from_db()
         assert plan.status == Status.DRAFT
+
+
+def connect_intervals(user: User) -> None:
+    ProviderConnection.objects.create(
+        owner=user, provider="intervals_icu", api_key="k3y-0123456789", athlete_id="i100"
+    )
+
+
+def sent(user: User, *workouts: Workout) -> WeeklyPlan:
+    """A confirmed plan, ready to be sent."""
+    return services.confirm(user, draft(user, *workouts).pk)
+
+
+class TestSendingAPlan:
+    def test_a_confirmed_plan_is_sent_and_the_answer_says_how_it_went(
+        self, alice: User, calendar: Calendar
+    ) -> None:
+        connect_intervals(alice)
+        plan = sent(alice)
+
+        response = signed_in(alice).call("POST", plan_url(plan.pk, "push/"))
+
+        assert response.status_code == HTTPStatus.OK
+        data = body(response)
+        assert set(data) == PLAN_FIELDS | {"push"}
+        assert data["push"] == {
+            "ok": True,
+            "synced": 2,
+            "failed": 0,
+            "removed": 0,
+            "left_behind": 0,
+        }
+        assert [w["export"]["status"] for w in data["workouts"]] == ["synced", "synced"]
+        assert [w["export"]["error_code"] for w in data["workouts"]] == ["", ""]
+        assert all(w["export"]["pushed_at"] for w in data["workouts"])
+        assert data["export"] == {"synced": 2, "failed": 0, "not_sent": 0, "older": 0}
+        assert len(calendar.events) == 2
+
+    def test_reading_the_plan_afterwards_shows_the_same_state_without_a_push_result(
+        self, alice: User, calendar: Calendar
+    ) -> None:
+        connect_intervals(alice)
+        plan = sent(alice)
+        api = signed_in(alice)
+        api.call("POST", plan_url(plan.pk, "push/"))
+
+        data = body(api.call("GET", plan_url(plan.pk)))
+
+        assert "push" not in data
+        assert data["export"] == {"synced": 2, "failed": 0, "not_sent": 0, "older": 0}
+
+    def test_before_the_first_push_every_workout_is_not_sent(
+        self, alice: User, calendar: Calendar
+    ) -> None:
+        plan = sent(alice)
+
+        data = body(signed_in(alice).call("GET", plan_url(plan.pk)))
+
+        assert [w["export"]["status"] for w in data["workouts"]] == ["not_sent", "not_sent"]
+        assert data["export"] == {"synced": 0, "failed": 0, "not_sent": 2, "older": 0}
+        assert calendar.calls == []
+
+    def test_a_plan_that_is_not_confirmed_has_no_export(self, alice: User) -> None:
+        plan = draft(alice)
+
+        data = body(signed_in(alice).call("GET", plan_url(plan.pk)))
+
+        assert data["export"] is None
+        assert [w["export"] for w in data["workouts"]] == [None, None]
+
+    def test_a_workout_that_fails_is_told_by_a_code_and_the_others_arrive(
+        self, alice: User, calendar: Calendar
+    ) -> None:
+        connect_intervals(alice)
+        calendar.upsert_failures = [RejectedError("SECRETMARKER"), None]
+        plan = sent(alice)
+
+        response = signed_in(alice).call("POST", plan_url(plan.pk, "push/"))
+
+        assert response.status_code == HTTPStatus.OK
+        data = body(response)
+        assert data["push"]["failed"] == 1
+        assert [w["export"]["status"] for w in data["workouts"]] == ["failed", "synced"]
+        assert data["workouts"][0]["export"]["error_code"] == "rejected"
+        assert data["export"] == {"synced": 1, "failed": 1, "not_sent": 0, "older": 0}
+        assert "SECRETMARKER" not in response.content.decode()
+
+    def test_a_new_version_shows_the_events_of_the_old_one_until_it_is_sent(
+        self, alice: User, calendar: Calendar
+    ) -> None:
+        connect_intervals(alice)
+        old = sent(alice)
+        api = signed_in(alice)
+        api.call("POST", plan_url(old.pk, "push/"))
+        newer = services.confirm(
+            alice, services.save_draft(alice, WeekPlan(MONDAY, (ride(0),)), parent=old.pk).pk
+        )
+
+        before = body(api.call("GET", plan_url(newer.pk)))
+        after = body(api.call("POST", plan_url(newer.pk, "push/")))
+
+        assert before["export"] == {"synced": 0, "failed": 0, "not_sent": 1, "older": 2}
+        assert after["push"] == {
+            "ok": True,
+            "synced": 1,
+            "failed": 0,
+            "removed": 2,
+            "left_behind": 0,
+        }
+        assert after["export"] == {"synced": 1, "failed": 0, "not_sent": 0, "older": 0}
+
+    @pytest.mark.parametrize("decided", ["draft", "discarded", "superseded"])
+    def test_only_a_confirmed_plan_can_be_sent(
+        self, alice: User, calendar: Calendar, decided: str
+    ) -> None:
+        connect_intervals(alice)
+        plan = draft(alice)
+        if decided == "discarded":
+            services.discard(alice, plan.pk)
+        if decided == "superseded":
+            services.confirm(alice, plan.pk)
+            services.confirm(
+                alice, services.save_draft(alice, WeekPlan(MONDAY, (ride(0),)), parent=plan.pk).pk
+            )
+
+        response = signed_in(alice).call("POST", plan_url(plan.pk, "push/"))
+
+        assert response.status_code == HTTPStatus.CONFLICT
+        assert body(response) == {
+            "detail": "Only a confirmed plan can be sent to Intervals.icu.",
+            "code": "not_confirmed",
+        }
+        assert calendar.calls == []
+
+    def test_without_intervals_connected_it_is_a_conflict(
+        self, alice: User, calendar: Calendar
+    ) -> None:
+        plan = sent(alice)
+
+        response = signed_in(alice).call("POST", plan_url(plan.pk, "push/"))
+
+        assert response.status_code == HTTPStatus.CONFLICT
+        assert body(response)["code"] == "not_connected"
+        assert calendar.calls == []
+
+    def test_a_key_that_is_refused_is_a_bad_gateway_and_marks_the_connection(
+        self, alice: User, calendar: Calendar
+    ) -> None:
+        connect_intervals(alice)
+        calendar.upsert_failures = [IntervalsKeyError("SECRETMARKER")]
+        plan = sent(alice)
+
+        response = signed_in(alice).call("POST", plan_url(plan.pk, "push/"))
+
+        assert response.status_code == HTTPStatus.BAD_GATEWAY
+        assert body(response) == {
+            "detail": "Intervals.icu did not accept the stored API key. Connect it again.",
+            "code": "invalid_key",
+        }
+        assert ProviderConnection.objects.get().status == "invalid"
+
+    def test_another_users_plan_does_not_exist(
+        self, alice: User, bob: User, calendar: Calendar
+    ) -> None:
+        connect_intervals(alice)
+        for weekday, minutes in enumerate([90, 0, 90, 0, 120, 120, 0]):
+            WeekdayMinutes.objects.create(owner=bob, weekday=weekday, minutes=minutes)
+        ThresholdValue.objects.create(
+            owner=bob, sport="ride", metric="ftp", value=250, source="manual", basis="test"
+        )
+        plan = sent(bob)
+
+        response = signed_in(alice).call("POST", plan_url(plan.pk, "push/"))
+
+        assert response.status_code == HTTPStatus.NOT_FOUND
+        assert body(response)["code"] == "not_found"
+        assert calendar.calls == []
+
+    def test_the_eleventh_push_within_a_minute_is_throttled(
+        self, alice: User, calendar: Calendar
+    ) -> None:
+        connect_intervals(alice)
+        plan = sent(alice)
+        api = signed_in(alice)
+
+        statuses = [api.call("POST", plan_url(plan.pk, "push/")).status_code for _ in range(11)]
+
+        assert statuses == [HTTPStatus.OK] * 10 + [HTTPStatus.TOO_MANY_REQUESTS]
+
+
+class TestConfirmingAndSending:
+    def test_confirming_without_the_wish_sends_nothing(
+        self, alice: User, calendar: Calendar
+    ) -> None:
+        connect_intervals(alice)
+        plan = draft(alice)
+
+        data = body(signed_in(alice).call("POST", plan_url(plan.pk, "confirm/")))
+
+        assert "push" not in data
+        assert calendar.calls == []
+
+    @pytest.mark.parametrize("wish", [{}, {"push": False}])
+    def test_no_wish_for_a_push_sends_nothing(
+        self, alice: User, calendar: Calendar, wish: dict[str, Any]
+    ) -> None:
+        connect_intervals(alice)
+        plan = draft(alice)
+
+        response = signed_in(alice).call("POST", plan_url(plan.pk, "confirm/"), wish)
+
+        assert body(response)["status"] == "confirmed"
+        assert calendar.calls == []
+
+    def test_confirming_with_the_wish_sends_the_week(self, alice: User, calendar: Calendar) -> None:
+        connect_intervals(alice)
+        plan = draft(alice)
+
+        response = signed_in(alice).call("POST", plan_url(plan.pk, "confirm/"), {"push": True})
+
+        assert response.status_code == HTTPStatus.OK
+        data = body(response)
+        assert data["status"] == "confirmed"
+        assert data["push"]["ok"] is True
+        assert data["export"]["synced"] == 2
+        assert len(calendar.events) == 2
+
+    def test_a_plan_with_errors_is_not_confirmed_and_not_sent(
+        self, alice: User, calendar: Calendar
+    ) -> None:
+        connect_intervals(alice)
+        plan = draft(alice, ride(0), ride(1))
+
+        response = signed_in(alice).call("POST", plan_url(plan.pk, "confirm/"), {"push": True})
+
+        assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+        assert calendar.calls == []
+
+    def test_a_problem_with_intervals_does_not_undo_the_confirmation(
+        self, alice: User, calendar: Calendar
+    ) -> None:
+        plan = draft(alice)  # Intervals.icu is not connected
+
+        response = signed_in(alice).call("POST", plan_url(plan.pk, "confirm/"), {"push": True})
+
+        assert response.status_code == HTTPStatus.OK
+        data = body(response)
+        assert data["status"] == "confirmed"
+        assert data["push"] == {
+            "ok": False,
+            "problem": "not_connected",
+            "message": "Intervals.icu is not connected. Connect it on the Connections page.",
+        }
+        plan.refresh_from_db()
+        assert plan.status == Status.CONFIRMED
+
+    def test_a_refused_key_is_part_of_the_answer_too(self, alice: User, calendar: Calendar) -> None:
+        connect_intervals(alice)
+        calendar.upsert_failures = [IntervalsKeyError("no")]
+        plan = draft(alice)
+
+        data = body(signed_in(alice).call("POST", plan_url(plan.pk, "confirm/"), {"push": True}))
+
+        assert data["status"] == "confirmed"
+        assert data["push"]["problem"] == "invalid_key"
+
+    @pytest.mark.parametrize("wish", [{"push": "maybe"}, {"push": 5}, {"push": []}])
+    def test_a_wish_that_is_not_a_boolean_is_refused_and_nothing_changes(
+        self, alice: User, calendar: Calendar, wish: dict[str, Any]
+    ) -> None:
+        connect_intervals(alice)
+        plan = draft(alice)
+
+        response = signed_in(alice).call("POST", plan_url(plan.pk, "confirm/"), wish)
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        plan.refresh_from_db()
+        assert plan.status == Status.DRAFT
+        assert calendar.calls == []

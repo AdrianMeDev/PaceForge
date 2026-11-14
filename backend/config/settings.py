@@ -148,6 +148,7 @@ REST_FRAMEWORK = {
         "activity_import": "30/min",
         "coach_check": "10/min",
         "planning_generate": "5/min",
+        "planning_push": "10/min",
     },
 }
 

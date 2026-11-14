@@ -342,7 +342,8 @@ plan of another user does not exist (404, the same answer as for an unknown id).
 | `GET /api/planning/weeks/` | The weeks that can be planned, each with its versions, newest first. |
 | `POST /api/planning/weeks/<Monday>/generate/` | 201 with the new draft; limited to 5 a minute per user. |
 | `GET /api/planning/plans/<id>/` | One plan with its workouts; a draft comes with its checks. |
-| `POST /api/planning/plans/<id>/confirm/` | The confirmed plan, or the findings if it has errors. |
+| `POST /api/planning/plans/<id>/confirm/` | The confirmed plan, or the findings if it has errors. With `{"push": true}` the week is sent to Intervals.icu right after (a problem with that is part of the answer, the plan stays confirmed). |
+| `POST /api/planning/plans/<id>/push/` | Sends a confirmed plan to the Intervals.icu calendar of the user; the plan with the result per workout. Limited to 10 a minute per user. |
 | `POST /api/planning/plans/<id>/discard/` | The discarded plan. |
 
 Errors have a fixed text and a `code`; nothing the provider or the coach said is in one. A 429
@@ -355,12 +356,14 @@ without a code is the limit of PaceForge itself.
 | `not_configured` | 409 | The user has not set up an AI provider. |
 | `no_time` | 409 | The week offers no training time at all; the coach is not asked and nothing is recorded. |
 | `not_a_draft` | 409 | Only a draft can be confirmed or discarded. |
+| `not_confirmed` | 409 | Only a confirmed plan can be sent to Intervals.icu. |
+| `not_connected` | 409 | The user has not connected Intervals.icu. |
 | `not_usable` | 422 | The coach gave no readable plan, even after the repair; the problems come along. |
 | `not_confirmable` | 422 | The plan has errors; the findings come along. |
 | `rate_limited` | 429 | The provider asked to slow down (`retry_after` in seconds, if it said). |
-| `invalid_key` | 502 | The provider refused the key. |
+| `invalid_key` | 502 | The provider (or Intervals.icu) refused the key. |
 | `not_allowed` | 502 | The address is no longer on the operator's list. |
-| `unexpected` | 502 | The provider answered in an unexpected way. |
+| `unexpected` | 502 | The provider (or Intervals.icu) answered in an unexpected way. |
 | `unavailable` | 503 | The provider could not be reached. |
 
 ## What is deliberately not checked

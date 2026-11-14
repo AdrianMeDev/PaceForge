@@ -9,6 +9,7 @@ from typing import Any
 from rest_framework import serializers
 
 from .models import WeeklyPlan
+from .push import ExportState, PushResult
 from .rules import Finding
 from .schema import Sport, WeekPlan, Workout, ZoneSystem, workout_to_json
 from .targets import Targets
@@ -35,7 +36,11 @@ def summary_data(plan: WeeklyPlan, workout_count: int) -> dict[str, Any]:
 
 
 def plan_data(
-    plan: WeeklyPlan, week_plan: WeekPlan, report: Report | None, targets: Targets
+    plan: WeeklyPlan,
+    week_plan: WeekPlan,
+    report: Report | None,
+    targets: Targets,
+    export: ExportState | None = None,
 ) -> dict[str, Any]:
     """One plan with its workouts and, for a draft, what the checks say about it. Every zone
     comes with its target range as it is *now* (from the thresholds of the user), or ``None``."""
@@ -49,9 +54,50 @@ def plan_data(
         "parent": str(plan.parent_id) if plan.parent_id else None,
         "created_at": _time(plan.created_at),
         "confirmed_at": _time(plan.confirmed_at),
-        "workouts": [workout_data(workout, targets) for workout in week_plan.workouts],
+        "workouts": [
+            {**workout_data(workout, targets), "export": _export(export, index)}
+            for index, workout in enumerate(week_plan.workouts)
+        ],
         "report": None if report is None else report_data(report),
+        "export": None if export is None else _summary(export),
     }
+
+
+def _export(export: ExportState | None, index: int) -> dict[str, Any] | None:
+    """What is known about the event of one workout; ``None`` for a plan that is not sent."""
+    if export is None:
+        return None
+    state = export.workouts[index]
+    return {
+        "status": state.status,
+        "error_code": state.error_code,
+        "pushed_at": _time(state.pushed_at),
+    }
+
+
+def _summary(export: ExportState) -> dict[str, int]:
+    count = [state.status for state in export.workouts]
+    return {
+        "synced": count.count("synced"),
+        "failed": count.count("failed"),
+        "not_sent": count.count("not_sent"),
+        # Events of an older version of the week that are still in the calendar.
+        "older": export.older,
+    }
+
+
+def push_data(result: PushResult) -> dict[str, Any]:
+    return {
+        "ok": True,
+        "synced": result.synced,
+        "failed": result.failed,
+        "removed": result.removed,
+        "left_behind": result.left_behind,
+    }
+
+
+def push_problem_data(code: str, message: str) -> dict[str, Any]:
+    return {"ok": False, "problem": code, "message": message}
 
 
 def workout_data(workout: Workout, targets: Targets) -> dict[str, Any]:

@@ -14,6 +14,7 @@ network: sending is idempotent, and removing an event that is gone already count
 """
 
 from dataclasses import dataclass
+from datetime import datetime
 from uuid import UUID
 
 from django.utils import timezone
@@ -54,8 +55,49 @@ class PushResult:
     left_behind: int
 
 
+@dataclass(frozen=True)
+class WorkoutState:
+    """Where one workout stands with Intervals.icu: ``not_sent``, ``synced`` or ``failed``."""
+
+    status: str
+    error_code: str = ""
+    pushed_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class ExportState:
+    """The workouts of a plan, in the order of the plan, and how many events of the same week are
+    in the calendar for workouts that are not in this plan (an older version)."""
+
+    workouts: tuple[WorkoutState, ...]
+    older: int
+
+
+NOT_SENT = "not_sent"
+
+
 def external_id(workout_id: UUID) -> str:
     return f"{PREFIX}{workout_id}"
+
+
+def export_state(user: User, plan: WeeklyPlan) -> ExportState:
+    """What is known about the events of ``plan`` (two queries, however many workouts)."""
+    ids = list(
+        PlannedWorkout.objects.for_user(user)
+        .filter(plan=plan)
+        .order_by("day", "position", "id")
+        .values_list("pk", flat=True)
+    )
+    rows = {
+        row.external_id: row
+        for row in WorkoutExport.objects.for_user(user).filter(week_start=plan.week_start)
+    }
+    keys = [external_id(pk) for pk in ids]
+    states = tuple(
+        WorkoutState(row.status, row.error_code, row.pushed_at) if row else WorkoutState(NOT_SENT)
+        for row in (rows.get(key) for key in keys)
+    )
+    return ExportState(states, older=len(rows.keys() - set(keys)))
 
 
 def push(user: User, plan_id: UUID) -> PushResult:

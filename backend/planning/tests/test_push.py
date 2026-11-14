@@ -1,4 +1,3 @@
-from collections.abc import Mapping
 from typing import Any
 
 import pytest
@@ -6,7 +5,6 @@ import pytest
 from accounts.models import User
 from integrations import services as integrations
 from integrations.intervals import (
-    Event,
     IntervalsUnavailableError,
     InvalidKeyError,
     RejectedError,
@@ -26,68 +24,13 @@ from planning.push import (
 )
 from planning.schema import WeekPlan
 
+from .fake_calendar import Calendar
 from .test_services import MONDAY, NEXT_MONDAY, good_week, prepared, workout
 
 pytestmark = pytest.mark.django_db
 
 KEY = "k3y-0123456789-abcdefghij"
 MARKER = "SECRETMARKER"
-Failure = Exception | None
-
-
-class Calendar:
-    """What Intervals.icu would hold, and the calls made to it."""
-
-    def __init__(self) -> None:
-        self.events: dict[int, dict[str, Any]] = {}
-        self.calls: list[tuple[str, Any]] = []
-        # One entry per upsert, consumed in order: what to raise instead of storing (None: store).
-        self.upsert_failures: list[Failure] = []
-        self.delete_failures: list[Failure] = []
-        self.keys: list[str] = []
-        self._next = 100
-
-    def upsert(self, event: Mapping[str, Any]) -> Event:
-        self.calls.append(("upsert", event["external_id"]))
-        failure = self.upsert_failures.pop(0) if self.upsert_failures else None
-        if failure is not None:
-            raise failure
-        for event_id, stored in self.events.items():
-            if stored["external_id"] == event["external_id"]:
-                self.events[event_id] = dict(event)
-                return Event(event_id, event["external_id"])
-        self._next += 1
-        self.events[self._next] = dict(event)
-        return Event(self._next, event["external_id"])
-
-    def delete(self, event_id: int) -> None:
-        self.calls.append(("delete", event_id))
-        failure = self.delete_failures.pop(0) if self.delete_failures else None
-        if failure is not None:
-            raise failure
-        self.events.pop(event_id, None)  # one that is gone counts as removed
-
-    def count(self, kind: str) -> int:
-        return sum(1 for call, _ in self.calls if call == kind)
-
-
-class FakeClient:
-    def __init__(self, calendar: Calendar, key: str) -> None:
-        self._calendar = calendar
-        calendar.keys.append(key)
-
-    def upsert_event(self, event: Mapping[str, Any]) -> Event:
-        return self._calendar.upsert(event)
-
-    def delete_event(self, event_id: int) -> None:
-        self._calendar.delete(event_id)
-
-
-@pytest.fixture
-def calendar(monkeypatch: pytest.MonkeyPatch) -> Calendar:
-    calendar = Calendar()
-    monkeypatch.setattr(integrations, "IntervalsClient", lambda key: FakeClient(calendar, key))
-    return calendar
 
 
 def connect(owner: User) -> ProviderConnection:
