@@ -196,6 +196,32 @@ that it works and see what you have used. The only thing that calls it besides t
   not typed in: it is chosen from the list the operator has allowed (see below), and the choice
   only appears when that list is not empty.
 
+**DeepSeek, OpenRouter and other services with an OpenAI-compatible API.** They work with the
+second kind, no extra code needed. The operator allows the address, the user chooses it and enters
+the key of their own account there:
+
+| Service    | Address (what the operator lists)  | Notes |
+| ---------- | ---------------------------------- | ----- |
+| DeepSeek   | `https://api.deepseek.com`         | The form names it "DeepSeek". For a plan PaceForge also asks for JSON output (`response_format`), which is not done for the check or for any other address. |
+| OpenRouter | `https://openrouter.ai/api/v1`     | One key for many models; the model name is the one OpenRouter lists (`vendor/model`). PaceForge sends no routing preferences, so which company handles a request is up to your OpenRouter settings. |
+
+Things to know before you allow one of them:
+
+- **Where the prompts go.** For a plan that is what [Week plan](#week-plan) lists: goals (title
+  and notes), training load, times and zone tables. DeepSeek is a Chinese company and OpenRouter
+  hands requests on to the company behind the model: read their terms and privacy statements
+  first, and remember that listing an address lets **every user of the instance** send their
+  prompts there.
+- **Cost.** You pay the service, at its prices, which change. They are often a fraction of what
+  Claude costs per token, but a model that makes more mistakes needs more repairs (a repair is a
+  second request), so compare the usage overview, not only the price list.
+- **Thinking models.** Their reasoning counts against the 8000-token limit of a plan. If the
+  answer is cut off, the draft is asked for once more; with a plan that is too long for the limit
+  it ends as "the coach gave no usable plan".
+- **Not verified.** The addresses and the form of the request follow the services' public
+  documentation and the OpenAI format; this has been tested against local fake servers, not
+  against the real services. Check the address and the model name in their documentation.
+
 **Setting it up.**
 
 1. Choose the provider, enter the model name exactly as the provider writes it (letters, digits and
@@ -261,6 +287,11 @@ allowed. Examples:
 ```
 # OpenAI, and Ollama or llama.cpp on the machine that runs PaceForge
 AI_ALLOWED_BASE_URLS=https://api.openai.com/v1,http://localhost:11434/v1,http://localhost:8080/v1
+```
+
+```
+# DeepSeek and OpenRouter
+AI_ALLOWED_BASE_URLS=https://api.deepseek.com,https://openrouter.ai/api/v1
 ```
 
 Inside a container `localhost` is the container itself; use the host name of the other service or of
@@ -578,7 +609,7 @@ Set in `.env` or in the environment. Values without a default are required.
 | `REGISTRATION_MODE`            | `invite_only`                       | `closed`, `invite_only` or `open`. Anything else stops Django at startup.         |
 | `INVITATION_TTL_DAYS`          | `7`                                 | How long an invitation stays valid.                                               |
 | `INTERVALS_API_BASE_URL`       | `https://intervals.icu/api/v1`      | Only for tests or a fake server: where the Intervals.icu API is. `http://` or `https://`. |
-| `AI_ALLOWED_BASE_URLS`         | empty                               | Comma-separated base URLs of OpenAI-compatible AI endpoints that users may choose, e.g. `https://api.openai.com/v1`. Empty: none. A bad entry stops Django at startup, see [AI coach](#ai-coach-bring-your-own-key). |
+| `AI_ALLOWED_BASE_URLS`         | empty                               | Comma-separated base URLs of OpenAI-compatible AI endpoints that users may choose, e.g. `https://api.openai.com/v1` or `https://api.deepseek.com`. Empty: none. A bad entry stops Django at startup, see [AI coach](#ai-coach-bring-your-own-key). |
 | `ANTHROPIC_API_BASE_URL`       | `https://api.anthropic.com`         | Only for tests or a fake server: where the Anthropic API is. `http://` or `https://`. |
 | `ACTIVITY_UPLOAD_MAX_BYTES`    | `26214400` (25 MB)                  | Largest FIT or TCX file accepted for import, in bytes. Must be a positive integer. |
 | `SMTP_HOST`                    | empty                               | Empty: emails are printed to the Django console. Set: they are sent via SMTP.     |

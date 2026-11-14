@@ -244,6 +244,12 @@ No database transaction is held while the provider answers. Every call that reac
 is a usage record with the purpose `weekly_plan` (facts only, never text); a draft costs one call,
 or two with a repair.
 
+**JSON mode.** A plan is asked for with `json_output`. A provider that has a JSON mode and is on
+the short list of `JSON_MODE_HOSTS` (`coach/providers/openai_compatible.py`) gets
+`response_format: {"type": "json_object"}`; everything else ignores the flag, and the answer is read
+strictly in any case. JSON output is requested from these hosts: `api.deepseek.com`. The
+connection check never asks for it.
+
 ### What the coach is told
 
 The briefing is a fixed set of keys (`planning/briefing.py`); a test fails if a key is added
