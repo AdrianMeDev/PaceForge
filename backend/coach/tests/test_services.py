@@ -184,6 +184,74 @@ class TestASuccessfulCall:
         assert (record.input_tokens, record.output_tokens) == (3, 1)
 
 
+class TestJsonOutput:
+    class Recorder:
+        def __init__(self) -> None:
+            self.asked: list[bool] = []
+
+        def complete(
+            self, system: str, messages: Any, max_tokens: int, json_output: bool = False
+        ) -> Completion:
+            self.asked.append(json_output)
+            return Completion("ok", 1, 1)
+
+    def use(self, monkeypatch: pytest.MonkeyPatch) -> TestJsonOutput.Recorder:
+        recorder = self.Recorder()
+        monkeypatch.setattr(services, "provider_for", lambda configuration: recorder)
+        return recorder
+
+    def test_a_call_does_not_ask_for_json_unless_told_to(
+        self, alice: User, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        configure(alice)
+        recorder = self.use(monkeypatch)
+
+        ask(alice)
+
+        assert recorder.asked == [False]
+
+    def test_a_call_can_ask_for_json(self, alice: User, monkeypatch: pytest.MonkeyPatch) -> None:
+        configure(alice)
+        recorder = self.use(monkeypatch)
+
+        services.call(alice, CHECK, "system", [Message("user", PROMPT)], 50, json_output=True)
+
+        assert recorder.asked == [True]
+
+    def test_the_check_never_asks_for_json(
+        self, alice: User, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        configure(alice)
+        recorder = self.use(monkeypatch)
+
+        services.check(alice)
+
+        assert recorder.asked == [False]
+
+    def test_it_reaches_a_listed_endpoint_and_only_when_asked(
+        self, fake: FakeProvider, alice: User, settings: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from coach.providers import openai_compatible
+
+        monkeypatch.setattr(openai_compatible, "JSON_MODE_HOSTS", frozenset({"127.0.0.1"}))
+        settings.AI_ALLOWED_BASE_URLS = (fake.url + "/v1",)
+        configure(
+            alice,
+            provider="openai_compatible",
+            model="llama3.1:8b",
+            api_key="",
+            base_url=fake.url + "/v1",
+        )
+        fake.reply({"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}]})
+
+        services.check(alice)
+        services.call(alice, CHECK, "system", [Message("user", PROMPT)], 50, json_output=True)
+
+        check_body, asked_body = (request["json"] for request in fake.requests)
+        assert "response_format" not in check_body
+        assert asked_body["response_format"] == {"type": "json_object"}
+
+
 class TestFailures:
     def test_a_refused_key_marks_the_configuration_invalid(
         self, fake: FakeProvider, alice: User

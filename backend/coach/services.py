@@ -161,8 +161,12 @@ def call(
     system: str,
     messages: Sequence[Message],
     max_tokens: int,
+    json_output: bool = False,
 ) -> Completion:
     """Ask the user's own provider, and record the call.
+
+    ``json_output`` asks for a JSON object where the provider has a mode for it (the answer is
+    read strictly either way); the connection check does not ask, its answer is the word "ok".
 
     Raises ``NotConfiguredError`` if there is no configuration, ``EndpointNotAllowedError`` if the
     operator has taken the address off the list (nothing is sent, nothing is recorded), and the
@@ -185,7 +189,7 @@ def call(
         raise InvalidKeyError("The stored key is not usable.") from None
     # EndpointNotAllowedError passes through: no call was made, so there is nothing to record.
     try:
-        completion = provider.complete(system, messages, max_tokens)
+        completion = provider.complete(system, messages, max_tokens, json_output=json_output)
     except InvalidKeyError:
         _finish(user, configuration, purpose, Outcome.INVALID_KEY, None, Status.INVALID)
         raise

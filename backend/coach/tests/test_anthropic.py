@@ -50,6 +50,17 @@ def error_of(fake: FakeProvider, data: object, status: int = 200) -> ProviderErr
     return raised.value
 
 
+class TestJsonOutput:
+    def test_the_flag_changes_nothing_in_the_request(self, fake: FakeProvider) -> None:
+        fake.reply(ANSWER)
+        provider(fake).complete("", HELLO, 100)
+        provider(fake).complete("", HELLO, 100, json_output=True)
+
+        plain, asked = fake.requests
+        assert plain["json"] == asked["json"]
+        assert "response_format" not in asked["json"]
+
+
 class TestTheRequest:
     def test_it_goes_to_the_messages_endpoint_with_the_key_and_the_version(
         self, fake: FakeProvider

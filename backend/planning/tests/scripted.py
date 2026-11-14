@@ -10,10 +10,14 @@ class Scripted:
     def __init__(self, *replies: Any) -> None:
         self.replies = list(replies)
         self.calls: list[tuple[str, list[Message], int]] = []
+        self.json_outputs: list[bool] = []
         self.before_answer: Callable[[], None] | None = None
 
-    def complete(self, system: str, messages: Any, max_tokens: int) -> Completion:
+    def complete(
+        self, system: str, messages: Any, max_tokens: int, json_output: bool = False
+    ) -> Completion:
         self.calls.append((system, list(messages), max_tokens))
+        self.json_outputs.append(json_output)
         if self.before_answer:
             self.before_answer()
             self.before_answer = None
