@@ -3,6 +3,7 @@ import uuid
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q
+from django.utils import timezone
 
 from activities.models import Activity
 from core.models import OwnedModel
@@ -12,6 +13,8 @@ NOTES_MAX = 500
 # The scales of the week feedback: fatigue, motivation and pain, each 1 (little) to 5 (a lot).
 SCALE_MIN = 1
 SCALE_MAX = 5
+# The longest comment of the coach that is kept.
+COMMENT_MAX = 600
 
 
 class WorkoutReview(OwnedModel):
@@ -113,6 +116,54 @@ class WeekFeedback(OwnedModel):
     def __str__(self) -> str:
         # No notes: they are free text and have no business in logs.
         return f"Feedback of user {self.owner_id} for the week of {self.week_start}"
+
+    def clean(self) -> None:
+        super().clean()
+        errors: dict[str, str] = {}
+        if self.week_start is not None and self.week_start.weekday() != 0:
+            errors["week_start"] = "A week starts on a Monday."
+        if errors:
+            raise ValidationError(errors)
+
+
+class WeekComment(OwnedModel):
+    """What the user's coach said about one week (Monday to Sunday) when asked: a short comment
+    and what to do with the next week. At most one per user and week; asking again replaces it.
+
+    ``comment`` is the coach's own text: free text, shown as text and never interpreted, and never
+    sent back to the coach. ``next_week`` is one of three fixed words, which the next week plan is
+    told. ``created_at`` is when it was written.
+    """
+
+    class NextWeek(models.TextChoices):
+        INCREASE = "increase", "Increase"
+        HOLD = "hold", "Hold"
+        REDUCE = "reduce", "Reduce"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid7, editable=False)
+    week_start = models.DateField()
+    comment = models.CharField(max_length=COMMENT_MAX)
+    next_week = models.CharField(max_length=20, choices=NextWeek.choices)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["owner", "week_start"], name="reviews_one_comment_per_week"
+            ),
+            models.CheckConstraint(
+                condition=Q(week_start__iso_week_day=1), name="reviews_comment_week_is_a_monday"
+            ),
+            models.CheckConstraint(condition=~Q(comment=""), name="reviews_comment_not_empty"),
+            models.CheckConstraint(
+                condition=Q(next_week__in=["increase", "hold", "reduce"]),
+                name="reviews_next_week_is_known",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        # No comment: it is free text and has no business in logs.
+        return f"Comment for user {self.owner_id} on the week of {self.week_start}"
 
     def clean(self) -> None:
         super().clean()

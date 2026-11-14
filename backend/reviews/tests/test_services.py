@@ -9,7 +9,7 @@ from athletes.models import AthleteProfile
 from goals import services as goal_services
 from planning.models import PlannedWorkout
 from reviews.matching import Origin, Status
-from reviews.models import WeekFeedback, WorkoutReview
+from reviews.models import WeekComment, WeekFeedback, WorkoutReview
 from reviews.services import REVIEW_WEEKS, WeekNotReviewable, reviewable_weeks, week_review
 
 from .builders import MONDAY, NOW, make_activity, make_plan
@@ -219,6 +219,9 @@ class TestAWeek:
         for workout in PlannedWorkout.objects.filter(plan=plan)[:5]:
             WorkoutReview.objects.create(owner=alice, workout=workout, no_activity=True)
         WeekFeedback.objects.create(owner=alice, week_start=MONDAY, fatigue=2)
+        WeekComment.objects.create(
+            owner=alice, week_start=MONDAY, comment="Fine.", next_week="hold"
+        )
         with CaptureQueriesContext(connection) as large:
             review = week_review(alice, MONDAY)
 

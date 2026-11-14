@@ -22,7 +22,7 @@ from planning.models import PlannedWorkout, WeeklyPlan
 
 from .comparison import Comparison, compare
 from .matching import ActivityItem, Correction, PlannedItem, Status, WeekMatch, match_week
-from .models import WeekFeedback, WorkoutReview
+from .models import WeekComment, WeekFeedback, WorkoutReview
 
 # The current week and this many weeks before it can be reviewed.
 REVIEW_WEEKS = 4
@@ -68,6 +68,8 @@ class WeekReview:
     match: WeekMatch
     comparison: Comparison
     feedback: WeekFeedback | None
+    # What the coach said about the week when asked; ``None``: it was not asked.
+    comment: WeekComment | None
 
 
 def reviewable_weeks(user: User) -> tuple[date, ...]:
@@ -104,6 +106,7 @@ def week_review(user: User, monday: date) -> WeekReview:
         match=match,
         comparison=compare(planned, performed, match),
         feedback=WeekFeedback.objects.for_user(user).filter(week_start=monday).first(),
+        comment=WeekComment.objects.for_user(user).filter(week_start=monday).first(),
     )
 
 

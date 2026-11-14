@@ -9,7 +9,15 @@ from accounts.models import User
 from activities.models import Activity
 from planning.models import PlannedWorkout, WeeklyPlan
 from reviews.matching import CHOOSABLE
-from reviews.models import NOTES_MAX, SCALE_MAX, SCALE_MIN, WeekFeedback, WorkoutReview
+from reviews.models import (
+    COMMENT_MAX,
+    NOTES_MAX,
+    SCALE_MAX,
+    SCALE_MIN,
+    WeekComment,
+    WeekFeedback,
+    WorkoutReview,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -277,3 +285,94 @@ class TestWeekFeedback:
         alice.delete()
 
         assert WeekFeedback.objects.get().owner == bob
+
+
+class TestWeekComment:
+    FIELDS: dict[str, Any] = {"comment": "A steady week.", "next_week": "hold"}
+
+    def test_a_comment_of_the_coach(self, alice: User) -> None:
+        comment = WeekComment.objects.create(owner=alice, week_start=MONDAY, **self.FIELDS)
+
+        comment.full_clean(exclude=["owner"])
+        assert comment.created_at is not None
+        assert (comment.comment, comment.next_week) == ("A steady week.", "hold")
+
+    def test_the_limit_is_written_out_on_purpose(self) -> None:
+        assert COMMENT_MAX == 600
+
+    def test_a_comment_up_to_the_limit_and_with_several_lines(self, alice: User) -> None:
+        for text in ("c" * COMMENT_MAX, "one\ntwo"):
+            WeekComment(owner=alice, week_start=MONDAY, comment=text, next_week="hold").full_clean(
+                exclude=["owner"]
+            )
+
+        refused(
+            WeekComment(
+                owner=alice, week_start=MONDAY, comment="c" * (COMMENT_MAX + 1), next_week="hold"
+            ),
+            "comment",
+        )
+
+    @pytest.mark.parametrize("word", ["increase", "hold", "reduce"])
+    def test_the_three_recommendations(self, alice: User, word: str) -> None:
+        comment = WeekComment.objects.create(
+            owner=alice, week_start=MONDAY, comment="x", next_week=word
+        )
+
+        comment.full_clean(exclude=["owner"])
+
+    @pytest.mark.parametrize("word", ["", "maintain", "INCREASE", "up"])
+    def test_any_other_recommendation_is_refused(self, alice: User, word: str) -> None:
+        message = rejected_by_database(
+            WeekComment, owner=alice, week_start=MONDAY, comment="x", next_week=word
+        )
+
+        assert "reviews_next_week_is_known" in message
+        refused(
+            WeekComment(owner=alice, week_start=MONDAY, comment="x", next_week=word), "next_week"
+        )
+
+    def test_a_comment_has_text(self, alice: User) -> None:
+        message = rejected_by_database(
+            WeekComment, owner=alice, week_start=MONDAY, comment="", next_week="hold"
+        )
+
+        assert "reviews_comment_not_empty" in message
+        refused(
+            WeekComment(owner=alice, week_start=MONDAY, comment="", next_week="hold"), "comment"
+        )
+
+    def test_a_week_starts_on_a_monday(self, alice: User) -> None:
+        tuesday = MONDAY + timedelta(days=1)
+
+        message = rejected_by_database(WeekComment, owner=alice, week_start=tuesday, **self.FIELDS)
+
+        assert "reviews_comment_week_is_a_monday" in message
+        refused(WeekComment(owner=alice, week_start=tuesday, **self.FIELDS), "week_start")
+
+    def test_one_comment_per_user_and_week(self, alice: User, bob: User) -> None:
+        WeekComment.objects.create(owner=alice, week_start=MONDAY, **self.FIELDS)
+        WeekComment.objects.create(owner=bob, week_start=MONDAY, **self.FIELDS)
+        WeekComment.objects.create(
+            owner=alice, week_start=MONDAY + timedelta(days=7), **self.FIELDS
+        )
+
+        message = rejected_by_database(WeekComment, owner=alice, week_start=MONDAY, **self.FIELDS)
+
+        assert "reviews_one_comment_per_week" in message
+
+    def test_the_text_form_holds_no_comment(self, alice: User) -> None:
+        comment = WeekComment(
+            owner=alice, week_start=MONDAY, comment="secret knee", next_week="reduce"
+        )
+
+        assert "secret" not in str(comment)
+        assert str(comment) == f"Comment for user {alice.pk} on the week of {MONDAY}"
+
+    def test_deleting_the_user_deletes_their_comments(self, alice: User, bob: User) -> None:
+        WeekComment.objects.create(owner=alice, week_start=MONDAY, **self.FIELDS)
+        WeekComment.objects.create(owner=bob, week_start=MONDAY, **self.FIELDS)
+
+        alice.delete()
+
+        assert WeekComment.objects.get().owner == bob
