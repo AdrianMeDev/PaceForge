@@ -122,3 +122,30 @@ export function correctionOf(choice: string, status: string): CorrectionInput {
     status: known?.value ?? '',
   };
 }
+
+function scaleChoices(words: string[]): { value: number; label: string }[] {
+  return words.map((label, index) => ({ value: index + 1, label: `${index + 1} – ${label}` }));
+}
+
+/** The three scales of the week feedback, 1 (little) to 5 (a lot), in words. */
+export const FEEDBACK_SCALES: {
+  field: 'fatigue' | 'motivation' | 'pain';
+  label: string;
+  choices: { value: number; label: string }[];
+}[] = [
+  {
+    field: 'fatigue',
+    label: 'Tiredness',
+    choices: scaleChoices(['Fresh', 'Slightly tired', 'Tired', 'Very tired', 'Exhausted']),
+  },
+  {
+    field: 'motivation',
+    label: 'Motivation',
+    choices: scaleChoices(['Very low', 'Low', 'Okay', 'Good', 'Very high']),
+  },
+  {
+    field: 'pain',
+    label: 'Pain',
+    choices: scaleChoices(['None', 'Slight', 'Noticeable', 'Strong', 'Severe']),
+  },
+];

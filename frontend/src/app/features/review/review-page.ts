@@ -29,6 +29,8 @@ import {
   statusChoiceOf,
   weekOptionText,
 } from './review-format';
+import { SessionRating } from './session-rating';
+import { WeekFeedbackForm } from './week-feedback-form';
 
 type View = 'loading' | 'unreachable' | 'ready' | 'signed_out';
 /** What the page is waiting for; one thing at a time. */
@@ -40,6 +42,9 @@ const NOT_REVIEWABLE = 'This week cannot be reviewed.';
 const NO_SUCH_WORKOUT = 'That workout is not in the plan of this week any more.';
 const ACTIVITY_TAKEN = 'That activity is already assigned to another workout. Free it there first.';
 const SAVED = 'Saved.';
+const RATED = 'The rating was saved.';
+const FEEDBACK_SAVED = 'Your feedback was saved.';
+const NO_SUCH_ACTIVITY = 'That session does not exist any more.';
 /** The fields of the correction, in the order a person reads them. */
 const CORRECTION_FIELDS: readonly CorrectionField[] = ['activity', 'no_activity', 'status'];
 
@@ -59,7 +64,7 @@ interface ReviewDay {
  */
 @Component({
   selector: 'app-review-page',
-  imports: [RouterLink],
+  imports: [RouterLink, SessionRating, WeekFeedbackForm],
   templateUrl: './review-page.html',
   styleUrls: ['../auth/auth-form.css', './review-page.css'],
 })
@@ -154,6 +159,32 @@ export class ReviewPage implements OnInit {
     }
   }
 
+  /** A session was rated: the week is fetched again, as its load and totals follow the rating. */
+  protected async rated(): Promise<void> {
+    await this.reload([], RATED);
+  }
+
+  /** The session of a rating is gone (deleted elsewhere): the week shows what is left. */
+  protected async gone(): Promise<void> {
+    await this.reload([NO_SUCH_ACTIVITY], null);
+  }
+
+  protected feedbackSaved(review: WeekReview): void {
+    this.errors.set([]);
+    this.review.set(review);
+    this.notice.set(FEEDBACK_SAVED);
+  }
+
+  protected async notReviewable(): Promise<void> {
+    this.clearMessages();
+    this.errors.set([NOT_REVIEWABLE]);
+    await this.refresh();
+  }
+
+  protected signOut(): void {
+    this.view.set('signed_out');
+  }
+
   protected activityOf(workout: ReviewWorkout): ReviewActivity | null {
     return this.review()?.activities.find((item) => item.id === workout.activity_id) ?? null;
   }
@@ -192,6 +223,24 @@ export class ReviewPage implements OnInit {
       case 'forbidden':
         this.view.set('signed_out');
         break;
+    }
+  }
+
+  /** Fetches the selected week again; ``notice`` is shown if that worked. */
+  private async reload(errors: string[], notice: string | null): Promise<void> {
+    if (this.work() !== null) {
+      return;
+    }
+    this.clearMessages();
+    this.errors.set(errors);
+    this.work.set('saving');
+    try {
+      await this.fetch();
+      if (notice !== null && this.errors().length === 0) {
+        this.notice.set(notice);
+      }
+    } finally {
+      this.work.set(null);
     }
   }
 

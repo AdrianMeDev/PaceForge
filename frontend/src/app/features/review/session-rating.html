@@ -1,0 +1,58 @@
+<details class="rating">
+  <summary [attr.data-testid]="'rate-' + activity().id">
+    {{ activity().rpe === null ? 'Rate this session' : 'Change the rating' }}
+  </summary>
+  <form
+    novalidate
+    [attr.aria-label]="'Rating of the session'"
+    (submit)="$event.preventDefault(); submit()"
+  >
+    <div class="field">
+      <label [for]="'rpe-' + activity().id">How hard it felt</label>
+      <select
+        [id]="'rpe-' + activity().id"
+        [attr.aria-invalid]="errors().rpe ? 'true' : null"
+        [disabled]="disabled() || saving()"
+        (change)="rpe.set(value($event))"
+      >
+        <option value="" [selected]="rpe() === ''">–</option>
+        @for (choice of ratings; track choice.value) {
+          <option [value]="choice.value" [selected]="choice.value.toString() === rpe()">
+            {{ choice.label }}
+          </option>
+        }
+      </select>
+      @if (errors().rpe; as text) {
+        <p class="field-error">{{ text }}</p>
+      }
+    </div>
+
+    <div class="field">
+      <label [for]="'notes-' + activity().id">Note</label>
+      <textarea
+        [id]="'notes-' + activity().id"
+        rows="2"
+        [attr.maxlength]="notesMax + 100"
+        [value]="notes()"
+        [attr.aria-invalid]="errors().notes ? 'true' : null"
+        [disabled]="disabled() || saving()"
+        (input)="notes.set(value($event))"
+      ></textarea>
+      @if (errors().notes; as text) {
+        <p class="field-error">{{ text }}</p>
+      }
+    </div>
+
+    @if (message(); as text) {
+      <p class="alert" role="alert" data-testid="rating-message">{{ text }}</p>
+    }
+    <button
+      type="submit"
+      class="primary"
+      [attr.data-testid]="'rating-save-' + activity().id"
+      [disabled]="disabled() || saving()"
+    >
+      Save rating
+    </button>
+  </form>
+</details>

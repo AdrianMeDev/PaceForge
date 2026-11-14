@@ -1,0 +1,64 @@
+<form
+  class="panel"
+  novalidate
+  aria-labelledby="feedback-title"
+  (submit)="$event.preventDefault(); submit()"
+>
+  <h2 id="feedback-title">How the week felt</h2>
+  <p class="hint">Your note stays with you: the coach is told only the three scales.</p>
+
+  <div class="grid">
+    @for (scale of scales; track scale.field) {
+      <div class="field">
+        <label [for]="'feedback-' + scale.field">{{ scale.label }}</label>
+        <select
+          [id]="'feedback-' + scale.field"
+          [attr.aria-invalid]="errors()[scale.field] ? 'true' : null"
+          [disabled]="disabled() || saving()"
+          (change)="choose(scale.field, value($event))"
+        >
+          <option value="" [selected]="values()[scale.field] === ''">–</option>
+          @for (choice of scale.choices; track choice.value) {
+            <option
+              [value]="choice.value"
+              [selected]="choice.value.toString() === values()[scale.field]"
+            >
+              {{ choice.label }}
+            </option>
+          }
+        </select>
+        @if (errors()[scale.field]; as text) {
+          <p class="field-error">{{ text }}</p>
+        }
+      </div>
+    }
+  </div>
+
+  <div class="field">
+    <label for="feedback-notes">Note (optional)</label>
+    <textarea
+      id="feedback-notes"
+      rows="3"
+      [attr.maxlength]="notesMax + 100"
+      [value]="notes()"
+      [attr.aria-invalid]="errors().notes ? 'true' : null"
+      [disabled]="disabled() || saving()"
+      (input)="notes.set(value($event))"
+    ></textarea>
+    @if (errors().notes; as text) {
+      <p class="field-error">{{ text }}</p>
+    }
+  </div>
+
+  @if (message(); as text) {
+    <p class="alert" role="alert" data-testid="feedback-message">{{ text }}</p>
+  }
+  <button
+    type="submit"
+    class="primary"
+    data-testid="feedback-save"
+    [disabled]="disabled() || saving()"
+  >
+    Save feedback
+  </button>
+</form>

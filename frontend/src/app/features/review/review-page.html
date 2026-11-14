@@ -83,6 +83,13 @@
                   @if (done.notes) {
                     <p class="notes" data-testid="matched-notes">{{ done.notes }}</p>
                   }
+                  <app-session-rating
+                    [activity]="done"
+                    [disabled]="work() !== null"
+                    (rated)="rated()"
+                    (gone)="gone()"
+                    (signedOut)="signOut()"
+                  />
                 } @else {
                   <p class="hint" data-testid="no-activity">
                     {{
@@ -157,6 +164,13 @@
                   @if (item.notes) {
                     <span class="notes">{{ item.notes }}</span>
                   }
+                  <app-session-rating
+                    [activity]="item"
+                    [disabled]="work() !== null"
+                    (rated)="rated()"
+                    (gone)="gone()"
+                    (signedOut)="signOut()"
+                  />
                 </li>
               }
             </ul>
@@ -210,6 +224,14 @@
               Load is minutes times how hard it felt (AU). It is not the TSS of a platform.
             </p>
           }
+          <app-week-feedback-form
+            [week]="shown.week_start"
+            [feedback]="shown.feedback"
+            [disabled]="work() !== null"
+            (saved)="feedbackSaved($event)"
+            (notReviewable)="notReviewable()"
+            (signedOut)="signOut()"
+          />
         </article>
       }
     }

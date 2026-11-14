@@ -1,5 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
+import { ActivitiesApi } from '../../core/activities/activities-api';
+import { RateActivityResult } from '../../core/activities/activities-models';
 import { ReviewApi } from '../../core/review/review-api';
 import {
   CorrectResult,
@@ -7,6 +9,7 @@ import {
   ListReviewWeeksResult,
   ReviewActivity,
   ReviewWorkout,
+  SaveFeedbackResult,
   ReviewableWeek,
   WeekReview,
 } from '../../core/review/review-models';
@@ -153,7 +156,9 @@ function createStubs() {
       weeks: vi.fn<() => Promise<ListReviewWeeksResult>>(),
       week: vi.fn<(week: string) => Promise<GetReviewResult>>(),
       correct: vi.fn<(week: string, workoutId: string, input: unknown) => Promise<CorrectResult>>(),
+      saveFeedback: vi.fn<(week: string, input: unknown) => Promise<SaveFeedbackResult>>(),
     },
+    activities: { rate: vi.fn<(id: string, input: unknown) => Promise<RateActivityResult>>() },
   };
 }
 
@@ -179,7 +184,11 @@ describe('ReviewPage', () => {
   function create() {
     TestBed.configureTestingModule({
       imports: [ReviewPage],
-      providers: [provideRouter([]), { provide: ReviewApi, useValue: stubs.api }],
+      providers: [
+        provideRouter([]),
+        { provide: ReviewApi, useValue: stubs.api },
+        { provide: ActivitiesApi, useValue: stubs.activities },
+      ],
     });
     fixture = TestBed.createComponent(ReviewPage);
     page = fixture.nativeElement as HTMLElement;
@@ -410,7 +419,8 @@ describe('ReviewPage', () => {
       const items = Array.from(page.querySelectorAll('[data-testid="unplanned"] li')).map((li) =>
         li.textContent?.replace(/\s+/g, ' ').trim(),
       );
-      expect(items).toEqual(['Fri 6 Nov · Strength · 30:00 · Not rated']);
+      // The rating form of the session follows the text; only what comes first is of interest.
+      expect(items).toEqual([expect.stringMatching(/^Fri 6 Nov · Strength · 30:00 · Not rated/)]);
     });
 
     it('has no such list when everything was planned', async () => {
@@ -688,6 +698,243 @@ describe('ReviewPage', () => {
       pending.resolve({ kind: 'ok', review: review() });
       await settle(fixture);
       expect(save('w1').disabled).toBe(false);
+    });
+  });
+
+  describe('rating a session', () => {
+    const rateButton = (id: string) =>
+      query<HTMLButtonElement>(page, `[data-testid="rating-save-${id}"]`);
+
+    function rateWith(id: string, rpe: string, notes: string) {
+      const select = query<HTMLSelectElement>(page, `#rpe-${id}`);
+      select.value = rpe;
+      select.dispatchEvent(new Event('change'));
+      const note = query<HTMLTextAreaElement>(page, `#notes-${id}`);
+      note.value = notes;
+      note.dispatchEvent(new Event('input'));
+      rateButton(id).click();
+    }
+
+    it('offers it for the session of a workout and for one that was not planned', async () => {
+      await setup();
+
+      expect(byId('rate-a1')?.textContent?.trim()).toBe('Change the rating');
+      expect(byId('rate-a2')?.textContent?.trim()).toBe('Rate this session');
+      expect(page.querySelectorAll('app-session-rating').length).toBe(2);
+    });
+
+    it('rates the session, fetches the week again and shows the load that follows', async () => {
+      await setup();
+      stubs.activities.rate.mockResolvedValue({ kind: 'ok', activity: {} as never });
+      stubs.api.week.mockResolvedValue(
+        ok(
+          review({
+            activities: [activity({ rpe: 7, load: 420, notes: 'Hilly' }), review().activities[1]],
+          }),
+        ),
+      );
+      stubs.api.week.mockClear();
+
+      rateWith('a1', '7', 'Hilly');
+      await settle(fixture);
+
+      expect(stubs.activities.rate).toHaveBeenCalledExactlyOnceWith('a1', {
+        rpe: 7,
+        notes: 'Hilly',
+      });
+      expect(stubs.api.week).toHaveBeenCalledExactlyOnceWith(FIRST);
+      expect(inWorkout('w1', 'matched')?.textContent).toContain('RPE 7 · 420 AU');
+      expect(inWorkout('w1', 'matched-notes')?.textContent).toBe('Hilly');
+      expect(notice()).toBe('The rating was saved.');
+      expect(weekSelect().value).toBe(FIRST);
+    });
+
+    it('rates a session that was not planned', async () => {
+      await setup();
+      stubs.activities.rate.mockResolvedValue({ kind: 'ok', activity: {} as never });
+      stubs.api.week.mockResolvedValue(
+        ok(
+          review({
+            activities: [activity(), { ...review().activities[1], rpe: 5, load: 150 }],
+          }),
+        ),
+      );
+
+      rateWith('a2', '5', '');
+      await settle(fixture);
+
+      expect(stubs.activities.rate).toHaveBeenCalledExactlyOnceWith('a2', { rpe: 5, notes: '' });
+      expect(byId('unplanned-a2')?.textContent).toContain('RPE 5 · 150 AU');
+    });
+
+    it('does not say that it worked when the week cannot be fetched again', async () => {
+      await setup();
+      stubs.activities.rate.mockResolvedValue({ kind: 'ok', activity: {} as never });
+      stubs.api.week.mockRejectedValue(new Error('down'));
+
+      rateWith('a1', '7', '');
+      await settle(fixture);
+
+      expect(alerts()).toEqual(['Something went wrong. Please try again.']);
+      expect(notice()).toBeUndefined();
+    });
+
+    it('says so and shows the week as it is when the session is gone', async () => {
+      await setup();
+      stubs.activities.rate.mockResolvedValue({ kind: 'not_found' });
+      stubs.api.week.mockClear();
+
+      rateWith('a1', '7', '');
+      await settle(fixture);
+
+      expect(alerts()).toEqual(['That session does not exist any more.']);
+      expect(stubs.api.week).toHaveBeenCalledExactlyOnceWith(FIRST);
+    });
+
+    it('says when the session has ended', async () => {
+      await setup();
+      stubs.activities.rate.mockResolvedValue({ kind: 'forbidden' });
+
+      rateWith('a1', '7', '');
+      await settle(fixture);
+
+      expect(alerts()).toEqual(['Your session has ended. Please sign in again.']);
+    });
+
+    it('is switched off while the page is busy', async () => {
+      await setup();
+      const pending = deferred<CorrectResult>();
+      stubs.api.correct.mockReturnValue(pending.promise);
+
+      save('w1').click();
+      await fixture.whenStable();
+
+      expect(rateButton('a1').disabled).toBe(true);
+      expect(rateButton('a2').disabled).toBe(true);
+      pending.resolve({ kind: 'ok', review: review() });
+      await settle(fixture);
+      expect(rateButton('a1').disabled).toBe(false);
+    });
+  });
+
+  describe('feedback on the week', () => {
+    const feedbackButton = () => query<HTMLButtonElement>(page, '[data-testid="feedback-save"]');
+
+    function giveFeedback(fatigue: string, notes: string) {
+      const select = query<HTMLSelectElement>(page, '#feedback-fatigue');
+      select.value = fatigue;
+      select.dispatchEvent(new Event('change'));
+      const note = query<HTMLTextAreaElement>(page, '#feedback-notes');
+      note.value = notes;
+      note.dispatchEvent(new Event('input'));
+      feedbackButton().click();
+    }
+
+    it('shows the form for the week', async () => {
+      await setup();
+
+      expect(page.querySelector('app-week-feedback-form')).toBeTruthy();
+    });
+
+    it('shows the form for a week without a plan too', async () => {
+      await setup({ shown: ok(review({ plan: null, workouts: [], activities: [] })) });
+
+      expect(page.querySelector('app-week-feedback-form')).toBeTruthy();
+    });
+
+    it('shows the feedback that is stored', async () => {
+      await setup({
+        shown: ok(
+          review({
+            feedback: {
+              fatigue: 4,
+              motivation: null,
+              pain: 1,
+              notes: 'Heavy legs',
+              updated_at: '2026-11-08T08:00:00Z',
+            },
+          }),
+        ),
+      });
+
+      expect(query<HTMLSelectElement>(page, '#feedback-fatigue').value).toBe('4');
+      expect(query<HTMLTextAreaElement>(page, '#feedback-notes').value).toBe('Heavy legs');
+    });
+
+    it('saves it for the selected week and shows the week that comes back', async () => {
+      await setup();
+      const answer = review({
+        feedback: {
+          fatigue: 3,
+          motivation: null,
+          pain: null,
+          notes: 'Fine',
+          updated_at: '2026-11-08T08:00:00Z',
+        },
+      });
+      stubs.api.saveFeedback.mockResolvedValue({ kind: 'ok', review: answer });
+
+      giveFeedback('3', 'Fine');
+      await settle(fixture);
+
+      expect(stubs.api.saveFeedback).toHaveBeenCalledExactlyOnceWith(FIRST, {
+        fatigue: 3,
+        motivation: null,
+        pain: null,
+        notes: 'Fine',
+      });
+      expect(notice()).toBe('Your feedback was saved.');
+      expect(query<HTMLSelectElement>(page, '#feedback-fatigue').value).toBe('3');
+      expect(weekSelect().value).toBe(FIRST);
+    });
+
+    it('drops an earlier error when it was saved', async () => {
+      await setup();
+      stubs.api.correct.mockResolvedValue({ kind: 'activity_taken' });
+      await press('w1');
+      expect(alerts().length).toBe(1);
+      stubs.api.saveFeedback.mockResolvedValue({ kind: 'ok', review: review() });
+
+      giveFeedback('2', '');
+      await settle(fixture);
+
+      expect(alerts()).toEqual([]);
+    });
+
+    it('says so and fetches the weeks again when the week cannot be reviewed any more', async () => {
+      await setup();
+      stubs.api.saveFeedback.mockResolvedValue({ kind: 'not_reviewable' });
+      stubs.api.weeks.mockClear();
+
+      giveFeedback('2', '');
+      await settle(fixture);
+
+      expect(alerts()).toEqual(['This week cannot be reviewed.']);
+      expect(stubs.api.weeks).toHaveBeenCalledTimes(1);
+    });
+
+    it('says when the session has ended', async () => {
+      await setup();
+      stubs.api.saveFeedback.mockResolvedValue({ kind: 'forbidden' });
+
+      giveFeedback('2', '');
+      await settle(fixture);
+
+      expect(alerts()).toEqual(['Your session has ended. Please sign in again.']);
+    });
+
+    it('is switched off while the page is busy', async () => {
+      await setup();
+      const pending = deferred<CorrectResult>();
+      stubs.api.correct.mockReturnValue(pending.promise);
+
+      save('w1').click();
+      await fixture.whenStable();
+
+      expect(feedbackButton().disabled).toBe(true);
+      pending.resolve({ kind: 'ok', review: review() });
+      await settle(fixture);
+      expect(feedbackButton().disabled).toBe(false);
     });
   });
 });
