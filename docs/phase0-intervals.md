@@ -144,7 +144,10 @@ deleted in the Intervals.icu calendar; the device checks are done.
   key.
 - **Phase 6:** export through the bulk upsert with `external_id`; the calendar entry and the
   PaceForge plan stay linked by that id. Conflicts (the user edited the event in Intervals.icu)
-  need a rule, because an upsert overwrites the event.
+  need a rule, because an upsert overwrites the event. **Done** (stage 1): PaceForge wins, see
+  [Sending to Intervals.icu](weekly-plan.md#sending-to-intervalsicu). Not yet checked against the
+  live API: the exact description format for pace targets, the `moving_time` of a strength event
+  and the event type that makes a ride reach Zwift (`Ride` or `VirtualRide`).
 - **Phase 3:** zones and thresholds can be read from the sport settings instead of asking the
   user to type them. (Thresholds are read now; the zones are computed by PaceForge itself from
   them, not taken over from the sport settings.)

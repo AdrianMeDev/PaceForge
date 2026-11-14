@@ -8,8 +8,10 @@ in exactly this format, and nothing the coach writes is trusted before it has be
 read by the strict parser and passed the checks.
 
 Status: the data model, the parser, the checks, the storage, the drafting with the user's own
-coach, the API and the **Week plan** page exist (`backend/planning/`, `/planning` in the app).
-Drafting is described in [Drafting with the coach](#drafting-with-the-coach).
+coach, the API, the **Week plan** page and the sending to Intervals.icu exist
+(`backend/planning/`, `/planning` in the app). Drafting is described in
+[Drafting with the coach](#drafting-with-the-coach), sending in
+[Sending to Intervals.icu](#sending-to-intervalsicu).
 
 Plausibility is not coaching advice. The rules below stop plans that cannot be done (no time, an
 illness, a zone the athlete has no threshold for) and plans that are obviously unwise (five hard
@@ -346,6 +348,14 @@ plan of another user does not exist (404, the same answer as for an unknown id).
 | `POST /api/planning/plans/<id>/push/` | Sends a confirmed plan to the Intervals.icu calendar of the user; the plan with the result per workout. Limited to 10 a minute per user. |
 | `POST /api/planning/plans/<id>/discard/` | The discarded plan. |
 
+Every workout and every segment of a plan has a `target`: the range of its zone as it is *now*
+(`low`, `high` and a `unit` of `W`, `bpm` or `s/km`; for pace `low` is the faster end), or `null`
+without a zone or without the threshold for it. A confirmed plan has an `export` (how many
+workouts are `synced`, `failed` or `not_sent`, and how many events of an `older` version are still
+in the calendar) and every workout an `export` of its own (`status`, `error_code`, `pushed_at`);
+for any other plan these are `null`. An answer of the two sending endpoints has a `push` with what
+the sending did (see [Sending to Intervals.icu](#sending-to-intervalsicu)).
+
 Errors have a fixed text and a `code`; nothing the provider or the coach said is in one. A 429
 without a code is the limit of PaceForge itself.
 
@@ -365,6 +375,68 @@ without a code is the limit of PaceForge itself.
 | `not_allowed` | 502 | The address is no longer on the operator's list. |
 | `unexpected` | 502 | The provider (or Intervals.icu) answered in an unexpected way. |
 | `unavailable` | 503 | The provider could not be reached. |
+
+## Sending to Intervals.icu
+
+A confirmed plan can be sent to the Intervals.icu calendar of the user (`planning/export.py` makes
+the events, `planning/push.py` sends them). It happens **only on request**: with **Send to
+Intervals.icu** on a confirmed plan, or by ticking **Send the week to Intervals.icu right away**
+when confirming. It uses the API key the user connected (see the README, section Connections).
+
+**One event per workout.**
+
+| Field of the event | Value |
+| ------------------ | ----- |
+| `category` | `WORKOUT` |
+| `type` | `Run`, `Ride`, `Swim` or `WeightTraining`, by the sport. |
+| `name` | The title of the workout. |
+| `start_date_local` | The day and a start time: 07:00 for `morning`, 12:00 for `afternoon`, 18:00 for `evening`, 00:00 (all day) without a time of day. |
+| `external_id` | `paceforge-<id of the workout>`: the key at Intervals.icu, so that the same workout is updated and never added twice. |
+| `description` | The workout in the syntax of Intervals.icu (below). |
+| `moving_time` | Strength only: the duration in seconds. |
+
+**The description.** Every segment is a block: a heading (`Warmup`, `Steady`, `Work`, `Recovery`,
+`Cooldown`, with `<n>x` when the segment is repeated) and one step. Targets are **absolute** and
+come from the thresholds of the user at the time of sending (the same numbers as on the plan page):
+watts as `138-188w`, heart rate as `145-152bpm`, pace as `5:12-5:41/km Pace`. A zone for which the
+user has no threshold stays in the text (`Power zone 3`) and has no target. A workout without
+segments is one step. Strength is a line of text and no steps. Stretching is a line after the
+workout, and the notes of the coach come first as one comment line.
+
+```
+Note: Keep the first rep easy
+
+Warmup
+- 10m 100-138w
+
+Work 4x
+- 5m 263-300w
+
+Recovery 4x
+- 3m 100-138w
+
+Stretching: 10 min after the workout.
+```
+
+A segment that is repeated is written as it is stored (four work parts, then four recoveries), so
+that the times add up as in PaceForge.
+
+**Free text is data.** Notes are joined into a single line that starts with a word and never ends
+in `<n>x`, so Intervals.icu cannot read them as a step or a repeat. Titles go into the name, which
+is not parsed.
+
+**Sending again, new versions, conflicts.** Sending the same plan again updates the same events.
+A new version of a week has new workouts and so new ids: sending it removes the events of the
+versions it replaces (PaceForge remembers them in `WorkoutExport`) and of every workout that is
+gone. **PaceForge wins:** what the user changed in an event in Intervals.icu is overwritten, and an
+event the user deleted there comes back. An event that is gone at Intervals.icu counts as removed.
+
+**One workout at a time.** Each workout is sent on its own, so each has its own result. One that
+Intervals.icu does not accept (`rejected`) does not keep the others from arriving. If Intervals.icu
+cannot be reached (`unavailable`) the rest is not tried, is marked failed and nothing is removed;
+sending again tries again. A key that Intervals.icu refuses stops everything and marks the
+connection invalid. The `error_code` is one of `rejected`, `unavailable` and `unexpected`: never
+what Intervals.icu said. Nothing holds a lock while the calls are made (sending is idempotent).
 
 ## What is deliberately not checked
 
