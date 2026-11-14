@@ -19,6 +19,7 @@ from .pagination import ActivityPagination
 from .parsing import ActivityFileError
 from .serializers import (
     ActivityDetailSerializer,
+    ActivityRatingSerializer,
     ActivitySerializer,
     ManualActivitySerializer,
 )
@@ -41,11 +42,12 @@ def _refused(message: str, status: HTTPStatus, **extra: Any) -> Response:
 
 
 class ActivityViewSet(OwnedModelViewSet):
-    """The signed-in user's own activities: list, detail and delete. Activities are created
-    only by importing a file, and are never edited."""
+    """The signed-in user's own activities: list, detail, delete and rate. Activities are created
+    only by importing a file or entering one by hand, and what they record is never edited: after
+    the fact the user can only say how hard it felt (``rpe``) and add a note."""
 
     queryset = Activity.objects.order_by("-start_time", "-id")
-    http_method_names = ["get", "delete", "head", "options"]
+    http_method_names = ["get", "patch", "delete", "head", "options"]
     pagination_class = ActivityPagination
     # An id that is no UUID is a 404 without reaching the database.
     lookup_value_regex = "[0-9a-fA-F-]{32,36}"
@@ -54,6 +56,13 @@ class ActivityViewSet(OwnedModelViewSet):
         queryset = super().get_queryset()
         # The laps are only needed for one activity.
         return queryset.defer("laps") if self.action == "list" else queryset
+
+    def partial_update(self, request: Request, *args: Any, **kwargs: Any) -> Response:
+        activity = self.get_object()
+        serializer = ActivityRatingSerializer(activity, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(ActivityDetailSerializer(activity).data)
 
     def perform_destroy(self, instance: Activity) -> None:
         instance.delete()
