@@ -8,7 +8,9 @@ from django.core.cache import cache
 from accounts.models import User
 from accounts.tests.conftest import PASSWORD, AuthApi
 from coach import services as coach_services
+from integrations import services as integrations_services
 
+from .fake_calendar import Calendar, FakeClient
 from .scripted import Scripted
 
 
@@ -42,3 +44,13 @@ def signed_in(user: User) -> AuthApi:
     api = AuthApi()
     assert api.login(user.email).status_code == 200
     return api
+
+
+@pytest.fixture
+def calendar(monkeypatch: pytest.MonkeyPatch) -> Calendar:
+    """An in-memory Intervals.icu calendar used in place of the real one."""
+    calendar = Calendar()
+    monkeypatch.setattr(
+        integrations_services, "IntervalsClient", lambda key: FakeClient(calendar, key)
+    )
+    return calendar

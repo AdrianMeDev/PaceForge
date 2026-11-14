@@ -3,15 +3,24 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { CoachApi } from '../../core/coach/coach-api';
 import { PlanningApi } from '../../core/planning/planning-api';
-import { PlanProblem, PlannableWeek, WeekPlan, Workout } from '../../core/planning/planning-models';
+import {
+  PlanProblem,
+  PlannableWeek,
+  PushOutcome,
+  WeekPlan,
+  Workout,
+} from '../../core/planning/planning-models';
 import {
   GOAL_LABELS,
   SLOT_LABELS,
   SPORT_LABELS,
   STATUS_LABELS,
   dayLabel,
+  exportSummaryText,
+  exportText,
   findingPlace,
   minutesText,
+  pushText,
   segmentText,
   stretchingText,
   targetText,
@@ -20,7 +29,7 @@ import {
 
 type View = 'loading' | 'unreachable' | 'ready' | 'signed_out';
 /** What the page is waiting for; one thing at a time. */
-type Work = 'generating' | 'deciding' | 'opening';
+type Work = 'generating' | 'deciding' | 'opening' | 'sending';
 
 const FALLBACK = 'Something went wrong. Please try again.';
 const GONE = 'That plan does not exist any more.';
@@ -31,6 +40,7 @@ const NOT_USABLE = 'The coach did not give a plan that could be used. Please try
 const TOO_MANY = 'Too many plans were requested. Please wait a minute and try again.';
 const NOT_A_DRAFT = 'That plan is not a draft any more.';
 const HAS_ERRORS = 'The plan has errors and cannot be confirmed.';
+const TOO_MANY_PUSHES = 'Too many sends in a short time. Please wait a minute and try again.';
 
 /** One day of the plan with its workouts, numbered as the checks number them. */
 interface PlanDay {
@@ -68,6 +78,10 @@ export class PlanningPage implements OnInit {
   protected readonly problems = signal<PlanProblem[]>([]);
   /** The week offers no training time: the page says where to enter it. */
   protected readonly noTime = signal(false);
+  /** Intervals.icu is not usable: the page says where to connect it again. */
+  protected readonly needsConnection = signal(false);
+  /** Whether confirming a draft also sends the week to Intervals.icu (never without asking). */
+  protected readonly sendAfterConfirm = signal(false);
 
   protected readonly week = computed(
     () => this.weeks().find((week) => week.week_start === this.selected()) ?? null,
@@ -92,6 +106,8 @@ export class PlanningPage implements OnInit {
   protected readonly target = targetText;
   protected readonly segment = segmentText;
   protected readonly place = findingPlace;
+  protected readonly sent = exportText;
+  protected readonly sentSummary = exportSummaryText;
 
   ngOnInit(): Promise<void> {
     return this.load();
@@ -193,11 +209,14 @@ export class PlanningPage implements OnInit {
     this.clearMessages();
     this.work.set('deciding');
     try {
-      const result = await this.planning.confirm(current.id);
+      const result = await this.planning.confirm(current.id, this.sendAfterConfirm());
       switch (result.kind) {
         case 'ok':
           this.plan.set(result.plan);
           this.notice.set('The plan is confirmed.');
+          if (result.push !== null) {
+            this.report(result.push);
+          }
           await this.refresh();
           break;
         case 'not_confirmable':
@@ -212,6 +231,60 @@ export class PlanningPage implements OnInit {
     } finally {
       this.work.set(null);
     }
+  }
+
+  /** Sends the confirmed plan to Intervals.icu (again): what is in the calendar is updated. */
+  protected async send(): Promise<void> {
+    const current = this.plan();
+    if (this.work() !== null || current === null || current.status !== 'confirmed') {
+      return;
+    }
+    this.clearMessages();
+    this.work.set('sending');
+    try {
+      const result = await this.planning.push(current.id);
+      switch (result.kind) {
+        case 'ok':
+          this.plan.set(result.plan);
+          this.report(result.push);
+          break;
+        case 'problem':
+          this.errors.set([result.message]);
+          this.needsConnection.set(
+            result.problem === 'not_connected' || result.problem === 'invalid_key',
+          );
+          break;
+        case 'not_found':
+          this.plan.set(null);
+          this.errors.set([GONE]);
+          await this.refresh();
+          break;
+        case 'rate_limited':
+          this.errors.set([TOO_MANY_PUSHES]);
+          break;
+        case 'forbidden':
+          this.view.set('signed_out');
+          break;
+      }
+    } catch {
+      this.errors.set([FALLBACK]);
+    } finally {
+      this.work.set(null);
+    }
+  }
+
+  /** Says what a push did: a success as a notice, a problem as an error (with the way out). */
+  private report(outcome: PushOutcome): void {
+    if (outcome.ok) {
+      this.notice.update((text) =>
+        text === null ? pushText(outcome) : `${text} ${pushText(outcome)}`,
+      );
+      return;
+    }
+    this.errors.set([outcome.message]);
+    this.needsConnection.set(
+      outcome.problem === 'not_connected' || outcome.problem === 'invalid_key',
+    );
   }
 
   protected async discard(): Promise<void> {
@@ -323,5 +396,6 @@ export class PlanningPage implements OnInit {
     this.notice.set(null);
     this.problems.set([]);
     this.noTime.set(false);
+    this.needsConnection.set(false);
   }
 }

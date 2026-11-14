@@ -18,6 +18,43 @@ export type Severity = 'error' | 'warning';
 export type ProviderProblem =
   'invalid_key' | 'rate_limited' | 'unavailable' | 'unexpected' | 'not_allowed';
 
+/** What a zone means in numbers: a closed range in watts, beats per minute or seconds per km. */
+export type TargetUnit = 'W' | 'bpm' | 's/km';
+
+/** For pace `low` is the faster end (fewer seconds). `null` where no threshold is known. */
+export interface ZoneTarget {
+  low: number;
+  high: number;
+  unit: TargetUnit;
+}
+
+/** Whether the event of a workout is in the Intervals.icu calendar. */
+export type ExportStatus = 'not_sent' | 'synced' | 'failed';
+/** Why sending a workout failed; the server's fixed codes. Empty when it did not. */
+export type ExportError = '' | 'rejected' | 'unavailable' | 'unexpected';
+/** Why a week could not be sent at all. */
+export type PushProblem = 'not_confirmed' | 'not_connected' | 'invalid_key' | 'unexpected';
+
+/** Where one workout stands with Intervals.icu; `pushed_at` is the last attempt (ISO 8601). */
+export interface WorkoutExport {
+  status: ExportStatus;
+  error_code: ExportError;
+  pushed_at: string | null;
+}
+
+/** The workouts of a confirmed plan by state; `older` events of an earlier version remain. */
+export interface ExportSummary {
+  synced: number;
+  failed: number;
+  not_sent: number;
+  older: number;
+}
+
+/** What a push did, or why it could not be made (the server's text for users). */
+export type PushOutcome =
+  | { ok: true; synced: number; failed: number; removed: number; left_behind: number }
+  | { ok: false; problem: PushProblem; message: string };
+
 /** One part of a workout, done `repeat` times in a row; zone system and zone come together. */
 export interface Segment {
   kind: SegmentKind;
@@ -25,6 +62,7 @@ export interface Segment {
   repeat: number;
   zone_system: ZoneSystem | null;
   zone: number | null;
+  target: ZoneTarget | null;
 }
 
 /** A planned session. `day` is a calendar date (YYYY-MM-DD); the text is the coach's. */
@@ -36,6 +74,10 @@ export interface Workout {
   duration_minutes: number;
   zone_system: ZoneSystem | null;
   zone: number | null;
+  /** The zone as numbers, as it is now (the thresholds may change); `null` without one. */
+  target: ZoneTarget | null;
+  /** Only a confirmed plan is sent: `null` for any other. */
+  export: WorkoutExport | null;
   notes: string;
   /** When on the day; `null`: not said. */
   slot: WorkoutSlot | null;
@@ -91,6 +133,8 @@ export interface WeekPlan {
   confirmed_at: string | null;
   workouts: Workout[];
   report: Report | null;
+  /** Only for a confirmed plan. */
+  export: ExportSummary | null;
 }
 
 /** What was wrong with an answer of the coach that could not be used (fixed texts only). */
@@ -136,11 +180,22 @@ export type GenerateResult =
 export type GetPlanResult = { kind: 'ok'; plan: WeekPlan } | PlanNotFound | Forbidden;
 
 export type ConfirmPlanResult =
-  | { kind: 'ok'; plan: WeekPlan }
+  /** `push` is what sending the week did, if that was asked for. */
+  | { kind: 'ok'; plan: WeekPlan; push: PushOutcome | null }
   | PlanNotFound
   | NotADraft
   /** The plan has errors; `findings` has all checks, the errors among them. */
   | { kind: 'not_confirmable'; findings: Finding[] }
+  | Forbidden;
+
+export type PushPlanResult =
+  /** The week was sent; single workouts may still have failed (see their `export`). */
+  | { kind: 'ok'; plan: WeekPlan; push: PushOutcome }
+  /** Nothing was sent: `problem` says why and `message` is the server's text for users. */
+  | { kind: 'problem'; problem: PushProblem; message: string }
+  | PlanNotFound
+  /** Too many pushes in a short time (this server's limit). */
+  | RateLimited
   | Forbidden;
 
 export type DiscardPlanResult =

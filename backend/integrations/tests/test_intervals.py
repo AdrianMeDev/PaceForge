@@ -653,3 +653,193 @@ class TestTheSetting:
 
         assert result.returncode != 0
         assert "INTERVALS_API_BASE_URL" in result.stderr
+
+
+EVENT = {
+    "category": "WORKOUT",
+    "type": "Ride",
+    "start_date_local": "2027-07-19T07:00:00",
+    "name": "Endurance ride",
+    "external_id": "paceforge-1",
+    "description": "- 1h 138-188w",
+}
+BULK = "/api/v1/athlete/0/events/bulk?upsert=true"
+
+
+class TestUpsertEvent:
+    def test_it_posts_the_event_as_a_list_with_the_upsert_flag(self, fake: FakeIntervals) -> None:
+        fake.body = b'[{"id": 4711, "external_id": "paceforge-1", "name": "Endurance ride"}]'
+
+        stored = client(fake).upsert_event(EVENT)
+
+        (request,) = fake.requests
+        assert (request["method"], request["path"]) == ("POST", BULK)
+        assert json.loads(request["body"]) == [EVENT]
+        assert request["headers"]["Content-Type"] == "application/json"
+        assert request["headers"]["Authorization"].startswith("Basic ")
+        assert stored == intervals.Event(id=4711, external_id="paceforge-1")
+
+    def test_only_the_id_and_the_external_id_are_kept(self, fake: FakeIntervals) -> None:
+        fake.body = (
+            b'[{"id": 1, "external_id": "x", "description": "secret", "icu_training_load": 5}]'
+        )
+
+        stored = client(fake).upsert_event(EVENT)
+
+        assert dataclasses.asdict(stored) == {"id": 1, "external_id": "x"}
+
+    def test_an_answer_without_an_external_id_is_fine(self, fake: FakeIntervals) -> None:
+        fake.body = b'[{"id": 1}]'
+
+        assert client(fake).upsert_event(EVENT) == intervals.Event(id=1, external_id=None)
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            b"[]",
+            b"{}",
+            b'{"id": 1}',
+            b'[{"id": 1}, {"id": 2}]',
+            b'["x"]',
+            b'[{"id": "1"}]',
+            b'[{"id": true}]',
+            b'[{"id": 0}]',
+            b'[{"id": -3}]',
+            b'[{"id": 1.5}]',
+            b'[{"name": "no id"}]',
+            b"null",
+            b"not json",
+        ],
+    )
+    def test_an_answer_that_is_not_one_event_is_unexpected(
+        self, fake: FakeIntervals, body: bytes
+    ) -> None:
+        fake.body = body
+
+        with pytest.raises(UnexpectedResponseError):
+            client(fake).upsert_event(EVENT)
+
+    @pytest.mark.parametrize("status", [400, 422])
+    def test_an_event_it_does_not_accept_is_rejected(
+        self, fake: FakeIntervals, status: int
+    ) -> None:
+        fake.status = status
+        fake.body = b'{"error": "Cannot parse workout: SECRETMARKER"}'
+
+        with pytest.raises(intervals.RejectedError) as caught:
+            client(fake).upsert_event(EVENT)
+
+        assert "SECRETMARKER" not in everything_printed(caught.value)
+        assert isinstance(caught.value, UnexpectedResponseError)
+
+    @pytest.mark.parametrize("status", [401, 403])
+    def test_a_refused_key_is_reported_as_invalid(self, fake: FakeIntervals, status: int) -> None:
+        fake.status = status
+
+        with pytest.raises(InvalidKeyError):
+            client(fake).upsert_event(EVENT)
+
+    @pytest.mark.parametrize("status", [429, 500, 503])
+    def test_a_busy_service_is_reported_as_unavailable(
+        self, fake: FakeIntervals, status: int
+    ) -> None:
+        fake.status = status
+
+        with pytest.raises(IntervalsUnavailableError):
+            client(fake).upsert_event(EVENT)
+
+    def test_a_too_large_answer_is_refused(
+        self, fake: FakeIntervals, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        fake.body = b'[{"id": 1}]'
+        monkeypatch.setattr(intervals, "MAX_RESPONSE_BYTES", 5)
+
+        with pytest.raises(UnexpectedResponseError):
+            client(fake).upsert_event(EVENT)
+
+    def test_a_redirect_is_not_followed_and_the_event_goes_nowhere_else(
+        self, fake: FakeIntervals
+    ) -> None:
+        with running() as elsewhere:
+            fake.status = 307
+            fake.headers = {"Location": elsewhere.url}
+
+            with pytest.raises(UnexpectedResponseError):
+                client(fake).upsert_event(EVENT)
+
+            assert elsewhere.requests == []
+
+    def test_no_error_shows_the_key_or_the_event(self, fake: FakeIntervals) -> None:
+        encoded = base64.b64encode(f"API_KEY:{KEY}".encode()).decode()
+        for status in (401, 422, 429, 500, 404, 200):
+            fake.status = status
+            fake.body = b"not json at all"
+            try:
+                client(fake).upsert_event(EVENT)
+            except intervals.IntervalsError as error:
+                shown = everything_printed(error)
+                assert KEY not in shown
+                assert encoded not in shown
+                assert "paceforge-1" not in shown
+                assert "Endurance" not in shown
+
+
+class TestDeleteEvent:
+    def test_it_deletes_the_event_with_that_id(self, fake: FakeIntervals) -> None:
+        fake.body = b""
+
+        client(fake).delete_event(4711)
+
+        (request,) = fake.requests
+        assert (request["method"], request["path"]) == ("DELETE", "/api/v1/athlete/0/events/4711")
+        assert request["headers"]["Authorization"].startswith("Basic ")
+        assert request["body"] == b""
+
+    def test_an_answer_with_a_body_is_fine_too(self, fake: FakeIntervals) -> None:
+        fake.body = b'{"deleted": 1}'
+
+        client(fake).delete_event(1)
+
+    def test_an_event_that_is_gone_counts_as_removed(self, fake: FakeIntervals) -> None:
+        fake.status = 404
+
+        client(fake).delete_event(4711)
+
+    @pytest.mark.parametrize("status", [401, 403])
+    def test_a_refused_key_is_reported_as_invalid(self, fake: FakeIntervals, status: int) -> None:
+        fake.status = status
+
+        with pytest.raises(InvalidKeyError):
+            client(fake).delete_event(1)
+
+    @pytest.mark.parametrize("status", [429, 502])
+    def test_a_busy_service_is_reported_as_unavailable(
+        self, fake: FakeIntervals, status: int
+    ) -> None:
+        fake.status = status
+
+        with pytest.raises(IntervalsUnavailableError):
+            client(fake).delete_event(1)
+
+    def test_other_statuses_are_unexpected(self, fake: FakeIntervals) -> None:
+        fake.status = 405
+
+        with pytest.raises(UnexpectedResponseError):
+            client(fake).delete_event(1)
+
+    @pytest.mark.parametrize("event_id", [0, -1, True, "1", "1/../../athlete", 1.5, None])
+    def test_only_a_positive_whole_number_is_an_id_and_nothing_is_sent(
+        self, fake: FakeIntervals, event_id: Any
+    ) -> None:
+        with pytest.raises(ValueError, match="event id"):
+            client(fake).delete_event(event_id)
+
+        assert fake.requests == []
+
+    def test_an_empty_answer_is_only_accepted_where_it_is_expected(
+        self, fake: FakeIntervals
+    ) -> None:
+        fake.body = b""
+
+        with pytest.raises(UnexpectedResponseError):
+            client(fake).get_athlete()

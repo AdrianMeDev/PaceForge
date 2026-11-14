@@ -141,3 +141,23 @@ button.secondary {
   margin: 0.3rem 0 0;
   color: var(--muted);
 }
+
+.export {
+  margin: 0.3rem 0 0;
+  color: var(--muted);
+}
+
+.export[data-status='synced'] {
+  color: var(--accent);
+}
+
+.export[data-status='failed'] {
+  color: var(--danger);
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}

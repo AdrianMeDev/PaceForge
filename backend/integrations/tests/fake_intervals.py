@@ -23,8 +23,23 @@ class FakeIntervals:
 
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self) -> None:
+                self._answer("GET")
+
+            def do_POST(self) -> None:
+                self._answer("POST")
+
+            def do_DELETE(self) -> None:
+                self._answer("DELETE")
+
+            def _answer(self, method: str) -> None:
+                length = int(self.headers.get("Content-Length") or 0)
                 outer.requests.append(
-                    {"method": "GET", "path": self.path, "headers": dict(self.headers.items())}
+                    {
+                        "method": method,
+                        "path": self.path,
+                        "headers": dict(self.headers.items()),
+                        "body": self.rfile.read(length),
+                    }
                 )
                 if outer.delay:
                     time.sleep(outer.delay)

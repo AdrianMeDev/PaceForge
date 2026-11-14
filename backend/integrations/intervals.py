@@ -15,7 +15,9 @@ import json
 import re
 import urllib.error
 import urllib.request
+from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Any, TypeGuard
 from urllib.parse import urlsplit
 
 from django.conf import settings
@@ -43,11 +45,28 @@ class UnexpectedResponseError(IntervalsError):
     """The answer is not what the API documents (status, size or shape)."""
 
 
+class RejectedError(UnexpectedResponseError):
+    """Intervals.icu understood the request and refused it (400 or 422), e.g. a workout it cannot
+    parse. Asking again with the same data will not help."""
+
+
+class NotFoundError(UnexpectedResponseError):
+    """There is nothing at that address (404), e.g. an event that was deleted meanwhile."""
+
+
 @dataclass(frozen=True)
 class Athlete:
     """The only part of the athlete object that is kept; the rest (email, services) is dropped."""
 
     id: str
+
+
+@dataclass(frozen=True)
+class Event:
+    """An event of the calendar as Intervals.icu stored it: the only part that is kept."""
+
+    id: int
+    external_id: str | None
 
 
 # Intervals.icu keeps one settings entry per group of sport types. These are the types that make
@@ -103,7 +122,7 @@ class IntervalsClient:
 
     def get_athlete(self) -> Athlete:
         """Check the key and return the account it belongs to (``athlete/0`` means "me")."""
-        data = self._get_json("/athlete/0")
+        data = self._request("GET", "/athlete/0")
         athlete_id = data.get("id") if isinstance(data, dict) else None
         if not isinstance(athlete_id, str) or not ATHLETE_ID.fullmatch(athlete_id):
             raise UnexpectedResponseError("The answer has no usable athlete id.")
@@ -115,7 +134,7 @@ class IntervalsClient:
         Anything that does not make sense is skipped, value by value, instead of failing the
         whole call. Where two entries claim the same sport group, the first one wins per value.
         """
-        data = self._get_json("/athlete/0/sport-settings")
+        data = self._request("GET", "/athlete/0/sport-settings")
         if not isinstance(data, list):
             raise UnexpectedResponseError("The answer is not a list of sport settings.")
         merged: dict[str, dict[str, float]] = {}
@@ -141,14 +160,51 @@ class IntervalsClient:
             if sport in merged
         ]
 
-    def _get_json(self, path: str) -> object:
+    def upsert_event(self, event: Mapping[str, Any]) -> Event:
+        """Create the event, or update the one with the same ``external_id`` (it is the key, so
+        sending a workout twice does not give two events). ``event`` is the event as Intervals.icu
+        takes it (see ``planning.export``).
+
+        Raises ``RejectedError`` if Intervals.icu does not accept the event. No error shows the
+        event or what Intervals.icu answered.
+        """
+        data = self._request("POST", "/athlete/0/events/bulk?upsert=true", [dict(event)])
+        stored = data[0] if isinstance(data, list) and len(data) == 1 else None
+        event_id = stored.get("id") if isinstance(stored, dict) else None
+        if not _is_event_id(event_id):
+            raise UnexpectedResponseError("The answer has no usable event.")
+        assert isinstance(stored, dict)
+        external_id = stored.get("external_id")
+        return Event(id=event_id, external_id=external_id if isinstance(external_id, str) else None)
+
+    def delete_event(self, event_id: int) -> None:
+        """Remove an event from the calendar. One that is gone already counts as removed."""
+        if not _is_event_id(event_id):
+            raise ValueError("An event id is a positive whole number.")
+        try:
+            self._request("DELETE", f"/athlete/0/events/{event_id}", allow_empty=True)
+        except NotFoundError:
+            pass
+
+    def _request(
+        self, method: str, path: str, payload: object = None, *, allow_empty: bool = False
+    ) -> object:
+        """One call, whatever the method: the same limits and the same errors for all of them.
+
+        ``payload`` (if any) is sent as JSON. Nothing of it, and nothing of the answer, goes into an
+        error. An empty answer is only fine where ``allow_empty`` says so (it gives ``None``).
+        """
+        headers = {
+            "Authorization": self._authorization,
+            "Accept": "application/json",
+            "User-Agent": "PaceForge",
+        }
+        data = None
+        if payload is not None:
+            data = json.dumps(payload).encode()
+            headers["Content-Type"] = "application/json"
         request = urllib.request.Request(
-            self._base_url + path,
-            headers={
-                "Authorization": self._authorization,
-                "Accept": "application/json",
-                "User-Agent": "PaceForge",
-            },
+            self._base_url + path, data=data, headers=headers, method=method
         )
         try:
             with _opener.open(request, timeout=self._timeout) as response:
@@ -165,6 +221,8 @@ class IntervalsClient:
             raise UnexpectedResponseError("The answer is larger than expected.")
         if cut_off:
             raise IntervalsUnavailableError("The answer was cut off.")
+        if allow_empty and not body.strip():
+            return None
         try:
             return json.loads(body)
         except ValueError:
@@ -176,7 +234,15 @@ class IntervalsClient:
             return InvalidKeyError("Intervals.icu did not accept the API key.")
         if status == 429 or status >= 500:
             return IntervalsUnavailableError(f"Intervals.icu is not available (HTTP {status}).")
+        if status in {400, 422}:
+            return RejectedError(f"Intervals.icu did not accept the request (HTTP {status}).")
+        if status == 404:
+            return NotFoundError("Intervals.icu has nothing at that address (HTTP 404).")
         return UnexpectedResponseError(f"Unexpected answer from Intervals.icu (HTTP {status}).")
+
+
+def _is_event_id(value: object) -> TypeGuard[int]:
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
 
 
 def _sport_group(types: object) -> str | None:

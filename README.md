@@ -553,6 +553,11 @@ links to the Connections page.
 4. **Confirm plan** or **Discard**. Confirming checks the plan again with your data of that moment.
    Drafting again makes a **new version** of the week; all versions stay in the list, and
    confirming a draft replaces the version that was confirmed before.
+5. Send the confirmed week to your calendar: see [Sending to Intervals.icu](#sending-to-intervalsicu).
+
+**Zones as numbers.** Next to a zone the page shows what it means for you today, for example
+"Power zone 2 · 138–188 W", worked out from your thresholds (see
+[Athlete profile](#athlete-profile)). Without the threshold for a zone the page shows only the zone.
 
 **Two sessions a day.** A day may have two sessions, rarely three, for example an easy run in the
 morning and a ride in the afternoon. Each of them has a time of day (**morning**, **afternoon** or
@@ -592,6 +597,37 @@ entry below).
 **Not verified yet.** The drafting is tested with a provider that answers from a script, and the
 page with test doubles for the API; neither has been tried against a real provider or in a browser
 by the developer. Your first real draft is the first real test; please read it critically.
+
+### Sending to Intervals.icu
+
+With [Intervals.icu connected](#connections) a confirmed week can be sent to your calendar. It
+never happens by itself: press **Send to Intervals.icu** on a confirmed plan, or tick **Send the
+week to Intervals.icu right away** before you confirm. If sending does not work, the plan stays
+confirmed and the page says why.
+
+- **What arrives:** one workout in your calendar for each workout of the plan, with its steps, the
+  targets in watts, beats per minute or minutes per kilometre (worked out from your thresholds at
+  the moment of sending), the time of day as start time (**morning** 07:00, **afternoon** 12:00,
+  **evening** 18:00, otherwise all day), strength and stretching as text. Intervals.icu passes the
+  workouts on to the devices and services you connected there (Zwift, COROS, Garmin …).
+- **Sending again** updates the same workouts and never adds them twice. A **new version** of the
+  week replaces the workouts of the version before in your calendar.
+- **PaceForge wins.** If you change a workout in Intervals.icu, the next sending overwrites it,
+  and one you deleted there comes back.
+- **Each workout has a result** on the page: "In Intervals.icu", "Not sent to Intervals.icu yet" or
+  why it was not sent. A workout that fails does not keep the others from arriving; **Send again**
+  tries the rest. Sending is limited to 10 a minute per user.
+- **The key** you gave PaceForge can write to your whole calendar. Nothing but the workouts of the
+  plan is sent, and what Intervals.icu answers is never shown or kept beyond a fixed error code.
+
+The format of the events is described in
+[Sending to Intervals.icu](docs/weekly-plan.md#sending-to-intervalsicu).
+
+**Not verified yet.** Sending is tested against a stand-in for Intervals.icu; it has not been tried
+against the real calendar by the developer, and neither has the page in a browser. In particular
+the description format (pace targets, the strength workout) is written from the documentation, and
+cycling workouts are sent as `Ride`: whether a ride reaches Zwift as a workout may depend on
+Intervals.icu treating it as `VirtualRide`. Your first real week is the first real test.
 
 ## Instance key
 

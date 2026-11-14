@@ -8,3 +8,10 @@ class PlanGenerateThrottle(UserRateThrottle):
     other rate limits."""
 
     scope = "planning_generate"
+
+
+class PlanPushThrottle(UserRateThrottle):
+    """Limits how often a user can make the server write to their Intervals.icu calendar: a push
+    is up to a call per workout, so a stuck button must not be able to repeat it."""
+
+    scope = "planning_push"
