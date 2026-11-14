@@ -9,6 +9,7 @@ from django.db import IntegrityError, transaction
 
 from accounts.models import User
 
+from .duplicates import duration_of, find_duplicate
 from .efforts import as_json, best_efforts
 from .models import Activity, ActivityFile
 from .parsing import ActivityFileError, ParsedActivity, parse_activity_file, parse_series
@@ -76,11 +77,13 @@ def best_efforts_of(data: bytes) -> dict[str, Any] | None:
 
 
 def _find_duplicate(user: User, source_hash: str, parsed: ParsedActivity) -> Activity | None:
-    """The same file, or the same run exported in another format (same start and sport)."""
-    own = Activity.objects.filter(owner=user)
-    return (
-        own.filter(source_hash=source_hash).first()
-        or own.filter(start_time=parsed.start_time, sport=parsed.sport).first()
+    """The same file, or the same session from another source (see ``duplicates``): the run
+    exported in another format, or the one that was entered by hand."""
+    return Activity.objects.filter(owner=user, source_hash=source_hash).first() or find_duplicate(
+        user,
+        parsed.sport,
+        parsed.start_time,
+        duration_of(parsed.timer_seconds, parsed.elapsed_seconds),
     )
 
 

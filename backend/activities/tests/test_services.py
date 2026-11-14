@@ -2,7 +2,7 @@ import hashlib
 import os
 import subprocess
 import sys
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -119,6 +119,41 @@ class TestDuplicates:
 
         assert raised.value.existing_id == first.pk
         assert counts() == (1, 1)
+
+    def test_a_file_that_starts_a_few_minutes_later_with_the_same_length_is_refused(
+        self, alice: User
+    ) -> None:
+        first = import_activity(alice, activity_file())
+
+        with pytest.raises(DuplicateActivityError) as raised:
+            import_activity(alice, activity_file(start=START + timedelta(minutes=4)))
+
+        assert raised.value.existing_id == first.pk
+        assert counts() == (1, 1)
+
+    def test_a_file_that_starts_later_than_the_tolerance_is_another_activity(
+        self, alice: User
+    ) -> None:
+        import_activity(alice, activity_file())
+
+        import_activity(alice, activity_file(start=START + timedelta(minutes=11)))
+
+        assert counts() == (2, 2)
+
+    def test_a_session_entered_by_hand_is_the_duplicate_of_its_file(self, alice: User) -> None:
+        by_hand = Activity.objects.create(
+            owner=alice,
+            source=Activity.Source.MANUAL,
+            sport=Activity.Sport.RUNNING,
+            start_time=START + timedelta(minutes=3),
+            timer_seconds=65 * 60,
+        )
+
+        with pytest.raises(DuplicateActivityError) as raised:
+            import_activity(alice, activity_file())
+
+        assert raised.value.existing_id == by_hand.pk
+        assert counts() == (1, 0)
 
     def test_the_same_start_in_another_sport_is_another_activity(self, alice: User) -> None:
         import_activity(alice, activity_file())
