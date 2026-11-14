@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta, tzinfo
 from uuid import UUID
 
+from django.db import IntegrityError, transaction
+
 from accounts.models import User
 from activities.duplicates import duration_of
 from activities.load import load_of
@@ -26,8 +28,29 @@ from .models import WeekFeedback, WorkoutReview
 REVIEW_WEEKS = 4
 
 
+# The statuses that describe an activity: they cannot be set on a workout that has none.
+NEEDS_AN_ACTIVITY = frozenset({"done", "partial", "replaced"})
+
+
 class WeekNotReviewable(Exception):
     """The week is not one of ``reviewable_weeks``."""
+
+
+class WorkoutNotFound(Exception):
+    """The user has no such workout in the confirmed plan of the week."""
+
+
+class ActivityNotInWeek(Exception):
+    """The user has no such activity in the week (it may exist in another week or be another
+    user's: which is not said)."""
+
+
+class ActivityLinkedElsewhere(Exception):
+    """The activity is already assigned by hand to another workout."""
+
+
+class StatusNeedsAnActivity(Exception):
+    """``done``, ``partial`` and ``replaced`` describe an activity, and the workout has none."""
 
 
 @dataclass(frozen=True)
@@ -146,3 +169,90 @@ def _performed(activity: Activity, day: date) -> ActivityItem:
 
 def _local_midnight(day: date, zone: tzinfo) -> datetime:
     return datetime.combine(day, time.min, tzinfo=zone).astimezone(UTC)
+
+
+def correct(
+    user: User,
+    monday: date,
+    workout_id: UUID,
+    *,
+    activity_id: UUID | None = None,
+    no_activity: bool = False,
+    status: str = "",
+) -> WeekReview:
+    """Set what the user decides about one workout of the week, replacing an earlier decision, and
+    return the week as it is now. ``activity_id`` links an activity of the week, ``no_activity``
+    says that none belongs to it (not both), ``status`` sets how it went (``""``: worked out from
+    the activity). Nothing at all sets the workout back to the automatic match.
+
+    Raises ``WeekNotReviewable``, ``WorkoutNotFound``, ``ActivityNotInWeek``,
+    ``ActivityLinkedElsewhere`` and ``StatusNeedsAnActivity`` (a status that describes an activity
+    for a workout that has none, after the correction); in each case nothing is changed.
+    """
+    if activity_id is not None and no_activity:
+        raise ValueError("A workout has an activity or none, not both.")
+    current = week_review(user, monday)  # raises WeekNotReviewable
+    workout = next((item for item in current.workouts if item.pk == workout_id), None)
+    if workout is None:
+        raise WorkoutNotFound
+    if activity_id is not None and activity_id not in current.activity_days:
+        raise ActivityNotInWeek
+    try:
+        with transaction.atomic():
+            _store(user, workout, activity_id, no_activity, status)
+            after = week_review(user, monday)
+            matched = next(item for item in after.match.workouts if item.workout_id == workout.pk)
+            if status in NEEDS_AN_ACTIVITY and matched.activity_id is None:
+                raise StatusNeedsAnActivity
+    except IntegrityError:
+        # Another workout of the user holds the activity (the check of the database).
+        raise ActivityLinkedElsewhere from None
+    return after
+
+
+def save_feedback(
+    user: User,
+    monday: date,
+    *,
+    fatigue: int | None = None,
+    motivation: int | None = None,
+    pain: int | None = None,
+    notes: str = "",
+) -> WeekReview:
+    """Set the feedback on the week, replacing an earlier one, and return the week as it is now.
+    Feedback with nothing in it is no feedback: it is removed. Raises ``WeekNotReviewable``."""
+    if monday not in reviewable_weeks(user):
+        raise WeekNotReviewable
+    feedback = WeekFeedback.objects.for_user(user).filter(week_start=monday)
+    if fatigue is None and motivation is None and pain is None and not notes:
+        feedback.delete()
+    else:
+        WeekFeedback.objects.update_or_create(
+            owner=user,
+            week_start=monday,
+            defaults={
+                "fatigue": fatigue,
+                "motivation": motivation,
+                "pain": pain,
+                "notes": notes,
+            },
+        )
+    return week_review(user, monday)
+
+
+def _store(
+    user: User,
+    workout: PlannedWorkout,
+    activity_id: UUID | None,
+    no_activity: bool,
+    status: str,
+) -> None:
+    rows = WorkoutReview.objects.for_user(user).filter(workout=workout)
+    if activity_id is None and not no_activity and not status:
+        rows.delete()  # back to the automatic match
+        return
+    WorkoutReview.objects.update_or_create(
+        owner=user,
+        workout=workout,
+        defaults={"activity_id": activity_id, "no_activity": no_activity, "status": status},
+    )

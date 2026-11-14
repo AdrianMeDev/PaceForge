@@ -10,8 +10,10 @@ from typing import Any
 
 from rest_framework import serializers
 
+from activities.serializers import TextField, WholeNumberField, checked_note
+
 from .comparison import Comparison, Figures
-from .models import WeekFeedback
+from .models import NOTES_MAX, SCALE_MAX, SCALE_MIN, WeekFeedback, WorkoutReview
 from .services import WeekReview
 
 _TIME = serializers.DateTimeField()
@@ -140,3 +142,84 @@ def _id(value: Any) -> str | None:
 
 def _origin(value: Any) -> str | None:
     return None if value is None else str(value.value)
+
+
+# What the forms may say, in fixed words: nothing of the input is repeated in an answer.
+NOT_A_STATUS = "Choose one of the statuses."
+NOT_AN_ID = "Must be a valid id."
+NOT_A_BOOLEAN = "Must be true or false."
+ONLY_THESE_FIELDS = "Only the fields of this form can be sent."
+ACTIVITY_OR_NONE = "A workout has an activity or none, not both."
+
+
+class IdField(serializers.UUIDField):
+    """An id written as text. A number is not an id."""
+
+    default_error_messages = {"invalid": NOT_AN_ID}
+
+    def to_internal_value(self, data: Any) -> Any:
+        if not isinstance(data, str):
+            self.fail("invalid")
+        return super().to_internal_value(data)
+
+
+class FlagField(serializers.BooleanField):
+    """A JSON true or false. Text such as "true" and numbers are not flags."""
+
+    default_error_messages = {"invalid": NOT_A_BOOLEAN}
+
+    def to_internal_value(self, data: Any) -> bool:
+        if not isinstance(data, bool):
+            self.fail("invalid")
+        return data
+
+
+class _Form(serializers.Serializer[Any]):
+    """A form that replaces what was there: a field left out is empty, and a field that is not
+    part of the form is refused (a typo would otherwise silently clear a decision)."""
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        sent = self.initial_data
+        if not isinstance(sent, dict) or set(sent) - set(self.fields):
+            raise serializers.ValidationError(ONLY_THESE_FIELDS)
+        return attrs
+
+
+class CorrectionSerializer(_Form):
+    """What the user decides about one workout. ``activity`` links one, ``no_activity`` says that
+    none belongs to it, ``status`` sets how it went (empty: worked out from the activity). All
+    empty: back to the automatic match."""
+
+    activity = IdField(allow_null=True, required=False, default=None)
+    no_activity = FlagField(required=False, default=False)
+    status = serializers.ChoiceField(
+        choices=WorkoutReview.Status.choices,
+        allow_blank=True,
+        required=False,
+        default="",
+        error_messages={"invalid_choice": NOT_A_STATUS},
+    )
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        attrs = super().validate(attrs)
+        if attrs["activity"] is not None and attrs["no_activity"]:
+            raise serializers.ValidationError({"no_activity": [ACTIVITY_OR_NONE]})
+        return attrs
+
+
+class FeedbackSerializer(_Form):
+    """How the user felt about the week: three scales of 1 to 5 and a note."""
+
+    fatigue = WholeNumberField(
+        min_value=SCALE_MIN, max_value=SCALE_MAX, allow_null=True, required=False, default=None
+    )
+    motivation = WholeNumberField(
+        min_value=SCALE_MIN, max_value=SCALE_MAX, allow_null=True, required=False, default=None
+    )
+    pain = WholeNumberField(
+        min_value=SCALE_MIN, max_value=SCALE_MAX, allow_null=True, required=False, default=None
+    )
+    notes = TextField(max_length=NOTES_MAX, allow_blank=True, required=False, default="")
+
+    def validate_notes(self, value: str) -> str:
+        return checked_note(value)
