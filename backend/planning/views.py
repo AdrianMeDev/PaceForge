@@ -24,6 +24,7 @@ from . import services
 from .generation import NoTimeAvailable, PlanNotUsable, WeekNotPlannable, generate, plannable_weeks
 from .models import WeeklyPlan
 from .serializers import finding_data, plan_data, summary_data
+from .targets import Targets
 from .throttles import PlanGenerateThrottle
 from .validation import Report
 
@@ -57,7 +58,7 @@ def _detail(user: User, plan: WeeklyPlan, report: Report | None = None) -> Respo
         report = None
     elif report is None:
         report = services.validate(user, plan.pk)
-    return Response(plan_data(plan, week_plan, report))
+    return Response(plan_data(plan, week_plan, report, Targets(user)))
 
 
 class WeeksView(APIView):

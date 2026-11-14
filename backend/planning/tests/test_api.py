@@ -25,7 +25,17 @@ from coach.views import PROBLEMS
 from goals import services as goal_services
 from planning import services
 from planning.models import PlannedWorkout, WeeklyPlan
-from planning.schema import Goal, Slot, Sport, WeekPlan, Workout, ZoneSystem, to_json
+from planning.schema import (
+    Goal,
+    Segment,
+    SegmentKind,
+    Slot,
+    Sport,
+    WeekPlan,
+    Workout,
+    ZoneSystem,
+    to_json,
+)
 
 from .conftest import make_user, signed_in
 from .scripted import Scripted
@@ -64,6 +74,7 @@ WORKOUT_FIELDS = {
     "slot",
     "stretching_minutes",
     "segments",
+    "target",
 }
 
 
@@ -501,6 +512,44 @@ class TestReadingAPlan:
             ("Easy run", "morning", 10),
             ("Endurance ride", None, 0),
         ]
+
+    def test_zones_come_with_their_target_ranges(self, alice: User) -> None:
+        ThresholdValue.objects.create(
+            owner=alice, sport="run", metric="lthr", value=170, source="manual", basis="test"
+        )
+        interval = Workout(
+            day=MONDAY,
+            sport=Sport.RUNNING,
+            title="Intervals",
+            goal=Goal.VO2MAX,
+            duration_minutes=50,
+            segments=(
+                Segment(SegmentKind.WARMUP, 600, 1, ZoneSystem.HEART_RATE, 1),
+                Segment(SegmentKind.WORK, 300, 4, ZoneSystem.HEART_RATE, 5),
+                Segment(SegmentKind.COOLDOWN, 600),
+            ),
+        )
+        plan = draft(alice, ride(2), interval)
+
+        data = body(signed_in(alice).call("GET", plan_url(plan.pk)))
+
+        run, cycling = data["workouts"]
+        assert cycling["target"] == {"low": 138, "high": 188, "unit": "W"}
+        assert run["target"] is None  # no zone for the whole session
+        assert [segment["target"] for segment in run["segments"]] == [
+            {"low": 111, "high": 145, "unit": "bpm"},
+            {"low": 170, "high": 179, "unit": "bpm"},
+            None,
+        ]
+
+    def test_a_zone_without_a_threshold_has_no_target(self, alice: User) -> None:
+        ThresholdValue.objects.filter(owner=alice).delete()
+        plan = draft(alice, ride(0))
+
+        data = body(signed_in(alice).call("GET", plan_url(plan.pk)))
+
+        assert data["workouts"][0]["zone"] == 2
+        assert data["workouts"][0]["target"] is None
 
     def test_a_confirmed_plan_has_no_report(self, alice: User) -> None:
         plan = services.confirm(alice, draft(alice).pk)
