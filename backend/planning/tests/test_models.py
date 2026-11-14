@@ -12,11 +12,13 @@ from planning.models import (
     NOTES_MAX,
     RATIONALE_MAX,
     REASON_MAX,
+    STRETCHING_MAX,
     TITLE_MAX,
     ZONE_COUNT,
     PlannedWorkout,
     WeeklyPlan,
 )
+from planning.schema import Slot
 
 pytestmark = pytest.mark.django_db
 
@@ -79,6 +81,7 @@ class TestLimits:
     def test_the_limits_are_written_out_on_purpose(self) -> None:
         # The other tests read the constants and would follow a change.
         assert (TITLE_MAX, NOTES_MAX, REASON_MAX, RATIONALE_MAX) == (100, 500, 200, 1000)
+        assert STRETCHING_MAX == 60
 
     def test_the_zone_counts_are_those_of_the_zone_models(self) -> None:
         power = power_zones(250)
@@ -275,6 +278,50 @@ class TestAWorkout:
         assert (workout.zone_system, workout.zone) == ("", None)
         assert (workout.position, workout.notes) == (0, "")
         assert workout.pk.version == 7
+
+    def test_the_defaults_of_time_of_day_and_stretching(self, alice: User) -> None:
+        workout = make_workout(make_plan(alice))
+
+        assert (workout.slot, workout.stretching_minutes) == ("", 0)
+
+    @pytest.mark.parametrize("slot", ["", "morning", "afternoon", "evening"])
+    def test_every_time_of_day_is_valid(self, alice: User, slot: str) -> None:
+        PlannedWorkout(owner=alice, plan=make_plan(alice), **workout_fields(slot=slot)).full_clean(
+            exclude=["owner"]
+        )
+
+    @pytest.mark.parametrize("slot", ["noon", "Morning", "night", "0"])
+    def test_another_time_of_day_is_refused(self, alice: User, slot: str) -> None:
+        workout = PlannedWorkout(owner=alice, plan=make_plan(alice), **workout_fields(slot=slot))
+
+        refused(workout, "slot")
+
+    @pytest.mark.parametrize("minutes", [0, 1, 30, 60])
+    def test_up_to_an_hour_of_stretching_is_valid(self, alice: User, minutes: int) -> None:
+        PlannedWorkout(
+            owner=alice, plan=make_plan(alice), **workout_fields(stretching_minutes=minutes)
+        ).full_clean(exclude=["owner"])
+
+    @pytest.mark.parametrize("minutes", [STRETCHING_MAX + 1, 100, 1000])
+    def test_more_stretching_is_refused_by_the_database(self, alice: User, minutes: int) -> None:
+        message = rejected_by_database(
+            PlannedWorkout,
+            owner=alice,
+            plan=make_plan(alice),
+            **workout_fields(stretching_minutes=minutes),
+        )
+
+        assert "planning_stretching_in_range" in message
+
+    def test_the_database_refuses_an_unknown_time_of_day(self, alice: User) -> None:
+        message = rejected_by_database(
+            PlannedWorkout, owner=alice, plan=make_plan(alice), **workout_fields(slot="noon")
+        )
+
+        assert "planning_slot_is_known" in message
+
+    def test_the_times_of_day_are_those_of_the_format(self) -> None:
+        assert [slot.value for slot in PlannedWorkout.Slot] == [slot.value for slot in Slot]
 
     @pytest.mark.parametrize("sport", ["running", "cycling", "swimming", "strength"])
     def test_every_sport_is_valid(self, alice: User, sport: str) -> None:

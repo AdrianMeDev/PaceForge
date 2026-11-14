@@ -342,6 +342,84 @@ class TestLoading:
             "Friday",
         ]
 
+    def test_time_of_day_and_stretching_are_stored_and_read_back(self, alice: User) -> None:
+        plan = draft(
+            alice,
+            WeekPlan(
+                MONDAY,
+                (
+                    workout(MONDAY, 0, 50, title="Run", slot=Slot.MORNING, stretching_minutes=10),
+                    workout(MONDAY, 0, 60, title="Ride", slot=Slot.AFTERNOON),
+                    workout(MONDAY, 2, 40, title="Plain"),
+                ),
+            ),
+        )
+
+        rows = list(PlannedWorkout.objects.filter(plan=plan))
+        assert [(r.title, r.slot, r.stretching_minutes) for r in rows] == [
+            ("Run", "morning", 10),
+            ("Ride", "afternoon", 0),
+            ("Plain", "", 0),
+        ]
+        read = load(alice, plan.pk).workouts
+        assert [(w.title, w.slot, w.stretching_minutes) for w in read] == [
+            ("Run", Slot.MORNING, 10),
+            ("Ride", Slot.AFTERNOON, 0),
+            ("Plain", None, 0),
+        ]
+
+    def test_the_positions_follow_the_times_of_day_whatever_the_order_given(
+        self, alice: User
+    ) -> None:
+        plan = draft(
+            alice,
+            WeekPlan(
+                MONDAY,
+                (
+                    workout(MONDAY, 1, 30, title="Evening", slot=Slot.EVENING),
+                    workout(MONDAY, 1, 31, title="No time"),
+                    workout(MONDAY, 1, 32, title="Morning", slot=Slot.MORNING),
+                ),
+            ),
+        )
+
+        rows = PlannedWorkout.objects.filter(plan=plan).order_by("position")
+
+        assert [(r.position, r.title) for r in rows] == [
+            (0, "Morning"),
+            (1, "Evening"),
+            (2, "No time"),
+        ]
+        assert [w.title for w in load(alice, plan.pk).workouts] == ["Morning", "Evening", "No time"]
+
+    def test_a_plan_that_was_saved_before_these_fields_reads_without_them(
+        self, alice: User
+    ) -> None:
+        plan = draft(alice, WeekPlan(MONDAY, (workout(MONDAY, 0, 30),)))
+        PlannedWorkout.objects.filter(plan=plan).update(slot="", stretching_minutes=0)
+
+        (read,) = load(alice, plan.pk).workouts
+
+        assert (read.slot, read.stretching_minutes) == (None, 0)
+
+    def test_the_findings_of_a_double_day_point_into_the_stored_order(self, alice: User) -> None:
+        # given evening first: stored and validated as morning (0), evening (1)
+        plan = draft(
+            alice,
+            WeekPlan(
+                MONDAY,
+                (
+                    workout(MONDAY, 1, 30, slot=Slot.EVENING),
+                    workout(MONDAY, 1, 40, slot=Slot.MORNING),
+                ),
+            ),
+        )
+
+        stored = load(alice, plan.pk)
+
+        assert [w.slot for w in stored.workouts] == [Slot.MORNING, Slot.EVENING]
+        assert stored == canonical(stored)
+
     def test_the_position_decides_the_order_within_a_day_not_the_id(self, alice: User) -> None:
         plan = draft(
             alice,

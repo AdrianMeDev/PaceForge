@@ -68,6 +68,7 @@ def save_draft(
     plain line saying why. Nothing is stored if anything goes wrong. The plan is stored as it is,
     even if the validation has things to say about it."""
     reason = _clean_reason(reason)
+    week_plan = canonical(week_plan)  # stored and read back in the order of the day
     if parent is not None:
         replaced = get(user, parent)
         if replaced.week_start != week_plan.week_start:
@@ -100,6 +101,7 @@ def load(user: User, plan_id: UUID) -> WeekPlan:
             **workout_row,
             "day": workout_row["day"].isoformat(),
             "zone_system": workout_row["zone_system"] or None,
+            "slot": workout_row["slot"] or None,
         }
         for workout_row in PlannedWorkout.objects.for_user(user)
         .filter(plan=plan)
@@ -114,6 +116,8 @@ def load(user: User, plan_id: UUID) -> WeekPlan:
             "zone",
             "notes",
             "segments",
+            "slot",
+            "stretching_minutes",
         )
     ]
     return parse_week_plan(
@@ -214,6 +218,8 @@ def _store(user: User, week_plan: WeekPlan, reason: str, parent: UUID | None) ->
                 zone_system=workout.zone_system.value if workout.zone_system else "",
                 zone=workout.zone,
                 notes=workout.notes,
+                slot=workout.slot.value if workout.slot else "",
+                stretching_minutes=workout.stretching_minutes,
             )
         )
     PlannedWorkout.objects.bulk_create(rows)

@@ -8,7 +8,14 @@ from django.db.models import F, Q
 
 from core.models import OwnedModel
 
-from .schema import DURATION_MAX, NOTES_MAX, RATIONALE_MAX, TITLE_MAX, ZONE_COUNT
+from .schema import (
+    DURATION_MAX,
+    NOTES_MAX,
+    RATIONALE_MAX,
+    STRETCHING_MAX,
+    TITLE_MAX,
+    ZONE_COUNT,
+)
 
 REASON_MAX = 200
 # The other limits are those of the format in ``planning.schema``, the single source.
@@ -117,6 +124,11 @@ class PlannedWorkout(OwnedModel):
         HEART_RATE = "heart_rate", "Heart rate"
         PACE = "pace", "Pace"
 
+    class Slot(models.TextChoices):
+        MORNING = "morning", "Morning"
+        AFTERNOON = "afternoon", "Afternoon"
+        EVENING = "evening", "Evening"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid7, editable=False)
     plan = models.ForeignKey(WeeklyPlan, on_delete=models.CASCADE, related_name="workouts")
     day = models.DateField()
@@ -130,6 +142,10 @@ class PlannedWorkout(OwnedModel):
     zone_system = models.CharField(max_length=20, choices=ZoneSystem.choices, blank=True)
     zone = models.PositiveSmallIntegerField(null=True, blank=True)
     notes = models.CharField(max_length=NOTES_MAX, blank=True)
+    # When on the day; empty: not said. The ``position`` follows the order of the times of day.
+    slot = models.CharField(max_length=20, choices=Slot.choices, blank=True)
+    # Stretching added to this workout (0: none): never a workout of its own.
+    stretching_minutes = models.PositiveSmallIntegerField(default=0)
 
     class Meta:
         ordering = ["day", "position", "id"]
@@ -138,6 +154,14 @@ class PlannedWorkout(OwnedModel):
                 fields=["plan", "day", "position"], name="planning_one_workout_per_slot"
             ),
             models.CheckConstraint(condition=~Q(title=""), name="planning_workout_has_a_title"),
+            models.CheckConstraint(
+                condition=Q(slot__in=["", "morning", "afternoon", "evening"]),
+                name="planning_slot_is_known",
+            ),
+            models.CheckConstraint(
+                condition=Q(stretching_minutes__lte=STRETCHING_MAX),
+                name="planning_stretching_in_range",
+            ),
             models.CheckConstraint(
                 condition=Q(duration_minutes__gte=1, duration_minutes__lte=DURATION_MAX),
                 name="planning_duration_in_range",
