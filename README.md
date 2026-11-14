@@ -497,12 +497,19 @@ a big first week after a long break, so enter what you really want to build up t
 wants more care can lower `TYPICAL_VOLUME_PERCENT` in `backend/planning/rules.py` (100 counts the
 whole week, 70 would count 70 % of it).
 
+**Sports and stretching.** Tick the sports you want in your plan: **Running**, **Cycling**,
+**Swimming** and **Strength / gym** (at least one; if you never chose, all four count). Your coach
+plans only those, and the checks refuse a workout in any other sport. **Add stretching to sessions**
+lets the coach add a few minutes of stretching to a session: it is never a session of its own, it
+uses up none of your minutes and it does not count as a training day. Off is the default.
+
 **Limitations.** Free text of up to 1000 characters ("no running on consecutive days"). It is kept
 and shown as plain text, never as markup. Nothing interprets it, and it is not sent to the coach
 either: it is free text about you, and the only free text the coach sees is the title and notes of
 your goals.
 
-**Save** sends the weekdays, the budget, the normal week and the limitations together. The page checks the limits
+**Save** sends the weekdays, the budget, the normal week, the sports, the stretching choice and the
+limitations together. The page checks the limits
 first and names every problem next to its field; if the server still refuses something, its message
 appears in the same place. Nothing is saved until every field is usable.
 
@@ -547,6 +554,13 @@ links to the Connections page.
    Drafting again makes a **new version** of the week; all versions stay in the list, and
    confirming a draft replaces the version that was confirmed before.
 
+**Two sessions a day.** A day may have two sessions, rarely three, for example an easy run in the
+morning and a ride in the afternoon. Each of them has a time of day (**morning**, **afternoon** or
+**evening**) shown next to it; no two sessions of a day share one, and a day with several sessions
+should name a time for each (the checks say so). The time you have is still given **per day**: the
+coach splits it over the day, and does not know that you can only train in the evening. Stretching
+comes as "+ 10 min stretching" under a session, only if you switched it on, and never as a session.
+
 **After a break.** If the plans look too small, enter **A normal week** on the
 [Training time](#training-time) page: the limit for how far a week may rise then follows what you
 are used to and not only the last four weeks.
@@ -556,9 +570,9 @@ or away the whole week), the page says "You have no training time for this week.
 the Training time page. Nothing is sent to your provider then, so it costs nothing.
 
 The coach is told only a fixed set of facts: the week and today, the minutes you can train on each
-day and your absences, your weekly budget, your zone tables, your active goals (title and notes),
-the minutes you trained in the last four weeks, your normal week if you gave one and a summary of
-last week's confirmed plan. **Not**
+day and your absences, your weekly budget, your zone tables, the sports you ticked and whether
+stretching is allowed, your active goals (title and notes), the minutes you trained in the last
+four weeks, your normal week if you gave one and a summary of last week's confirmed plan. **Not**
 your name, e-mail address, activities' names, the limitations you wrote on the training time page
 or anything of other users. A goal's title and notes are free text, and a model can be influenced by
 text; whatever it answers still has to pass the strict reading and the checks before it is a draft,

@@ -13,6 +13,7 @@ from django.conf import settings
 from django.urls import get_resolver
 
 from accounts.models import User
+from availability.models import SPORTS
 from availability.serializers import availability_data
 from coach.endpoints import parse_base_urls
 from coach.providers.openai_compatible import JSON_MODE_HOSTS
@@ -372,6 +373,44 @@ class TestTheReadmeOnTheTypicalWeek:
     def test_the_limitations_are_not_said_to_go_to_the_coach(self) -> None:
         assert "it is there for the coach" not in FLAT_README
         assert "it is not sent to the coach either" in FLAT_README
+
+
+class TestTheReadmeOnSportsAndDoubleDays:
+    PAGE = (ROOT / "frontend/src/app/features/availability/availability-page.html").read_text()
+
+    def test_the_labels_of_the_page_are_the_words_of_the_readme(self) -> None:
+        for label in ("Sports for your plan", "Add stretching to sessions"):
+            assert label in self.PAGE, label
+        assert "**Add stretching to sessions**" in FLAT_README
+        assert "<legend>Sports for your plan</legend>" in self.PAGE
+
+    def test_the_four_sports_are_named_as_the_page_names_them(self) -> None:
+        for name in ("Running", "Cycling", "Swimming", "Strength / gym"):
+            assert f"**{name}**" in FLAT_README, name
+        assert len(SPORTS) == 4
+
+    def test_the_three_times_of_day_are_those_of_the_format(self) -> None:
+        for slot in schema.Slot:
+            assert f"**{slot.value}**" in FLAT_README, slot
+
+    def test_stretching_is_said_to_be_never_a_session_and_to_cost_no_time(self) -> None:
+        assert "never a session of its own" in FLAT_README
+        assert "uses up none of your minutes" in FLAT_README
+        assert "+ 10 min stretching" in FLAT_README
+
+    def test_the_time_per_day_limit_is_admitted(self) -> None:
+        assert "given **per day**" in FLAT_README
+        assert "does not know that you can only train in the evening" in FLAT_README
+
+    def test_the_format_page_says_what_the_fields_mean(self) -> None:
+        text = section("The format")
+
+        assert f"0 to {schema.STRETCHING_MAX}" in text
+        assert "**never a workout of its own**" in " ".join(text.split())
+        assert "`stretching_minutes`" in text and "`slot`" in text
+
+    def test_the_old_sentence_about_no_time_of_day_is_gone(self) -> None:
+        assert "There is **no time of day**" not in DOC
 
 
 class TestTheReadmeTable:

@@ -103,6 +103,14 @@ characters are refused everywhere (line breaks are allowed in `notes` and `ratio
 are the line and paragraph separators and the characters that reorder text on screen. A text that
 is not text, such as a number, is refused instead of being turned into text.
 
+**Time of day and stretching.** `slot` says when on the day a workout is: `morning`, `afternoon` or
+`evening`. It is an order and no clock time. Several workouts on one day are welcome (an easy run
+in the morning, a ride in the afternoon), each with a time of its own; the stored order of a day
+follows the times of day (a workout without one comes last). `stretching_minutes` adds stretching
+to a workout. Stretching is **never a workout of its own**: it is not a sport, it is not part of
+`duration_minutes`, it uses up no minutes of the day or the week, it does not count for the
+progression rule and it is not a training day. It is only allowed if the athlete switched it on.
+
 **Errors.** The parser reports *every* problem at once, each with its path
 (`workouts[2].segments[0].seconds`). One mistake is one problem: a missing field is reported once.
 No message repeats anything that was sent; an unknown field is named only if it looks like a name.
@@ -360,7 +368,10 @@ without a code is the limit of PaceForge itself.
 - The **limitations** the user wrote on the training time page are free text. A machine cannot
   check them, and they are **not sent to the coach** either: they are free text about the body of
   the user. The only free text the coach sees is the title and notes of the goals.
-- There is **no time of day**: two workouts on one day add up, they cannot overlap.
+- The **time of day** is only an order (morning, afternoon, evening), not a clock time: two
+  workouts on one day add up, and PaceForge does not know that you can only train in the evening,
+  because the time you have is given per day. A plan can put the morning on a day when you are not
+  free then.
 - Whether a plan is *good* training: the rules only keep out what is impossible or plainly unwise.
 - Anything about the weeks before or after the plan beyond the recent average and the typical week.
 
