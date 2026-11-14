@@ -10,5 +10,6 @@ urlpatterns = [
         views.CorrectionView.as_view(),
         name="reviews-correction",
     ),
+    path("weeks/<str:week>/comment/", views.CommentView.as_view(), name="reviews-comment"),
     path("weeks/<str:week>/feedback/", views.FeedbackView.as_view(), name="reviews-feedback"),
 ]

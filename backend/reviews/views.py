@@ -9,8 +9,12 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts.models import User
+from coach.providers.base import ProviderError
+from coach.services import NotConfiguredError
+from coach.views import provider_problem
 from planning.models import WeeklyPlan
 
+from .commenting import CommentNotUsable, NothingToReview, comment_on
 from .models import WeekFeedback
 from .serializers import CorrectionSerializer, FeedbackSerializer, review_data, week_list_data
 from .services import (
@@ -24,6 +28,7 @@ from .services import (
     save_feedback,
     week_review,
 )
+from .throttles import ReviewCommentThrottle
 
 # Fixed texts, with a code the client can act on: nothing of the request goes into an error.
 NOT_REVIEWABLE = "This week cannot be reviewed."
@@ -31,6 +36,9 @@ NO_SUCH_WORKOUT = "There is no such workout in this week."
 ACTIVITY_NOT_IN_WEEK = "Choose an activity of this week."
 ACTIVITY_TAKEN = "This activity is already assigned to another workout."
 STATUS_NEEDS_AN_ACTIVITY = "This status needs an activity. Link one first."
+NOTHING_TO_REVIEW = "There is nothing to look back on in this week yet."
+NOT_CONFIGURED = "No AI provider is set up."
+NOT_USABLE = "The coach did not give a comment that can be used. Please try again."
 
 _WEEK = re.compile(r"\d{4}-\d{2}-\d{2}")
 
@@ -150,3 +158,39 @@ class FeedbackView(APIView):
         except WeekNotReviewable:
             return _error(status.HTTP_404_NOT_FOUND, "week_not_reviewable", NOT_REVIEWABLE)
         return Response(review_data(review))
+
+
+class CommentView(APIView):
+    """Asks the user's own coach to comment on a week. Synchronous: the answer can take up to a
+    minute or two. The answer is the whole week, with the comment in it."""
+
+    throttle_classes = [ReviewCommentThrottle]
+    http_method_names = ["post", "options"]
+
+    def post(self, request: Request, week: str) -> Response:
+        user = _user(request)
+        monday = parse_week(week)
+        if monday is None:
+            return _error(status.HTTP_404_NOT_FOUND, "week_not_reviewable", NOT_REVIEWABLE)
+        try:
+            comment_on(user, monday)
+        except WeekNotReviewable:
+            return _error(status.HTTP_404_NOT_FOUND, "week_not_reviewable", NOT_REVIEWABLE)
+        except NothingToReview:
+            return _error(status.HTTP_409_CONFLICT, "nothing_to_review", NOTHING_TO_REVIEW)
+        except NotConfiguredError:
+            return _error(status.HTTP_409_CONFLICT, "not_configured", NOT_CONFIGURED)
+        except CommentNotUsable as error:
+            return Response(
+                {
+                    "detail": NOT_USABLE,
+                    "code": "not_usable",
+                    "problems": [{"path": p.path, "message": p.message} for p in error.problems],
+                },
+                status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+        except ProviderError as error:
+            return provider_problem(error)
+        response = Response(review_data(week_review(user, monday)))
+        response.status_code = status.HTTP_201_CREATED
+        return response
