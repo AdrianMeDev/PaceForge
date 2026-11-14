@@ -34,6 +34,8 @@ from planning.models import PlannedWorkout, WeeklyPlan
 from planning.prompt import SYSTEM_PROMPT
 from planning.schema import Goal, Sport, WeekPlan, Workout, ZoneSystem, to_json
 
+from .scripted import Scripted
+
 pytestmark = pytest.mark.django_db
 
 # A Wednesday: the week that can be planned first starts on Monday the 12th.
@@ -42,28 +44,6 @@ THIS_WEEK = date(2027, 7, 12)
 MONDAY = date(2027, 7, 19)
 KEY = "sk-ant-test-0123456789-abcdefghij"
 Status = WeeklyPlan.Status
-
-
-class Scripted:
-    """A provider that answers from a list, and remembers what it was asked."""
-
-    def __init__(self, *replies: Any) -> None:
-        self.replies = list(replies)
-        self.calls: list[tuple[str, list[Message], int]] = []
-        self.before_answer: Callable[[], None] | None = None
-
-    def complete(self, system: str, messages: Any, max_tokens: int) -> Completion:
-        self.calls.append((system, list(messages), max_tokens))
-        if self.before_answer:
-            self.before_answer()
-            self.before_answer = None
-        reply = self.replies.pop(0)
-        if isinstance(reply, Exception):
-            raise reply
-        if isinstance(reply, str):
-            return Completion(reply, 100, 50)
-        assert isinstance(reply, Completion)
-        return reply
 
 
 @pytest.fixture(autouse=True)
@@ -88,16 +68,6 @@ def alice() -> User:
 @pytest.fixture
 def bob() -> User:
     return User.objects.create_user("bob@example.com")
-
-
-@pytest.fixture
-def provide(monkeypatch: pytest.MonkeyPatch) -> Callable[..., Scripted]:
-    def install(*replies: Any) -> Scripted:
-        scripted = Scripted(*replies)
-        monkeypatch.setattr(coach_services, "provider_for", lambda configuration: scripted)
-        return scripted
-
-    return install
 
 
 def ride(offset: int, minutes: int = 60, monday: date = MONDAY, **fields: Any) -> Workout:

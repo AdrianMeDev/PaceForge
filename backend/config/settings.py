@@ -147,6 +147,7 @@ REST_FRAMEWORK = {
         "provider_connection": "10/min",
         "activity_import": "30/min",
         "coach_check": "10/min",
+        "planning_generate": "5/min",
     },
 }
 
