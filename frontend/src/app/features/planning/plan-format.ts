@@ -6,6 +6,7 @@ import {
   WorkoutGoal,
   WorkoutSlot,
   ZoneSystem,
+  ZoneTarget,
 } from '../../core/planning/planning-models';
 
 export const SPORT_LABELS: Record<Sport, string> = {
@@ -89,9 +90,33 @@ export function minutesText(minutes: number): string {
   return rest === 0 ? `${hours} h` : `${hours} h ${rest} min`;
 }
 
-/** "Power zone 2"; empty without a target. */
-export function targetText(system: ZoneSystem | null, zone: number | null): string {
-  return system === null || zone === null ? '' : `${ZONE_SYSTEM_LABELS[system]} zone ${zone}`;
+/** "138–188 W", "145–152 bpm", "4:20–4:45 /km": the numbers of a zone; empty without a range. */
+export function rangeText(range: ZoneTarget | null): string {
+  if (range === null) {
+    return '';
+  }
+  if (range.unit === 's/km') {
+    return `${paceText(range.low)}–${paceText(range.high)} /km`;
+  }
+  return `${range.low}–${range.high} ${range.unit}`;
+}
+
+function paceText(secondsPerKm: number): string {
+  const seconds = secondsPerKm % 60;
+  return `${Math.floor(secondsPerKm / 60)}:${seconds < 10 ? '0' : ''}${seconds}`;
+}
+
+/** "Power zone 2" or "Power zone 2 · 138–188 W"; empty without a target. */
+export function targetText(
+  system: ZoneSystem | null,
+  zone: number | null,
+  range: ZoneTarget | null = null,
+): string {
+  if (system === null || zone === null) {
+    return '';
+  }
+  const text = `${ZONE_SYSTEM_LABELS[system]} zone ${zone}`;
+  return range === null ? text : `${text} · ${rangeText(range)}`;
 }
 
 /** "3 × 10 min work, power zone 4", "15 min warm-up": one part of an interval workout. */
@@ -106,7 +131,7 @@ export function segmentText(segment: Segment): string {
         ? `${minutes} min`
         : `${minutes} min ${seconds} s`;
   const repeat = segment.repeat > 1 ? `${segment.repeat} × ` : '';
-  const target = targetText(segment.zone_system, segment.zone);
+  const target = targetText(segment.zone_system, segment.zone, segment.target);
   const text = `${repeat}${length} ${SEGMENT_LABELS[segment.kind]}`;
   return target === '' ? text : `${text}, ${target.charAt(0).toLowerCase()}${target.slice(1)}`;
 }

@@ -37,6 +37,7 @@ const DRAFT = {
       notes: 'Keep it easy',
       slot: null,
       stretching_minutes: 0,
+      target: null,
       segments: [],
     },
     {
@@ -50,6 +51,7 @@ const DRAFT = {
       notes: 'Keep it easy',
       slot: null,
       stretching_minutes: 0,
+      target: null,
       segments: [],
     },
     {
@@ -63,11 +65,12 @@ const DRAFT = {
       notes: 'Keep it easy',
       slot: null,
       stretching_minutes: 0,
+      target: null,
       segments: [
-        { kind: 'warmup', seconds: 900, repeat: 1, zone_system: 'power', zone: 2 },
-        { kind: 'work', seconds: 600, repeat: 3, zone_system: 'power', zone: 4 },
-        { kind: 'recovery', seconds: 300, repeat: 3, zone_system: 'power', zone: 1 },
-        { kind: 'cooldown', seconds: 600, repeat: 1, zone_system: 'power', zone: 1 },
+        { kind: 'warmup', seconds: 900, repeat: 1, zone_system: 'power', zone: 2, target: null },
+        { kind: 'work', seconds: 600, repeat: 3, zone_system: 'power', zone: 4, target: null },
+        { kind: 'recovery', seconds: 300, repeat: 3, zone_system: 'power', zone: 1, target: null },
+        { kind: 'cooldown', seconds: 600, repeat: 1, zone_system: 'power', zone: 1, target: null },
       ],
     },
   ],
@@ -105,6 +108,7 @@ const CONFIRMED = {
       notes: '',
       slot: null,
       stretching_minutes: 0,
+      target: null,
       segments: [],
     },
   ],
@@ -284,6 +288,28 @@ const WRONG_PLANS: [string, unknown][] = [
   ['a fraction as stretching', altered(DRAFT, [[...WORKOUT, 'stretching_minutes'], 7.5])],
   ['negative stretching', altered(DRAFT, [[...WORKOUT, 'stretching_minutes'], -1])],
   ['more than an hour of stretching', altered(DRAFT, [[...WORKOUT, 'stretching_minutes'], 61])],
+  ['no target', altered(DRAFT, [[...WORKOUT, 'target'], REMOVE])],
+  ['a text as target', altered(DRAFT, [[...WORKOUT, 'target'], '138-188 W'])],
+  [
+    'a list as target',
+    altered(DRAFT, [
+      [...WORKOUT, 'target'],
+      [138, 188],
+    ]),
+  ],
+  [
+    'a target that falls',
+    altered(DRAFT, [[...WORKOUT, 'target'], { low: 188, high: 138, unit: 'W' }]),
+  ],
+  [
+    'a target with an unknown unit',
+    altered(DRAFT, [[...WORKOUT, 'target'], { low: 138, high: 188, unit: 'kJ' }]),
+  ],
+  [
+    'a target with a fraction',
+    altered(DRAFT, [[...WORKOUT, 'target'], { low: 138.5, high: 188, unit: 'W' }]),
+  ],
+  ['no target on a segment', altered(DRAFT, [[...SEGMENT, 'target'], REMOVE])],
   ['no notes', altered(DRAFT, [[...WORKOUT, 'notes'], REMOVE])],
   ['a number as notes', altered(DRAFT, [[...WORKOUT, 'notes'], 5])],
   ['no segments', altered(DRAFT, [[...WORKOUT, 'segments'], REMOVE])],
@@ -813,6 +839,23 @@ describe('PlanningApi', () => {
 
       expect(request.request.body).toBeNull();
       expect(result).toEqual({ kind: 'ok', plan: DRAFT as WeekPlan });
+    });
+
+    it('returns the target ranges of workouts and segments', async () => {
+      const withTargets = altered(
+        DRAFT,
+        [[...WORKOUT, 'target'], { low: 138, high: 188, unit: 'W' }],
+        [[...SEGMENT, 'target'], { low: 248, high: 300, unit: 'W' }],
+      );
+
+      const { result } = await run(api.get(DRAFT_ID), 'GET', URL, withTargets as object, 200);
+
+      expect(result).toMatchObject({ kind: 'ok' });
+      const workouts = (result as { plan: WeekPlan }).plan.workouts;
+      expect(workouts[0].target).toEqual({ low: 138, high: 188, unit: 'W' });
+      expect(workouts[1].target).toBeNull();
+      expect(workouts[2].segments[0].target).toEqual({ low: 248, high: 300, unit: 'W' });
+      expect(workouts[2].segments[1].target).toBeNull();
     });
 
     it('returns a confirmed plan without checks', async () => {

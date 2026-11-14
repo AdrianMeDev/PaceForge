@@ -60,6 +60,7 @@ function plan(changes: Partial<WeekPlan> = {}): WeekPlan {
         notes: 'Keep it easy',
         slot: null,
         stretching_minutes: 0,
+        target: null,
         segments: [],
       },
       {
@@ -73,6 +74,7 @@ function plan(changes: Partial<WeekPlan> = {}): WeekPlan {
         notes: '',
         slot: null,
         stretching_minutes: 0,
+        target: null,
         segments: [],
       },
       {
@@ -86,9 +88,10 @@ function plan(changes: Partial<WeekPlan> = {}): WeekPlan {
         notes: '',
         slot: null,
         stretching_minutes: 0,
+        target: null,
         segments: [
-          { kind: 'warmup', seconds: 900, repeat: 1, zone_system: 'pace', zone: 2 },
-          { kind: 'work', seconds: 600, repeat: 3, zone_system: 'pace', zone: 4 },
+          { kind: 'warmup', seconds: 900, repeat: 1, zone_system: 'pace', zone: 2, target: null },
+          { kind: 'work', seconds: 600, repeat: 3, zone_system: 'pace', zone: 4, target: null },
         ],
       },
     ],
@@ -496,6 +499,39 @@ describe('PlanningPage', () => {
       await setup({ plans: { [DRAFT_ID]: { kind: 'ok', plan: plan({ workouts: [] }) } } });
 
       expect(text()).toContain('The plan has no workouts.');
+    });
+  });
+
+  describe('zones with numbers', () => {
+    const base = plan();
+    const WITH_TARGETS = plan({
+      workouts: [
+        { ...base.workouts[0], target: { low: 138, high: 188, unit: 'W' } },
+        {
+          ...base.workouts[2],
+          segments: [
+            { ...base.workouts[2].segments[0], target: { low: 312, high: 341, unit: 's/km' } },
+            base.workouts[2].segments[1],
+          ],
+        },
+      ],
+    });
+
+    beforeEach(() => setup({ plans: { [DRAFT_ID]: { kind: 'ok', plan: WITH_TARGETS } } }));
+
+    it('shows the range next to the zone of a workout', () => {
+      const meta = byId('workout-1')?.querySelector('[data-testid="meta"]');
+      expect(meta?.textContent?.replace(/\s+/g, ' ').trim()).toBe('1 h · Power zone 2 · 138–188 W');
+    });
+
+    it('shows the range next to the zone of a segment, and none where there is none', () => {
+      const parts = Array.from(byId('workout-2')?.querySelectorAll('.segments li') ?? []).map(
+        (li) => li.textContent?.trim(),
+      );
+      expect(parts).toEqual([
+        '15 min warm-up, pace zone 2 · 5:12–5:41 /km',
+        '3 × 10 min work, pace zone 4',
+      ]);
     });
   });
 

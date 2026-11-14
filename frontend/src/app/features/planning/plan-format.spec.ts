@@ -7,6 +7,7 @@ import {
   dayLabel,
   findingPlace,
   minutesText,
+  rangeText,
   segmentText,
   stretchingText,
   targetText,
@@ -14,7 +15,15 @@ import {
 } from './plan-format';
 
 function segment(changes: Partial<Segment> = {}): Segment {
-  return { kind: 'work', seconds: 600, repeat: 1, zone_system: null, zone: null, ...changes };
+  return {
+    kind: 'work',
+    seconds: 600,
+    repeat: 1,
+    zone_system: null,
+    zone: null,
+    target: null,
+    ...changes,
+  };
 }
 
 describe('labels', () => {
@@ -95,6 +104,35 @@ describe('targetText', () => {
   it('is empty without a target', () => {
     expect(targetText(null, null)).toBe('');
   });
+
+  it('adds the numbers of the zone when it has them', () => {
+    expect(targetText('power', 2, { low: 138, high: 188, unit: 'W' })).toBe(
+      'Power zone 2 · 138–188 W',
+    );
+  });
+
+  it('stays as it is if the zone has no numbers', () => {
+    expect(targetText('power', 2, null)).toBe('Power zone 2');
+  });
+
+  it('says nothing about numbers without a zone', () => {
+    expect(targetText(null, null, { low: 138, high: 188, unit: 'W' })).toBe('');
+  });
+});
+
+describe('rangeText', () => {
+  it.each([
+    [{ low: 138, high: 188, unit: 'W' }, '138–188 W'],
+    [{ low: 145, high: 152, unit: 'bpm' }, '145–152 bpm'],
+    [{ low: 312, high: 341, unit: 's/km' }, '5:12–5:41 /km'],
+    [{ low: 245, high: 305, unit: 's/km' }, '4:05–5:05 /km'],
+  ] as const)('writes %j as "%s"', (range, expected) => {
+    expect(rangeText(range)).toBe(expected);
+  });
+
+  it('is empty without a range', () => {
+    expect(rangeText(null)).toBe('');
+  });
 });
 
 describe('SLOT_LABELS', () => {
@@ -159,6 +197,19 @@ describe('segmentText', () => {
 
   it('does not count a repeat of 1', () => {
     expect(segmentText(segment({ repeat: 1 }))).toBe('10 min work');
+  });
+
+  it('shows the numbers of the zone', () => {
+    expect(
+      segmentText(
+        segment({
+          repeat: 4,
+          zone_system: 'power',
+          zone: 4,
+          target: { low: 248, high: 300, unit: 'W' },
+        }),
+      ),
+    ).toBe('4 × 10 min work, power zone 4 · 248–300 W');
   });
 });
 

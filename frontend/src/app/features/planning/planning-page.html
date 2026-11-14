@@ -137,7 +137,10 @@
                 </div>
                 <p class="meta" data-testid="meta">
                   {{ minutes(entry.workout.duration_minutes) }}
-                  @if (target(entry.workout.zone_system, entry.workout.zone); as text) {
+                  @if (
+                    target(entry.workout.zone_system, entry.workout.zone, entry.workout.target);
+                    as text
+                  ) {
                     · {{ text }}
                   }
                 </p>

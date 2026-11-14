@@ -18,6 +18,16 @@ export type Severity = 'error' | 'warning';
 export type ProviderProblem =
   'invalid_key' | 'rate_limited' | 'unavailable' | 'unexpected' | 'not_allowed';
 
+/** What a zone means in numbers: a closed range in watts, beats per minute or seconds per km. */
+export type TargetUnit = 'W' | 'bpm' | 's/km';
+
+/** For pace `low` is the faster end (fewer seconds). `null` where no threshold is known. */
+export interface ZoneTarget {
+  low: number;
+  high: number;
+  unit: TargetUnit;
+}
+
 /** One part of a workout, done `repeat` times in a row; zone system and zone come together. */
 export interface Segment {
   kind: SegmentKind;
@@ -25,6 +35,7 @@ export interface Segment {
   repeat: number;
   zone_system: ZoneSystem | null;
   zone: number | null;
+  target: ZoneTarget | null;
 }
 
 /** A planned session. `day` is a calendar date (YYYY-MM-DD); the text is the coach's. */
@@ -36,6 +47,8 @@ export interface Workout {
   duration_minutes: number;
   zone_system: ZoneSystem | null;
   zone: number | null;
+  /** The zone as numbers, as it is now (the thresholds may change); `null` without one. */
+  target: ZoneTarget | null;
   notes: string;
   /** When on the day; `null`: not said. */
   slot: WorkoutSlot | null;

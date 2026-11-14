@@ -17,12 +17,14 @@ import {
   Report,
   Segment,
   SegmentKind,
+  TargetUnit,
   Severity,
   Sport,
   WeekPlan,
   Workout,
   WorkoutGoal,
   WorkoutSlot,
+  ZoneTarget,
   ZoneSystem,
 } from './planning-models';
 
@@ -52,6 +54,7 @@ const PROBLEMS: readonly string[] = [
   'unexpected',
   'not_allowed',
 ];
+const TARGET_UNITS: readonly string[] = ['W', 'bpm', 's/km'];
 // The zones of each zone system: the seven power levels, five heart rate zones, five pace zones.
 const ZONE_COUNT: Record<string, number> = { power: 7, heart_rate: 5, pace: 5 };
 const DURATION_MAX = 1440;
@@ -286,6 +289,7 @@ function toWorkout(raw: unknown, reply: Reply): Workout {
   const item = asObject(raw, reply);
   const { day, sport, title, goal, duration_minutes, notes, slot, stretching_minutes } = item;
   const target = toTarget(item['zone_system'], item['zone']);
+  const range = toRange(item['target']);
   const segments = item['segments'];
   if (
     !isDate(day) ||
@@ -297,6 +301,7 @@ function toWorkout(raw: unknown, reply: Reply): Workout {
     duration_minutes < 1 ||
     duration_minutes > DURATION_MAX ||
     target === null ||
+    range === undefined ||
     typeof notes !== 'string' ||
     (slot !== null && !isOneOf<WorkoutSlot>(slot, SLOTS)) ||
     !isCount(stretching_minutes) ||
@@ -312,6 +317,7 @@ function toWorkout(raw: unknown, reply: Reply): Workout {
     goal,
     duration_minutes,
     ...target,
+    target: range,
     notes,
     slot,
     stretching_minutes,
@@ -323,6 +329,7 @@ function toSegment(raw: unknown, reply: Reply): Segment {
   const item = asObject(raw, reply);
   const { kind, seconds, repeat } = item;
   const target = toTarget(item['zone_system'], item['zone']);
+  const range = toRange(item['target']);
   if (
     !isOneOf<SegmentKind>(kind, SEGMENT_KINDS) ||
     !isCount(seconds) ||
@@ -330,11 +337,12 @@ function toSegment(raw: unknown, reply: Reply): Segment {
     !isCount(repeat) ||
     repeat < 1 ||
     repeat > REPEAT_MAX ||
-    target === null
+    target === null ||
+    range === undefined
   ) {
     throw unexpected(reply);
   }
-  return { kind, seconds, repeat, ...target };
+  return { kind, seconds, repeat, ...target, target: range };
 }
 
 function toReport(raw: unknown, reply: Reply): Report {
@@ -444,6 +452,21 @@ function toTarget(
     return { zone_system: system, zone };
   }
   return null;
+}
+
+/** The range of a zone, `null` for none, `undefined` for something that is no range. */
+function toRange(raw: unknown): ZoneTarget | null | undefined {
+  if (raw === null) {
+    return null;
+  }
+  if (typeof raw !== 'object' || Array.isArray(raw)) {
+    return undefined;
+  }
+  const { low, high, unit } = raw as Record<string, unknown>;
+  if (!isCount(low) || !isCount(high) || low > high || !isOneOf<TargetUnit>(unit, TARGET_UNITS)) {
+    return undefined;
+  }
+  return { low, high, unit };
 }
 
 function isConfirmedAt(value: unknown, status: PlanStatus): value is string | null {
