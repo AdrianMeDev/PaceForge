@@ -7,7 +7,7 @@ import pytest
 
 from accounts.models import User
 from athletes.models import AthleteProfile, ThresholdValue
-from availability.models import WeekdayMinutes
+from availability.models import AvailabilitySettings, UnavailablePeriod, WeekdayMinutes
 from coach import services as coach_services
 from coach.models import AIProviderConfiguration, AIUsageRecord
 from coach.providers.base import (
@@ -25,6 +25,7 @@ from planning.generation import (
     PLAN_MAX_TOKENS,
     REASON,
     WEEKS_AHEAD,
+    NoTimeAvailable,
     PlanNotUsable,
     WeekNotPlannable,
     generate,
@@ -470,8 +471,109 @@ class TestWhenTheProviderFails:
         assert plans(alice) == []
 
     def test_without_a_provider_nothing_happens(self, bob: User) -> None:
+        WeekdayMinutes.objects.create(owner=bob, weekday=0, minutes=60)
+
         with pytest.raises(coach_services.NotConfiguredError):
             generate(bob, MONDAY)
 
         assert records(bob) == []
         assert plans(bob) == []
+
+
+class TestAWeekWithoutTime:
+    """With no time at all there is nothing to plan: the coach is not asked, nothing is paid."""
+
+    def nothing_happens(self, user: User, scripted: Scripted) -> None:
+        with pytest.raises(NoTimeAvailable):
+            generate(user, MONDAY)
+
+        assert scripted.calls == []
+        assert records(user) == []
+        assert plans(user) == []
+
+    def free(self, user: User) -> None:
+        WeekdayMinutes.objects.filter(owner=user).update(minutes=0)
+
+    def test_days_without_minutes_are_no_time(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        scripted = provide(good())
+        self.free(alice)
+
+        self.nothing_happens(alice, scripted)
+
+    def test_a_user_who_never_entered_a_day_has_no_time(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        scripted = provide(good())
+        WeekdayMinutes.objects.filter(owner=alice).delete()
+
+        self.nothing_happens(alice, scripted)
+
+    def test_a_budget_of_zero_is_no_time(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        scripted = provide(good())
+        AvailabilitySettings.objects.create(owner=alice, weekly_budget_minutes=0)
+
+        self.nothing_happens(alice, scripted)
+
+    def test_away_the_whole_week_is_no_time(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        scripted = provide(good())
+        UnavailablePeriod.objects.create(
+            owner=alice, kind="vacation", start_date=MONDAY, end_date=MONDAY + timedelta(days=6)
+        )
+
+        self.nothing_happens(alice, scripted)
+
+    def test_a_single_minute_is_enough_to_ask(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        scripted = provide(good(), good())  # one minute is too little for this plan: a repair
+        self.free(alice)
+        WeekdayMinutes.objects.filter(owner=alice, weekday=0).update(minutes=1)
+
+        generate(alice, MONDAY)
+
+        assert len(scripted.calls) >= 1
+
+    def test_free_time_in_another_week_does_not_count(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        scripted = provide(good())
+        UnavailablePeriod.objects.create(
+            owner=alice,
+            kind="illness",
+            start_date=MONDAY + timedelta(days=7),
+            end_date=MONDAY + timedelta(days=13),
+        )
+
+        generate(alice, MONDAY)
+
+        assert len(scripted.calls) == 1
+
+    def test_the_typical_week_is_no_time(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        scripted = provide(good())
+        self.free(alice)
+        AvailabilitySettings.objects.create(owner=alice, typical_weekly_minutes=600)
+
+        self.nothing_happens(alice, scripted)
+
+    def test_it_is_said_before_a_missing_provider(self, bob: User) -> None:
+        with pytest.raises(NoTimeAvailable):
+            generate(bob, MONDAY)
+
+    def test_a_week_that_cannot_be_planned_is_said_first(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        scripted = provide(good())
+        self.free(alice)
+
+        with pytest.raises(WeekNotPlannable):
+            generate(alice, THIS_WEEK - timedelta(weeks=1))
+
+        assert scripted.calls == []

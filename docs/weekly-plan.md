@@ -234,7 +234,9 @@ the user can be shown what is wrong. Its statuses:
 `planning.generation.generate(user, monday)` asks the user's own AI provider for a draft of a week:
 
 1. A **briefing** is built from the data of the user (below) and sent with the fixed system prompt
-   (`planning/prompt.py`), which describes the format and the rules above.
+   (`planning/prompt.py`), which describes the format and the rules above. If the week offers no
+   training time at all (no minutes on any day, a weekly budget of 0, or away all week) nothing is
+   sent: there is nothing to plan, and the answer is `no_time` (below).
 2. The answer has to be **one JSON object** and nothing else (one code fence around it is
    tolerated). It is read by the strict parser; a repeated key, `NaN`, a huge number or an answer
    of more than the answer limit is refused, and so is a plan for another week.
@@ -329,6 +331,7 @@ without a code is the limit of PaceForge itself.
 | `week_not_plannable` | 404 | The week is not one of the weeks that can be planned (also: not a date). |
 | `not_found` | 404 | There is no such plan. |
 | `not_configured` | 409 | The user has not set up an AI provider. |
+| `no_time` | 409 | The week offers no training time at all; the coach is not asked and nothing is recorded. |
 | `not_a_draft` | 409 | Only a draft can be confirmed or discarded. |
 | `not_usable` | 422 | The coach gave no readable plan, even after the repair; the problems come along. |
 | `not_confirmable` | 422 | The plan has errors; the findings come along. |
