@@ -8,19 +8,33 @@ import {
   ActivityPage,
   ActivitySource,
   DeleteActivityResult,
+  EnterActivityResult,
   GetActivityResult,
   ImportActivityResult,
   Lap,
   ListActivitiesResult,
+  ManualActivityInput,
+  ManualField,
   Sport,
 } from './activities-models';
 
 const URL = `${API_BASE}/activities/`;
 const IMPORT_URL = `${URL}import/`;
+const MANUAL_URL = `${URL}manual/`;
 const REJECTED_FALLBACK = 'The file could not be imported.';
+const REJECTED_MANUAL = 'The session could not be saved. Please check your entries.';
 const HANDLED_ERRORS = [400, 401, 403, 404, 409, 413, 429];
 const SPORTS: readonly string[] = ['running', 'cycling', 'swimming', 'strength', 'other'];
-const SOURCES: readonly string[] = ['fit_file', 'tcx_file'];
+const SOURCES: readonly string[] = ['fit_file', 'tcx_file', 'manual'];
+const MANUAL_FIELDS: readonly string[] = [
+  'sport',
+  'date',
+  'time',
+  'duration_minutes',
+  'distance_km',
+  'rpe',
+  'notes',
+];
 
 interface Reply {
   status: number;
@@ -79,15 +93,30 @@ export class ActivitiesApi {
         return { kind: 'imported', activity: toActivity(reply.body, reply) };
       case 400:
         return { kind: 'rejected', message: detailOf(reply.body) ?? REJECTED_FALLBACK };
-      case 409: {
-        const existingId = (reply.body as { existing_id?: unknown } | null)?.existing_id;
-        if (typeof existingId !== 'string' || !existingId) {
-          throw unexpected(reply);
-        }
-        return { kind: 'duplicate', existingId };
-      }
+      case 409:
+        return { kind: 'duplicate', existingId: existingIdOf(reply) };
       case 413:
         return { kind: 'too_large' };
+      case 429:
+        return { kind: 'rate_limited' };
+      case 401:
+      case 403:
+        return { kind: 'forbidden' };
+      default:
+        throw unexpected(reply);
+    }
+  }
+
+  /** Enters a session by hand; the server checks every field again and says what is wrong. */
+  async enter(input: ManualActivityInput): Promise<EnterActivityResult> {
+    const reply = await this.send(this.http.post(MANUAL_URL, input, { observe: 'response' }));
+    switch (reply.status) {
+      case 201:
+        return { kind: 'entered', activity: toActivity(reply.body, reply) };
+      case 400:
+        return { kind: 'invalid', ...toRefusal(reply.body) };
+      case 409:
+        return { kind: 'duplicate', existingId: existingIdOf(reply) };
       case 429:
         return { kind: 'rate_limited' };
       case 401:
@@ -156,6 +185,7 @@ function toActivity(raw: unknown, reply: Reply): Activity {
     typeof item['source_sport'] !== 'string' ||
     typeof item['start_time'] !== 'string' ||
     typeof item['manufacturer'] !== 'string' ||
+    typeof item['notes'] !== 'string' ||
     typeof item['created_at'] !== 'string'
   ) {
     throw unexpected(reply);
@@ -175,6 +205,9 @@ function toActivity(raw: unknown, reply: Reply): Activity {
     total_ascent_m: numberOrNull(item['total_ascent_m'], reply),
     calories: numberOrNull(item['calories'], reply),
     manufacturer: item['manufacturer'],
+    rpe: numberOrNull(item['rpe'], reply),
+    notes: item['notes'],
+    load: numberOrNull(item['load'], reply),
     created_at: item['created_at'],
   };
 }
@@ -211,6 +244,39 @@ function isSport(value: unknown): value is Sport {
 
 function isSource(value: unknown): value is ActivitySource {
   return typeof value === 'string' && SOURCES.includes(value);
+}
+
+function existingIdOf(reply: Reply): string {
+  const existingId = (reply.body as { existing_id?: unknown } | null)?.existing_id;
+  if (typeof existingId !== 'string' || !existingId) {
+    throw unexpected(reply);
+  }
+  return existingId;
+}
+
+/**
+ * The messages of a refusal by field. Only the fields of the form are taken over, and only text
+ * messages; an answer without any of them (the JSON could not be read at all) gives its `detail`.
+ */
+function toRefusal(body: unknown): {
+  errors: Partial<Record<ManualField, string[]>>;
+  message: string | null;
+} {
+  const errors: Partial<Record<ManualField, string[]>> = {};
+  const item = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
+  for (const field of MANUAL_FIELDS) {
+    const messages = item[field];
+    if (Array.isArray(messages)) {
+      const texts = messages.filter((m): m is string => typeof m === 'string' && m !== '');
+      if (texts.length > 0) {
+        errors[field as ManualField] = texts;
+      }
+    }
+  }
+  return {
+    errors,
+    message: Object.keys(errors).length > 0 ? null : (detailOf(body) ?? REJECTED_MANUAL),
+  };
 }
 
 function detailOf(body: unknown): string | null {

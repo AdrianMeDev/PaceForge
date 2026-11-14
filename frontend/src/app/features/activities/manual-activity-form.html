@@ -1,0 +1,151 @@
+<form
+  class="panel"
+  novalidate
+  aria-labelledby="manual-title"
+  (submit)="$event.preventDefault(); submit()"
+>
+  <h2 id="manual-title">Enter a session</h2>
+  <p class="hint">
+    For what no watch recorded, such as strength training, and for sessions that only Strava has.
+  </p>
+
+  <div class="grid">
+    <div class="field">
+      <label for="manual-sport">Sport</label>
+      <select
+        id="manual-sport"
+        [attr.aria-invalid]="errors().sport ? 'true' : null"
+        (change)="sport.set($any(value($event)))"
+      >
+        @for (choice of sports; track choice.value) {
+          <option [value]="choice.value" [selected]="choice.value === sport()">
+            {{ choice.label }}
+          </option>
+        }
+      </select>
+      @if (errors().sport; as text) {
+        <p class="field-error">{{ text }}</p>
+      }
+    </div>
+
+    <div class="field">
+      <label for="manual-date">Day</label>
+      <input
+        id="manual-date"
+        type="date"
+        min="2000-01-01"
+        [value]="date()"
+        [attr.aria-invalid]="errors().date ? 'true' : null"
+        (input)="date.set(value($event))"
+      />
+      @if (errors().date; as text) {
+        <p class="field-error">{{ text }}</p>
+      }
+    </div>
+
+    <div class="field">
+      <label for="manual-time">Started at</label>
+      <input
+        id="manual-time"
+        type="time"
+        [value]="time()"
+        [attr.aria-invalid]="errors().time ? 'true' : null"
+        (input)="time.set(value($event))"
+      />
+      @if (errors().time; as text) {
+        <p class="field-error">{{ text }}</p>
+      }
+    </div>
+
+    <div class="field">
+      <label for="manual-duration">Duration (minutes)</label>
+      <input
+        id="manual-duration"
+        type="text"
+        inputmode="numeric"
+        autocomplete="off"
+        [value]="duration()"
+        [attr.aria-invalid]="errors().duration_minutes ? 'true' : null"
+        (input)="duration.set(value($event))"
+      />
+      @if (errors().duration_minutes; as text) {
+        <p class="field-error">{{ text }}</p>
+      }
+    </div>
+
+    <div class="field">
+      <label for="manual-distance">Distance (km, optional)</label>
+      <input
+        id="manual-distance"
+        type="text"
+        inputmode="decimal"
+        autocomplete="off"
+        [value]="distance()"
+        [attr.aria-invalid]="errors().distance_km ? 'true' : null"
+        (input)="distance.set(value($event))"
+      />
+      @if (errors().distance_km; as text) {
+        <p class="field-error">{{ text }}</p>
+      }
+    </div>
+
+    <div class="field">
+      <label for="manual-rpe">How hard it felt (optional)</label>
+      <select
+        id="manual-rpe"
+        [attr.aria-invalid]="errors().rpe ? 'true' : null"
+        (change)="rpe.set(value($event))"
+      >
+        <option value="" [selected]="rpe() === ''">–</option>
+        @for (choice of ratings; track choice.value) {
+          <option [value]="choice.value" [selected]="choice.value.toString() === rpe()">
+            {{ choice.label }}
+          </option>
+        }
+      </select>
+      @if (errors().rpe; as text) {
+        <p class="field-error">{{ text }}</p>
+      }
+    </div>
+  </div>
+
+  <div class="field">
+    <label for="manual-notes">Note (optional)</label>
+    <textarea
+      id="manual-notes"
+      rows="2"
+      [attr.maxlength]="notesMax + 100"
+      [value]="notes()"
+      [attr.aria-invalid]="errors().notes ? 'true' : null"
+      (input)="notes.set(value($event))"
+    ></textarea>
+    @if (errors().notes; as text) {
+      <p class="field-error">{{ text }}</p>
+    }
+  </div>
+
+  @if (message(); as text) {
+    <p class="alert" role="alert" data-testid="manual-message">
+      {{ text }}
+      @if (existingId(); as id) {
+        @if (listedIds().includes(id)) {
+          <button type="button" class="link" data-testid="manual-locate" (click)="locate.emit(id)">
+            Show it in the list
+          </button>
+        }
+      }
+    </p>
+  }
+  @if (saved()) {
+    <p class="notice" role="status" data-testid="manual-saved">The session was saved.</p>
+  }
+
+  <button
+    type="submit"
+    class="primary"
+    data-testid="manual-save"
+    [disabled]="saving() || disabled()"
+  >
+    {{ saving() ? 'Saving…' : 'Save session' }}
+  </button>
+</form>

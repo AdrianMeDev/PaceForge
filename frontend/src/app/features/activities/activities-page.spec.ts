@@ -4,10 +4,11 @@ import { ActivitiesApi } from '../../core/activities/activities-api';
 import {
   Activity,
   DeleteActivityResult,
+  EnterActivityResult,
   ImportActivityResult,
   ListActivitiesResult,
 } from '../../core/activities/activities-models';
-import { query, required, settle } from '../../testing/dom';
+import { query, required, settle, typeInto } from '../../testing/dom';
 import { ActivitiesPage } from './activities-page';
 
 const RUN: Activity = {
@@ -25,6 +26,9 @@ const RUN: Activity = {
   total_ascent_m: 11,
   calories: 1133,
   manufacturer: 'coros',
+  rpe: null,
+  notes: '',
+  load: null,
   created_at: '2026-11-13T07:29:55Z',
 };
 const BARE: Activity = {
@@ -52,6 +56,7 @@ function createApiStub() {
     list: vi.fn<(limit: number, offset: number) => Promise<ListActivitiesResult>>(),
     get: vi.fn(),
     import: vi.fn<(file: File) => Promise<ImportActivityResult>>(),
+    enter: vi.fn<() => Promise<EnterActivityResult>>(),
     delete: vi.fn<(id: string) => Promise<DeleteActivityResult>>(),
   };
 }
@@ -183,14 +188,49 @@ describe('ActivitiesPage', () => {
       await setup(ok([RUN, BARE]));
 
       const [first, second] = rows();
-      expect(cells(first).slice(1, 6)).toEqual([
+      expect(cells(first).slice(1, 8)).toEqual([
         'Running',
         '1:05:00',
         '12.77 km',
         '155 bpm',
+        '–',
+        '–',
         'FIT',
       ]);
-      expect(cells(second).slice(1, 6)).toEqual(['Other (Rowing)', '30:00', '–', '–', 'TCX']);
+      expect(cells(second).slice(1, 8)).toEqual([
+        'Other (Rowing)',
+        '30:00',
+        '–',
+        '–',
+        '–',
+        '–',
+        'TCX',
+      ]);
+    });
+
+    it('shows the rating and the load of a session entered by hand', async () => {
+      const lifting: Activity = {
+        ...BARE,
+        id: 'a3',
+        source: 'manual',
+        sport: 'strength',
+        source_sport: '',
+        timer_seconds: 2700,
+        rpe: 7,
+        notes: 'Legs were heavy',
+        load: 315,
+      };
+      await setup(ok([lifting]));
+
+      expect(cells(rows()[0]).slice(1, 8)).toEqual([
+        'Strength',
+        '45:00',
+        '–',
+        '–',
+        '7',
+        '315 AU',
+        'Entered by hand',
+      ]);
     });
 
     it('shows the start in the time zone of the browser', async () => {
@@ -460,6 +500,88 @@ describe('ActivitiesPage', () => {
     });
   });
 
+  describe('entering a session by hand', () => {
+    const ENTERED: Activity = {
+      ...BARE,
+      id: 'a9',
+      source: 'manual',
+      sport: 'strength',
+      source_sport: '',
+      timer_seconds: 2700,
+      rpe: 7,
+      load: 315,
+    };
+
+    async function fillAndSave(): Promise<void> {
+      typeInto(page, '#manual-duration', '45');
+      fixture.detectChanges();
+      query<HTMLButtonElement>(page, '[data-testid="manual-save"]').click();
+      await settle(fixture);
+    }
+
+    it('shows the form above the list, also when there are no activities yet', async () => {
+      await setup(ok([]));
+
+      expect(page.querySelector('app-manual-activity-form form')).not.toBeNull();
+      expect(text()).toContain('or enter a session by hand');
+    });
+
+    it('fetches the newest activities again after a session was saved', async () => {
+      await setup(ok(many(25), 25));
+      api.enter.mockResolvedValue({ kind: 'entered', activity: ENTERED });
+      api.list.mockResolvedValue(ok([ENTERED, ...many(19)], 26));
+
+      await fillAndSave();
+
+      expect(api.enter).toHaveBeenCalledTimes(1);
+      expect(api.list).toHaveBeenLastCalledWith(20, 0);
+      expect(cells(rows()[0]).slice(1, 8)).toContain('Entered by hand');
+    });
+
+    it('shows that the list could not be refreshed, and keeps the form working', async () => {
+      await setup(ok([RUN]));
+      api.enter.mockResolvedValue({ kind: 'entered', activity: ENTERED });
+      api.list.mockRejectedValue(new Error('network'));
+
+      await fillAndSave();
+
+      expect(alerts()).toEqual(['The list could not be refreshed. Please try again.']);
+      expect(query(page, '[data-testid="manual-saved"]')).not.toBeNull();
+    });
+
+    it('goes to the sign-in when the session has ended', async () => {
+      await setup(ok([RUN]));
+      api.enter.mockResolvedValue({ kind: 'forbidden' });
+
+      await fillAndSave();
+
+      expect(alerts()).toEqual(['Your session has ended. Please sign in again.']);
+    });
+
+    it('shows the session the user has already when it is on the page', async () => {
+      await setup(ok([RUN]));
+      api.enter.mockResolvedValue({ kind: 'duplicate', existingId: RUN.id });
+
+      await fillAndSave();
+      query<HTMLButtonElement>(page, '[data-testid="manual-locate"]').click();
+      await settle(fixture);
+
+      expect(document.activeElement?.id).toBe(`activity-${RUN.id}`);
+    });
+
+    it('does not let the form start while a file is being imported', async () => {
+      await setup(ok([RUN]));
+      const pending = deferred<ImportActivityResult>();
+      api.import.mockReturnValue(pending.promise);
+
+      await choose(file('slow.fit'));
+
+      expect(query<HTMLButtonElement>(page, '[data-testid="manual-save"]').disabled).toBe(true);
+      pending.resolve({ kind: 'imported', activity: RUN });
+      await settle(fixture);
+    });
+  });
+
   describe('a duplicate', () => {
     it('links to the row of the existing activity when it is in the list', async () => {
       await setup(ok([RUN, BARE]));
@@ -498,7 +620,7 @@ describe('ActivitiesPage', () => {
       deleteButton('Running').click();
       await settle(fixture);
 
-      expect(text()).toContain('Delete this activity and its stored file?');
+      expect(text()).toContain('Delete this activity and its stored file, if it has one?');
       expect(api.delete).not.toHaveBeenCalled();
     });
 

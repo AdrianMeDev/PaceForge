@@ -1,5 +1,5 @@
 export type Sport = 'running' | 'cycling' | 'swimming' | 'strength' | 'other';
-export type ActivitySource = 'fit_file' | 'tcx_file';
+export type ActivitySource = 'fit_file' | 'tcx_file' | 'manual';
 
 /**
  * One lap of an activity. A value the file does not report is `null`; nothing is estimated.
@@ -34,6 +34,12 @@ export interface Activity {
   total_ascent_m: number | null;
   calories: number | null;
   manufacturer: string;
+  /** How hard the user felt the session was, 1 to 10 (their own rating); `null`: not said. */
+  rpe: number | null;
+  /** The user's own note (free text: show it as text only). */
+  notes: string;
+  /** Minutes times RPE in arbitrary units (not TSS); `null` without a duration or an RPE. */
+  load: number | null;
   created_at: string;
 }
 
@@ -73,6 +79,30 @@ export type ImportActivityResult =
   /** The file cannot be imported; `message` is the server's text for users. */
   | { kind: 'rejected'; message: string }
   | { kind: 'too_large' }
+  | RateLimited
+  | Forbidden;
+
+/** What the form sends. `date` is YYYY-MM-DD and `time` HH:MM on the wall clock of the user. */
+export interface ManualActivityInput {
+  sport: Sport;
+  date: string;
+  time: string;
+  duration_minutes: number;
+  distance_km: number | null;
+  rpe: number | null;
+  notes: string;
+}
+
+/** The fields of the form the server can name in a refusal. */
+export type ManualField =
+  'sport' | 'date' | 'time' | 'duration_minutes' | 'distance_km' | 'rpe' | 'notes';
+
+export type EnterActivityResult =
+  | { kind: 'entered'; activity: Activity }
+  /** The user has this session already (as a file, a sync or an earlier entry). */
+  | { kind: 'duplicate'; existingId: string }
+  /** The server refused the input: the messages by field, or `message` if none is for a field. */
+  | { kind: 'invalid'; errors: Partial<Record<ManualField, string[]>>; message: string | null }
   | RateLimited
   | Forbidden;
 

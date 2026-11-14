@@ -6,10 +6,11 @@ import {
 import { TestBed } from '@angular/core/testing';
 import { provideApiClient } from '../api/api-providers';
 import { ActivitiesApi } from './activities-api';
-import { Activity, ActivityDetail } from './activities-models';
+import { Activity, ActivityDetail, ManualActivityInput } from './activities-models';
 
 const URL = '/api/activities/';
 const IMPORT = `${URL}import/`;
+const MANUAL = `${URL}manual/`;
 const ID = '01a1d3d0-2289-74b2-95b2-17e8712141b0';
 
 // The shapes are those of the real API (replayed with curl against a real Django).
@@ -28,6 +29,9 @@ const SUMMARY = {
   total_ascent_m: null,
   calories: null,
   manufacturer: 'COROS Wearables',
+  rpe: null,
+  notes: '',
+  load: null,
   created_at: '2026-11-13T07:29:55.337064Z',
 };
 const ACTIVITY: Activity = { ...(SUMMARY as Activity) };
@@ -346,6 +350,164 @@ describe('ActivitiesApi', () => {
       const action = api.import(file());
       action.catch(() => undefined);
       const request = await vi.waitFor(() => backend.expectOne((req) => req.url === IMPORT));
+
+      request.error(new ProgressEvent('error'));
+
+      await expect(action).rejects.toThrow();
+    });
+  });
+
+  describe('enter', () => {
+    const INPUT: ManualActivityInput = {
+      sport: 'strength',
+      date: '2026-11-12',
+      time: '06:30',
+      duration_minutes: 45,
+      distance_km: null,
+      rpe: 7,
+      notes: 'Legs were heavy',
+    };
+    const CREATED = {
+      ...SUMMARY,
+      source: 'manual',
+      sport: 'strength',
+      source_sport: '',
+      timer_seconds: 2700,
+      elapsed_seconds: null,
+      distance_m: null,
+      rpe: 7,
+      notes: 'Legs were heavy',
+      load: 315,
+    };
+
+    it('posts the form as JSON and returns the activity', async () => {
+      const { result, request } = await run(api.enter(INPUT), 'POST', MANUAL, CREATED, 201);
+
+      expect(request.request.body).toEqual(INPUT);
+      expect(result).toEqual({
+        kind: 'entered',
+        activity: expect.objectContaining({
+          source: 'manual',
+          rpe: 7,
+          notes: 'Legs were heavy',
+          load: 315,
+        }),
+      });
+    });
+
+    it('reads rpe, note and load of any activity, empty ones as null and empty text', async () => {
+      const { result } = await run(
+        api.list(20, 0),
+        'GET',
+        URL,
+        {
+          count: 1,
+          results: [SUMMARY],
+        },
+        200,
+      );
+
+      expect(result).toMatchObject({
+        page: { results: [{ rpe: null, notes: '', load: null }] },
+      });
+    });
+
+    it('returns the messages by field and drops everything else', async () => {
+      const { result } = await run(
+        api.enter(INPUT),
+        'POST',
+        MANUAL,
+        {
+          duration_minutes: ['Ensure this value is less than or equal to 1440.'],
+          rpe: ['A valid integer is required.', 5, ''],
+          unknown_field: ['ignored'],
+          sport: 'not a list',
+        },
+        400,
+      );
+
+      expect(result).toEqual({
+        kind: 'invalid',
+        errors: {
+          duration_minutes: ['Ensure this value is less than or equal to 1440.'],
+          rpe: ['A valid integer is required.'],
+        },
+        message: null,
+      });
+    });
+
+    it.each([
+      ['a parse error', { detail: 'JSON parse error' }, 'JSON parse error'],
+      ['no detail', {}, 'The session could not be saved. Please check your entries.'],
+      [
+        'a body that is no object',
+        'Bad Request',
+        'The session could not be saved. Please check your entries.',
+      ],
+      [
+        'only unknown fields',
+        { other: ['x'] },
+        'The session could not be saved. Please check your entries.',
+      ],
+    ])(
+      'uses the detail or a fixed message for a refusal with %s',
+      async (_name, reply, message) => {
+        const { result } = await run(api.enter(INPUT), 'POST', MANUAL, reply, 400);
+
+        expect(result).toEqual({ kind: 'invalid', errors: {}, message });
+      },
+    );
+
+    it('returns the id of the session the user has already', async () => {
+      const { result } = await run(
+        api.enter(INPUT),
+        'POST',
+        MANUAL,
+        { detail: 'This activity has already been imported.', existing_id: ID },
+        409,
+      );
+
+      expect(result).toEqual({ kind: 'duplicate', existingId: ID });
+    });
+
+    it.each([
+      ['no id', { detail: 'x' }],
+      ['an empty id', { existing_id: '' }],
+      ['an id that is no text', { existing_id: 5 }],
+    ])('rejects a duplicate answer with %s', async (_name, reply) => {
+      await runFailing(api.enter(INPUT), 'POST', MANUAL, reply, 409);
+    });
+
+    it('says when the user enters too fast', async () => {
+      const { result } = await run(api.enter(INPUT), 'POST', MANUAL, THROTTLED, 429);
+
+      expect(result).toEqual({ kind: 'rate_limited' });
+    });
+
+    it.each([401, 403])('says when the session is gone (%i)', async (status) => {
+      const { result } = await run(api.enter(INPUT), 'POST', MANUAL, NO_SESSION, status);
+
+      expect(result).toEqual({ kind: 'forbidden' });
+    });
+
+    it.each([
+      ['no note', { ...CREATED, notes: undefined }],
+      ['a note that is no text', { ...CREATED, notes: 5 }],
+      ['an rpe that is text', { ...CREATED, rpe: '7' }],
+      ['a load that is text', { ...CREATED, load: '315' }],
+      ['an unknown source', { ...CREATED, source: 'gpx_file' }],
+    ])('rejects a created answer with %s', async (_name, reply) => {
+      await runFailing(api.enter(INPUT), 'POST', MANUAL, reply, 201);
+    });
+
+    it.each([404, 413, 500, 502])('rejects the unexpected status %i', async (status) => {
+      await runFailing(api.enter(INPUT), 'POST', MANUAL, 'oops', status);
+    });
+
+    it('rejects when the network fails', async () => {
+      const action = api.enter(INPUT);
+      action.catch(() => undefined);
+      const request = await vi.waitFor(() => backend.expectOne((req) => req.url === MANUAL));
 
       request.error(new ProgressEvent('error'));
 

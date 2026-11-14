@@ -11,9 +11,12 @@ import {
   formatDistance,
   formatDuration,
   formatHeartRate,
+  formatLoad,
+  formatRpe,
   sourceLabel,
   sportLabel,
 } from './activity-format';
+import { ManualActivityForm } from './manual-activity-form';
 
 type View = 'loading' | 'unreachable' | 'ready' | 'signed_out';
 
@@ -36,7 +39,7 @@ const REFRESH_FAILED = 'The list could not be refreshed. Please try again.';
  */
 @Component({
   selector: 'app-activities-page',
-  imports: [RouterLink, DatePipe],
+  imports: [RouterLink, DatePipe, ManualActivityForm],
   templateUrl: './activities-page.html',
   styleUrls: ['../auth/auth-form.css', './activities-page.css'],
 })
@@ -64,11 +67,14 @@ export class ActivitiesPage implements OnInit {
   protected readonly hasNext = computed(() => this.last() < this.page().count);
   protected readonly previousOffset = computed(() => Math.max(0, this.offset() - PAGE_SIZE));
   protected readonly nextOffset = computed(() => this.offset() + PAGE_SIZE);
+  protected readonly listedIds = computed(() => this.page().results.map((a) => a.id));
 
   protected readonly sport = sportLabel;
   protected readonly source = sourceLabel;
   protected readonly distance = formatDistance;
   protected readonly heartRate = formatHeartRate;
+  protected readonly rpeText = formatRpe;
+  protected readonly loadText = formatLoad;
   protected readonly duration = (activity: Activity): string =>
     formatDuration(activity.timer_seconds ?? activity.elapsed_seconds);
 
@@ -92,6 +98,16 @@ export class ActivitiesPage implements OnInit {
       return;
     }
     await this.importAll(files);
+  }
+
+  /** A session was entered by hand: the list starts again at the newest activity. */
+  protected async entered(): Promise<void> {
+    this.clearMessages();
+    await this.refresh(0);
+  }
+
+  protected signOut(): void {
+    this.view.set('signed_out');
   }
 
   protected async goTo(offset: number): Promise<void> {
