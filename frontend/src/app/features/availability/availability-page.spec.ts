@@ -15,12 +15,16 @@ const SAVED: Availability = {
   weekdays: [60, 0, 90, 0, 0, 120, 180],
   weekly_budget_minutes: 300,
   typical_weekly_minutes: 360,
+  sports: ['running', 'cycling'],
+  stretching: true,
   limitations: 'No running on consecutive days',
 };
 const NOTHING: Availability = {
   weekdays: [0, 0, 0, 0, 0, 0, 0],
   weekly_budget_minutes: null,
   typical_weekly_minutes: null,
+  sports: ['running', 'cycling', 'swimming', 'strength'],
+  stretching: false,
   limitations: '',
 };
 
@@ -74,6 +78,16 @@ describe('AvailabilityPage', () => {
     typeInto(page, selector, input);
     await settle(fixture);
   }
+
+  async function tick(selector: string): Promise<void> {
+    query<HTMLInputElement>(page, selector).click();
+    await settle(fixture);
+  }
+
+  const ticked = () =>
+    ['running', 'cycling', 'swimming', 'strength'].filter(
+      (sport) => query<HTMLInputElement>(page, `#sport-${sport}`).checked,
+    );
 
   async function save(): Promise<void> {
     query<HTMLFormElement>(page, 'form').dispatchEvent(new Event('submit', { cancelable: true }));
@@ -182,6 +196,151 @@ describe('AvailabilityPage', () => {
     });
   });
 
+  describe('sports and stretching', () => {
+    it('show what the server has: the ticked sports and the stretching flag', async () => {
+      await setup(ok(SAVED));
+
+      expect(ticked()).toEqual(['running', 'cycling']);
+      expect(query<HTMLInputElement>(page, '#stretching').checked).toBe(true);
+    });
+
+    it('show all four sports ticked and no stretching for someone who chose nothing', async () => {
+      await setup(ok(NOTHING));
+
+      expect(ticked()).toEqual(['running', 'cycling', 'swimming', 'strength']);
+      expect(query<HTMLInputElement>(page, '#stretching').checked).toBe(false);
+    });
+
+    it('label every box and group the sports', async () => {
+      await setup(ok(NOTHING));
+
+      const labels = ['running', 'cycling', 'swimming', 'strength'].map((sport) => {
+        const label = query(page, `label[for="sport-${sport}"]`);
+        return label.textContent?.trim();
+      });
+      expect(labels).toEqual(['Running', 'Cycling', 'Swimming', 'Strength / gym']);
+      expect(query(page, 'fieldset legend').textContent?.trim()).toBe('Sports for your plan');
+      expect(query(page, 'label[for="stretching"]').textContent?.trim()).toBe(
+        'Add stretching to sessions',
+      );
+    });
+
+    it('say that stretching is never a session of its own', async () => {
+      await setup(ok(NOTHING));
+
+      expect(query(page, '#stretching-hint').textContent).toContain('never a session of its own');
+    });
+
+    it('are sent as ticked, in the order of the server, whatever the order of ticking', async () => {
+      await setup(ok(NOTHING));
+      for (const sport of ['running', 'cycling', 'swimming', 'strength']) {
+        await tick(`#sport-${sport}`); // all off
+      }
+      await tick('#sport-strength');
+      await tick('#sport-running');
+      await tick('#sport-swimming');
+      await tick('#stretching');
+
+      await save();
+
+      expect(api.save).toHaveBeenCalledTimes(1);
+      expect(api.save.mock.calls[0][0].sports).toEqual(['running', 'swimming', 'strength']);
+      expect(api.save.mock.calls[0][0].stretching).toBe(true);
+    });
+
+    it('switch stretching off again, and send it as it is', async () => {
+      await setup(ok(SAVED));
+      expect(query<HTMLInputElement>(page, '#stretching').checked).toBe(true);
+
+      await tick('#stretching');
+      expect(query<HTMLInputElement>(page, '#stretching').checked).toBe(false);
+      await save();
+
+      expect(api.save.mock.calls[0][0].stretching).toBe(false);
+    });
+
+    it('can be ticked off and on again', async () => {
+      await setup(ok(NOTHING));
+
+      await tick('#sport-swimming');
+      expect(ticked()).toEqual(['running', 'cycling', 'strength']);
+
+      await tick('#sport-swimming');
+      expect(ticked()).toEqual(['running', 'cycling', 'swimming', 'strength']);
+    });
+
+    it('cannot all be ticked off: one sport is the least, and it says so next to them', async () => {
+      await setup(ok(NOTHING));
+      for (const sport of ['running', 'cycling', 'swimming', 'strength']) {
+        await tick(`#sport-${sport}`);
+      }
+
+      await save();
+
+      expect(api.save).not.toHaveBeenCalled();
+      expect(alerts()).toEqual(['Choose at least one sport.']);
+      expect(query(page, '#sport-running').getAttribute('aria-invalid')).toBe('true');
+    });
+
+    it('clear the message as soon as a sport is ticked and saved', async () => {
+      await setup(ok(NOTHING));
+      for (const sport of ['running', 'cycling', 'swimming', 'strength']) {
+        await tick(`#sport-${sport}`);
+      }
+      await save();
+
+      await tick('#sport-cycling');
+      await save();
+
+      expect(alerts()).toEqual([]);
+      expect(api.save.mock.calls[0][0].sports).toEqual(['cycling']);
+    });
+
+    it('show the server messages next to the sports', async () => {
+      await setup(ok(NOTHING));
+      api.save.mockResolvedValue({
+        kind: 'invalid',
+        errors: ['Choose at least one of: running, cycling, swimming, strength.'],
+        fields: { sports: ['Choose at least one of: running, cycling, swimming, strength.'] },
+      });
+
+      await save();
+
+      expect(alerts()).toEqual(['Choose at least one of: running, cycling, swimming, strength.']);
+      expect(query(page, '#sport-strength').getAttribute('aria-invalid')).toBe('true');
+      expect(query(page, '#stretching').getAttribute('aria-invalid')).toBeNull();
+    });
+
+    it('show the server message about stretching next to it', async () => {
+      await setup(ok(NOTHING));
+      api.save.mockResolvedValue({
+        kind: 'invalid',
+        errors: ['Send true or false.'],
+        fields: { stretching: ['Send true or false.'] },
+      });
+
+      await save();
+
+      expect(alerts()).toEqual(['Send true or false.']);
+      expect(query(page, '#stretching').getAttribute('aria-invalid')).toBe('true');
+      expect(query(page, '#sport-running').getAttribute('aria-invalid')).toBeNull();
+    });
+
+    it('show what the server has after saving', async () => {
+      await setup(ok(NOTHING));
+      api.save.mockResolvedValue({
+        kind: 'ok',
+        availability: { ...NOTHING, sports: ['swimming'], stretching: true },
+      });
+      await tick('#stretching');
+
+      await save();
+
+      expect(ticked()).toEqual(['swimming']);
+      expect(query<HTMLInputElement>(page, '#stretching').checked).toBe(true);
+    });
+  });
+
   describe('the sum while typing', () => {
     beforeEach(() => setup(ok(NOTHING)));
 
@@ -272,6 +431,8 @@ describe('AvailabilityPage', () => {
         weekdays: [90, 0, 90, 0, 0, 0, 180],
         weekly_budget_minutes: 300,
         typical_weekly_minutes: 510,
+        sports: ['running', 'cycling', 'swimming', 'strength'],
+        stretching: false,
         limitations: 'Knee',
       });
     });
@@ -285,6 +446,8 @@ describe('AvailabilityPage', () => {
         weekdays: [0, 0, 0, 0, 0, 0, 0],
         weekly_budget_minutes: null,
         typical_weekly_minutes: null,
+        sports: ['running', 'cycling', 'swimming', 'strength'],
+        stretching: false,
         limitations: '',
       });
     });

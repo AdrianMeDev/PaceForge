@@ -17,12 +17,16 @@ const AVAILABILITY = {
   weekdays: [60, 0, 90, 0, 0, 120, 180],
   weekly_budget_minutes: 300,
   typical_weekly_minutes: 360,
+  sports: ['running', 'cycling', 'swimming', 'strength'],
+  stretching: false,
   limitations: 'No running <b>x</b>',
 };
 const NOTHING_SAVED = {
   weekdays: [0, 0, 0, 0, 0, 0, 0],
   weekly_budget_minutes: null,
   typical_weekly_minutes: null,
+  sports: ['running', 'cycling', 'swimming', 'strength'],
+  stretching: false,
   limitations: '',
 };
 const UPCOMING = {
@@ -137,6 +141,19 @@ describe('AvailabilityApi', () => {
     ['a text as typical week', altered(AVAILABILITY, [['typical_weekly_minutes'], '360'])],
     ['a fraction as typical week', altered(AVAILABILITY, [['typical_weekly_minutes'], 360.5])],
     ['a negative typical week', altered(AVAILABILITY, [['typical_weekly_minutes'], -5])],
+    ['no sports', altered(AVAILABILITY, [['sports'], REMOVE])],
+    ['a text as sports', altered(AVAILABILITY, [['sports'], 'running'])],
+    ['an object as sports', altered(AVAILABILITY, [['sports'], { running: true }])],
+    ['no sport at all', altered(AVAILABILITY, [['sports'], []])],
+    ['an unknown sport', altered(AVAILABILITY, [['sports'], ['running', 'golf']])],
+    ['a sport in other letters', altered(AVAILABILITY, [['sports'], ['Running']])],
+    ['a number as a sport', altered(AVAILABILITY, [['sports'], ['running', 5]])],
+    ['a sport twice', altered(AVAILABILITY, [['sports'], ['running', 'running']])],
+    ['null as sports', altered(AVAILABILITY, [['sports'], null])],
+    ['no stretching flag', altered(AVAILABILITY, [['stretching'], REMOVE])],
+    ['a text as stretching flag', altered(AVAILABILITY, [['stretching'], 'true'])],
+    ['a number as stretching flag', altered(AVAILABILITY, [['stretching'], 1])],
+    ['null as stretching flag', altered(AVAILABILITY, [['stretching'], null])],
     ['no limitations', altered(AVAILABILITY, [['limitations'], REMOVE])],
     ['a number as limitations', altered(AVAILABILITY, [['limitations'], 5])],
     ['null as limitations', altered(AVAILABILITY, [['limitations'], null])],
@@ -261,6 +278,40 @@ describe('AvailabilityApi', () => {
       );
 
       expect(result).toMatchObject({ availability: { typical_weekly_minutes: 0 } });
+    });
+
+    it('patches the sports and the stretching flag alone', async () => {
+      const sports = await run(
+        api.save({ sports: ['running'] }),
+        'PATCH',
+        URL,
+        altered(AVAILABILITY, [['sports'], ['running']]) as object,
+        200,
+      );
+      const stretching = await run(
+        api.save({ stretching: true }),
+        'PATCH',
+        URL,
+        altered(AVAILABILITY, [['stretching'], true]) as object,
+        200,
+      );
+
+      expect(sports.request.request.body).toEqual({ sports: ['running'] });
+      expect(stretching.request.request.body).toEqual({ stretching: true });
+      expect(sports.result).toMatchObject({ availability: { sports: ['running'] } });
+      expect(stretching.result).toMatchObject({ availability: { stretching: true } });
+    });
+
+    it('takes over the sports as a copy, in the order of the server', async () => {
+      const body = altered(AVAILABILITY, [['sports'], ['cycling', 'strength']]) as {
+        sports: string[];
+      };
+
+      const { result } = await run(api.get(), 'GET', URL, body, 200);
+
+      const sports = result.kind === 'ok' ? result.availability.sports : null;
+      expect(sports).toEqual(['cycling', 'strength']);
+      expect(sports).not.toBe(body.sports);
     });
 
     it('sends everything as it is, a removed budget as null', async () => {

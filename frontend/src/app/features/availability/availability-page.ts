@@ -1,7 +1,7 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { AvailabilityApi } from '../../core/availability/availability-api';
-import { Availability } from '../../core/availability/availability-models';
+import { Availability, AvailabilitySport } from '../../core/availability/availability-models';
 import {
   DAY_MAX_MINUTES,
   WEEKDAY_NAMES,
@@ -17,6 +17,14 @@ type View = 'loading' | 'unreachable' | 'ready' | 'signed_out';
 const FALLBACK = 'Something went wrong. Please try again.';
 const LIMITATIONS_MAX = 1000;
 const DAYS = [0, 1, 2, 3, 4, 5, 6];
+/** The sports to tick, in the order the server keeps them. */
+const SPORT_CHOICES: { value: AvailabilitySport; label: string }[] = [
+  { value: 'running', label: 'Running' },
+  { value: 'cycling', label: 'Cycling' },
+  { value: 'swimming', label: 'Swimming' },
+  { value: 'strength', label: 'Strength / gym' },
+];
+const NO_SPORT = 'Choose at least one sport.';
 const NO_ERRORS: (string | null)[] = DAYS.map(() => null);
 
 /** A day field: empty means no time. */
@@ -27,7 +35,8 @@ function dayMinutes(text: string): Parsed<number> {
 /**
  * How much time the user can train: minutes per weekday, an optional weekly budget that caps what
  * the days add up to, optionally what a normal week of training is for them (a reference for the
- * planning after a break, no limit), and limitations as free text. Everything is saved together with one Save.
+ * planning after a break, no limit), the sports they want in a plan, whether stretching may be
+ * added to sessions, and limitations as free text. Everything is saved together with one Save.
  * What is checked here is what the server checks too, so that the message appears next to the
  * field; the server's own messages are shown the same way.
  */
@@ -45,6 +54,11 @@ export class AvailabilityPage implements OnInit {
   protected readonly days = signal<string[]>(DAYS.map(() => ''));
   protected readonly budget = signal('');
   protected readonly typical = signal('');
+  /** The sports that are ticked. */
+  protected readonly sports = signal<AvailabilitySport[]>(
+    SPORT_CHOICES.map((sport) => sport.value),
+  );
+  protected readonly stretching = signal(false);
   protected readonly limitations = signal('');
   protected readonly busy = signal(false);
   protected readonly errors = signal<string[]>([]);
@@ -53,8 +67,11 @@ export class AvailabilityPage implements OnInit {
   protected readonly weekdaysError = signal<string | null>(null);
   protected readonly budgetError = signal<string | null>(null);
   protected readonly typicalError = signal<string | null>(null);
+  protected readonly sportsError = signal<string | null>(null);
+  protected readonly stretchingError = signal<string | null>(null);
   protected readonly limitationsError = signal<string | null>(null);
 
+  protected readonly sportChoices = SPORT_CHOICES;
   protected readonly names = WEEKDAY_NAMES;
   protected readonly indexes = DAYS;
 
@@ -111,6 +128,17 @@ export class AvailabilityPage implements OnInit {
 
   protected read(event: Event): string {
     return (event.target as HTMLInputElement | HTMLTextAreaElement).value;
+  }
+
+  protected isChecked(event: Event): boolean {
+    return (event.target as HTMLInputElement).checked;
+  }
+
+  protected setSport(sport: AvailabilitySport, ticked: boolean): void {
+    this.sports.update((list) => {
+      const rest = list.filter((candidate) => candidate !== sport);
+      return ticked ? [...rest, sport] : rest;
+    });
   }
 
   protected setDay(index: number, text: string): void {
@@ -190,6 +218,17 @@ export class AvailabilityPage implements OnInit {
       usable = false;
     }
 
+    const sports = SPORT_CHOICES.map((choice) => choice.value).filter((sport) =>
+      this.sports().includes(sport),
+    );
+    if (sports.length === 0) {
+      this.sportsError.set(NO_SPORT);
+      usable = false;
+    } else {
+      this.sportsError.set(null);
+    }
+    this.stretchingError.set(null);
+
     if (this.limitations().length > LIMITATIONS_MAX) {
       this.limitationsError.set(`Use at most ${LIMITATIONS_MAX} characters.`);
       usable = false;
@@ -202,6 +241,8 @@ export class AvailabilityPage implements OnInit {
           weekdays,
           weekly_budget_minutes: weeklyBudget,
           typical_weekly_minutes: typicalWeek,
+          sports,
+          stretching: this.stretching(),
           limitations: this.limitations(),
         }
       : null;
@@ -220,11 +261,15 @@ export class AvailabilityPage implements OnInit {
         ? ''
         : formatMinutes(availability.typical_weekly_minutes),
     );
+    this.sports.set([...availability.sports]);
+    this.stretching.set(availability.stretching);
     this.limitations.set(availability.limitations);
     this.dayErrors.set(NO_ERRORS);
     this.weekdaysError.set(null);
     this.budgetError.set(null);
     this.typicalError.set(null);
+    this.sportsError.set(null);
+    this.stretchingError.set(null);
     this.limitationsError.set(null);
   }
 
@@ -233,8 +278,17 @@ export class AvailabilityPage implements OnInit {
     this.weekdaysError.set(join('weekdays'));
     this.budgetError.set(join('weekly_budget_minutes'));
     this.typicalError.set(join('typical_weekly_minutes'));
+    this.sportsError.set(join('sports'));
+    this.stretchingError.set(join('stretching'));
     this.limitationsError.set(join('limitations'));
-    const known = ['weekdays', 'weekly_budget_minutes', 'typical_weekly_minutes', 'limitations'];
+    const known = [
+      'weekdays',
+      'weekly_budget_minutes',
+      'typical_weekly_minutes',
+      'sports',
+      'stretching',
+      'limitations',
+    ];
     const rest = Object.entries(fields)
       .filter(([name]) => !known.includes(name))
       .flatMap(([, texts]) => texts);
