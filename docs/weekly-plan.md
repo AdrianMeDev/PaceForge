@@ -138,6 +138,9 @@ Each plan is checked against the facts of its user for that week, collected when
 - **Time.** The minutes per weekday that the user offers (an empty weekday is 0, not "free"), a day
   inside a vacation, an illness or another absence offers 0 (where absences overlap, the illness is
   named before the vacation), and the weekly budget caps what the week adds up to.
+- **Sports and stretching.** The sports the athlete ticked (all four if none was chosen) and whether
+  stretching may be added to sessions. Stretching minutes are not a workout and not time: they do
+  not use up the minutes of a day or a week and do not count for the progression rule.
 - **Zones.** Which zone systems the athlete has a threshold for (typed in, read from Intervals.icu
   or estimated, in any case).
 - **Recent volume.** The minutes of each of the up to 4 calendar weeks before the plan's week in
@@ -163,6 +166,10 @@ user to weigh.
 | `zone_system_not_for_sport` | error | A zone system that does not fit the sport (workout or segment). |
 | `zone_system_unavailable` | error | The athlete has no threshold for that system in that sport. |
 | `day_over_capacity` | error | The workouts of a day add up to more than the day offers. The workout that tips the day is named. |
+| `sport_not_selected` | error | A workout in a sport the athlete did not tick on the training time page. |
+| `stretching_not_wanted` | error | Stretching minutes on a workout although stretching is switched off. |
+| `same_slot` | error | Two workouts of one day in the same part of the day. The later one is named. |
+| `slot_missing` | warning | A day with several workouts of which one has no time of day. Named once per day. |
 | `day_in_absence` | error | A workout on a day of vacation, illness or another absence. |
 | `week_over_capacity` | error | The week adds up to more than the user offers, the weekly budget included. |
 | `too_many_hard_days` | error | More hard days than the limit. A day counts once. |

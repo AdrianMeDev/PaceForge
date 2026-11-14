@@ -345,7 +345,11 @@ class TestTheContextOfAUser:
         for weekday in range(7):
             WeekdayMinutes.objects.create(owner=alice, weekday=weekday, minutes=60)
         AvailabilitySettings.objects.create(
-            owner=alice, weekly_budget_minutes=300, typical_weekly_minutes=420
+            owner=alice,
+            weekly_budget_minutes=300,
+            typical_weekly_minutes=420,
+            sports=["running", "cycling"],
+            stretching=True,
         )
         for day in range(7):
             UnavailablePeriod.objects.create(
@@ -383,6 +387,27 @@ class TestTheContextOfAUser:
         context = build_context(alice, MONDAY)
 
         assert (context.weekly_minutes, context.weekly_budget) == (60, None)
+
+    def test_the_sports_and_stretching_come_from_the_settings(self, alice: User, bob: User) -> None:
+        AvailabilitySettings.objects.create(
+            owner=alice, sports=["cycling", "strength"], stretching=True
+        )
+        AvailabilitySettings.objects.create(owner=bob, sports=["swimming"], stretching=False)
+
+        context = build_context(alice, MONDAY)
+
+        assert context.sports == frozenset({Sport.CYCLING, Sport.STRENGTH})
+        assert context.stretching is True
+
+    def test_without_a_choice_every_sport_is_allowed_and_stretching_is_off(
+        self, alice: User
+    ) -> None:
+        context = build_context(alice, MONDAY)
+
+        assert context.sports == frozenset(Sport)
+        assert context.stretching is False
+        AvailabilitySettings.objects.create(owner=alice, weekly_budget_minutes=300)
+        assert build_context(alice, MONDAY).sports == frozenset(Sport)
 
     def test_the_offset_of_a_day_in_the_week(self, alice: User) -> None:
         context = build_context(alice, MONDAY)

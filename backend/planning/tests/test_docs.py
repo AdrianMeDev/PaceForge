@@ -104,6 +104,7 @@ class TestTheExample:
                 {(Sport.CYCLING, ZoneSystem.POWER), (Sport.RUNNING, ZoneSystem.PACE)}
             ),
             recent_weeks=(270, 300, 280),
+            stretching=True,
         )
 
         report = validate_week(plan, context)
@@ -163,8 +164,8 @@ class TestTheRules:
 
     def test_every_check_of_the_rules_is_covered_by_the_table(self) -> None:
         # the number of checks and of codes can only move together with the page
-        assert len(rules.ALL_CHECKS) == 11
-        assert len(self.in_the_code()) == 14
+        assert len(rules.ALL_CHECKS) == 14
+        assert len(self.in_the_code()) == 18
 
 
 class TestTheZoneSystems:

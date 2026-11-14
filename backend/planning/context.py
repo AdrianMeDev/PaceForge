@@ -40,6 +40,10 @@ class PlanContext:
     # What the athlete calls a normal week, in minutes (``None``: not said). The progression rule
     # takes it as the reference when it is higher than the recent weeks.
     typical_weekly_minutes: int | None = None
+    # The sports the athlete wants in a plan (all of them if none was chosen) and whether
+    # stretching may be added to sessions.
+    sports: frozenset[Sport] = frozenset(Sport)
+    stretching: bool = False
 
     def offset(self, day: date) -> int | None:
         """The place of ``day`` in the week (Monday is 0), ``None`` if it lies outside."""
@@ -61,6 +65,8 @@ def build_context(user: User, monday: date) -> PlanContext:
         zone_systems=usable_zone_systems(held),
         recent_weeks=recent_weekly_minutes(_recent_activities(user, monday, zone), zone, monday),
         typical_weekly_minutes=capacity.typical_weekly_minutes,
+        sports=frozenset(Sport(sport) for sport in capacity.sports),
+        stretching=capacity.stretching,
     )
 
 

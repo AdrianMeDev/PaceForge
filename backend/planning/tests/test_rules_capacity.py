@@ -17,7 +17,10 @@ from planning.rules import (
     basic_checks,
     check_day_capacity,
     check_inside_week,
+    check_progression,
     check_segments_add_up,
+    check_sports,
+    check_stretching,
     check_week_capacity,
     check_zone_systems,
 )
@@ -463,6 +466,132 @@ class TestTheWeek:
         assert check_week_capacity(plan, context(weekly_minutes=100)) == []
 
 
+class TestTheSportsOfTheAthlete:
+    def test_without_a_choice_every_sport_is_fine(self) -> None:
+        plan = week(*(workout(i, 30, sport=sport) for i, sport in enumerate(Sport)))
+
+        assert check_sports(plan, context()) == []
+
+    @pytest.mark.parametrize("sport", list(Sport))
+    def test_a_workout_in_a_sport_that_was_not_chosen_is_an_error(self, sport: Sport) -> None:
+        plan = week(workout(2, 30, sport=sport))
+        others = frozenset(Sport) - {sport}
+
+        found = check_sports(plan, context(sports=others))
+
+        assert found == [
+            Finding(
+                Severity.ERROR,
+                "sport_not_selected",
+                f"Wednesday has a {sport.value} workout, which is not one of the sports you chose.",
+                "workouts[0].sport",
+            )
+        ]
+
+    def test_the_chosen_sports_are_fine_and_every_other_workout_is_named(self) -> None:
+        plan = week(
+            workout(0, 30, sport=Sport.RUNNING),
+            workout(1, 30, sport=Sport.SWIMMING),
+            workout(2, 30, sport=Sport.CYCLING),
+            workout(3, 30, sport=Sport.SWIMMING),
+        )
+
+        found = check_sports(plan, context(sports=frozenset({Sport.RUNNING, Sport.CYCLING})))
+
+        assert [f.path for f in found] == ["workouts[1].sport", "workouts[3].sport"]
+        assert all(f.severity is Severity.ERROR for f in found)
+
+    def test_one_sport_alone_is_enough(self) -> None:
+        plan = week(workout(0, 30, sport=Sport.RUNNING), workout(1, 30, sport=Sport.RUNNING))
+
+        assert check_sports(plan, context(sports=frozenset({Sport.RUNNING}))) == []
+
+    def test_a_workout_outside_the_week_is_left_to_its_own_rule(self) -> None:
+        plan = week(workout(9, 30, sport=Sport.SWIMMING), workout(-1, 30, sport=Sport.SWIMMING))
+
+        assert check_sports(plan, context(sports=frozenset({Sport.RUNNING}))) == []
+
+    def test_nothing_the_coach_wrote_is_repeated(self) -> None:
+        plan = week(
+            workout(1, 30, sport=Sport.SWIMMING, title="SECRETMARKER", notes="SECRETMARKER")
+        )
+
+        (found,) = check_sports(plan, context(sports=frozenset({Sport.RUNNING})))
+
+        assert "SECRETMARKER" not in repr(found)
+
+    def test_no_workouts_no_findings(self) -> None:
+        assert check_sports(week(), context(sports=frozenset())) == []
+
+
+class TestStretchingThatWasNotAskedFor:
+    def test_without_stretching_there_is_nothing_to_say(self) -> None:
+        plan = week(workout(1, 30), workout(2, 30, stretching_minutes=0))
+
+        assert check_stretching(plan, context(stretching=False)) == []
+
+    def test_stretching_that_is_wanted_is_fine(self) -> None:
+        plan = week(workout(1, 30, stretching_minutes=10), workout(2, 30, stretching_minutes=60))
+
+        assert check_stretching(plan, context(stretching=True)) == []
+
+    def test_stretching_that_is_not_wanted_is_an_error_at_every_workout_that_has_it(self) -> None:
+        plan = week(
+            workout(1, 30, stretching_minutes=10),
+            workout(2, 30),
+            workout(3, 30, stretching_minutes=5),
+        )
+
+        found = check_stretching(plan, context(stretching=False))
+
+        assert found == [
+            Finding(
+                Severity.ERROR,
+                "stretching_not_wanted",
+                "Tuesday has stretching added, but you did not ask for stretching.",
+                "workouts[0].stretching_minutes",
+            ),
+            Finding(
+                Severity.ERROR,
+                "stretching_not_wanted",
+                "Thursday has stretching added, but you did not ask for stretching.",
+                "workouts[2].stretching_minutes",
+            ),
+        ]
+
+    def test_a_single_minute_of_stretching_is_stretching(self) -> None:
+        plan = week(workout(1, 30, stretching_minutes=1))
+
+        found = check_stretching(plan, context(stretching=False))
+
+        assert [f.code for f in found] == ["stretching_not_wanted"]
+
+    def test_a_workout_outside_the_week_is_left_to_its_own_rule(self) -> None:
+        plan = week(workout(9, 30, stretching_minutes=10))
+
+        assert check_stretching(plan, context(stretching=False)) == []
+
+    def test_stretching_does_not_use_up_the_time_of_a_day(self) -> None:
+        # the day offers 60 minutes; 60 of training and 60 of stretching still fit
+        plan = week(workout(1, 60, stretching_minutes=60))
+        ctx = context(minutes=(0, 60, 0, 0, 0, 0, 0), weekly_minutes=60, stretching=True)
+
+        assert check_day_capacity(plan, ctx) == []
+        assert check_week_capacity(plan, ctx) == []
+
+    def test_stretching_does_not_count_for_the_progression(self) -> None:
+        plan = week(workout(1, 100, stretching_minutes=60))
+
+        assert check_progression(plan, context(recent_weeks=(100,), stretching=True)) == []
+
+    def test_nothing_the_coach_wrote_is_repeated(self) -> None:
+        plan = week(workout(1, 30, stretching_minutes=10, title="SECRETMARKER"))
+
+        found = check_stretching(plan, context(stretching=False))
+
+        assert "SECRETMARKER" not in repr(found)
+
+
 class TestAllTogether:
     def test_the_checks_are_listed_in_a_fixed_order(self) -> None:
         assert BASIC_CHECKS == (
@@ -471,6 +600,8 @@ class TestAllTogether:
             check_zone_systems,
             check_day_capacity,
             check_week_capacity,
+            check_sports,
+            check_stretching,
         )
 
     def test_a_good_plan_has_no_findings(self) -> None:
