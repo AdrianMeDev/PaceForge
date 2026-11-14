@@ -10,6 +10,7 @@ from typing import Any
 
 from rest_framework import serializers
 
+from activities.load import load_of
 from activities.serializers import TextField, WholeNumberField, checked_note
 
 from .comparison import Comparison, Figures
@@ -94,6 +95,7 @@ def review_data(review: WeekReview) -> dict[str, Any]:
                 "distance_m": activity.distance_m,
                 "rpe": activity.rpe,
                 "notes": activity.notes,
+                "load": load_of(activity),
                 # The workout it belongs to; ``None``: not planned.
                 "workout_id": _id(workout_of.get(activity.pk)),
             }

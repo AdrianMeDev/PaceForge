@@ -165,6 +165,8 @@ class TestOneWeek:
             None,
         )
         by_id = {activity["id"]: activity for activity in data["activities"]}
+        assert (by_id[str(run.pk)]["rpe"], by_id[str(run.pk)]["load"]) == (6, 360)
+        assert by_id[str(extra.pk)]["load"] is None  # not rated
         assert by_id[str(run.pk)]["workout_id"] == first["id"]
         assert by_id[str(extra.pk)]["workout_id"] is None
         assert data["comparison"]["statuses"] == {
