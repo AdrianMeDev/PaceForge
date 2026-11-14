@@ -324,9 +324,13 @@ an athlete whose history lives in Strava the file import is the way in (details 
      compressed (`.fit.gz`): unpack them first (`gunzip activities/*.gz`).
 2. Open **Activities**, press the file chooser and select the files. Each file is sent on its own
    and gets its own line: *Imported*, *Already imported*, the reason it was refused, or *too
-   large*. The list below shows date, sport, duration, distance, average heart rate and source,
-   newest first, 20 per page.
-3. **Delete** (with a confirmation) removes the activity and the file that was stored with it.
+   large*. The list below shows date, sport, duration, distance, average heart rate, RPE, load and
+   source, newest first, 20 per page.
+3. **Enter a session** by hand for what no watch recorded (strength training, a session that only
+   Strava has): sport, day, the time it started, the duration in minutes, and optionally the
+   distance, how hard it felt and a note. See [Sessions entered by hand](#sessions-entered-by-hand).
+4. **Delete** (with a confirmation) removes the activity and the file that was stored with it, if
+   it has one.
 
 What you should know:
 
@@ -343,16 +347,47 @@ What you should know:
   be built later without asking you to upload again. **This includes the GPS track**: from it,
   home and workplace can be inferred. The database and its backups therefore hold location data and
   need the same care. The file is never returned by the API, and deleting an activity deletes it.
-- **Duplicates are refused:** the same file, or the same run exported in another format (same start
-  and sport), answers *Already imported*. Each user has their own activities; another user may
-  import the same file.
+- **Duplicates are refused:** the same file, or the same session from another source, answers
+  *Already imported* (see [the same session twice](#the-same-session-twice)). Each user has their
+  own activities; another user may import the same file.
 - **Limits:** 25 MB per file (`ACTIVITY_UPLOAD_MAX_BYTES`, see [Configuration](#configuration)),
-  30 imports per minute per user, files with several sessions (multisport) are refused. Behind a
+  30 imports or entries by hand per minute per user (they share one counter), files with several sessions (multisport) are refused. Behind a
   reverse proxy, allow request bodies at least that large (for nginx `client_max_body_size`); the
   proxy would otherwise answer before PaceForge can.
 - **Damaged or hostile files** are refused with a message and store nothing: FIT checksums are
   verified, TCX documents with a `DOCTYPE` or entities are refused, and the number of records,
   laps and nested elements is capped.
+
+### Sessions entered by hand
+
+The form on the Activities page stores a session without a file. It is meant for what a watch did
+not record, and for the sessions that only Strava has (Intervals.icu cannot hand those out).
+
+- **What you give:** the sport, the **day** and **the time it started** (on the clock of your time
+  zone from the [profile](#athlete-profile); without one, UTC), the duration in whole minutes (1 to
+  1440), optionally the distance in kilometres (up to 1000), **how hard it felt** on a scale from 1
+  to 10 (RPE, the rating of perceived exertion) and a note of up to 500 characters. A session in
+  the future, or before the year 2000, is refused. There is no editing: delete it and enter it again.
+- **The coach counts it** like an imported activity: its duration is part of the minutes of the last
+  four weeks that the plan builds on. Nothing is estimated beyond that: no heart rate, no power, no
+  best efforts, so it does not change your estimated thresholds.
+- **The load** of a session is the duration in minutes times the RPE, rounded, shown as *AU*
+  (arbitrary units; a 45 minute session at 7 is 315 AU). It is an estimate from how it felt and
+  **not the training stress score (TSS)** of a power meter or a platform: the two are on different
+  scales and are never added up. A session without a rating has no load, and neither does one
+  without a duration. (Imported files carry no rating yet; rating them comes with the week review.)
+
+#### The same session twice
+
+One session can arrive more than once: as the file from the watch, in another format, entered by
+hand. Two activities of yours count as the same session if they have the **same sport** and either
+start at exactly the same moment, or start **within 10 minutes** of each other and their durations
+differ by **at most 10 %** of the longer one (where a duration is missing on one side, the start
+alone decides). The second one is refused with *Already imported* (a file) or *You already have
+this session* (the form), and the page offers to show the first. This is a guess: two real, short
+sessions of one sport that start minutes apart and are about equally long would be taken for one.
+If that happens to you, change the start of one of the two by more than 10 minutes. The tolerances
+are two constants in `backend/activities/duplicates.py`.
 
 ## Athlete profile
 
