@@ -1,8 +1,13 @@
+import runpy
+from typing import Any
+
+import environ
 import pytest
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 
 from coach.endpoints import parse_base_urls
+from config import settings as config_settings
 
 
 def parse(*values: str) -> tuple[str, ...]:
@@ -86,8 +91,39 @@ class TestRefusedAddresses:
 
 
 class TestTheSettings:
-    def test_no_openai_compatible_address_is_allowed_by_default(self) -> None:
-        assert settings.AI_ALLOWED_BASE_URLS == ()
+    """The defaults of ``config/settings.py``, read afresh: not what the test run was given, and
+    not what the operator wrote into ``.env`` (django-environ never overwrites a variable that is
+    set, so deleting it and skipping the file leaves the default)."""
 
-    def test_anthropic_is_at_home_by_default(self) -> None:
+    @pytest.fixture
+    def defaults(self, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+        for name in ("AI_ALLOWED_BASE_URLS", "ANTHROPIC_API_BASE_URL"):
+            monkeypatch.delenv(name, raising=False)
+        monkeypatch.setattr(environ.Env, "read_env", classmethod(lambda cls, *a, **k: None))
+        return runpy.run_path(config_settings.__file__)
+
+    def test_no_openai_compatible_address_is_allowed_by_default(
+        self, defaults: dict[str, Any]
+    ) -> None:
+        assert defaults["AI_ALLOWED_BASE_URLS"] == ()
+
+    def test_anthropic_is_at_home_by_default(self, defaults: dict[str, Any]) -> None:
+        assert defaults["ANTHROPIC_API_BASE_URL"] == "https://api.anthropic.com"
+
+    def test_a_variable_is_read(
+        self, defaults: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv(
+            "AI_ALLOWED_BASE_URLS", "https://api.deepseek.com, https://openrouter.ai/api/v1/"
+        )
+
+        read = runpy.run_path(config_settings.__file__)
+
+        assert read["AI_ALLOWED_BASE_URLS"] == (
+            "https://api.deepseek.com",
+            "https://openrouter.ai/api/v1",
+        )
+
+    def test_the_test_run_itself_is_independent_of_the_env_file(self) -> None:
+        assert settings.AI_ALLOWED_BASE_URLS == ()
         assert settings.ANTHROPIC_API_BASE_URL == "https://api.anthropic.com"
