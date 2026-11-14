@@ -99,3 +99,26 @@ class ProviderCheckView(APIView):
             "retry_after": retry_after,
         }
         return Response(answer)
+
+
+def provider_problem(error: ProviderError) -> Response:
+    """The answer to a provider error that stopped a request of the user: a status and a fixed text
+    with a code the client can act on, never what the provider said."""
+    if isinstance(error, InvalidKeyError):
+        return _problem(status.HTTP_502_BAD_GATEWAY, "invalid_key")
+    if isinstance(error, RateLimitedError):
+        response = _problem(
+            status.HTTP_429_TOO_MANY_REQUESTS, "rate_limited", retry_after=error.retry_after
+        )
+        if error.retry_after is not None:
+            response["Retry-After"] = str(error.retry_after)
+        return response
+    if isinstance(error, ProviderUnavailableError):
+        return _problem(status.HTTP_503_SERVICE_UNAVAILABLE, "unavailable")
+    if isinstance(error, EndpointNotAllowedError):
+        return _problem(status.HTTP_502_BAD_GATEWAY, "not_allowed")
+    return _problem(status.HTTP_502_BAD_GATEWAY, "unexpected")
+
+
+def _problem(http_status: int, code: str, **extra: Any) -> Response:
+    return Response({"detail": PROBLEMS[code], "code": code, **extra}, status=http_status)

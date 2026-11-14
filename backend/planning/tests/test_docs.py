@@ -15,6 +15,7 @@ from django.urls import get_resolver
 from accounts.models import User
 from availability.models import SPORTS
 from availability.serializers import availability_data
+from coach import views as coach_views
 from coach.endpoints import parse_base_urls
 from coach.providers.openai_compatible import JSON_MODE_HOSTS
 from coach.providers.transport import TIMEOUT_SECONDS
@@ -296,10 +297,17 @@ class TestTheApi:
 
     def test_the_table_lists_every_error_with_its_status(self) -> None:
         source = (Path(rules.__file__).parent / "views.py").read_text()
+        # The answers to provider errors are shared with other endpoints: they live in coach.views.
+        provider_source = Path(coach_views.__file__).read_text()
         code = {
             (code, status)
             for status, code in re.findall(
                 r'_error\(\s*status\.HTTP_(\d+)_[A-Z_]+,\s*"([a-z_]+)"', source
+            )
+        } | {
+            (code, status)
+            for status, code in re.findall(
+                r'_problem\(\s*status\.HTTP_(\d+)_[A-Z_]+,\s*"([a-z_]+)"', provider_source
             )
         }
 
