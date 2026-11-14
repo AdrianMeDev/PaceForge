@@ -5,6 +5,7 @@ import { API_BASE } from '../api/api-providers';
 import {
   Availability,
   AvailabilityChanges,
+  AvailabilitySport,
   CreatePeriodResult,
   DeletePeriodResult,
   GetAvailabilityResult,
@@ -24,6 +25,7 @@ const PERIODS_URL = `${URL}periods/`;
 const INVALID_FALLBACK = 'The input was not accepted.';
 const HANDLED_ERRORS = [400, 401, 403, 404];
 const KINDS: readonly string[] = ['vacation', 'illness', 'other'];
+const SPORTS: readonly string[] = ['running', 'cycling', 'swimming', 'strength'];
 const STATUSES: readonly string[] = ['current', 'upcoming', 'past'];
 const CALENDAR_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -154,6 +156,7 @@ function toAvailability(raw: unknown, reply: Reply): Availability {
   const item = asObject(raw, reply);
   const budget = item['weekly_budget_minutes'];
   const typical = item['typical_weekly_minutes'];
+  const sports = item['sports'];
   const weekdays = item['weekdays'];
   if (
     !Array.isArray(weekdays) ||
@@ -161,6 +164,12 @@ function toAvailability(raw: unknown, reply: Reply): Availability {
     !weekdays.every(isMinutes) ||
     (budget !== null && !isMinutes(budget)) ||
     (typical !== null && !isMinutes(typical)) ||
+    // At least one sport, each of the known ones once.
+    !Array.isArray(sports) ||
+    sports.length === 0 ||
+    !sports.every((sport) => isOneOf<AvailabilitySport>(sport, SPORTS)) ||
+    new Set(sports).size !== sports.length ||
+    typeof item['stretching'] !== 'boolean' ||
     typeof item['limitations'] !== 'string'
   ) {
     throw unexpected(reply);
@@ -169,6 +178,8 @@ function toAvailability(raw: unknown, reply: Reply): Availability {
     weekdays: [...(weekdays as number[])],
     weekly_budget_minutes: budget,
     typical_weekly_minutes: typical,
+    sports: [...(sports as AvailabilitySport[])],
+    stretching: item['stretching'],
     limitations: item['limitations'],
   };
 }

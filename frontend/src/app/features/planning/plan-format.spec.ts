@@ -1,12 +1,14 @@
 import { Segment } from '../../core/planning/planning-models';
 import {
   GOAL_LABELS,
+  SLOT_LABELS,
   SPORT_LABELS,
   STATUS_LABELS,
   dayLabel,
   findingPlace,
   minutesText,
   segmentText,
+  stretchingText,
   targetText,
   weekRange,
 } from './plan-format';
@@ -92,6 +94,26 @@ describe('targetText', () => {
 
   it('is empty without a target', () => {
     expect(targetText(null, null)).toBe('');
+  });
+});
+
+describe('SLOT_LABELS', () => {
+  it('names the three times of day in words', () => {
+    expect(SLOT_LABELS).toEqual({ morning: 'Morning', afternoon: 'Afternoon', evening: 'Evening' });
+  });
+});
+
+describe('stretchingText', () => {
+  it.each([
+    [1, '+ 1 min stretching'],
+    [10, '+ 10 min stretching'],
+    [60, '+ 60 min stretching'],
+  ])('writes %i minutes as "%s"', (minutes, expected) => {
+    expect(stretchingText(minutes)).toBe(expected);
+  });
+
+  it('says nothing for no stretching', () => {
+    expect(stretchingText(0)).toBe('');
   });
 });
 

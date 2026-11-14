@@ -18,15 +18,19 @@ from .models import (
     DAY_MINUTES_MAX,
     LIMITATIONS_MAX,
     NOTE_MAX,
+    SPORTS,
     WEEK_MINUTES_MAX,
     AvailabilitySettings,
     UnavailablePeriod,
     WeekdayMinutes,
+    effective_sports,
 )
 
 WEEKDAYS = "Enter seven numbers of minutes, Monday first."
 DAY_RANGE = f"Enter whole minutes between 0 and {DAY_MINUTES_MAX} for every day."
 BUDGET_RANGE = f"Enter whole minutes between 0 and {WEEK_MINUTES_MAX}."
+SPORTS_CHOICE = f"Choose at least one of: {', '.join(SPORTS)}."
+STRETCHING_CHOICE = "Send true or false."
 MAX_PERIODS = 100
 TOO_MANY_PERIODS = f"You can have at most {MAX_PERIODS} periods. Delete one first."
 
@@ -51,8 +55,38 @@ class WeekdaysField(serializers.Field[list[int], list[int], list[int], Any]):
         return value
 
 
+class SportsField(serializers.Field[list[str], list[str], list[str], Any]):
+    """At least one sport, each of the known ones at most once. Stored in the order of ``SPORTS``,
+    whatever the order sent."""
+
+    def to_internal_value(self, data: Any) -> list[str]:
+        if (
+            not isinstance(data, list)
+            or not data
+            or not all(isinstance(sport, str) and sport in SPORTS for sport in data)
+            or len(set(data)) != len(data)
+        ):
+            raise serializers.ValidationError(SPORTS_CHOICE)
+        return [sport for sport in SPORTS if sport in data]
+
+    def to_representation(self, value: list[str]) -> list[str]:
+        return value
+
+
+class StrictBooleanField(serializers.Field[bool, bool, bool, Any]):
+    """``true`` or ``false`` and nothing else: no ``"true"``, no ``1``."""
+
+    def to_internal_value(self, data: Any) -> bool:
+        if not isinstance(data, bool):
+            raise serializers.ValidationError(STRETCHING_CHOICE)
+        return data
+
+    def to_representation(self, value: bool) -> bool:
+        return value
+
+
 class AvailabilityInput(serializers.Serializer[Any]):
-    """What may be sent: any of the four, the rest stays as it is."""
+    """What may be sent: any of the six, the rest stays as it is."""
 
     weekdays = WeekdaysField(required=False)
     weekly_budget_minutes = WholeNumberField(
@@ -78,6 +112,8 @@ class AvailabilityInput(serializers.Serializer[Any]):
             "max_value": BUDGET_RANGE,
         },
     )
+    sports = SportsField(required=False, error_messages={"null": SPORTS_CHOICE})
+    stretching = StrictBooleanField(required=False, error_messages={"null": STRETCHING_CHOICE})
     limitations = TextField(max_length=LIMITATIONS_MAX, allow_blank=True, required=False)
 
 
@@ -85,7 +121,8 @@ def availability_data(
     settings: AvailabilitySettings | None, weekdays: list[WeekdayMinutes]
 ) -> dict[str, Any]:
     """The answer: the seven weekdays (Monday first, 0 where nothing is saved), the weekly budget
-    and the typical week (``null`` for none) and the limitations. No row ids, no owner."""
+    and the typical week (``null`` for none), the sports of the plan (all of them if none was
+    chosen), whether stretching may be added and the limitations. No row ids, no owner."""
     minutes = [0] * 7
     for row in weekdays:
         minutes[row.weekday] = row.minutes
@@ -93,6 +130,8 @@ def availability_data(
         "weekdays": minutes,
         "weekly_budget_minutes": settings.weekly_budget_minutes if settings else None,
         "typical_weekly_minutes": settings.typical_weekly_minutes if settings else None,
+        "sports": effective_sports(settings.sports if settings else None),
+        "stretching": settings.stretching if settings else False,
         "limitations": settings.limitations if settings else "",
     }
 

@@ -105,6 +105,50 @@
           </p>
         </div>
 
+        <h2>Sports and stretching</h2>
+        <fieldset class="field sports" [attr.aria-describedby]="'sports-hint'">
+          <legend>Sports for your plan</legend>
+          @for (choice of sportChoices; track choice.value) {
+            <div class="check">
+              <input
+                type="checkbox"
+                [id]="'sport-' + choice.value"
+                [checked]="sports().includes(choice.value)"
+                [attr.aria-invalid]="sportsError() ? true : null"
+                (change)="setSport(choice.value, isChecked($event))"
+              />
+              <label [for]="'sport-' + choice.value">{{ choice.label }}</label>
+            </div>
+          }
+          @if (sportsError(); as message) {
+            <p class="field-error" role="alert">{{ message }}</p>
+          }
+          <p class="hint" id="sports-hint">
+            Your coach plans only these sports, and may put two sessions on a day, for example a run
+            in the morning and a ride in the afternoon.
+          </p>
+        </fieldset>
+        <div class="field">
+          <div class="check">
+            <input
+              id="stretching"
+              type="checkbox"
+              aria-describedby="stretching-hint"
+              [checked]="stretching()"
+              [attr.aria-invalid]="stretchingError() ? true : null"
+              (change)="stretching.set(isChecked($event))"
+            />
+            <label for="stretching">Add stretching to sessions</label>
+          </div>
+          @if (stretchingError(); as message) {
+            <p class="field-error" role="alert">{{ message }}</p>
+          }
+          <p class="hint" id="stretching-hint">
+            Stretching is never a session of its own: it is added as a few minutes to a session and
+            does not count as training time.
+          </p>
+        </div>
+
         <h2>Limitations</h2>
         <div class="field">
           <label for="limitations">Anything the plan should respect (optional)</label>

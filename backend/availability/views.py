@@ -54,7 +54,13 @@ class AvailabilityView(APIView):
                 )
             settings_fields = [
                 name
-                for name in ("weekly_budget_minutes", "typical_weekly_minutes", "limitations")
+                for name in (
+                    "weekly_budget_minutes",
+                    "typical_weekly_minutes",
+                    "sports",
+                    "stretching",
+                    "limitations",
+                )
                 if name in data
             ]
             if settings_fields:

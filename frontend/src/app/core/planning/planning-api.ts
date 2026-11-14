@@ -22,6 +22,7 @@ import {
   WeekPlan,
   Workout,
   WorkoutGoal,
+  WorkoutSlot,
   ZoneSystem,
 } from './planning-models';
 
@@ -41,6 +42,7 @@ const GOALS: readonly string[] = [
 ];
 const ZONE_SYSTEMS: readonly string[] = ['power', 'heart_rate', 'pace'];
 const SEGMENT_KINDS: readonly string[] = ['warmup', 'steady', 'work', 'recovery', 'cooldown'];
+const SLOTS: readonly string[] = ['morning', 'afternoon', 'evening'];
 const STATUSES: readonly string[] = ['draft', 'confirmed', 'superseded', 'discarded'];
 const SEVERITIES: readonly string[] = ['error', 'warning'];
 const PROBLEMS: readonly string[] = [
@@ -53,6 +55,7 @@ const PROBLEMS: readonly string[] = [
 // The zones of each zone system: the seven power levels, five heart rate zones, five pace zones.
 const ZONE_COUNT: Record<string, number> = { power: 7, heart_rate: 5, pace: 5 };
 const DURATION_MAX = 1440;
+const STRETCHING_MAX = 60;
 const REPEAT_MAX = 50;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -281,7 +284,7 @@ function toPlan(raw: unknown, reply: Reply): WeekPlan {
 
 function toWorkout(raw: unknown, reply: Reply): Workout {
   const item = asObject(raw, reply);
-  const { day, sport, title, goal, duration_minutes, notes } = item;
+  const { day, sport, title, goal, duration_minutes, notes, slot, stretching_minutes } = item;
   const target = toTarget(item['zone_system'], item['zone']);
   const segments = item['segments'];
   if (
@@ -295,6 +298,9 @@ function toWorkout(raw: unknown, reply: Reply): Workout {
     duration_minutes > DURATION_MAX ||
     target === null ||
     typeof notes !== 'string' ||
+    (slot !== null && !isOneOf<WorkoutSlot>(slot, SLOTS)) ||
+    !isCount(stretching_minutes) ||
+    stretching_minutes > STRETCHING_MAX ||
     !Array.isArray(segments)
   ) {
     throw unexpected(reply);
@@ -307,6 +313,8 @@ function toWorkout(raw: unknown, reply: Reply): Workout {
     duration_minutes,
     ...target,
     notes,
+    slot,
+    stretching_minutes,
     segments: segments.map((segment: unknown) => toSegment(segment, reply)),
   };
 }

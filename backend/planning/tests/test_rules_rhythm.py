@@ -24,10 +24,20 @@ from planning.rules import (
     check_hard_days,
     check_hard_days_in_a_row,
     check_progression,
+    check_times_of_day,
     check_workouts_per_day,
     intensity_of,
 )
-from planning.schema import Goal, Segment, SegmentKind, Sport, WeekPlan, Workout, ZoneSystem
+from planning.schema import (
+    Goal,
+    Segment,
+    SegmentKind,
+    Slot,
+    Sport,
+    WeekPlan,
+    Workout,
+    ZoneSystem,
+)
 
 MONDAY = date(2027, 7, 12)
 assert MONDAY.weekday() == 0
@@ -531,6 +541,111 @@ class TestTheTypicalWeek:
         assert "the average of 300 minutes" in found[0].message
 
 
+class TestTheTimesOfDay:
+    M, A, E = Slot.MORNING, Slot.AFTERNOON, Slot.EVENING
+
+    def found(self, *workouts: Workout) -> list[Finding]:
+        return check_times_of_day(week(*workouts), context())
+
+    def test_a_single_workout_needs_no_time_of_day(self) -> None:
+        assert self.found(workout(1, 30)) == []
+        assert self.found(workout(1, 30, slot=self.E)) == []
+
+    def test_two_workouts_at_different_times_are_fine(self) -> None:
+        assert self.found(workout(1, 30, slot=self.M), workout(1, 30, slot=self.E)) == []
+        assert self.found(workout(1, 30, slot=self.E), workout(1, 30, slot=self.A)) == []
+
+    def test_three_workouts_at_three_times_are_fine(self) -> None:
+        plan = (
+            workout(1, 30, slot=self.M),
+            workout(1, 30, slot=self.A),
+            workout(1, 30, slot=self.E),
+        )
+
+        assert self.found(*plan) == []
+
+    @pytest.mark.parametrize("slot", list(Slot))
+    def test_two_workouts_at_the_same_time_are_an_error_at_the_second(self, slot: Slot) -> None:
+        found = self.found(workout(2, 30, slot=slot), workout(2, 30, slot=slot))
+
+        assert found == [
+            Finding(
+                Severity.ERROR,
+                "same_slot",
+                f"Wednesday has two workouts in the {slot.value}.",
+                "workouts[1].slot",
+            )
+        ]
+
+    def test_every_repeat_is_named(self) -> None:
+        found = self.found(
+            workout(2, 30, slot=self.M), workout(2, 30, slot=self.M), workout(2, 30, slot=self.M)
+        )
+
+        assert [f.path for f in found] == ["workouts[1].slot", "workouts[2].slot"]
+
+    def test_the_same_time_on_different_days_is_fine(self) -> None:
+        assert self.found(workout(1, 30, slot=self.M), workout(2, 30, slot=self.M)) == []
+
+    def test_several_workouts_without_a_time_are_one_warning_at_the_first(self) -> None:
+        found = self.found(workout(3, 30), workout(3, 30, sport=Sport.RUNNING))
+
+        assert found == [
+            Finding(
+                Severity.WARNING,
+                "slot_missing",
+                "Thursday has 2 workouts; say for each when it is (morning, afternoon or evening).",
+                "workouts[0].slot",
+            )
+        ]
+
+    def test_one_without_a_time_among_two_is_named_at_that_one(self) -> None:
+        found = self.found(workout(3, 30, slot=self.M), workout(3, 30, sport=Sport.RUNNING))
+
+        assert [(f.code, f.path) for f in found] == [("slot_missing", "workouts[1].slot")]
+
+    def test_it_is_named_once_a_day_however_many_lack_a_time(self) -> None:
+        found = self.found(
+            workout(3, 30), workout(3, 30, sport=Sport.RUNNING), workout(3, 30, slot=self.E)
+        )
+
+        assert len(found) == 1
+        assert found[0].message.startswith("Thursday has 3 workouts")
+
+    def test_two_days_are_named_each_for_itself(self) -> None:
+        found = self.found(
+            workout(1, 30), workout(1, 30, sport=Sport.RUNNING), workout(4, 30), workout(4, 30)
+        )
+
+        assert [f.path for f in found] == ["workouts[0].slot", "workouts[2].slot"]
+
+    def test_a_repeat_and_a_missing_time_on_one_day_are_both_named(self) -> None:
+        found = self.found(workout(1, 30, slot=self.M), workout(1, 30, slot=self.M), workout(1, 30))
+
+        assert [(f.code, f.severity) for f in found] == [
+            ("same_slot", Severity.ERROR),
+            ("slot_missing", Severity.WARNING),
+        ]
+
+    def test_workouts_without_a_time_are_never_the_same_time(self) -> None:
+        found = self.found(workout(1, 30), workout(1, 30, sport=Sport.RUNNING))
+
+        assert [f.code for f in found] == ["slot_missing"]
+
+    def test_workouts_outside_the_week_are_left_to_their_own_rule(self) -> None:
+        assert self.found(workout(9, 30), workout(9, 30)) == []
+
+    def test_nothing_the_coach_wrote_is_repeated(self) -> None:
+        found = self.found(
+            workout(1, 30, slot=self.M, title="SECRETMARKER", notes="SECRETMARKER"),
+            workout(1, 30, slot=self.M, title="SECRETMARKER"),
+            workout(1, 30, title="SECRETMARKER"),
+        )
+
+        assert found
+        assert "SECRETMARKER" not in repr(found)
+
+
 class TestTheLists:
     def test_the_rhythm_checks_come_after_the_basic_ones(self) -> None:
         assert ALL_CHECKS == BASIC_CHECKS + RHYTHM_CHECKS
@@ -541,6 +656,7 @@ class TestTheLists:
             check_workouts_per_day,
             check_duplicates,
             check_progression,
+            check_times_of_day,
         )
 
     def test_which_rules_are_errors_and_which_warnings(self) -> None:
@@ -559,6 +675,7 @@ class TestTheLists:
             "many_workouts_in_a_day": Severity.WARNING,
             "duplicate_workout": Severity.WARNING,
             "volume_jump": Severity.ERROR,
+            "slot_missing": Severity.WARNING,
         }
 
     def test_a_context_for_another_week_is_a_programming_error(self) -> None:

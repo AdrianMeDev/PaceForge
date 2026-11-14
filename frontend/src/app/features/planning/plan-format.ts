@@ -4,6 +4,7 @@ import {
   SegmentKind,
   Sport,
   WorkoutGoal,
+  WorkoutSlot,
   ZoneSystem,
 } from '../../core/planning/planning-models';
 
@@ -29,6 +30,12 @@ export const STATUS_LABELS: Record<PlanStatus, string> = {
   confirmed: 'Confirmed',
   superseded: 'Replaced',
   discarded: 'Discarded',
+};
+
+export const SLOT_LABELS: Record<WorkoutSlot, string> = {
+  morning: 'Morning',
+  afternoon: 'Afternoon',
+  evening: 'Evening',
 };
 
 const ZONE_SYSTEM_LABELS: Record<ZoneSystem, string> = {
@@ -111,4 +118,9 @@ export function segmentText(segment: Segment): string {
 export function findingPlace(path: string): string {
   const match = /^workouts\[(\d+)\]/.exec(path);
   return match === null ? 'Week' : `Workout ${Number(match[1]) + 1}`;
+}
+
+/** "+ 10 min stretching": what is added to a workout; empty for none. Never a workout. */
+export function stretchingText(minutes: number): string {
+  return minutes > 0 ? `+ ${minutes} min stretching` : '';
 }

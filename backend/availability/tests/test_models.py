@@ -12,11 +12,14 @@ from availability.models import (
     LIMITATIONS_MAX,
     NOTE_MAX,
     PERIOD_MAX_DAYS,
+    SPORTS,
     WEEK_MINUTES_MAX,
     AvailabilitySettings,
     UnavailablePeriod,
     WeekdayMinutes,
+    effective_sports,
 )
+from planning import schema
 
 pytestmark = pytest.mark.django_db
 
@@ -61,6 +64,70 @@ class TestLimits:
         assert LIMITATIONS_MAX == 1000
         assert NOTE_MAX == 200
         assert PERIOD_MAX_DAYS == 366
+
+
+class TestSports:
+    def test_they_are_the_sports_of_the_week_plan_in_the_same_order(self) -> None:
+        # availability does not import planning; this keeps the two lists in step
+        assert SPORTS == tuple(sport.value for sport in schema.Sport)
+
+    @pytest.mark.parametrize(
+        "sports",
+        [[], ["running"], ["cycling", "strength"], ["strength", "running"], list(SPORTS)],
+    )
+    def test_valid_choices(self, alice: User, sports: list[str]) -> None:
+        check(AvailabilitySettings, alice, sports=sports)
+
+    @pytest.mark.parametrize(
+        "sports",
+        [
+            ["golf"],
+            ["running", "running"],
+            ["Running"],
+            "running",
+            {"running": True},
+            [1],
+            [None],
+            [["running"]],
+            ["running", "golf"],
+            5,
+            True,
+        ],
+    )
+    def test_unusable_choices_are_refused(self, alice: User, sports: Any) -> None:
+        refused(AvailabilitySettings, alice, "sports", sports=sports)
+
+    def test_the_defaults_are_no_choice_and_no_stretching(self, alice: User) -> None:
+        settings = AvailabilitySettings.objects.create(owner=alice)
+
+        assert settings.sports == []
+        assert settings.stretching is False
+
+    def test_none_chosen_means_all_of_them(self, alice: User) -> None:
+        settings = AvailabilitySettings.objects.create(owner=alice)
+
+        assert settings.chosen_sports == list(SPORTS)
+
+    def test_the_chosen_sports_come_in_the_order_of_the_list(self, alice: User) -> None:
+        settings = AvailabilitySettings.objects.create(owner=alice, sports=["strength", "running"])
+
+        assert settings.chosen_sports == ["running", "strength"]
+
+    @pytest.mark.parametrize(
+        ("stored", "expected"),
+        [
+            (None, list(SPORTS)),
+            ([], list(SPORTS)),
+            (["cycling"], ["cycling"]),
+            (["strength", "cycling"], ["cycling", "strength"]),
+            ("running", list(SPORTS)),
+            ({"a": 1}, list(SPORTS)),
+            (5, list(SPORTS)),
+            (["golf"], []),
+        ],
+    )
+    def test_the_effective_sports(self, stored: Any, expected: list[str]) -> None:
+        assert effective_sports(stored) == expected
 
 
 class TestSettings:

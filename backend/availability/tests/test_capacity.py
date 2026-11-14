@@ -295,6 +295,55 @@ class TestTheTypicalWeek:
         assert len(queries) == 3
 
 
+class TestTheSportsAndStretching:
+    def test_without_a_settings_row_every_sport_is_there_and_no_stretching(
+        self, alice: User
+    ) -> None:
+        result = week_capacity(alice, MONDAY)
+
+        assert result.sports == ("running", "cycling", "swimming", "strength")
+        assert result.stretching is False
+
+    def test_a_row_without_a_choice_means_every_sport(self, alice: User) -> None:
+        budget(alice, 100)
+
+        assert week_capacity(alice, MONDAY).sports == ("running", "cycling", "swimming", "strength")
+
+    def test_the_chosen_sports_come_in_the_order_of_the_list(self, alice: User) -> None:
+        AvailabilitySettings.objects.create(
+            owner=alice, sports=["strength", "running"], stretching=True
+        )
+
+        result = week_capacity(alice, MONDAY)
+
+        assert result.sports == ("running", "strength")
+        assert result.stretching is True
+
+    def test_they_change_nothing_about_what_the_week_offers(self, alice: User) -> None:
+        declare(alice, 60, 0, 90)
+        AvailabilitySettings.objects.create(owner=alice, sports=["running"], stretching=True)
+
+        result = week_capacity(alice, MONDAY)
+
+        assert (result.minutes, result.budget, result.total) == ((60, 0, 90, 0, 0, 0, 0), None, 150)
+
+    def test_the_choice_of_another_user_is_not_seen(self, alice: User, bob: User) -> None:
+        AvailabilitySettings.objects.create(owner=bob, sports=["swimming"], stretching=True)
+
+        result = week_capacity(alice, MONDAY)
+
+        assert (len(result.sports), result.stretching) == (4, False)
+
+    def test_it_still_takes_three_queries(self, alice: User) -> None:
+        declare(alice, 60, 60)
+        AvailabilitySettings.objects.create(owner=alice, sports=["running"], stretching=True)
+
+        with CaptureQueriesContext(connection) as queries:
+            week_capacity(alice, MONDAY)
+
+        assert len(queries) == 3
+
+
 class TestTheWholeWeek:
     def test_nothing_declared_offers_nothing(self, alice: User) -> None:
         assert week_capacity(alice, MONDAY) == WeekCapacity((0,) * 7, (None,) * 7, None, 0)

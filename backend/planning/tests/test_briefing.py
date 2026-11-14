@@ -69,6 +69,8 @@ ALLOWED_KEYS = {
     "goals_not_shown",
     "recent_weeks_minutes",
     "typical_weekly_minutes",
+    "sports",
+    "stretching",
     "previous_week_plan",
     "day",
     "goal",
@@ -150,6 +152,8 @@ class TestTheBriefingOfAUserWithNothing:
             "goals_not_shown": 0,
             "recent_weeks_minutes": [],
             "typical_weekly_minutes": None,
+            "sports": ["running", "cycling", "swimming", "strength"],
+            "stretching": False,
             "previous_week_plan": [],
         }
 
@@ -373,6 +377,8 @@ class TestTheGoals:
             "goals_not_shown",
             "recent_weeks_minutes",
             "typical_weekly_minutes",
+            "sports",
+            "stretching",
             "previous_week_plan",
         ]
 
@@ -402,6 +408,45 @@ class TestTheTypicalWeek:
         AvailabilitySettings.objects.create(owner=alice, typical_weekly_minutes=360)
 
         assert '"typical_weekly_minutes":360' in to_json(build_briefing(alice, MONDAY))
+
+
+class TestTheSportsAndStretching:
+    def test_without_a_choice_every_sport_is_told_and_stretching_is_off(self, alice: User) -> None:
+        briefing = build_briefing(alice, MONDAY)
+
+        assert briefing["sports"] == ["running", "cycling", "swimming", "strength"]
+        assert briefing["stretching"] is False
+
+    def test_the_chosen_sports_are_told_in_the_order_of_the_format(self, alice: User) -> None:
+        AvailabilitySettings.objects.create(
+            owner=alice, sports=["strength", "running"], stretching=True
+        )
+
+        briefing = build_briefing(alice, MONDAY)
+
+        assert briefing["sports"] == ["running", "strength"]
+        assert briefing["stretching"] is True
+
+    def test_a_row_without_a_choice_tells_every_sport(self, alice: User) -> None:
+        AvailabilitySettings.objects.create(owner=alice, weekly_budget_minutes=300)
+
+        assert len(build_briefing(alice, MONDAY)["sports"]) == 4
+
+    def test_the_choice_of_another_user_is_not_told(self, alice: User, bob: User) -> None:
+        AvailabilitySettings.objects.create(owner=bob, sports=["swimming"], stretching=True)
+
+        briefing = build_briefing(alice, MONDAY)
+
+        assert len(briefing["sports"]) == 4
+        assert briefing["stretching"] is False
+
+    def test_it_is_in_the_text_the_coach_gets(self, alice: User) -> None:
+        AvailabilitySettings.objects.create(owner=alice, sports=["cycling"], stretching=True)
+
+        text = to_json(build_briefing(alice, MONDAY))
+
+        assert '"sports":["cycling"]' in text
+        assert '"stretching":true' in text
 
 
 class TestTheRecentWeeks:

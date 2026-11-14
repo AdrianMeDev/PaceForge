@@ -1,6 +1,7 @@
 """The page ``docs/weekly-plan.md`` is compared with the code, so that it cannot drift."""
 
 import ast
+import dataclasses
 import json
 import re
 from datetime import date
@@ -12,6 +13,7 @@ from django.conf import settings
 from django.urls import get_resolver
 
 from accounts.models import User
+from availability.models import SPORTS
 from availability.serializers import availability_data
 from coach.endpoints import parse_base_urls
 from coach.providers.openai_compatible import JSON_MODE_HOSTS
@@ -103,6 +105,7 @@ class TestTheExample:
                 {(Sport.CYCLING, ZoneSystem.POWER), (Sport.RUNNING, ZoneSystem.PACE)}
             ),
             recent_weeks=(270, 300, 280),
+            stretching=True,
         )
 
         report = validate_week(plan, context)
@@ -162,8 +165,8 @@ class TestTheRules:
 
     def test_every_check_of_the_rules_is_covered_by_the_table(self) -> None:
         # the number of checks and of codes can only move together with the page
-        assert len(rules.ALL_CHECKS) == 11
-        assert len(self.in_the_code()) == 14
+        assert len(rules.ALL_CHECKS) == 14
+        assert len(self.in_the_code()) == 18
 
 
 class TestTheZoneSystems:
@@ -198,10 +201,17 @@ class TestTheFormatTables:
             "| Field | Required | Meaning |"
         )
 
+    def test_every_field_of_a_workout_and_a_segment_is_named_on_the_page(self) -> None:
+        text = section("The format")
+
+        for dataclass in (schema.Workout, schema.Segment):
+            for field in dataclasses.fields(dataclass):
+                assert f"`{field.name}`" in text, field.name
+
     def test_the_enums_named_on_the_page_are_those_of_the_code(self) -> None:
         text = section("The format")
 
-        for enum in (schema.Sport, schema.Goal, schema.SegmentKind):
+        for enum in (schema.Sport, schema.Goal, schema.SegmentKind, schema.Slot):
             for member in enum:
                 assert f"`{member.value}`" in text, member
 
@@ -363,6 +373,44 @@ class TestTheReadmeOnTheTypicalWeek:
     def test_the_limitations_are_not_said_to_go_to_the_coach(self) -> None:
         assert "it is there for the coach" not in FLAT_README
         assert "it is not sent to the coach either" in FLAT_README
+
+
+class TestTheReadmeOnSportsAndDoubleDays:
+    PAGE = (ROOT / "frontend/src/app/features/availability/availability-page.html").read_text()
+
+    def test_the_labels_of_the_page_are_the_words_of_the_readme(self) -> None:
+        for label in ("Sports for your plan", "Add stretching to sessions"):
+            assert label in self.PAGE, label
+        assert "**Add stretching to sessions**" in FLAT_README
+        assert "<legend>Sports for your plan</legend>" in self.PAGE
+
+    def test_the_four_sports_are_named_as_the_page_names_them(self) -> None:
+        for name in ("Running", "Cycling", "Swimming", "Strength / gym"):
+            assert f"**{name}**" in FLAT_README, name
+        assert len(SPORTS) == 4
+
+    def test_the_three_times_of_day_are_those_of_the_format(self) -> None:
+        for slot in schema.Slot:
+            assert f"**{slot.value}**" in FLAT_README, slot
+
+    def test_stretching_is_said_to_be_never_a_session_and_to_cost_no_time(self) -> None:
+        assert "never a session of its own" in FLAT_README
+        assert "uses up none of your minutes" in FLAT_README
+        assert "+ 10 min stretching" in FLAT_README
+
+    def test_the_time_per_day_limit_is_admitted(self) -> None:
+        assert "given **per day**" in FLAT_README
+        assert "does not know that you can only train in the evening" in FLAT_README
+
+    def test_the_format_page_says_what_the_fields_mean(self) -> None:
+        text = section("The format")
+
+        assert f"0 to {schema.STRETCHING_MAX}" in text
+        assert "**never a workout of its own**" in " ".join(text.split())
+        assert "`stretching_minutes`" in text and "`slot`" in text
+
+    def test_the_old_sentence_about_no_time_of_day_is_gone(self) -> None:
+        assert "There is **no time of day**" not in DOC
 
 
 class TestTheReadmeTable:

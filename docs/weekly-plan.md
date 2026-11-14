@@ -30,6 +30,8 @@ days, a doubled volume). They do not say that a plan is *good*.
       "duration_minutes": 90,
       "zone_system": "power",
       "zone": 2,
+      "slot": "morning",
+      "stretching_minutes": 10,
       "segments": [
         { "kind": "steady", "seconds": 5400, "zone_system": "power", "zone": 2 }
       ]
@@ -83,6 +85,8 @@ A **workout**:
 | `duration_minutes` | yes | 1 to 1440. |
 | `zone_system`, `zone` | no | The target of the whole session. Both or neither. |
 | `notes` | no | Up to 500 characters, line breaks allowed. |
+| `slot` | no | When on the day: `morning`, `afternoon` or `evening`. Only the order is meant, not a clock time. |
+| `stretching_minutes` | no | Stretching added to this workout, 0 to 60 minutes (0 or left out: none). Never a workout of its own, and not part of the training time. |
 | `segments` | no | The interval structure: a list of at most 40 segments. |
 
 A **segment**:
@@ -98,6 +102,14 @@ A **segment**:
 characters are refused everywhere (line breaks are allowed in `notes` and `rationale` only), and so
 are the line and paragraph separators and the characters that reorder text on screen. A text that
 is not text, such as a number, is refused instead of being turned into text.
+
+**Time of day and stretching.** `slot` says when on the day a workout is: `morning`, `afternoon` or
+`evening`. It is an order and no clock time. Several workouts on one day are welcome (an easy run
+in the morning, a ride in the afternoon), each with a time of its own; the stored order of a day
+follows the times of day (a workout without one comes last). `stretching_minutes` adds stretching
+to a workout. Stretching is **never a workout of its own**: it is not a sport, it is not part of
+`duration_minutes`, it uses up no minutes of the day or the week, it does not count for the
+progression rule and it is not a training day. It is only allowed if the athlete switched it on.
 
 **Errors.** The parser reports *every* problem at once, each with its path
 (`workouts[2].segments[0].seconds`). One mistake is one problem: a missing field is reported once.
@@ -134,6 +146,9 @@ Each plan is checked against the facts of its user for that week, collected when
 - **Time.** The minutes per weekday that the user offers (an empty weekday is 0, not "free"), a day
   inside a vacation, an illness or another absence offers 0 (where absences overlap, the illness is
   named before the vacation), and the weekly budget caps what the week adds up to.
+- **Sports and stretching.** The sports the athlete ticked (all four if none was chosen) and whether
+  stretching may be added to sessions. Stretching minutes are not a workout and not time: they do
+  not use up the minutes of a day or a week and do not count for the progression rule.
 - **Zones.** Which zone systems the athlete has a threshold for (typed in, read from Intervals.icu
   or estimated, in any case).
 - **Recent volume.** The minutes of each of the up to 4 calendar weeks before the plan's week in
@@ -159,6 +174,10 @@ user to weigh.
 | `zone_system_not_for_sport` | error | A zone system that does not fit the sport (workout or segment). |
 | `zone_system_unavailable` | error | The athlete has no threshold for that system in that sport. |
 | `day_over_capacity` | error | The workouts of a day add up to more than the day offers. The workout that tips the day is named. |
+| `sport_not_selected` | error | A workout in a sport the athlete did not tick on the training time page. |
+| `stretching_not_wanted` | error | Stretching minutes on a workout although stretching is switched off. |
+| `same_slot` | error | Two workouts of one day in the same part of the day. The later one is named. |
+| `slot_missing` | warning | A day with several workouts of which one has no time of day. Named once per day. |
 | `day_in_absence` | error | A workout on a day of vacation, illness or another absence. |
 | `week_over_capacity` | error | The week adds up to more than the user offers, the weekly budget included. |
 | `too_many_hard_days` | error | More hard days than the limit. A day counts once. |
@@ -196,6 +215,7 @@ decisions, not coaching science; better ones will come from using the feature.
 | `MAX_SEGMENTS` | 40 | Segments of a workout. |
 | `SEGMENT_SECONDS_MAX` | 86400 | Seconds of a segment. |
 | `REPEAT_MAX` | 50 | Repeats of a segment. |
+| `STRETCHING_MAX` | 60 | Minutes of stretching added to one workout. |
 
 The progression rule compares without rounding the reference: with the weeks 100 and 101 (average
 100.5) 130 percent is 130.65, so 130 planned minutes pass and 131 do not. A week exactly at a limit
@@ -277,6 +297,8 @@ without this page.
 | `goals_not_shown` | How many active goals were left out because of the limit. |
 | `recent_weeks_minutes` | Minutes done in each of the up to 4 weeks before, latest first. |
 | `typical_weekly_minutes` | What the athlete calls a normal week, in minutes; `null` if not given (or 0). The progression rule's reference is the higher of this and the recent average. |
+| `sports` | The sports the athlete wants in a plan (all four if none was chosen), in the order of the format. |
+| `stretching` | Whether stretching may be added to sessions (`stretching_minutes`), never as a session. |
 | `previous_week_plan` | The confirmed plan of the week before: day, sport, goal, minutes. |
 
 What is **never** sent: names, e-mail addresses, ids, the title or notes of past plans, the names
@@ -346,7 +368,10 @@ without a code is the limit of PaceForge itself.
 - The **limitations** the user wrote on the training time page are free text. A machine cannot
   check them, and they are **not sent to the coach** either: they are free text about the body of
   the user. The only free text the coach sees is the title and notes of the goals.
-- There is **no time of day**: two workouts on one day add up, they cannot overlap.
+- The **time of day** is only an order (morning, afternoon, evening), not a clock time: two
+  workouts on one day add up, and PaceForge does not know that you can only train in the evening,
+  because the time you have is given per day. A plan can put the morning on a day when you are not
+  free then.
 - Whether a plan is *good* training: the rules only keep out what is impossible or plainly unwise.
 - Anything about the weeks before or after the plan beyond the recent average and the typical week.
 

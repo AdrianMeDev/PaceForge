@@ -35,6 +35,8 @@ const DRAFT = {
       zone_system: 'power',
       zone: 2,
       notes: 'Keep it easy',
+      slot: null,
+      stretching_minutes: 0,
       segments: [],
     },
     {
@@ -46,6 +48,8 @@ const DRAFT = {
       zone_system: 'power',
       zone: 3,
       notes: 'Keep it easy',
+      slot: null,
+      stretching_minutes: 0,
       segments: [],
     },
     {
@@ -57,6 +61,8 @@ const DRAFT = {
       zone_system: null,
       zone: null,
       notes: 'Keep it easy',
+      slot: null,
+      stretching_minutes: 0,
       segments: [
         { kind: 'warmup', seconds: 900, repeat: 1, zone_system: 'power', zone: 2 },
         { kind: 'work', seconds: 600, repeat: 3, zone_system: 'power', zone: 4 },
@@ -97,6 +103,8 @@ const CONFIRMED = {
       zone_system: 'power',
       zone: 2,
       notes: '',
+      slot: null,
+      stretching_minutes: 0,
       segments: [],
     },
   ],
@@ -265,6 +273,17 @@ const WRONG_PLANS: [string, unknown][] = [
     altered(DRAFT, [[...WORKOUT, 'zone_system'], 'pace'], [[...WORKOUT, 'zone'], 6]),
   ],
   ['no zone system', altered(DRAFT, [[...WORKOUT, 'zone_system'], REMOVE])],
+  ['no time of day', altered(DRAFT, [[...WORKOUT, 'slot'], REMOVE])],
+  ['an unknown time of day', altered(DRAFT, [[...WORKOUT, 'slot'], 'noon'])],
+  ['a time of day in other letters', altered(DRAFT, [[...WORKOUT, 'slot'], 'Morning'])],
+  ['an empty text as time of day', altered(DRAFT, [[...WORKOUT, 'slot'], ''])],
+  ['a number as time of day', altered(DRAFT, [[...WORKOUT, 'slot'], 5])],
+  ['no stretching', altered(DRAFT, [[...WORKOUT, 'stretching_minutes'], REMOVE])],
+  ['null as stretching', altered(DRAFT, [[...WORKOUT, 'stretching_minutes'], null])],
+  ['a text as stretching', altered(DRAFT, [[...WORKOUT, 'stretching_minutes'], '10'])],
+  ['a fraction as stretching', altered(DRAFT, [[...WORKOUT, 'stretching_minutes'], 7.5])],
+  ['negative stretching', altered(DRAFT, [[...WORKOUT, 'stretching_minutes'], -1])],
+  ['more than an hour of stretching', altered(DRAFT, [[...WORKOUT, 'stretching_minutes'], 61])],
   ['no notes', altered(DRAFT, [[...WORKOUT, 'notes'], REMOVE])],
   ['a number as notes', altered(DRAFT, [[...WORKOUT, 'notes'], 5])],
   ['no segments', altered(DRAFT, [[...WORKOUT, 'segments'], REMOVE])],
@@ -464,6 +483,44 @@ describe('PlanningApi', () => {
       const { result } = await run(api.generate('2026-11-16'), 'POST', URL, VALID_DRAFT, 201);
 
       expect(result).toMatchObject({ plan: { report: { valid: true, findings: [] } } });
+    });
+
+    it.each(['morning', 'afternoon', 'evening'])('knows the time of day %s', async (slot) => {
+      const body = altered(DRAFT, [[...WORKOUT, 'slot'], slot]);
+
+      const { result } = await run(api.generate('2026-11-16'), 'POST', URL, body as object, 201);
+
+      expect(result).toMatchObject({
+        plan: { workouts: [{ slot }, { slot: null }, { slot: null }] },
+      });
+    });
+
+    it.each([0, 1, 60])('takes over %i minutes of stretching', async (minutes) => {
+      const body = altered(DRAFT, [[...WORKOUT, 'stretching_minutes'], minutes]);
+
+      const { result } = await run(api.generate('2026-11-16'), 'POST', URL, body as object, 201);
+
+      expect(result).toMatchObject({
+        plan: { workouts: [{ stretching_minutes: minutes }, {}, {}] },
+      });
+    });
+
+    it('takes over a day with two workouts at two times', async () => {
+      const body = altered(
+        DRAFT,
+        [[...WORKOUT, 'slot'], 'morning'],
+        [['workouts', 1, 'day'], '2026-11-16'],
+        [['workouts', 1, 'slot'], 'evening'],
+      );
+
+      const { result } = await run(api.generate('2026-11-16'), 'POST', URL, body as object, 201);
+
+      const plan = result.kind === 'ok' ? result.plan : null;
+      expect(plan?.workouts.map((w) => [w.day, w.slot])).toEqual([
+        ['2026-11-16', 'morning'],
+        ['2026-11-16', 'evening'],
+        ['2026-11-20', null],
+      ]);
     });
 
     it('takes over only the known fields', async () => {

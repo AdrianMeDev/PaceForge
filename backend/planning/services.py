@@ -21,7 +21,7 @@ from accounts.models import User
 
 from .context import build_context
 from .models import REASON_MAX, PlannedWorkout, WeeklyPlan
-from .schema import WeekPlan, parse_week_plan, workout_to_json
+from .schema import WeekPlan, order_key, parse_week_plan, workout_to_json
 from .validation import Report, validate_week
 
 Status = WeeklyPlan.Status
@@ -48,12 +48,13 @@ def _now() -> datetime:
 
 
 def canonical(plan: WeekPlan) -> WeekPlan:
-    """The plan with its workouts in the order they are stored and read back: by day, and within
-    a day in the order given. Validate this form, so that the paths of the findings (such as
-    ``workouts[2]``) are the places in what is stored."""
+    """The plan with its workouts in the order they are stored and read back: by day, within a
+    day by time of day (a workout without one last) and otherwise in the order given. Validate
+    this form, so that the paths of the findings (such as ``workouts[2]``) are the places in
+    what is stored."""
     return WeekPlan(
         plan.week_start,
-        tuple(sorted(plan.workouts, key=lambda workout: workout.day)),
+        tuple(sorted(plan.workouts, key=order_key)),
         plan.rationale,
     )
 
@@ -67,6 +68,7 @@ def save_draft(
     plain line saying why. Nothing is stored if anything goes wrong. The plan is stored as it is,
     even if the validation has things to say about it."""
     reason = _clean_reason(reason)
+    week_plan = canonical(week_plan)  # stored and read back in the order of the day
     if parent is not None:
         replaced = get(user, parent)
         if replaced.week_start != week_plan.week_start:
@@ -99,6 +101,7 @@ def load(user: User, plan_id: UUID) -> WeekPlan:
             **workout_row,
             "day": workout_row["day"].isoformat(),
             "zone_system": workout_row["zone_system"] or None,
+            "slot": workout_row["slot"] or None,
         }
         for workout_row in PlannedWorkout.objects.for_user(user)
         .filter(plan=plan)
@@ -113,6 +116,8 @@ def load(user: User, plan_id: UUID) -> WeekPlan:
             "zone",
             "notes",
             "segments",
+            "slot",
+            "stretching_minutes",
         )
     ]
     return parse_week_plan(
@@ -213,6 +218,8 @@ def _store(user: User, week_plan: WeekPlan, reason: str, parent: UUID | None) ->
                 zone_system=workout.zone_system.value if workout.zone_system else "",
                 zone=workout.zone,
                 notes=workout.notes,
+                slot=workout.slot.value if workout.slot else "",
+                stretching_minutes=workout.stretching_minutes,
             )
         )
     PlannedWorkout.objects.bulk_create(rows)

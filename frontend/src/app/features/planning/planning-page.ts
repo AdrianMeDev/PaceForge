@@ -6,12 +6,14 @@ import { PlanningApi } from '../../core/planning/planning-api';
 import { PlanProblem, PlannableWeek, WeekPlan, Workout } from '../../core/planning/planning-models';
 import {
   GOAL_LABELS,
+  SLOT_LABELS,
   SPORT_LABELS,
   STATUS_LABELS,
   dayLabel,
   findingPlace,
   minutesText,
   segmentText,
+  stretchingText,
   targetText,
   weekRange,
 } from './plan-format';
@@ -80,10 +82,12 @@ export class PlanningPage implements OnInit {
     () => this.plan()?.status === 'draft' && this.plan()?.report?.valid === true,
   );
 
+  protected readonly slot = SLOT_LABELS;
   protected readonly sport = SPORT_LABELS;
   protected readonly goal = GOAL_LABELS;
   protected readonly status = STATUS_LABELS;
   protected readonly range = weekRange;
+  protected readonly stretching = stretchingText;
   protected readonly minutes = minutesText;
   protected readonly target = targetText;
   protected readonly segment = segmentText;

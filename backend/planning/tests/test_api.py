@@ -25,7 +25,7 @@ from coach.views import PROBLEMS
 from goals import services as goal_services
 from planning import services
 from planning.models import PlannedWorkout, WeeklyPlan
-from planning.schema import Goal, Sport, WeekPlan, Workout, ZoneSystem, to_json
+from planning.schema import Goal, Slot, Sport, WeekPlan, Workout, ZoneSystem, to_json
 
 from .conftest import make_user, signed_in
 from .scripted import Scripted
@@ -61,6 +61,8 @@ WORKOUT_FIELDS = {
     "zone_system",
     "zone",
     "notes",
+    "slot",
+    "stretching_minutes",
     "segments",
 }
 
@@ -472,6 +474,33 @@ class TestReadingAPlan:
         assert [w["day"] for w in data["workouts"]] == ["2027-07-19", "2027-07-20", "2027-07-21"]
         assert data["report"]["valid"] is False
         assert data["report"]["findings"][0]["path"] == "workouts[1]"
+
+    def test_time_of_day_and_stretching_are_part_of_every_workout(self, alice: User) -> None:
+        plan = services.save_draft(
+            alice,
+            WeekPlan(
+                MONDAY,
+                (
+                    ride(0).__class__(
+                        day=MONDAY,
+                        sport=Sport.RUNNING,
+                        title="Easy run",
+                        goal=Goal.ENDURANCE,
+                        duration_minutes=50,
+                        slot=Slot.MORNING,
+                        stretching_minutes=10,
+                    ),
+                    ride(0),
+                ),
+            ),
+        )
+
+        data = body(signed_in(alice).call("GET", plan_url(plan.pk)))
+
+        assert [(w["title"], w["slot"], w["stretching_minutes"]) for w in data["workouts"]] == [
+            ("Easy run", "morning", 10),
+            ("Endurance ride", None, 0),
+        ]
 
     def test_a_confirmed_plan_has_no_report(self, alice: User) -> None:
         plan = services.confirm(alice, draft(alice).pk)

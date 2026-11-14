@@ -16,10 +16,13 @@ pytestmark = pytest.mark.django_db
 
 URL = "/api/availability/"
 MONDAY = date(2027, 7, 12)
+ALL_SPORTS = ["running", "cycling", "swimming", "strength"]
 EMPTY = {
     "weekdays": [0] * 7,
     "weekly_budget_minutes": None,
     "typical_weekly_minutes": None,
+    "sports": ALL_SPORTS,
+    "stretching": False,
     "limitations": "",
 }
 WEEK = [60, 0, 90, 0, 0, 120, 180]
@@ -99,6 +102,8 @@ class TestReading:
             "weekdays",
             "weekly_budget_minutes",
             "typical_weekly_minutes",
+            "sports",
+            "stretching",
             "limitations",
         }
 
@@ -117,6 +122,128 @@ class TestReading:
         assert read(signed_in(alice)) == EMPTY
 
 
+class TestSportsAndStretching:
+    def test_a_user_who_chose_nothing_gets_all_sports_and_no_stretching(self, alice: User) -> None:
+        answer = read(signed_in(alice))
+
+        assert (answer["sports"], answer["stretching"]) == (ALL_SPORTS, False)
+
+    def test_settings_saved_before_the_choice_existed_read_as_all_sports(self, alice: User) -> None:
+        AvailabilitySettings.objects.create(owner=alice, weekly_budget_minutes=300)
+
+        assert read(signed_in(alice))["sports"] == ALL_SPORTS
+
+    def test_the_sports_are_chosen_and_kept_in_the_order_of_the_list(self, alice: User) -> None:
+        api = signed_in(alice)
+
+        response = save(api, {"sports": ["strength", "cycling"]})
+
+        assert response.status_code == HTTPStatus.OK
+        assert body(response)["sports"] == ["cycling", "strength"]
+        assert AvailabilitySettings.objects.get().sports == ["cycling", "strength"]
+        assert read(api)["sports"] == ["cycling", "strength"]
+
+    def test_all_four_can_be_chosen_explicitly(self, alice: User) -> None:
+        response = save(signed_in(alice), {"sports": ALL_SPORTS[::-1]})
+
+        assert body(response)["sports"] == ALL_SPORTS
+
+    def test_the_choice_can_be_changed(self, alice: User) -> None:
+        api = signed_in(alice)
+        save(api, {"sports": ["running"]})
+
+        save(api, {"sports": ["swimming", "running"]})
+
+        assert read(api)["sports"] == ["running", "swimming"]
+
+    @pytest.mark.parametrize(
+        "sports",
+        [[], ["golf"], ["running", "running"], ["Running"], "running", None, [5], {}, True, 3],
+    )
+    def test_an_unusable_choice_is_refused(self, alice: User, sports: Any) -> None:
+        response = save(signed_in(alice), {"sports": sports})
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert list(body(response)) == ["sports"]
+        assert body(response)["sports"] == [
+            "Choose at least one of: running, cycling, swimming, strength."
+        ]
+        assert rows() == (0, 0)
+
+    @pytest.mark.parametrize("stretching", [True, False])
+    def test_stretching_is_switched_on_and_off(self, alice: User, stretching: bool) -> None:
+        api = signed_in(alice)
+
+        response = save(api, {"stretching": stretching})
+
+        assert body(response)["stretching"] is stretching
+        assert read(api)["stretching"] is stretching
+
+    @pytest.mark.parametrize("stretching", ["true", "false", 1, 0, None, "yes", [], {}, 1.0])
+    def test_only_true_and_false_are_stretching(self, alice: User, stretching: Any) -> None:
+        response = save(signed_in(alice), {"stretching": stretching})
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert list(body(response)) == ["stretching"]
+        assert body(response)["stretching"] == ["Send true or false."]
+        assert rows() == (0, 0)
+
+    def test_the_sports_alone_leave_the_rest_as_it_was(self, alice: User) -> None:
+        api = signed_in(alice)
+        save(
+            api,
+            {
+                "weekdays": WEEK,
+                "weekly_budget_minutes": 300,
+                "typical_weekly_minutes": 360,
+                "stretching": True,
+                "limitations": "Knee",
+            },
+        )
+
+        save(api, {"sports": ["running"]})
+
+        assert read(api) == {
+            "weekdays": WEEK,
+            "weekly_budget_minutes": 300,
+            "typical_weekly_minutes": 360,
+            "sports": ["running"],
+            "stretching": True,
+            "limitations": "Knee",
+        }
+
+    def test_the_other_settings_leave_the_choice_as_it_was(self, alice: User) -> None:
+        api = signed_in(alice)
+        save(api, {"sports": ["cycling"], "stretching": True})
+
+        save(api, {"weekly_budget_minutes": 200, "limitations": "Knee"})
+
+        answer = read(api)
+        assert (answer["sports"], answer["stretching"]) == (["cycling"], True)
+
+    def test_the_choice_of_another_user_is_not_seen(self, alice: User, bob: User) -> None:
+        AvailabilitySettings.objects.create(owner=bob, sports=["swimming"], stretching=True)
+
+        answer = read(signed_in(alice))
+
+        assert (answer["sports"], answer["stretching"]) == (ALL_SPORTS, False)
+
+    def test_a_refusal_keeps_the_choice(self, alice: User) -> None:
+        api = signed_in(alice)
+        save(api, {"sports": ["running"], "stretching": True})
+
+        response = save(api, {"sports": [], "stretching": False})
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        answer = read(api)
+        assert (answer["sports"], answer["stretching"]) == (["running"], True)
+
+    def test_every_problem_is_named_at_once(self, alice: User) -> None:
+        response = save(signed_in(alice), {"sports": [], "stretching": "yes"})
+
+        assert set(body(response)) == {"sports", "stretching"}
+
+
 class TestSaving:
     def test_everything_at_once(self, alice: User) -> None:
         api = signed_in(alice)
@@ -130,6 +257,8 @@ class TestSaving:
             "weekdays": WEEK,
             "weekly_budget_minutes": 300,
             "typical_weekly_minutes": None,
+            "sports": ALL_SPORTS,
+            "stretching": False,
             "limitations": "No running",
         }
         assert read(api) == body(response)
@@ -145,6 +274,8 @@ class TestSaving:
             "weekdays": WEEK,
             "weekly_budget_minutes": 300,
             "typical_weekly_minutes": None,
+            "sports": ALL_SPORTS,
+            "stretching": False,
             "limitations": "Knee",
         }
 
@@ -158,6 +289,8 @@ class TestSaving:
             "weekdays": WEEK,
             "weekly_budget_minutes": 240,
             "typical_weekly_minutes": None,
+            "sports": ALL_SPORTS,
+            "stretching": False,
             "limitations": "Knee",
         }
 
@@ -171,6 +304,8 @@ class TestSaving:
             "weekdays": WEEK,
             "weekly_budget_minutes": 300,
             "typical_weekly_minutes": None,
+            "sports": ALL_SPORTS,
+            "stretching": False,
             "limitations": "Knee",
         }
 
@@ -205,6 +340,8 @@ class TestSaving:
             "weekdays": WEEK,
             "weekly_budget_minutes": 300,
             "typical_weekly_minutes": 360,
+            "sports": ALL_SPORTS,
+            "stretching": False,
             "limitations": "Knee",
         }
 
@@ -267,6 +404,8 @@ class TestSaving:
             "weekdays": [30] * 7,
             "weekly_budget_minutes": 100,
             "typical_weekly_minutes": None,
+            "sports": ALL_SPORTS,
+            "stretching": False,
             "limitations": "",
         }
 
@@ -312,6 +451,8 @@ class TestSaving:
             "weekdays": [10] * 7,
             "weekly_budget_minutes": 50,
             "typical_weekly_minutes": None,
+            "sports": ALL_SPORTS,
+            "stretching": False,
             "limitations": "Bob",
         }
 
@@ -424,6 +565,8 @@ class TestRefusals:
             "weekdays": WEEK,
             "weekly_budget_minutes": 300,
             "typical_weekly_minutes": None,
+            "sports": ALL_SPORTS,
+            "stretching": False,
             "limitations": "Knee",
         }
 

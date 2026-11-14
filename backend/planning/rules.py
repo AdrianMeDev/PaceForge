@@ -15,7 +15,7 @@ from enum import StrEnum
 from fractions import Fraction
 
 from .context import PlanContext
-from .schema import Goal, Sport, WeekPlan, Workout, ZoneSystem
+from .schema import Goal, Slot, Sport, WeekPlan, Workout, ZoneSystem
 
 # The segments of a workout may differ from its duration by this much before it is an error.
 DURATION_TOLERANCE_SECONDS = 60
@@ -361,6 +361,81 @@ def _reference_week(context: PlanContext) -> tuple[str, Fraction] | None:
     return max(options, key=lambda option: option[1], default=None)
 
 
+def check_sports(plan: WeekPlan, context: PlanContext) -> list[Finding]:
+    """Every workout is in a sport the athlete wants in a plan (an error)."""
+    _same_week(plan, context)
+    return [
+        Finding(
+            Severity.ERROR,
+            "sport_not_selected",
+            f"{_WEEKDAYS[offset]} has a {workout.sport.value} workout, "
+            "which is not one of the sports you chose.",
+            f"workouts[{index}].sport",
+        )
+        for offset, workouts in sorted(_workouts_by_day(plan, context).items())
+        for index, workout in workouts
+        if workout.sport not in context.sports
+    ]
+
+
+def check_stretching(plan: WeekPlan, context: PlanContext) -> list[Finding]:
+    """Stretching is only added if the athlete wants it (an error). It is never a workout of its
+    own and counts for no minutes: nothing else looks at it."""
+    _same_week(plan, context)
+    if context.stretching:
+        return []
+    return [
+        Finding(
+            Severity.ERROR,
+            "stretching_not_wanted",
+            f"{_WEEKDAYS[offset]} has stretching added, but you did not ask for stretching.",
+            f"workouts[{index}].stretching_minutes",
+        )
+        for offset, workouts in sorted(_workouts_by_day(plan, context).items())
+        for index, workout in workouts
+        if workout.stretching_minutes > 0
+    ]
+
+
+def check_times_of_day(plan: WeekPlan, context: PlanContext) -> list[Finding]:
+    """Several workouts on a day need a time of day each, and no two share one.
+
+    The second workout in the same part of the day is an error (named at that workout); a day
+    with several workouts of which one has no time of day is a warning, named once per day at the
+    first workout without one."""
+    _same_week(plan, context)
+    found: list[Finding] = []
+    for offset, workouts in sorted(_workouts_by_day(plan, context).items()):
+        if len(workouts) < 2:
+            continue
+        taken: set[Slot] = set()
+        for index, workout in workouts:
+            if workout.slot is None:
+                continue
+            if workout.slot in taken:
+                found.append(
+                    Finding(
+                        Severity.ERROR,
+                        "same_slot",
+                        f"{_WEEKDAYS[offset]} has two workouts in the {workout.slot.value}.",
+                        f"workouts[{index}].slot",
+                    )
+                )
+            taken.add(workout.slot)
+        without = [index for index, workout in workouts if workout.slot is None]
+        if without:
+            found.append(
+                Finding(
+                    Severity.WARNING,
+                    "slot_missing",
+                    f"{_WEEKDAYS[offset]} has {len(workouts)} workouts; say for each when it is "
+                    "(morning, afternoon or evening).",
+                    f"workouts[{without[0]}].slot",
+                )
+            )
+    return found
+
+
 # The checks of structure, zones and capacity, in the order their findings are listed.
 BASIC_CHECKS: tuple[Check, ...] = (
     check_inside_week,
@@ -368,6 +443,8 @@ BASIC_CHECKS: tuple[Check, ...] = (
     check_zone_systems,
     check_day_capacity,
     check_week_capacity,
+    check_sports,
+    check_stretching,
 )
 
 
@@ -379,6 +456,7 @@ RHYTHM_CHECKS: tuple[Check, ...] = (
     check_workouts_per_day,
     check_duplicates,
     check_progression,
+    check_times_of_day,
 )
 
 ALL_CHECKS: tuple[Check, ...] = BASIC_CHECKS + RHYTHM_CHECKS

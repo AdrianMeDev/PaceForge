@@ -150,6 +150,7 @@ class TestTheOrder:
             "outside_week",
             "hard_days_in_a_row",
             "duplicate_workout",
+            "slot_missing",
         ]
 
     def test_the_findings_follow_the_list_of_checks(self) -> None:

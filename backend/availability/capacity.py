@@ -10,7 +10,13 @@ from datetime import date, timedelta
 
 from accounts.models import User
 
-from .models import AvailabilitySettings, UnavailablePeriod, WeekdayMinutes
+from .models import (
+    SPORTS,
+    AvailabilitySettings,
+    UnavailablePeriod,
+    WeekdayMinutes,
+    effective_sports,
+)
 
 # Where absences overlap, the one that says most is named: illness before vacation before the rest.
 _KIND_ORDER = ("illness", "vacation", "other")
@@ -31,6 +37,10 @@ class WeekCapacity:
     # What the user calls a normal week of training, ``None`` if not said. A reference for the
     # planning, not a limit: it changes nothing about what the week offers.
     typical_weekly_minutes: int | None = None
+    # The sports the user wants in a plan (all of them if none was chosen) and whether stretching
+    # may be added to sessions. Choices, not time: they change nothing about what the week offers.
+    sports: tuple[str, ...] = SPORTS
+    stretching: bool = False
 
 
 def week_capacity(user: User, monday: date) -> WeekCapacity:
@@ -41,10 +51,10 @@ def week_capacity(user: User, monday: date) -> WeekCapacity:
     minutes = tuple(offered for offered, _ in days)
     row = (
         AvailabilitySettings.objects.for_user(user)
-        .values_list("weekly_budget_minutes", "typical_weekly_minutes")
+        .values_list("weekly_budget_minutes", "typical_weekly_minutes", "sports", "stretching")
         .first()
     )
-    budget, typical = row if row is not None else (None, None)
+    budget, typical, chosen, stretching = row if row is not None else (None, None, [], False)
     total = sum(minutes)
     return WeekCapacity(
         minutes=minutes,
@@ -52,6 +62,8 @@ def week_capacity(user: User, monday: date) -> WeekCapacity:
         budget=budget,
         total=total if budget is None else min(total, budget),
         typical_weekly_minutes=typical,
+        sports=tuple(effective_sports(chosen)),
+        stretching=stretching,
     )
 
 

@@ -58,6 +58,8 @@ function plan(changes: Partial<WeekPlan> = {}): WeekPlan {
         zone_system: 'power',
         zone: 2,
         notes: 'Keep it easy',
+        slot: null,
+        stretching_minutes: 0,
         segments: [],
       },
       {
@@ -69,6 +71,8 @@ function plan(changes: Partial<WeekPlan> = {}): WeekPlan {
         zone_system: null,
         zone: null,
         notes: '',
+        slot: null,
+        stretching_minutes: 0,
         segments: [],
       },
       {
@@ -80,6 +84,8 @@ function plan(changes: Partial<WeekPlan> = {}): WeekPlan {
         zone_system: null,
         zone: null,
         notes: '',
+        slot: null,
+        stretching_minutes: 0,
         segments: [
           { kind: 'warmup', seconds: 900, repeat: 1, zone_system: 'pace', zone: 2 },
           { kind: 'work', seconds: 600, repeat: 3, zone_system: 'pace', zone: 4 },
@@ -92,6 +98,21 @@ function plan(changes: Partial<WeekPlan> = {}): WeekPlan {
 }
 
 const WITH_ERRORS = plan();
+const DOUBLE = plan({
+  workouts: [
+    {
+      ...plan().workouts[0],
+      title: 'Easy run',
+      sport: 'running',
+      slot: 'morning',
+      stretching_minutes: 10,
+      duration_minutes: 50,
+    },
+    { ...plan().workouts[0], title: 'Ride', slot: 'evening' },
+    { ...plan().workouts[2], day: '2026-11-18' },
+  ],
+});
+
 const VALID = plan({ report: { valid: true, findings: [] } });
 const WARNED = plan({ report: { valid: true, findings: [NO_FREE_DAY] } });
 const CONFIRMED = plan({
@@ -478,7 +499,66 @@ describe('PlanningPage', () => {
     });
   });
 
+  describe('a day with two sessions and stretching', () => {
+    beforeEach(() => setup({ plans: { [DRAFT_ID]: { kind: 'ok', plan: DOUBLE } } }));
+
+    it('shows both sessions under one day, the morning first', () => {
+      const days = Array.from(page.querySelectorAll('h3')).map((h) => h.textContent?.trim());
+      expect(days).toEqual(['Mon 16 Nov', 'Wed 18 Nov']);
+      const titles = Array.from(page.querySelectorAll('.workout h4')).map((h) => h.textContent);
+      expect(titles).toEqual(['Easy run', 'Ride', 'Intervals']);
+    });
+
+    it('names the time of day of a session', () => {
+      expect(byId('workout-1')?.querySelector('[data-testid="slot"]')?.textContent).toBe('Morning');
+      expect(byId('workout-2')?.querySelector('[data-testid="slot"]')?.textContent).toBe('Evening');
+    });
+
+    it('names none for a session without one', () => {
+      expect(byId('workout-3')?.querySelector('[data-testid="slot"]')).toBeNull();
+    });
+
+    it('shows stretching as an addition to the session and never as a session', () => {
+      expect(byId('workout-1')?.querySelector('[data-testid="stretching"]')?.textContent).toBe(
+        '+ 10 min stretching',
+      );
+      expect(page.querySelectorAll('.workout')).toHaveLength(3);
+    });
+
+    it('shows no stretching line for a session without it', () => {
+      expect(byId('workout-2')?.querySelector('[data-testid="stretching"]')).toBeNull();
+    });
+
+    it('keeps the length of the session apart from the stretching', () => {
+      const meta = byId('workout-1')?.querySelector('[data-testid="meta"]');
+
+      expect(meta?.textContent?.replace(/\s+/g, ' ').trim()).toContain('50 min');
+    });
+  });
+
   describe('the checks', () => {
+    it('puts a finding about the time of day at the session it is about', async () => {
+      const flagged = plan({
+        workouts: DOUBLE.workouts,
+        report: {
+          valid: false,
+          findings: [
+            {
+              severity: 'error',
+              code: 'same_slot',
+              message: 'Monday has two workouts in the morning.',
+              path: 'workouts[1].slot',
+            },
+          ],
+        },
+      });
+      await setup({ plans: { [DRAFT_ID]: { kind: 'ok', plan: flagged } } });
+
+      expect(query(page, '.findings li').textContent?.replace(/\s+/g, ' ').trim()).toBe(
+        'Error · Workout 2: Monday has two workouts in the morning.',
+      );
+    });
+
     it('show an error at the workout it is about', async () => {
       await setup();
 

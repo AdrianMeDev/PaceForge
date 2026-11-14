@@ -15,10 +15,12 @@ from planning.schema import (
     Problem,
     Segment,
     SegmentKind,
+    Slot,
     Sport,
     WeekPlan,
     Workout,
     ZoneSystem,
+    order_key,
     parse_week_plan,
     to_json,
 )
@@ -211,6 +213,8 @@ class TestTheWayBack:
                     "zone_system": None,
                     "zone": None,
                     "notes": "",
+                    "slot": None,
+                    "stretching_minutes": 0,
                     "segments": [
                         {
                             "kind": "work",
@@ -465,6 +469,131 @@ class TestTheZone:
         assert "workouts[0].zone_system" in paths_of(with_workout(zone_system=system, zone=2))
 
 
+class TestTheTimeOfDay:
+    def slot_of(self, **fields: Any) -> Slot | None:
+        (result,) = parse_week_plan(with_workout(**fields)).workouts
+        return result.slot
+
+    def test_a_workout_has_no_time_of_day_unless_it_is_given(self) -> None:
+        assert self.slot_of() is None
+
+    @pytest.mark.parametrize("slot", ["morning", "afternoon", "evening"])
+    def test_every_time_of_day_is_known(self, slot: str) -> None:
+        assert self.slot_of(slot=slot) == Slot(slot)
+
+    def test_an_explicit_null_is_the_same_as_leaving_it_out(self) -> None:
+        assert self.slot_of(slot=None) is None
+
+    @pytest.mark.parametrize(
+        "slot", ["noon", "Morning", "MORNING", " morning", "", "night", 1, True, ["morning"], {}]
+    )
+    def test_any_other_time_of_day_is_refused(self, slot: object) -> None:
+        problems = problems_of(with_workout(slot=slot))
+
+        assert [(p.path, p.message) for p in problems] == [
+            ("workouts[0].slot", "Must be one of: morning, afternoon, evening.")
+        ]
+
+    def test_two_workouts_of_one_day_may_have_two_times(self) -> None:
+        result = parse_week_plan(
+            plan(workouts=[workout(slot="morning"), workout(slot="evening", sport="running")])
+        )
+
+        assert [w.slot for w in result.workouts] == [Slot.MORNING, Slot.EVENING]
+
+
+class TestStretching:
+    def minutes_of(self, **fields: Any) -> int:
+        (result,) = parse_week_plan(with_workout(**fields)).workouts
+        return result.stretching_minutes
+
+    def test_there_is_none_unless_it_is_given(self) -> None:
+        assert self.minutes_of() == 0
+
+    @pytest.mark.parametrize("minutes", [0, 1, 10, 59, 60])
+    def test_up_to_an_hour_is_fine(self, minutes: int) -> None:
+        assert self.minutes_of(stretching_minutes=minutes) == minutes
+
+    @pytest.mark.parametrize("minutes", [-1, 61, 100, 10**9])
+    def test_other_lengths_are_refused(self, minutes: int) -> None:
+        problems = problems_of(with_workout(stretching_minutes=minutes))
+
+        assert [(p.path, p.message) for p in problems] == [
+            ("workouts[0].stretching_minutes", "Must be between 0 and 60.")
+        ]
+
+    @pytest.mark.parametrize("minutes", ["10", 10.0, 7.5, True, False, None, [10], {}])
+    def test_a_length_must_be_a_whole_number(self, minutes: object) -> None:
+        assert paths_of(with_workout(stretching_minutes=minutes)) == [
+            "workouts[0].stretching_minutes"
+        ]
+
+    def test_it_is_no_workout_and_makes_none(self) -> None:
+        result = parse_week_plan(with_workout(stretching_minutes=20))
+
+        assert len(result.workouts) == 1
+        assert result.workouts[0].duration_minutes == 90
+
+    def test_it_comes_back_through_the_round_trip(self) -> None:
+        original = parse_week_plan(
+            plan(
+                workouts=[
+                    workout(slot="morning", stretching_minutes=15),
+                    workout(slot="evening", sport="running"),
+                ]
+            )
+        )
+
+        assert parse_week_plan(to_json(original)) == original
+        assert [w["slot"] for w in to_json(original)["workouts"]] == ["morning", "evening"]
+        assert [w["stretching_minutes"] for w in to_json(original)["workouts"]] == [15, 0]
+
+    def test_both_problems_are_named_at_once(self) -> None:
+        assert paths_of(with_workout(slot="noon", stretching_minutes=99, sport="golf")) == [
+            "workouts[0].sport",
+            "workouts[0].slot",
+            "workouts[0].stretching_minutes",
+        ]
+
+    def test_nothing_of_the_input_is_repeated(self) -> None:
+        marker = "SECRETMARKER"
+
+        text = repr(problems_of(with_workout(slot=marker, stretching_minutes=marker)))
+
+        assert marker not in text
+
+
+class TestTheOrderOfAWeek:
+    def key_of(self, day: int, slot: Slot | None) -> tuple[date, int]:
+        return order_key(
+            Workout(
+                day=MONDAY + timedelta(days=day),
+                sport=Sport.RUNNING,
+                title="t",
+                goal=Goal.ENDURANCE,
+                duration_minutes=30,
+                slot=slot,
+            )
+        )
+
+    def test_the_day_counts_first(self) -> None:
+        assert self.key_of(0, Slot.EVENING) < self.key_of(1, Slot.MORNING)
+        assert self.key_of(0, None) < self.key_of(1, Slot.MORNING)
+
+    def test_within_a_day_morning_comes_before_afternoon_before_evening(self) -> None:
+        keys = [self.key_of(2, slot) for slot in (Slot.MORNING, Slot.AFTERNOON, Slot.EVENING)]
+
+        assert keys == sorted(keys)
+        assert len(set(keys)) == 3
+
+    def test_a_workout_without_a_time_comes_after_those_with_one(self) -> None:
+        assert self.key_of(2, Slot.EVENING) < self.key_of(2, None)
+
+    def test_the_same_time_is_the_same_place(self) -> None:
+        assert self.key_of(2, Slot.AFTERNOON) == self.key_of(2, Slot.AFTERNOON)
+        assert self.key_of(2, None) == self.key_of(2, None)
+
+
 class TestTheSegments:
     def test_a_segment_has_its_defaults(self) -> None:
         (result,) = parse_week_plan(with_segment()).workouts[0].segments
@@ -647,6 +776,7 @@ class TestTheLimits:
         assert (schema.TITLE_MAX, schema.NOTES_MAX, schema.RATIONALE_MAX) == (100, 500, 1000)
         assert (schema.DURATION_MAX, schema.MAX_WORKOUTS, schema.MAX_SEGMENTS) == (1440, 28, 40)
         assert (schema.SEGMENT_SECONDS_MAX, schema.REPEAT_MAX) == (86_400, 50)
+        assert schema.STRETCHING_MAX == 60
         assert schema.ZONE_COUNT == {"power": 7, "heart_rate": 5, "pace": 5}
 
     def test_the_models_use_the_same_limits(self) -> None:
@@ -714,9 +844,13 @@ class TestWhateverIsSent:
             rationale="Why",
             workouts=[
                 workout(
-                    zone_system="power", zone=2, segments=[segment(zone_system="power", zone=4)]
+                    zone_system="power",
+                    zone=2,
+                    slot="morning",
+                    stretching_minutes=10,
+                    segments=[segment(zone_system="power", zone=4)],
                 ),
-                workout(day="2027-07-15", sport="running", goal="tempo"),
+                workout(day="2027-07-15", sport="running", goal="tempo", slot="evening"),
             ],
         )
         outcomes = {"plan": 0, "error": 0}
@@ -773,6 +907,8 @@ class TestWhateverIsSent:
                         sport=rng.choice(["running", "cycling", "swimming", "strength"]),
                         goal=rng.choice(["recovery", "endurance", "tempo", "threshold", "vo2max"]),
                         duration_minutes=rng.randint(1, 1440),
+                        slot=rng.choice([None, "morning", "afternoon", "evening"]),
+                        stretching_minutes=rng.randint(0, 60),
                         segments=segments,
                         **({} if system is None else {"zone_system": system, "zone": zone}),
                     )

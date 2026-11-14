@@ -36,12 +36,14 @@ from .schema import (
     NOTES_MAX,
     RATIONALE_MAX,
     REPEAT_MAX,
+    STRETCHING_MAX,
     TITLE_MAX,
     ZONE_COUNT,
     Goal,
     PlanFormatError,
     Problem,
     SegmentKind,
+    Slot,
     Sport,
     WeekPlan,
     ZoneSystem,
@@ -82,6 +84,8 @@ Format (fields marked optional may be left out):
       "zone_system": one of {_words(ZoneSystem)},   // optional, only together with "zone"
       "zone": whole number,      // optional; the target of the whole session
       "notes": "...",            // optional, at most {NOTES_MAX} characters
+      "slot": one of {_words(Slot)},   // optional: when on the day
+      "stretching_minutes": whole number, 0 to {STRETCHING_MAX},   // optional: see below
       "segments": [              // optional, at most {MAX_SEGMENTS}: the interval structure
         {{
           "kind": one of {_words(SegmentKind)},
@@ -116,6 +120,15 @@ higher of the average of "recent_weeks_minutes" and {TYPICAL_VOLUME_PERCENT} per
 second number is where a return to training is headed, not where it starts: after a break climb \
 towards it over several weeks, and prefer a few sessions of a useful length to many very short \
 ones. Without either there is no such limit; then plan carefully.
+- Plan only the sports listed in "sports" in the data. (error)
+- A day may have two sessions, rarely three, where the minutes of the day and of the week allow it \
+and the sports fit: for example an easy run in the morning and a ride in the afternoon, or \
+strength in the morning and a run in the evening. Give every session of such a day its own \
+"slot", no two in the same part of the day (error); a day with one session needs no slot. Do not \
+double two hard sessions.
+- Stretching is never a session of its own: no workout has stretching as its sport or its title. \
+If "stretching" in the data is true you may add "stretching_minutes" to a session, usually 5 to \
+15, and it is not part of "duration_minutes". If it is false, leave the field out. (error)
 - Plan for the athlete's goals, the main goal first, and use "previous_week_plan" to vary and \
 progress the week. Fewer workouts than the time allows is fine.
 """
