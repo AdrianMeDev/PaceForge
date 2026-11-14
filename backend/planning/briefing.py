@@ -62,6 +62,10 @@ def build_briefing(user: User, monday: date) -> dict[str, Any]:
         "recent_weeks_minutes": list(context.recent_weeks),
         # The athlete's own idea of a normal week; zero says nothing, so it is not told.
         "typical_weekly_minutes": context.typical_weekly_minutes or None,
+        # The sports the athlete wants (all four if none was chosen), in the order of the format,
+        # and whether stretching may be added to sessions.
+        "sports": [sport.value for sport in Sport if sport in context.sports],
+        "stretching": context.stretching,
         "previous_week_plan": _previous_week(user, monday),
     }
 

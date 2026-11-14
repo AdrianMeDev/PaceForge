@@ -289,6 +289,8 @@ without this page.
 | `goals_not_shown` | How many active goals were left out because of the limit. |
 | `recent_weeks_minutes` | Minutes done in each of the up to 4 weeks before, latest first. |
 | `typical_weekly_minutes` | What the athlete calls a normal week, in minutes; `null` if not given (or 0). The progression rule's reference is the higher of this and the recent average. |
+| `sports` | The sports the athlete wants in a plan (all four if none was chosen), in the order of the format. |
+| `stretching` | Whether stretching may be added to sessions (`stretching_minutes`), never as a session. |
 | `previous_week_plan` | The confirmed plan of the week before: day, sport, goal, minutes. |
 
 What is **never** sent: names, e-mail addresses, ids, the title or notes of past plans, the names
