@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from .load import load_of
 from .models import Activity
 
 SUMMARY_FIELDS = [
@@ -17,13 +18,22 @@ SUMMARY_FIELDS = [
     "total_ascent_m",
     "calories",
     "manufacturer",
+    "rpe",
+    "notes",
+    "load",
     "created_at",
 ]
 
 
 class ActivitySerializer(serializers.ModelSerializer[Activity]):
     """The summary of an activity. Neither the owner, the file hash nor the file itself is part of
-    it: the file holds the whole GPS track and is never returned."""
+    it: the file holds the whole GPS track and is never returned. ``load`` is the estimate from the
+    duration and the RPE (see ``activities.load``), ``None`` without either."""
+
+    load = serializers.SerializerMethodField()
+
+    def get_load(self, activity: Activity) -> int | None:
+        return load_of(activity)
 
     class Meta:
         model = Activity

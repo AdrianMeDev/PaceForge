@@ -40,6 +40,9 @@ SUMMARY_FIELDS = {
     "total_ascent_m",
     "calories",
     "manufacturer",
+    "rpe",
+    "notes",
+    "load",
     "created_at",
 }
 
