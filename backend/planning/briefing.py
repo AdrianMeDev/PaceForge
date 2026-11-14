@@ -60,6 +60,8 @@ def build_briefing(user: User, monday: date) -> dict[str, Any]:
         "goals": goals,
         "goals_not_shown": goals_not_shown,
         "recent_weeks_minutes": list(context.recent_weeks),
+        # The athlete's own idea of a normal week; zero says nothing, so it is not told.
+        "typical_weekly_minutes": context.typical_weekly_minutes or None,
         "previous_week_plan": _previous_week(user, monday),
     }
 
