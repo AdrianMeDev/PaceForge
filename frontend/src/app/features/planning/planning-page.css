@@ -1,0 +1,133 @@
+.planning {
+  max-width: 48rem;
+}
+
+select {
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+.versions {
+  margin: 0 0 1rem;
+  padding: 0;
+  list-style: none;
+}
+
+.versions li {
+  margin-bottom: 0.25rem;
+}
+
+.versions button[aria-current='true'] {
+  font-weight: 700;
+}
+
+.plan {
+  margin-top: 1rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.plan[data-status='discarded'],
+.plan[data-status='superseded'] {
+  opacity: 0.8;
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+h2 {
+  margin: 0 0.25rem 0 0;
+  font-size: 1.15rem;
+}
+
+h3 {
+  margin: 1.25rem 0 0.4rem;
+  font-size: 1rem;
+  color: var(--muted);
+}
+
+h4 {
+  margin: 0 0.25rem 0 0;
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.85rem;
+}
+
+.badge[data-status='confirmed'] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.badge[data-status='discarded'],
+.badge[data-status='superseded'] {
+  color: var(--muted);
+}
+
+.rationale,
+.notes {
+  margin: 0.4rem 0 0;
+  color: var(--muted);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.workout {
+  margin-bottom: 0.75rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.meta {
+  margin: 0.3rem 0 0;
+}
+
+.segments {
+  margin: 0.3rem 0 0;
+  padding-left: 1.2rem;
+  color: var(--muted);
+}
+
+.findings,
+.problems {
+  margin: 0.75rem 0;
+  padding-left: 1.2rem;
+}
+
+.findings li[data-severity='error'] {
+  color: var(--danger);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 1rem;
+}
+
+button.secondary {
+  padding: 0.5rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}

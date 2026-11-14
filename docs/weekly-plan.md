@@ -4,11 +4,12 @@ A **week plan** is what the coach proposes and the user confirms: the workouts o
 (Monday to Sunday) with their intensity targets and, where useful, an interval structure. This
 page describes the format that every plan must have, what is checked before a plan can be
 confirmed, and where each limit lives. It is the contract with the coach: the coach has to answer
-in exactly this format (milestone 4c), and nothing the coach writes is trusted before it has been
+in exactly this format, and nothing the coach writes is trusted before it has been
 read by the strict parser and passed the checks.
 
-Status: the data model, the parser, the checks and the storage exist (`backend/planning/`). There
-is no screen and no API yet, and nothing calls the coach with it.
+Status: the data model, the parser, the checks, the storage, the drafting with the user's own
+coach, the API and the **Week plan** page exist (`backend/planning/`, `/planning` in the app).
+Drafting is described in [Drafting with the coach](#drafting-with-the-coach).
 
 Plausibility is not coaching advice. The rules below stop plans that cannot be done (no time, an
 illness, a zone the athlete has no threshold for) and plans that are obviously unwise (five hard
@@ -220,10 +221,113 @@ the user can be shown what is wrong. Its statuses:
   what is stored.
 - Everything belongs to one user: another user's plan, version or workout does not exist for them.
 
+## Drafting with the coach
+
+`planning.generation.generate(user, monday)` asks the user's own AI provider for a draft of a week:
+
+1. A **briefing** is built from the data of the user (below) and sent with the fixed system prompt
+   (`planning/prompt.py`), which describes the format and the rules above.
+2. The answer has to be **one JSON object** and nothing else (one code fence around it is
+   tolerated). It is read by the strict parser; a repeated key, `NaN`, a huge number or an answer
+   of more than the answer limit is refused, and so is a plan for another week.
+3. The plan is checked with the rules, against what the user can do **after** the answer came in
+   (they may have changed their time while the provider was thinking).
+4. If the answer could not be read, was cut off, or the plan has errors, the coach is told **once**
+   what was wrong (paths and fixed texts, never a word of its own answer) and may try again. There
+   is no third try. The better of the two answers is kept: a readable plan beats an unreadable one,
+   fewer errors beat more, a tie goes to the later answer.
+5. The plan is stored as a **draft** (`reason`: "Drafted by the coach"), also with errors, so that
+   the user sees what is wrong. If no answer could be read, nothing is stored and the user is told
+   to try again.
+
+No database transaction is held while the provider answers. Every call that reached the provider
+is a usage record with the purpose `weekly_plan` (facts only, never text); a draft costs one call,
+or two with a repair.
+
+### What the coach is told
+
+The briefing is a fixed set of keys (`planning/briefing.py`); a test fails if a key is added
+without this page.
+
+| Key | Meaning |
+| --- | ------- |
+| `week_start` | The Monday of the week to plan. |
+| `today` | The day it is for the user, in their time zone. |
+| `days` | Seven entries (date, minutes on offer, kind of absence) from Monday. |
+| `weekly_budget_minutes` | The weekly budget, none if not set. |
+| `weekly_minutes_available` | What the week offers in all, the budget applied. |
+| `zone_systems` | For each zone system the athlete can use: sport, threshold and the zone table. |
+| `goals` | The active goals, the main goal first, then the nearest date. |
+| `goals_not_shown` | How many active goals were left out because of the limit. |
+| `recent_weeks_minutes` | Minutes done in each of the up to 4 weeks before, latest first. |
+| `previous_week_plan` | The confirmed plan of the week before: day, sport, goal, minutes. |
+
+What is **never** sent: names, e-mail addresses, ids, the title or notes of past plans, the names
+or descriptions of activities, the limitations of the training time page and the provider setup.
+The title and notes of a goal are free text. They are sent as JSON strings, the notes cut to
+`GOAL_NOTES_MAX` characters, and the system prompt says that they are data and never instructions.
+That is a request to the model, not a guarantee: a model may still be swayed by what is in them.
+What it cannot do is get a plan past the parser and the rules.
+
+### The drafting limits
+
+| Constant | Value | Meaning |
+| -------- | ----- | ------- |
+| `WEEKS_AHEAD` | 4 | Weeks after the current one that can be planned. |
+| `ATTEMPTS` | 2 | Calls for one draft: one try and one repair. |
+| `PLAN_MAX_TOKENS` | 8000 | The most the coach may write for a plan; an answer cut off is not used. |
+| `MAX_ANSWER_CHARS` | 200000 | The longest answer that is read at all. |
+| `MAX_LISTED` | 20 | Problems listed in a repair message; the rest is only counted. |
+| `MAX_GOALS` | 5 | Active goals told to the coach. |
+| `GOAL_NOTES_MAX` | 300 | Characters of the notes of a goal that are sent. |
+| `MAX_BYTES` | 20000 | The most the briefing may take (UTF-8), checked in the tests. |
+
+### Time and the web server
+
+Drafting is **synchronous**: the request waits for the provider. A call may take up to 60 seconds
+per step of the connection, so a draft with a repair can take about `ATTEMPTS` times 60 = 120
+seconds. Everything in front of PaceForge has to allow that: set the read timeout of a reverse
+proxy (for nginx `proxy_read_timeout`) and the timeout of the application server's workers to at
+least 150 seconds. Otherwise the request is cut off while the call to the provider (and its cost)
+goes on, and the user sees an error although a draft may have been stored; the versions list shows
+it. A proxy that replaces a 502 or 503 by a page of its own hides the reason from the app, which
+then shows a general text for that kind of problem.
+
+### The API
+
+All of it needs a signed-in user, and every plan is looked up among the plans of that user: the
+plan of another user does not exist (404, the same answer as for an unknown id).
+
+| Endpoint | Answer |
+| -------- | ------ |
+| `GET /api/planning/weeks/` | The weeks that can be planned, each with its versions, newest first. |
+| `POST /api/planning/weeks/<Monday>/generate/` | 201 with the new draft; limited to 5 a minute per user. |
+| `GET /api/planning/plans/<id>/` | One plan with its workouts; a draft comes with its checks. |
+| `POST /api/planning/plans/<id>/confirm/` | The confirmed plan, or the findings if it has errors. |
+| `POST /api/planning/plans/<id>/discard/` | The discarded plan. |
+
+Errors have a fixed text and a `code`; nothing the provider or the coach said is in one. A 429
+without a code is the limit of PaceForge itself.
+
+| Code | Status | When |
+| ---- | ------ | ---- |
+| `week_not_plannable` | 404 | The week is not one of the weeks that can be planned (also: not a date). |
+| `not_found` | 404 | There is no such plan. |
+| `not_configured` | 409 | The user has not set up an AI provider. |
+| `not_a_draft` | 409 | Only a draft can be confirmed or discarded. |
+| `not_usable` | 422 | The coach gave no readable plan, even after the repair; the problems come along. |
+| `not_confirmable` | 422 | The plan has errors; the findings come along. |
+| `rate_limited` | 429 | The provider asked to slow down (`retry_after` in seconds, if it said). |
+| `invalid_key` | 502 | The provider refused the key. |
+| `not_allowed` | 502 | The address is no longer on the operator's list. |
+| `unexpected` | 502 | The provider answered in an unexpected way. |
+| `unavailable` | 503 | The provider could not be reached. |
+
 ## What is deliberately not checked
 
 - The **limitations** the user wrote on the training time page are free text. A machine cannot
-  check them; they go to the coach as context, where they are data and never instructions.
+  check them, and they are **not sent to the coach** either: they are free text about the body of
+  the user. The only free text the coach sees is the title and notes of the goals.
 - There is **no time of day**: two workouts on one day add up, they cannot overlap.
 - Whether a plan is *good* training: the rules only keep out what is impossible or plainly unwise.
 - Anything about the weeks before or after the plan beyond the recent average.
@@ -238,6 +342,11 @@ week = services.canonical(parse_week_plan(answer_of_the_coach))   # PlanFormatEr
 draft = services.save_draft(user, week, reason="Knee hurts", parent=previous_id)
 report = services.validate(user, draft.pk)                        # errors and warnings
 confirmed = services.confirm(user, draft.pk)                      # PlanNotConfirmable with errors
+
+# or let the coach of the user draft the week (provider errors, PlanNotUsable and
+# WeekNotPlannable are raised); the result has the stored draft and its report
+from planning.generation import generate
+result = generate(user, monday)
 ```
 
 ## How it is tested
@@ -246,4 +355,7 @@ The format and the rules have tests on both sides of every limit, a fuzz test th
 garbage to the parser and random plans to the checks (nothing but a plan or a format error comes
 out, nothing raises), tests that no title or note is ever repeated in a message, and mutation tests
 for every rule. The example, the limits, the rules and the zone systems of **this page** are
-compared with the code by `backend/planning/tests/test_docs.py`, so that the page cannot drift.
+compared with the code by `backend/planning/tests/test_docs.py`, so that the page cannot drift:
+so are the keys of the briefing, the drafting limits, the endpoints and the error codes.
+Drafting is tested with a provider that answers from a script, so that every path (a repair, two
+unreadable answers, a provider that fails on the second call) is run without a network.

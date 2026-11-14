@@ -13,12 +13,14 @@ them, goals (races, threshold targets and general goals, with one main goal), yo
 (minutes per weekday, a weekly budget, limitations, vacation and illness), your own AI provider
 ([Anthropic or an OpenAI-compatible endpoint](#ai-coach-bring-your-own-key), key stored encrypted,
 with a connection check and a usage overview), the model and the plausibility checks for a
-training week ([format and rules](docs/weekly-plan.md); no screen uses them yet), and the
-data-isolation foundation the training features will build on.
+training week ([format and rules](docs/weekly-plan.md)), a **Week plan** page on which your own
+AI coach drafts a training week that you read, confirm or discard ([Week plan](#week-plan)), and
+the data-isolation foundation the training features will build on.
 **Not there yet:** reading activities from Intervals.icu over that connection (it can only ever
 work for activities that do not come from Strava, see [Activities](#activities)), sending
-invitations by email (the administrator hands the link on) and the coach itself: the AI provider
-can be set up and checked, but nothing plans with it yet. Before an instance is exposed to the
+invitations by email (the administrator hands the link on) and more of the coach: it drafts a
+week, but you cannot yet change a draft by talking to it, and it has not been tried against a real
+provider (see [Week plan](#week-plan)). Before an instance is exposed to the
 internet, read [Instance key](#instance-key): secrets in the database are encrypted, and the key
 has to be backed up apart from the database.
 
@@ -181,8 +183,8 @@ and invite a few others. The findings behind this are in
 The coach that plans your training will use an AI model. PaceForge does not ship one: every user
 connects **their own** AI account on the **Connections** page (`/settings/connections`, section
 **AI coach**) and pays their provider directly. At the moment you can set the provider up, check
-that it works and see what you have used; nothing else calls it yet, because the planning itself
-is the next step.
+that it works and see what you have used. The only thing that calls it besides the check is the
+[Week plan](#week-plan) page.
 
 **Two kinds of provider.**
 
@@ -438,8 +440,8 @@ Not there yet: training phases, and goals in the coach's context.
 ## Training time
 
 The **Training time** page (`/availability`, also in the navigation) tells PaceForge how much time
-you can train. It does not plan anything yet; it is what the planning that follows will check its
-sessions against. Everything here is personal: every user sees and changes only their own, an
+you can train. It does not plan anything itself; the [Week plan](#week-plan) checks its sessions
+against it. Everything here is personal: every user sees and changes only their own, an
 administrator included.
 
 **Per weekday.** Seven fields, Monday first. Enter minutes (`90`) or hours and minutes (`1:30`,
@@ -479,8 +481,49 @@ business.
 The API is `GET` and `PATCH` on `/api/availability/` (the weekdays Monday first, the budget, the
 limitations) and `/api/availability/periods/` with list, create, read, change and delete.
 
-Not there yet: using the training time in a plan, time windows within a day, and different time
-per sport.
+Not there yet: time windows within a day, and different time per sport. The limitations you write
+here are not sent to the coach and not checked.
+
+## Week plan
+
+The **Week plan** page (`/planning`, in the navigation) is where your own AI coach drafts a training
+week. It needs an [AI provider](#ai-coach-bring-your-own-key); without one the page says so and
+links to the Connections page.
+
+1. Choose the **week**. The current week and the four after it can be planned; the page starts with
+   next week.
+2. Press **Draft a plan with my coach**. The page waits for the answer, which can take **a minute or
+   two**. You can do nothing else on the page meanwhile.
+3. Read the **draft**: the workouts by day with their length, their zone (power, heart rate or
+   pace) and, for intervals, their parts, and below the title what the **checks** say. An *error*
+   (for example a workout on a day you cannot train, or segments that do not add up to the length)
+   means the plan cannot be confirmed; a *note* is for you to weigh.
+4. **Confirm plan** or **Discard**. Confirming checks the plan again with your data of that moment.
+   Drafting again makes a **new version** of the week; all versions stay in the list, and
+   confirming a draft replaces the version that was confirmed before.
+
+The coach is told only a fixed set of facts: the week and today, the minutes you can train on each
+day and your absences, your weekly budget, your zone tables, your active goals (title and notes),
+the minutes you trained in the last four weeks and a summary of last week's confirmed plan. **Not**
+your name, e-mail address, activities' names, the limitations you wrote on the training time page
+or anything of other users. A goal's title and notes are free text, and a model can be influenced by
+text; whatever it answers still has to pass the strict reading and the checks before it is a draft,
+and nothing is confirmed without you. Every request goes to your provider with your key and is
+**billed to you**: a draft costs one request, or two if the coach had to correct its answer. They
+are counted in the usage overview of the AI coach (calls and tokens of the last 30 days; the
+purpose "weekly plan" is stored with each record). Drafting is limited to 5 a minute per user, with
+a counter of its own.
+
+The full description, with the format, the rules, the exact limits and the API, is
+[Drafting with the coach](docs/weekly-plan.md#drafting-with-the-coach).
+
+**For operators.** Drafting waits for the provider inside the request. A reverse proxy and the
+application server need a timeout of at least **150 seconds** for it (see the troubleshooting
+entry below).
+
+**Not verified yet.** The drafting is tested with a provider that answers from a script, and the
+page with test doubles for the API; neither has been tried against a real provider or in a browser
+by the developer. Your first real draft is the first real test; please read it critically.
 
 ## Instance key
 
@@ -572,6 +615,10 @@ Set in `.env` or in the environment. Values without a default are required.
 - **The Connections page says "Intervals.icu cannot be reached right now".** The server could not
   get an answer from `intervals.icu` (network, timeout, a busy service). Try again later; nothing
   was saved or changed. "Too many attempts" means more than 10 saves or checks within a minute.
+- **Drafting a plan ends with a gateway error (502, 504) after a minute or so.** A reverse proxy or
+  the application server gave up waiting for the provider. Drafting can take two minutes (60
+  seconds per call, and one repair); raise `proxy_read_timeout` (nginx) and the worker timeout to
+  150 seconds or more. A draft may have been stored anyway: look at the versions of the week.
 - **An administrator cannot reach the admin pages and keeps landing on the security page.** That is
   the rule that administrators need two-factor authentication; set it up there.
 - **Sign-in is refused with "too many failed attempts".** That is the brute-force protection: five
