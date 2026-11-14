@@ -344,7 +344,9 @@ class TestTheContextOfAUser:
             build_context(alice, MONDAY)
         for weekday in range(7):
             WeekdayMinutes.objects.create(owner=alice, weekday=weekday, minutes=60)
-        AvailabilitySettings.objects.create(owner=alice, weekly_budget_minutes=300)
+        AvailabilitySettings.objects.create(
+            owner=alice, weekly_budget_minutes=300, typical_weekly_minutes=420
+        )
         for day in range(7):
             UnavailablePeriod.objects.create(
                 owner=alice,
@@ -362,6 +364,25 @@ class TestTheContextOfAUser:
             build_context(alice, MONDAY)
 
         assert len(empty) == len(full) == 6
+
+    def test_the_typical_week_comes_from_the_settings(self, alice: User, bob: User) -> None:
+        AvailabilitySettings.objects.create(owner=alice, typical_weekly_minutes=420)
+        AvailabilitySettings.objects.create(owner=bob, typical_weekly_minutes=900)
+
+        assert build_context(alice, MONDAY).typical_weekly_minutes == 420
+
+    def test_without_a_typical_week_there_is_none(self, alice: User) -> None:
+        assert build_context(alice, MONDAY).typical_weekly_minutes is None
+        AvailabilitySettings.objects.create(owner=alice, weekly_budget_minutes=300)
+        assert build_context(alice, MONDAY).typical_weekly_minutes is None
+
+    def test_the_typical_week_does_not_change_what_the_week_offers(self, alice: User) -> None:
+        WeekdayMinutes.objects.create(owner=alice, weekday=0, minutes=60)
+        AvailabilitySettings.objects.create(owner=alice, typical_weekly_minutes=5000)
+
+        context = build_context(alice, MONDAY)
+
+        assert (context.weekly_minutes, context.weekly_budget) == (60, None)
 
     def test_the_offset_of_a_day_in_the_week(self, alice: User) -> None:
         context = build_context(alice, MONDAY)

@@ -429,6 +429,108 @@ class TestProgression:
         )
 
 
+class TestTheTypicalWeek:
+    """The athlete's own word about a normal week: the reference when it is higher than the recent
+    weeks (a break must not keep a returning athlete at the few weeks since)."""
+
+    def planned(self, minutes: int) -> WeekPlan:
+        return week(workout(1, minutes))
+
+    def codes(self, minutes: int, **fields: Any) -> list[str]:
+        return [f.code for f in check_progression(self.planned(minutes), context(**fields))]
+
+    def test_it_is_a_reference_of_its_own_when_there_are_no_recent_weeks(self) -> None:
+        assert self.codes(130, typical_weekly_minutes=100) == []
+        assert self.codes(131, typical_weekly_minutes=100) == ["volume_increase"]
+        assert self.codes(150, typical_weekly_minutes=100) == ["volume_increase"]
+        assert self.codes(151, typical_weekly_minutes=100) == ["volume_jump"]
+
+    def test_the_higher_one_counts_after_a_break(self) -> None:
+        # recent 108 alone: 140 is the limit. With a typical week of 360 the limits are 468 and 540.
+        assert self.codes(141, recent_weeks=(108,)) == ["volume_increase"]
+        assert self.codes(468, recent_weeks=(108,), typical_weekly_minutes=360) == []
+        assert self.codes(469, recent_weeks=(108,), typical_weekly_minutes=360) == [
+            "volume_increase"
+        ]
+        assert self.codes(540, recent_weeks=(108,), typical_weekly_minutes=360) == [
+            "volume_increase"
+        ]
+        assert self.codes(541, recent_weeks=(108,), typical_weekly_minutes=360) == ["volume_jump"]
+
+    def test_a_typical_week_below_the_recent_weeks_changes_nothing(self) -> None:
+        weeks = (200, 200)
+
+        for minutes in (260, 261, 300, 301):
+            assert self.codes(minutes, recent_weeks=weeks, typical_weekly_minutes=50) == self.codes(
+                minutes, recent_weeks=weeks
+            )
+
+    def test_the_recent_weeks_name_themselves_when_both_are_equal(self) -> None:
+        found = check_progression(
+            self.planned(400), context(recent_weeks=(200,), typical_weekly_minutes=200)
+        )
+
+        assert "the average of 200 minutes of the last 1 week(s)" in found[0].message
+        assert "typical" not in found[0].message
+
+    def test_no_typical_week_or_one_of_no_minutes_is_no_reference(self) -> None:
+        assert self.codes(1440, typical_weekly_minutes=None) == []
+        assert self.codes(1440, typical_weekly_minutes=0) == []
+        assert self.codes(1440, recent_weeks=(0,), typical_weekly_minutes=0) == []
+        assert self.codes(141, recent_weeks=(108,), typical_weekly_minutes=0) == ["volume_increase"]
+
+    def test_the_message_names_the_typical_week_when_it_is_the_reference(self) -> None:
+        found = check_progression(
+            self.planned(469), context(recent_weeks=(108,), typical_weekly_minutes=360)
+        )
+
+        assert found == [
+            Finding(
+                Severity.WARNING,
+                "volume_increase",
+                "The week adds up to 469 minutes, 130 % of your typical week of 360 minutes.",
+                "workouts",
+            )
+        ]
+
+    def test_a_week_below_the_typical_week_is_fine(self) -> None:
+        assert self.codes(30, recent_weeks=(108,), typical_weekly_minutes=360) == []
+        assert check_progression(week(), context(typical_weekly_minutes=360)) == []
+
+    def test_only_the_workouts_of_the_week_count(self) -> None:
+        plan = week(workout(1, 100), workout(9, 5000), workout(-2, 5000))
+
+        assert check_progression(plan, context(typical_weekly_minutes=100)) == []
+
+    def test_the_share_of_the_typical_week_that_counts_is_a_constant(self) -> None:
+        assert rules.TYPICAL_VOLUME_PERCENT == 100
+
+    def test_a_lower_share_makes_the_reference_smaller_and_says_so(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(rules, "TYPICAL_VOLUME_PERCENT", 70)
+
+        # 70 % of 101 is 70.7 minutes, not rounded: 130 % of it is 91.91
+        assert self.codes(91, typical_weekly_minutes=101) == []
+        found = check_progression(self.planned(92), context(typical_weekly_minutes=101))
+        assert [f.code for f in found] == ["volume_increase"]
+        assert found[0].message == (
+            "The week adds up to 92 minutes, 130 % of 70 % of your typical week of 101 minutes."
+        )
+
+    def test_a_lower_share_still_loses_to_higher_recent_weeks(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(rules, "TYPICAL_VOLUME_PERCENT", 70)
+
+        # 70 % of 360 is 252; the recent average of 300 is higher
+        found = check_progression(
+            self.planned(400), context(recent_weeks=(300,), typical_weekly_minutes=360)
+        )
+
+        assert "the average of 300 minutes" in found[0].message
+
+
 class TestTheLists:
     def test_the_rhythm_checks_come_after_the_basic_ones(self) -> None:
         assert ALL_CHECKS == BASIC_CHECKS + RHYTHM_CHECKS
@@ -502,7 +604,8 @@ class TestWhateverIsPlanned:
                 )
             plan = week(*workouts)
             ctx = context(
-                recent_weeks=tuple(rng.randint(0, 3000) for _ in range(rng.randint(0, 4)))
+                recent_weeks=tuple(rng.randint(0, 3000) for _ in range(rng.randint(0, 4))),
+                typical_weekly_minutes=rng.choice([None, 0, rng.randint(1, 5000)]),
             )
 
             found = [f for check in RHYTHM_CHECKS for f in check(plan, ctx)]

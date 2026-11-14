@@ -12,6 +12,7 @@ The limits are the constants below, in one place, so that they can be read and c
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
+from fractions import Fraction
 
 from .context import PlanContext
 from .schema import Goal, Sport, WeekPlan, Workout, ZoneSystem
@@ -38,6 +39,11 @@ MAX_WORKOUTS_PER_DAY = 2
 # skipped.
 PROGRESSION_WARNING_PERCENT = 130
 PROGRESSION_ERROR_PERCENT = 150
+# How much of the athlete's own "typical week" counts as the reference, in percent. The reference
+# is the higher of this and the average of the recent weeks, so that someone coming back from a
+# break is not held to the few weeks since. 100 takes the athlete at their word; a lower number
+# (70, say) makes the first weeks back more careful.
+TYPICAL_VOLUME_PERCENT = 100
 
 _WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 _ABSENCES = {"illness": "an illness", "vacation": "a vacation"}
@@ -298,40 +304,61 @@ def check_duplicates(plan: WeekPlan, context: PlanContext) -> list[Finding]:
 
 
 def check_progression(plan: WeekPlan, context: PlanContext) -> list[Finding]:
-    """The planned minutes stay within a plausible step from the recent weeks.
+    """The planned minutes stay within a plausible step from what the athlete has been doing.
 
-    The reference is the average of ``context.recent_weeks``. Above ``PROGRESSION_WARNING_PERCENT``
-    of it is a warning, above ``PROGRESSION_ERROR_PERCENT`` an error. Without a reference, or with
-    a reference of no minutes, nothing is checked: a number is not made up."""
+    The reference is the higher of the average of ``context.recent_weeks`` and the typical week of
+    the athlete (``TYPICAL_VOLUME_PERCENT`` of it). Above ``PROGRESSION_WARNING_PERCENT`` of it is
+    a warning, above ``PROGRESSION_ERROR_PERCENT`` an error. Without a reference, or with a
+    reference of no minutes, nothing is checked: a number is not made up."""
     _same_week(plan, context)
-    weeks = context.recent_weeks
-    reference = sum(weeks)
-    if not weeks or reference == 0:
+    reference = _reference_week(context)
+    if reference is None:
         return []
+    source, per_week = reference
     planned = sum(
         workout.duration_minutes
         for workout in plan.workouts
         if context.offset(workout.day) is not None
     )
-    # planned / (reference / weeks) > percent / 100, without dividing
-    scaled = planned * len(weeks) * 100
-    if scaled > reference * PROGRESSION_ERROR_PERCENT:
+    # planned / per_week > percent / 100, exactly (no rounding of the reference)
+    scaled = Fraction(planned * 100) / per_week
+    if scaled > PROGRESSION_ERROR_PERCENT:
         severity, code = Severity.ERROR, "volume_jump"
-    elif scaled > reference * PROGRESSION_WARNING_PERCENT:
+    elif scaled > PROGRESSION_WARNING_PERCENT:
         severity, code = Severity.WARNING, "volume_increase"
     else:
         return []
-    average = round(reference / len(weeks))
-    percent = round(scaled / reference)
     return [
         Finding(
             severity,
             code,
-            f"The week adds up to {planned} minutes, {percent} % of the average of {average} "
-            f"minutes of the last {len(weeks)} week(s).",
+            f"The week adds up to {planned} minutes, {round(scaled)} % of {source}.",
             "workouts",
         )
     ]
+
+
+def _reference_week(context: PlanContext) -> tuple[str, Fraction] | None:
+    """The reference minutes per week, with the words that say where it comes from: the higher of
+    the recent average and the typical week. ``None`` if neither is more than no minutes."""
+    options: list[tuple[str, Fraction]] = []
+    weeks = context.recent_weeks
+    if weeks and sum(weeks) > 0:
+        average = Fraction(sum(weeks), len(weeks))
+        options.append(
+            (f"the average of {round(average)} minutes of the last {len(weeks)} week(s)", average)
+        )
+    typical = context.typical_weekly_minutes
+    if typical:
+        share = "" if TYPICAL_VOLUME_PERCENT == 100 else f"{TYPICAL_VOLUME_PERCENT} % of "
+        options.append(
+            (
+                f"{share}your typical week of {typical} minutes",
+                Fraction(typical * TYPICAL_VOLUME_PERCENT, 100),
+            )
+        )
+    # The recent weeks come first, so that they name the source when both are equal.
+    return max(options, key=lambda option: option[1], default=None)
 
 
 # The checks of structure, zones and capacity, in the order their findings are listed.
