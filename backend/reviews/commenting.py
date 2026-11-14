@@ -19,7 +19,7 @@ from coach import services as coach
 from coach.models import AIUsageRecord
 from coach.providers.base import Message
 
-from .briefing import build_briefing, has_anything
+from .briefing import build_briefing
 from .models import WeekComment
 from .prompt import (
     SYSTEM_PROMPT,
@@ -29,7 +29,7 @@ from .prompt import (
     first_message,
     repair_message,
 )
-from .services import week_review
+from .services import has_anything, week_review
 
 # The most the coach may write for a comment (tokens): the comment is at most 600 characters. An
 # answer that is cut off is not used.

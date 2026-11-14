@@ -84,18 +84,41 @@ def week_review(user: User, monday: date) -> WeekReview:
     today = today_of(user)
     if monday not in _weeks(today):
         raise WeekNotReviewable
+    return _build(user, monday, today)
+
+
+def week_summary(user: User, monday: date) -> WeekReview | None:
+    """The review of any week that has begun, for what the coach is told about the week before the
+    one it plans (which is not limited to ``reviewable_weeks``). ``None`` for a week that has not
+    begun yet and for one with nothing in it (see ``has_anything``). Raises ``ValueError`` unless
+    ``monday`` is a Monday. The number of queries does not depend on how much data there is."""
+    if monday.weekday() != 0:
+        raise ValueError("A week starts on a Monday.")
+    today = today_of(user)
+    if monday > today - timedelta(days=today.weekday()):
+        return None
+    review = _build(user, monday, today)
+    return review if has_anything(review) else None
+
+
+def has_anything(review: WeekReview) -> bool:
+    """Whether there is something to look back on: a confirmed plan, an activity or feedback."""
+    return review.plan is not None or bool(review.activities) or review.feedback is not None
+
+
+def _build(user: User, monday: date, today: date) -> WeekReview:
     zone = time_zone_of(user)
     plan = (
         WeeklyPlan.objects.for_user(user)
         .filter(week_start=monday, status=WeeklyPlan.Status.CONFIRMED)
         .first()
     )
-    workouts = _workouts(user, plan)
+    workouts = _workouts(user, monday)
     activities = _activities(user, monday, zone)
     days = {activity.pk: activity.start_time.astimezone(zone).date() for activity in activities}
     planned = [_planned(workout) for workout in workouts]
     performed = [_performed(activity, days[activity.pk]) for activity in activities]
-    match = match_week(planned, performed, _corrections(user, plan), today)
+    match = match_week(planned, performed, _corrections(user, monday), today)
     return WeekReview(
         week_start=monday,
         today=today,
@@ -115,10 +138,13 @@ def _weeks(today: date) -> tuple[date, ...]:
     return tuple(this_week - timedelta(weeks=n) for n in range(REVIEW_WEEKS, -1, -1))
 
 
-def _workouts(user: User, plan: WeeklyPlan | None) -> list[PlannedWorkout]:
-    if plan is None:
-        return []
-    return list(PlannedWorkout.objects.for_user(user).filter(plan=plan))  # ordered by the model
+def _workouts(user: User, monday: date) -> list[PlannedWorkout]:
+    """The workouts of the confirmed plan of the week (none without one), with one query."""
+    return list(
+        PlannedWorkout.objects.for_user(user).filter(
+            plan__week_start=monday, plan__status=WeeklyPlan.Status.CONFIRMED
+        )  # ordered by the model
+    )
 
 
 def _activities(user: User, monday: date, zone: tzinfo) -> list[Activity]:
@@ -132,10 +158,10 @@ def _activities(user: User, monday: date, zone: tzinfo) -> list[Activity]:
     )
 
 
-def _corrections(user: User, plan: WeeklyPlan | None) -> list[Correction]:
-    if plan is None:
-        return []
-    rows = WorkoutReview.objects.for_user(user).filter(workout__plan=plan)
+def _corrections(user: User, monday: date) -> list[Correction]:
+    rows = WorkoutReview.objects.for_user(user).filter(
+        workout__plan__week_start=monday, workout__plan__status=WeeklyPlan.Status.CONFIRMED
+    )
     return [
         Correction(
             workout_id=row.workout_id,

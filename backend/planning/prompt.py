@@ -130,6 +130,15 @@ If "stretching" in the data is true you may add "stretching_minutes" to a sessio
 15, and it is not part of "duration_minutes". If it is false, leave the field out. (error)
 - Plan for the athlete's goals, the main goal first, and use "previous_week_plan" to vary and \
 progress the week. Fewer workouts than the time allows is fine.
+- "previous_week_review" tells how the week before went, and is null if there is nothing to tell: \
+how many workouts are "done", "partial", "replaced", "missed" or still "open", the minutes planned \
+and done, how hard the sessions felt (the mean RPE, 1 easy to 10 maximal), how the athlete felt \
+about the week ("fatigue", "motivation" and "pain", each 1 to 5) and "next_week", what a review of \
+that week recommended for the next one: "increase", "hold", "reduce", or null if none was asked \
+for. Use it as advice, not as a rule that overrides the rules above. After "reduce", or with high \
+fatigue or pain, plan no more minutes than that week had and keep the hard days few; after "hold" \
+plan about the same; after "increase" you may raise the minutes, within the limits above. If that \
+week is still running ("open" workouts), it is not over: do not read what is missing as missed.
 """
 
 

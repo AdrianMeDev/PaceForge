@@ -89,11 +89,6 @@ def to_json(briefing: dict[str, Any]) -> str:
     return json.dumps(briefing, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
-def has_anything(review: WeekReview) -> bool:
-    """Whether there is something to look back on: a confirmed plan, an activity or feedback."""
-    return review.plan is not None or bool(review.activities) or review.feedback is not None
-
-
 def _minutes(activity: Activity | None) -> int | None:
     """Whole minutes of an activity, half up; ``None`` without an activity or a duration."""
     if activity is None:

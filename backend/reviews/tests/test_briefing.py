@@ -1,5 +1,4 @@
 import json
-from datetime import timedelta
 
 import pytest
 
@@ -7,7 +6,7 @@ from accounts.models import User
 from goals import services as goal_services
 from planning.models import PlannedWorkout
 from planning.schema import MAX_WORKOUTS
-from reviews.briefing import MAX_BYTES, MAX_UNPLANNED, build_briefing, has_anything, to_json
+from reviews.briefing import MAX_BYTES, MAX_UNPLANNED, build_briefing, to_json
 from reviews.models import WeekComment, WeekFeedback
 from reviews.services import week_review
 
@@ -307,34 +306,3 @@ class TestTheText:
         text = to_json(briefing(alice))
 
         assert len(text.encode()) < MAX_BYTES
-
-
-class TestWhetherThereIsSomethingToLookBackOn:
-    def test_an_empty_week_has_nothing(self, alice: User) -> None:
-        assert not has_anything(week_review(alice, MONDAY))
-
-    def test_a_draft_alone_is_nothing(self, alice: User) -> None:
-        make_plan(alice, status="draft", workouts=2)
-
-        assert not has_anything(week_review(alice, MONDAY))
-
-    def test_a_confirmed_plan(self, alice: User) -> None:
-        make_plan(alice, workouts=1)
-
-        assert has_anything(week_review(alice, MONDAY))
-
-    def test_an_activity(self, alice: User) -> None:
-        make_activity(alice, "2026-11-10T07:00")
-
-        assert has_anything(week_review(alice, MONDAY))
-
-    def test_feedback(self, alice: User) -> None:
-        WeekFeedback.objects.create(owner=alice, week_start=MONDAY, pain=2)
-
-        assert has_anything(week_review(alice, MONDAY))
-
-    def test_what_belongs_to_another_week_or_user_is_nothing(self, alice: User, bob: User) -> None:
-        make_activity(alice, (MONDAY - timedelta(days=2)).isoformat() + "T07:00")
-        make_plan(bob, workouts=1)
-
-        assert not has_anything(week_review(alice, MONDAY))

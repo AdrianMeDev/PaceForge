@@ -3,7 +3,8 @@
 ``build_briefing`` turns the planning context and a few more rows into plain JSON data; the prompt
 (``planning.prompt``) wraps it, nothing else is ever sent. What is in it: the week and today,
 what each day offers, the zone tables of the zone systems the athlete can use, the active goals,
-the minutes done in recent weeks and a summary of last week's confirmed plan.
+the minutes done in recent weeks, a summary of last week's confirmed plan and how that week went
+(``previous_week_review``: numbers and one fixed word, no free text; see ``reviews.briefing``).
 
 What is not in it: names, e-mail addresses, activity names or descriptions, ids of any kind, the
 thresholds of sports without zones, the provider settings. The only free text is the title and
@@ -23,6 +24,7 @@ from athletes.thresholds import all_candidates
 from athletes.zones import ZoneSet, heart_rate_zones, pace_zones, power_zones
 from goals.models import Goal
 from goals.services import today_of
+from reviews.services import WeekReview, week_summary
 
 from .context import PlanContext, build_context
 from .models import PlannedWorkout, WeeklyPlan
@@ -67,6 +69,7 @@ def build_briefing(user: User, monday: date) -> dict[str, Any]:
         "sports": [sport.value for sport in Sport if sport in context.sports],
         "stretching": context.stretching,
         "previous_week_plan": _previous_week(user, monday),
+        "previous_week_review": _previous_week_review(user, monday),
     }
 
 
@@ -169,3 +172,38 @@ def _previous_week(user: User, monday: date) -> list[dict[str, Any]]:
         {"day": (day - previous).days, "sport": sport, "goal": goal, "minutes": minutes}
         for day, sport, goal, minutes in rows
     ]
+
+
+def _previous_week_review(user: User, monday: date) -> dict[str, Any] | None:
+    """How the week before went, from the review of the user: numbers and one fixed word (what a
+    review of that week recommended for the next one), never a title, a note or the comment of the
+    coach itself. ``None`` when that week has not begun or has nothing in it."""
+    review = week_summary(user, monday - timedelta(days=7))
+    if review is None:
+        return None
+    total = review.comparison.total
+    feedback = review.feedback
+    return {
+        "statuses": {status.value: count for status, count in review.comparison.statuses.items()},
+        "planned_minutes": total.planned_minutes,
+        "done_minutes": total.actual_minutes,
+        "unplanned_sessions": len(review.match.unplanned),
+        "rated_sessions": total.rated_count,
+        "mean_rpe": _mean_rpe(review),
+        "feedback": (
+            None
+            if feedback is None
+            else {
+                "fatigue": feedback.fatigue,
+                "motivation": feedback.motivation,
+                "pain": feedback.pain,
+            }
+        ),
+        "next_week": review.comment.next_week if review.comment is not None else None,
+    }
+
+
+def _mean_rpe(review: WeekReview) -> float | None:
+    """The mean of the ratings of the sessions of the week, one decimal; ``None`` without any."""
+    ratings = [activity.rpe for activity in review.activities if activity.rpe is not None]
+    return round(sum(ratings) / len(ratings), 1) if ratings else None

@@ -1,7 +1,7 @@
 import json
 from collections.abc import Iterator
 from dataclasses import replace
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 
 import pytest
@@ -25,6 +25,7 @@ from planning.briefing import (
 from planning.context import PlanContext
 from planning.models import PlannedWorkout, WeeklyPlan
 from planning.schema import Sport, ZoneSystem
+from reviews.models import WeekComment, WeekFeedback
 
 pytestmark = pytest.mark.django_db
 
@@ -74,6 +75,24 @@ ALLOWED_KEYS = {
     "previous_week_plan",
     "day",
     "goal",
+    # previous_week_review: numbers and one fixed word
+    "previous_week_review",
+    "statuses",
+    "done",
+    "partial",
+    "missed",
+    "replaced",
+    "open",
+    "planned_minutes",
+    "done_minutes",
+    "unplanned_sessions",
+    "rated_sessions",
+    "mean_rpe",
+    "feedback",
+    "fatigue",
+    "motivation",
+    "pain",
+    "next_week",
 }
 
 
@@ -155,6 +174,7 @@ class TestTheBriefingOfAUserWithNothing:
             "sports": ["running", "cycling", "swimming", "strength"],
             "stretching": False,
             "previous_week_plan": [],
+            "previous_week_review": None,
         }
 
     def test_the_week_must_start_on_a_monday(self, alice: User) -> None:
@@ -380,6 +400,7 @@ class TestTheGoals:
             "sports",
             "stretching",
             "previous_week_plan",
+            "previous_week_review",
         ]
 
 
@@ -565,4 +586,136 @@ class TestWhatIsSent:
         with CaptureQueriesContext(connection) as full:
             build_briefing(alice, MONDAY)
 
-        assert len(empty) == len(full) == 11
+        # 11 of the briefing and 8 of the review of the week before
+        assert len(empty) == len(full) == 19
+
+
+class TestHowTheWeekBeforeWent:
+    """``previous_week_review``: the review of the week before, as numbers and one fixed word."""
+
+    BEFORE = MONDAY - timedelta(days=7)
+
+    def review_of(self, user: User) -> Any:
+        return build_briefing(user, MONDAY)["previous_week_review"]
+
+    def confirmed(self, user: User, workouts: int = 2) -> None:
+        plan_of(user, self.BEFORE, "confirmed", [(n, "running") for n in range(workouts)])
+
+    def session(self, user: User, day: int, seconds: float = 3600, **fields: Any) -> Activity:
+        values: dict[str, Any] = {
+            "source": "manual",
+            "sport": "running",
+            "timer_seconds": seconds,
+            **fields,
+        }
+        start = datetime.combine(self.BEFORE + timedelta(days=day), time(7), tzinfo=UTC)
+        return Activity.objects.create(owner=user, start_time=start, **values)
+
+    def test_it_is_null_when_there_is_nothing_to_tell(self, alice: User) -> None:
+        assert self.review_of(alice) is None
+
+    def test_the_figures_of_the_week_before(self, alice: User) -> None:
+        self.confirmed(alice, workouts=3)
+        self.session(alice, 0, 3600, rpe=6)
+        self.session(alice, 1, 1200, rpe=8)
+        self.session(alice, 4, 1800, sport="strength")
+
+        assert self.review_of(alice) == {
+            "statuses": {"done": 1, "partial": 1, "missed": 1, "replaced": 0, "open": 0},
+            "planned_minutes": 180,
+            "done_minutes": 110,
+            "unplanned_sessions": 1,
+            "rated_sessions": 2,
+            "mean_rpe": 7.0,
+            "feedback": None,
+            "next_week": None,
+        }
+
+    def test_the_mean_rpe_has_one_decimal(self, alice: User) -> None:
+        self.session(alice, 0, rpe=5)
+        self.session(alice, 1, rpe=6)
+        self.session(alice, 2, rpe=6)
+
+        assert self.review_of(alice)["mean_rpe"] == 5.7
+
+    def test_the_mean_rpe_is_null_without_ratings(self, alice: User) -> None:
+        self.session(alice, 0)
+
+        review = self.review_of(alice)
+
+        assert review["mean_rpe"] is None and review["rated_sessions"] == 0
+
+    def test_the_scales_of_the_week_are_told_and_its_note_is_not(self, alice: User) -> None:
+        self.session(alice, 0)
+        WeekFeedback.objects.create(
+            owner=alice, week_start=self.BEFORE, fatigue=4, pain=2, notes="SECRET FEEDBACK"
+        )
+
+        review = self.review_of(alice)
+
+        assert review["feedback"] == {"fatigue": 4, "motivation": None, "pain": 2}
+        assert "SECRET FEEDBACK" not in to_json(build_briefing(alice, MONDAY))
+
+    @pytest.mark.parametrize("word", ["increase", "hold", "reduce"])
+    def test_the_recommendation_of_the_review_is_told_as_its_word(
+        self, alice: User, word: str
+    ) -> None:
+        self.session(alice, 0)
+        WeekComment.objects.create(
+            owner=alice, week_start=self.BEFORE, comment="SECRET COMMENT", next_week=word
+        )
+
+        text = to_json(build_briefing(alice, MONDAY))
+
+        assert self.review_of(alice)["next_week"] == word
+        assert "SECRET COMMENT" not in text
+
+    def test_a_comment_of_another_week_does_not_count(self, alice: User) -> None:
+        self.session(alice, 0)
+        WeekComment.objects.create(
+            owner=alice, week_start=self.BEFORE - timedelta(days=7), comment="x", next_week="reduce"
+        )
+
+        assert self.review_of(alice)["next_week"] is None
+
+    def test_no_title_note_or_id_of_the_week_is_told(self, alice: User) -> None:
+        self.confirmed(alice)
+        self.session(alice, 0, notes="SECRET ACTIVITY NOTE", rpe=5)
+
+        text = to_json(build_briefing(alice, MONDAY))
+
+        assert "SECRET" not in text
+        assert str(alice.pk) not in text
+
+    def test_the_week_that_is_running_is_told_with_its_open_workouts(self, alice: User) -> None:
+        # now is Sunday the 18th, so the week before the one of the 19th is still running
+        plan_of(alice, self.BEFORE, "confirmed", [(n, "running") for n in range(7)])
+
+        review = self.review_of(alice)
+
+        assert review["statuses"] == {
+            "done": 0,
+            "partial": 0,
+            "missed": 6,
+            "replaced": 0,
+            "open": 1,
+        }
+
+    def test_a_week_that_has_not_begun_is_not_told(self, alice: User) -> None:
+        later = MONDAY + timedelta(days=7)
+        plan_of(alice, MONDAY, "confirmed", [(0, "running")])
+
+        assert build_briefing(alice, later)["previous_week_review"] is None
+
+    def test_the_data_of_another_user_is_not_told(self, alice: User, bob: User) -> None:
+        self.confirmed(bob, workouts=3)
+        self.session(bob, 0, rpe=9)
+        WeekFeedback.objects.create(owner=bob, week_start=self.BEFORE, pain=5)
+
+        assert self.review_of(alice) is None
+
+    def test_the_review_is_the_same_text_for_the_same_data(self, alice: User) -> None:
+        self.confirmed(alice)
+        self.session(alice, 0, rpe=6)
+
+        assert to_json(build_briefing(alice, MONDAY)) == to_json(build_briefing(alice, MONDAY))

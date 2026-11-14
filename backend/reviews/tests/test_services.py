@@ -10,7 +10,14 @@ from goals import services as goal_services
 from planning.models import PlannedWorkout
 from reviews.matching import Origin, Status
 from reviews.models import WeekComment, WeekFeedback, WorkoutReview
-from reviews.services import REVIEW_WEEKS, WeekNotReviewable, reviewable_weeks, week_review
+from reviews.services import (
+    REVIEW_WEEKS,
+    WeekNotReviewable,
+    has_anything,
+    reviewable_weeks,
+    week_review,
+    week_summary,
+)
 
 from .builders import MONDAY, NOW, make_activity, make_plan
 
@@ -227,3 +234,116 @@ class TestAWeek:
 
         assert len(review.workouts) == 14 and len(review.activities) == 13
         assert len(small) == len(large)
+
+
+class TestWhetherThereIsSomethingToLookBackOn:
+    def test_an_empty_week_has_nothing(self, alice: User) -> None:
+        assert not has_anything(week_review(alice, MONDAY))
+
+    def test_a_draft_alone_is_nothing(self, alice: User) -> None:
+        make_plan(alice, status="draft", workouts=2)
+
+        assert not has_anything(week_review(alice, MONDAY))
+
+    def test_a_confirmed_plan(self, alice: User) -> None:
+        make_plan(alice, workouts=1)
+
+        assert has_anything(week_review(alice, MONDAY))
+
+    def test_an_activity(self, alice: User) -> None:
+        make_activity(alice, "2026-11-10T07:00")
+
+        assert has_anything(week_review(alice, MONDAY))
+
+    def test_feedback(self, alice: User) -> None:
+        WeekFeedback.objects.create(owner=alice, week_start=MONDAY, pain=2)
+
+        assert has_anything(week_review(alice, MONDAY))
+
+    def test_what_belongs_to_another_week_or_user_is_nothing(self, alice: User, bob: User) -> None:
+        make_activity(alice, (MONDAY - timedelta(days=2)).isoformat() + "T07:00")
+        make_plan(bob, workouts=1)
+
+        assert not has_anything(week_review(alice, MONDAY))
+
+
+class TestTheSummaryOfAnyWeek:
+    def test_a_week_beyond_the_window_of_the_page_can_be_summed_up(self, alice: User) -> None:
+        old = MONDAY - timedelta(weeks=REVIEW_WEEKS + 3)
+        make_plan(alice, old, workouts=1)
+        with pytest.raises(WeekNotReviewable):
+            week_review(alice, old)
+
+        summary = week_summary(alice, old)
+
+        assert summary is not None and summary.week_start == old
+        assert len(summary.workouts) == 1
+
+    def test_it_is_the_review_of_the_week_otherwise(self, alice: User) -> None:
+        make_plan(alice, workouts=2)
+        make_activity(alice, "2026-11-09T07:00", rpe=6)
+
+        summary = week_summary(alice, MONDAY)
+
+        assert summary is not None
+        assert summary.match == week_review(alice, MONDAY).match
+        assert summary.comparison == week_review(alice, MONDAY).comparison
+
+    def test_the_running_week_is_summed_up_too(self, alice: User) -> None:
+        make_plan(alice, workouts=7)
+
+        summary = week_summary(alice, MONDAY)
+
+        assert summary is not None
+        assert summary.comparison.statuses[Status.OPEN] == 2
+
+    def test_a_week_that_has_not_begun_is_none(self, alice: User) -> None:
+        next_week = MONDAY + timedelta(weeks=1)
+        make_plan(alice, next_week, workouts=2)
+
+        assert week_summary(alice, next_week) is None
+
+    def test_a_week_with_nothing_in_it_is_none(self, alice: User) -> None:
+        assert week_summary(alice, MONDAY - timedelta(weeks=1)) is None
+
+    def test_the_week_is_the_week_of_the_time_zone_of_the_user(
+        self, alice: User, bob: User, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Sunday 23:30 UTC: already next Monday in Berlin, still Sunday in Los Angeles.
+        sunday_night = datetime(2026, 11, 15, 23, 30, tzinfo=UTC)
+        monkeypatch.setattr(goal_services, "_utc_now", lambda: sunday_night)
+        next_week = MONDAY + timedelta(weeks=1)
+        for user, zone in ((alice, "Europe/Berlin"), (bob, "America/Los_Angeles")):
+            AthleteProfile.objects.create(owner=user, timezone=zone)
+            make_plan(user, next_week, workouts=1)
+
+        assert week_summary(alice, next_week) is not None
+        assert week_summary(bob, next_week) is None
+
+    def test_a_day_that_is_no_monday_is_refused(self, alice: User) -> None:
+        with pytest.raises(ValueError, match="Monday"):
+            week_summary(alice, MONDAY + timedelta(days=1))
+
+    def test_the_data_of_another_user_is_not_part_of_it(self, alice: User, bob: User) -> None:
+        make_plan(bob, workouts=3)
+        make_activity(bob, "2026-11-09T07:00")
+        WeekFeedback.objects.create(owner=bob, week_start=MONDAY, pain=5)
+
+        assert week_summary(alice, MONDAY) is None
+
+    def test_it_takes_the_same_number_of_queries_with_or_without_data(self, alice: User) -> None:
+        with CaptureQueriesContext(connection) as empty:
+            week_summary(alice, MONDAY)
+        make_plan(alice, workouts=7)
+        for hour in range(5):
+            make_activity(alice, f"2026-11-1{hour % 3}T{hour:02d}:00", rpe=4)
+        WeekFeedback.objects.create(owner=alice, week_start=MONDAY, fatigue=2)
+        WeekComment.objects.create(owner=alice, week_start=MONDAY, comment="x", next_week="hold")
+        first = PlannedWorkout.objects.filter(owner=alice).first()
+        assert first is not None
+        WorkoutReview.objects.create(owner=alice, workout=first, no_activity=True)
+
+        with CaptureQueriesContext(connection) as full:
+            week_summary(alice, MONDAY)
+
+        assert len(empty) == len(full)
