@@ -9,6 +9,7 @@ import { AthleteApi } from './core/athlete/athlete-api';
 import { CoachApi } from './core/coach/coach-api';
 import { AvailabilityApi } from './core/availability/availability-api';
 import { GoalsApi } from './core/goals/goals-api';
+import { ReviewApi } from './core/review/review-api';
 import { IntervalsConnectionApi } from './core/integrations/intervals-api';
 import { ADA, createAuthStoreStub } from './core/auth/testing/auth-store-stub';
 import { required } from './testing/dom';
@@ -37,6 +38,7 @@ describe('app routes', () => {
         { provide: CoachApi, useValue: { get: () => new Promise<never>(() => undefined) } },
         { provide: AthleteApi, useValue: { get: () => new Promise<never>(() => undefined) } },
         { provide: ActivitiesApi, useValue: { list: () => new Promise<never>(() => undefined) } },
+        { provide: ReviewApi, useValue: { weeks: () => new Promise<never>(() => undefined) } },
         {
           provide: IntervalsConnectionApi,
           useValue: { get: () => new Promise<never>(() => undefined) },
@@ -201,6 +203,29 @@ describe('app routes', () => {
     expect(page.querySelector('[data-testid="user-label"]')?.textContent).toBe('Ada');
   });
 
+  it('sends visitors from the week review to the login and remembers where they wanted to go', async () => {
+    await harness.navigateByUrl('/review');
+
+    expect(router.url).toBe('/login?returnUrl=%2Freview');
+  });
+
+  it.each([
+    ['a member', ADA],
+    [
+      'an administrator with two-factor authentication',
+      { ...ADA, is_staff: true, mfa_enabled: true },
+    ],
+  ])('shows the week review inside the shell to %s', async (_who, me) => {
+    store.signIn(me);
+
+    await harness.navigateByUrl('/review');
+
+    expect(router.url).toBe('/review');
+    const page = required(harness.routeNativeElement, 'the routed element');
+    expect(page.textContent).toContain('Week review');
+    expect(page.querySelector('[data-testid="user-label"]')?.textContent).toBe('Ada');
+  });
+
   it('sends visitors from the athlete profile to the login and remembers where they wanted to go', async () => {
     await harness.navigateByUrl('/settings/profile');
 
@@ -287,6 +312,12 @@ describe('app routes', () => {
 
     it('is sent from the activities page to the security page, with the reason', async () => {
       await harness.navigateByUrl('/activities');
+
+      expect(router.url).toBe('/settings/security?notice=mfa-required');
+    });
+
+    it('is sent from the week review to the security page, with the reason', async () => {
+      await harness.navigateByUrl('/review');
 
       expect(router.url).toBe('/settings/security?notice=mfa-required');
     });
