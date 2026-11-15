@@ -1,0 +1,100 @@
+.panel {
+  margin-bottom: 1.5rem;
+  padding: 1.25rem 1.5rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.15rem;
+}
+
+h3 {
+  margin: 1rem 0 0.5rem;
+  font-size: 1rem;
+}
+
+.sports {
+  padding: 0;
+  border: 0;
+}
+
+.sports legend {
+  margin-bottom: 0.25rem;
+  padding: 0;
+  font-weight: 600;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.check input {
+  width: auto;
+}
+
+.check label {
+  margin: 0;
+  font-weight: normal;
+}
+
+.list {
+  margin: 1rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.entry {
+  margin-bottom: 0.75rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.entry[data-status='healed'] {
+  opacity: 0.8;
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.85rem;
+}
+
+.badge.current {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.entry-sports {
+  margin: 0.5rem 0;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.confirm {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}

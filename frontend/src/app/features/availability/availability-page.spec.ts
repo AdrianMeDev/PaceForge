@@ -1,11 +1,14 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { AvailabilityApi } from '../../core/availability/availability-api';
+import { CoachApi } from '../../core/coach/coach-api';
+import { AiProviderState, GetProviderResult } from '../../core/coach/coach-models';
 import {
   Availability,
   AvailabilityChanges,
   AvailabilitySlot,
   GetAvailabilityResult,
+  ListLimitationsResult,
   ListPeriodsResult,
   SaveAvailabilityResult,
 } from '../../core/availability/availability-models';
@@ -80,6 +83,27 @@ const NOTHING: Availability = {
 
 const ok = (availability: Availability): GetAvailabilityResult => ({ kind: 'ok', availability });
 
+const PROVIDER: AiProviderState = {
+  configured: true,
+  provider: 'anthropic',
+  model: 'claude-sonnet-5-5',
+  base_url: null,
+  has_key: true,
+  status: 'connected',
+  last_checked_at: null,
+  last_success_at: null,
+  allowed_base_urls: [],
+  usage: { calls: 0, input_tokens: 0, output_tokens: 0, days: 30 },
+};
+
+function createCoachStub() {
+  return {
+    get: vi
+      .fn<() => Promise<GetProviderResult>>()
+      .mockResolvedValue({ kind: 'ok', state: PROVIDER }),
+  };
+}
+
 function createApiStub() {
   return {
     get: vi.fn<() => Promise<GetAvailabilityResult>>(),
@@ -88,6 +112,10 @@ function createApiStub() {
     listPeriods: vi
       .fn<() => Promise<ListPeriodsResult>>()
       .mockResolvedValue({ kind: 'ok', periods: [] }),
+    // The limitations have a panel of their own, tested in limitations-panel.spec.ts.
+    listLimitations: vi
+      .fn<() => Promise<ListLimitationsResult>>()
+      .mockResolvedValue({ kind: 'ok', limitations: [] }),
   };
 }
 
@@ -99,16 +127,22 @@ function deferred<T>() {
 
 describe('AvailabilityPage', () => {
   let api: ReturnType<typeof createApiStub>;
+  let coach: ReturnType<typeof createCoachStub>;
   let fixture: ComponentFixture<AvailabilityPage>;
   let page: HTMLElement;
 
   async function setup(first: GetAvailabilityResult = ok(SAVED)) {
     api = createApiStub();
+    coach = createCoachStub();
     api.get.mockResolvedValue(first);
     api.save.mockResolvedValue({ kind: 'ok', availability: SAVED });
     TestBed.configureTestingModule({
       imports: [AvailabilityPage],
-      providers: [provideRouter([]), { provide: AvailabilityApi, useValue: api }],
+      providers: [
+        provideRouter([]),
+        { provide: AvailabilityApi, useValue: api },
+        { provide: CoachApi, useValue: coach },
+      ],
     });
     fixture = TestBed.createComponent(AvailabilityPage);
     page = fixture.nativeElement as HTMLElement;
@@ -147,10 +181,15 @@ describe('AvailabilityPage', () => {
   describe('loading', () => {
     it('shows a loading note until the answer arrives', () => {
       api = createApiStub();
+      coach = createCoachStub();
       api.get.mockReturnValue(new Promise<never>(() => undefined));
       TestBed.configureTestingModule({
         imports: [AvailabilityPage],
-        providers: [provideRouter([]), { provide: AvailabilityApi, useValue: api }],
+        providers: [
+          provideRouter([]),
+          { provide: AvailabilityApi, useValue: api },
+          { provide: CoachApi, useValue: coach },
+        ],
       });
       fixture = TestBed.createComponent(AvailabilityPage);
       fixture.detectChanges();
@@ -167,10 +206,15 @@ describe('AvailabilityPage', () => {
 
     it('offers a retry when it cannot be loaded', async () => {
       api = createApiStub();
+      coach = createCoachStub();
       api.get.mockRejectedValueOnce(new Error('offline')).mockResolvedValue(ok(SAVED));
       TestBed.configureTestingModule({
         imports: [AvailabilityPage],
-        providers: [provideRouter([]), { provide: AvailabilityApi, useValue: api }],
+        providers: [
+          provideRouter([]),
+          { provide: AvailabilityApi, useValue: api },
+          { provide: CoachApi, useValue: coach },
+        ],
       });
       fixture = TestBed.createComponent(AvailabilityPage);
       page = fixture.nativeElement as HTMLElement;
@@ -1053,6 +1097,101 @@ describe('AvailabilityPage', () => {
     });
   });
 
+  describe('the limitations', () => {
+    it('are shown below the form and above the periods', async () => {
+      await setup();
+
+      const panel = query(page, 'app-limitations-panel');
+      expect(panel.textContent).toContain('Injuries and limitations');
+      expect(
+        query(page, 'form').compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(
+        panel.compareDocumentPosition(query(page, 'app-periods-panel')) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(api.listLimitations).toHaveBeenCalledTimes(1);
+    });
+
+    it('name the provider the entries go to', async () => {
+      await setup();
+
+      expect(query(page, 'app-limitations-panel').textContent).toContain(
+        'Where they go: Anthropic, model claude-sonnet-5-5.',
+      );
+      expect(coach.get).toHaveBeenCalledTimes(1);
+    });
+
+    it('say that nothing is sent when no provider is set up', async () => {
+      await setup();
+      coach.get.mockResolvedValue({
+        kind: 'ok',
+        state: { ...PROVIDER, configured: false, provider: null, model: '', has_key: false },
+      });
+      api.get.mockResolvedValue(ok(SAVED));
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({
+        imports: [AvailabilityPage],
+        providers: [
+          provideRouter([]),
+          { provide: AvailabilityApi, useValue: api },
+          { provide: CoachApi, useValue: coach },
+        ],
+      });
+      fixture = TestBed.createComponent(AvailabilityPage);
+      page = fixture.nativeElement as HTMLElement;
+      await settle(fixture);
+
+      expect(query(page, 'app-limitations-panel').textContent).toContain(
+        'no AI provider is set up yet, so nothing is sent',
+      );
+    });
+
+    it('still work when the provider cannot be read', async () => {
+      api = createApiStub();
+      api.get.mockResolvedValue(ok(SAVED));
+      coach = createCoachStub();
+      coach.get.mockRejectedValue(new Error('offline'));
+      TestBed.configureTestingModule({
+        imports: [AvailabilityPage],
+        providers: [
+          provideRouter([]),
+          { provide: AvailabilityApi, useValue: api },
+          { provide: CoachApi, useValue: coach },
+        ],
+      });
+      fixture = TestBed.createComponent(AvailabilityPage);
+      page = fixture.nativeElement as HTMLElement;
+      await settle(fixture);
+
+      expect(query(page, 'app-limitations-panel').textContent).toContain(
+        'Where they go: your AI provider.',
+      );
+      expect(alerts()).toEqual([]);
+    });
+
+    it('end the session of the page when they find it gone', async () => {
+      api = createApiStub();
+      api.get.mockResolvedValue(ok(SAVED));
+      api.listLimitations.mockResolvedValue({ kind: 'forbidden' });
+      coach = createCoachStub();
+      TestBed.configureTestingModule({
+        imports: [AvailabilityPage],
+        providers: [
+          provideRouter([]),
+          { provide: AvailabilityApi, useValue: api },
+          { provide: CoachApi, useValue: coach },
+        ],
+      });
+      fixture = TestBed.createComponent(AvailabilityPage);
+      page = fixture.nativeElement as HTMLElement;
+      await settle(fixture);
+
+      expect(alerts()).toEqual(['Your session has ended. Please sign in again.']);
+      expect(page.querySelector('app-limitations-panel')).toBeNull();
+    });
+  });
+
   describe('the periods', () => {
     it('are shown below the form', async () => {
       await setup();
@@ -1067,11 +1206,16 @@ describe('AvailabilityPage', () => {
 
     it('end the session of the page when they find it gone', async () => {
       api = createApiStub();
+      coach = createCoachStub();
       api.get.mockResolvedValue(ok(SAVED));
       api.listPeriods.mockResolvedValue({ kind: 'forbidden' });
       TestBed.configureTestingModule({
         imports: [AvailabilityPage],
-        providers: [provideRouter([]), { provide: AvailabilityApi, useValue: api }],
+        providers: [
+          provideRouter([]),
+          { provide: AvailabilityApi, useValue: api },
+          { provide: CoachApi, useValue: coach },
+        ],
       });
       fixture = TestBed.createComponent(AvailabilityPage);
       page = fixture.nativeElement as HTMLElement;

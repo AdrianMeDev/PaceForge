@@ -1,6 +1,7 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { AvailabilityApi } from '../../core/availability/availability-api';
+import { CoachApi } from '../../core/coach/coach-api';
 import {
   Availability,
   AvailabilityChanges,
@@ -29,7 +30,9 @@ import {
   ownLimitTexts,
   readOwnLimits,
 } from './intensity-settings';
+import { LimitationsPanel } from './limitations-panel';
 import { PeriodsPanel } from './periods-panel';
+import { UNKNOWN_PROVIDER, providerLine } from './provider-line';
 
 type View = 'loading' | 'unreachable' | 'ready' | 'signed_out';
 
@@ -62,12 +65,13 @@ function dayMinutes(text: string): Parsed<number> {
  */
 @Component({
   selector: 'app-availability-page',
-  imports: [RouterLink, PeriodsPanel, IntensitySettings, DayOptions],
+  imports: [RouterLink, PeriodsPanel, LimitationsPanel, IntensitySettings, DayOptions],
   templateUrl: './availability-page.html',
   styleUrls: ['../auth/auth-form.css', './availability-page.css'],
 })
 export class AvailabilityPage implements OnInit {
   private readonly api = inject(AvailabilityApi);
+  private readonly coach = inject(CoachApi);
 
   protected readonly view = signal<View>('loading');
   /** What is in the seven day fields, Monday first. */
@@ -85,6 +89,8 @@ export class AvailabilityPage implements OnInit {
   /** The limits of every level as the server has them; set with the first answer. */
   protected readonly levelLimits = signal<Record<IntensityLevel, Limits> | null>(null);
   protected readonly intensityErrors = signal<IntensityErrors>({});
+  /** Where what the user lets go to the AI coach goes, in a few words. */
+  protected readonly provider = signal(UNKNOWN_PROVIDER);
   protected readonly busy = signal(false);
   protected readonly errors = signal<string[]>([]);
   protected readonly notice = signal<string | null>(null);
@@ -147,8 +153,19 @@ export class AvailabilityPage implements OnInit {
       }
       this.show(result.availability);
       this.view.set('ready');
+      void this.loadProvider();
     } catch {
       this.view.set('unreachable');
+    }
+  }
+
+  /** The provider is only named in hints: if it cannot be read, the hints say so in general. */
+  private async loadProvider(): Promise<void> {
+    try {
+      const result = await this.coach.get();
+      this.provider.set(providerLine(result.kind === 'ok' ? result.state : null));
+    } catch {
+      this.provider.set(UNKNOWN_PROVIDER);
     }
   }
 
