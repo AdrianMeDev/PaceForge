@@ -420,6 +420,7 @@ class TestTheSystemPrompt:
         assert '"limitations" in the data lists the athlete\'s current injuries' in flat
         assert '"body_part" from a fixed list and the "sports" it affects' in flat
         assert "Do not load the body part" in flat
+        assert "a session in an affected sport is a warning" in flat
         assert '"limitations_text" is what the athlete wrote about them, or null' in flat
         assert 'titles and notes of goals and "limitations_text"' in flat
         assert '"limitations_not_shown" counts further ones that are left out' in flat

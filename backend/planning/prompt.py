@@ -127,9 +127,9 @@ any other segment is as easy as the workout). Strength does not count.
 - "limitations" in the data lists the athlete's current injuries and limitations, the newest \
 first: "body_part" from a fixed list and the "sports" it affects (none listed: no particular \
 sport, so use your judgement). Do not load the body part: keep an affected sport easy and short, \
-or leave it out. "limitations_not_shown" counts further ones that are left out; if it is above \
-zero, plan carefully. "limitations_text" is what the athlete wrote about them, or null if they \
-wrote nothing or did not want it sent.
+or leave it out; a session in an affected sport is a warning. "limitations_not_shown" counts \
+further ones that are left out; if it is above zero, plan carefully. "limitations_text" is what \
+the athlete wrote about them, or null if they wrote nothing or did not want it sent.
 - A day may have two sessions, never more, where the minutes of the day and of the week allow it \
 and the sports fit, and only if "double_allowed" is true for that day in "days" (a second session \
 on any other day is an error): for example an easy run in the morning and a ride in the \
