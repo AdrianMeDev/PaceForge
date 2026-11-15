@@ -12,6 +12,7 @@ from accounts.models import User
 from core.views import OwnedModelViewSet
 from goals.services import today_of
 
+from .intensity import LIMIT_NAMES
 from .models import AvailabilitySettings, UnavailablePeriod, WeekdayMinutes
 from .serializers import AvailabilityInput, PeriodSerializer, availability_data
 
@@ -38,7 +39,8 @@ class AvailabilityView(APIView):
 
     def patch(self, request: Request) -> Response:
         user = _user(request)
-        serializer = AvailabilityInput(data=request.data)
+        stored = AvailabilitySettings.objects.for_user(user).first()
+        serializer = AvailabilityInput(data=request.data, context={"settings": stored})
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         with transaction.atomic():
@@ -60,6 +62,8 @@ class AvailabilityView(APIView):
                     "sports",
                     "stretching",
                     "limitations",
+                    "intensity_level",
+                    *LIMIT_NAMES,
                 )
                 if name in data
             ]

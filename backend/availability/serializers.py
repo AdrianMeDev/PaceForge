@@ -14,6 +14,15 @@ from accounts.models import User
 from goals.serializers import TextField, WholeNumberField
 from goals.services import today_of
 
+from .intensity import (
+    DEFAULT_LEVEL,
+    LEVEL_LIMITS,
+    LIMIT_NAMES,
+    LIMIT_RANGES,
+    IntensityLevel,
+    limit_problems,
+    range_message,
+)
 from .models import (
     DAY_MINUTES_MAX,
     LIMITATIONS_MAX,
@@ -31,6 +40,7 @@ DAY_RANGE = f"Enter whole minutes between 0 and {DAY_MINUTES_MAX} for every day.
 BUDGET_RANGE = f"Enter whole minutes between 0 and {WEEK_MINUTES_MAX}."
 SPORTS_CHOICE = f"Choose at least one of: {', '.join(SPORTS)}."
 STRETCHING_CHOICE = "Send true or false."
+LEVEL_CHOICE = f"Choose one of: {', '.join(IntensityLevel.values)}."
 MAX_PERIODS = 100
 TOO_MANY_PERIODS = f"You can have at most {MAX_PERIODS} periods. Delete one first."
 
@@ -85,8 +95,25 @@ class StrictBooleanField(serializers.Field[bool, bool, bool, Any]):
         return value
 
 
+def _own_limit_field(name: str) -> WholeNumberField:
+    """A whole number in the range of the limit ``name``, or ``null`` for the level's value."""
+    low, high = LIMIT_RANGES[name]
+    message = range_message(name)
+    return WholeNumberField(
+        min_value=low,
+        max_value=high,
+        allow_null=True,
+        required=False,
+        error_messages={"invalid": message, "min_value": message, "max_value": message},
+    )
+
+
 class AvailabilityInput(serializers.Serializer[Any]):
-    """What may be sent: any of the six, the rest stays as it is."""
+    """What may be sent: any of the fields, the rest stays as it is.
+
+    The own limits are checked against each other and the level as they will be after saving: what
+    is sent, and what is stored for the rest (``context["settings"]``, ``None`` if nothing is).
+    """
 
     weekdays = WeekdaysField(required=False)
     weekly_budget_minutes = WholeNumberField(
@@ -115,6 +142,24 @@ class AvailabilityInput(serializers.Serializer[Any]):
     sports = SportsField(required=False, error_messages={"null": SPORTS_CHOICE})
     stretching = StrictBooleanField(required=False, error_messages={"null": STRETCHING_CHOICE})
     limitations = TextField(max_length=LIMITATIONS_MAX, allow_blank=True, required=False)
+    intensity_level = serializers.ChoiceField(
+        choices=IntensityLevel.choices,
+        required=False,
+        error_messages={"invalid_choice": LEVEL_CHOICE, "null": LEVEL_CHOICE},
+    )
+    max_hard_days = _own_limit_field("max_hard_days")
+    progression_warning_percent = _own_limit_field("progression_warning_percent")
+    progression_error_percent = _own_limit_field("progression_error_percent")
+    easy_share_percent = _own_limit_field("easy_share_percent")
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        stored: AvailabilitySettings = self.context.get("settings") or AvailabilitySettings()
+        level = attrs.get("intensity_level", stored.intensity_level)
+        own = {name: attrs.get(name, getattr(stored, name)) for name in LIMIT_NAMES}
+        problems = limit_problems(level, own)
+        if problems:
+            raise serializers.ValidationError({name: [text] for name, text in problems.items()})
+        return attrs
 
 
 def availability_data(
@@ -122,7 +167,9 @@ def availability_data(
 ) -> dict[str, Any]:
     """The answer: the seven weekdays (Monday first, 0 where nothing is saved), the weekly budget
     and the typical week (``null`` for none), the sports of the plan (all of them if none was
-    chosen), whether stretching may be added and the limitations. No row ids, no owner."""
+    chosen), whether stretching may be added, the limitations, the intensity level with the own
+    limits (``null`` for the level's value) and the limits of every level, so that a client need
+    not repeat them. No row ids, no owner."""
     minutes = [0] * 7
     for row in weekdays:
         minutes[row.weekday] = row.minutes
@@ -133,6 +180,12 @@ def availability_data(
         "sports": effective_sports(settings.sports if settings else None),
         "stretching": settings.stretching if settings else False,
         "limitations": settings.limitations if settings else "",
+        "intensity_level": settings.intensity_level if settings else DEFAULT_LEVEL.value,
+        **{name: getattr(settings, name) if settings else None for name in LIMIT_NAMES},
+        "level_limits": {
+            level.value: {name: getattr(limits, name) for name in LIMIT_NAMES}
+            for level, limits in LEVEL_LIMITS.items()
+        },
     }
 
 

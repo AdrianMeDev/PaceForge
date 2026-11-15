@@ -8,6 +8,7 @@ import pytest
 from accounts.models import User
 from accounts.tests.conftest import AuthApi
 from availability.capacity import minutes_in_week
+from availability.intensity import LIMIT_NAMES, Limits
 from availability.models import AvailabilitySettings, WeekdayMinutes
 
 from .conftest import make_user, signed_in
@@ -17,6 +18,35 @@ pytestmark = pytest.mark.django_db
 URL = "/api/availability/"
 MONDAY = date(2027, 7, 12)
 ALL_SPORTS = ["running", "cycling", "swimming", "strength"]
+# The intensity of a user who chose nothing: "normal" without own limits, and every level's limits.
+LEVEL_LIMITS_ANSWER = {
+    "relaxed": {
+        "max_hard_days": 1,
+        "progression_warning_percent": 115,
+        "progression_error_percent": 130,
+        "easy_share_percent": 85,
+    },
+    "normal": {
+        "max_hard_days": 2,
+        "progression_warning_percent": 120,
+        "progression_error_percent": 140,
+        "easy_share_percent": 80,
+    },
+    "intensive": {
+        "max_hard_days": 3,
+        "progression_warning_percent": 130,
+        "progression_error_percent": 150,
+        "easy_share_percent": 75,
+    },
+}
+INTENSITY = {
+    "intensity_level": "normal",
+    "max_hard_days": None,
+    "progression_warning_percent": None,
+    "progression_error_percent": None,
+    "easy_share_percent": None,
+    "level_limits": LEVEL_LIMITS_ANSWER,
+}
 EMPTY = {
     "weekdays": [0] * 7,
     "weekly_budget_minutes": None,
@@ -24,6 +54,7 @@ EMPTY = {
     "sports": ALL_SPORTS,
     "stretching": False,
     "limitations": "",
+    **INTENSITY,
 }
 WEEK = [60, 0, 90, 0, 0, 120, 180]
 
@@ -105,6 +136,12 @@ class TestReading:
             "sports",
             "stretching",
             "limitations",
+            "intensity_level",
+            "max_hard_days",
+            "progression_warning_percent",
+            "progression_error_percent",
+            "easy_share_percent",
+            "level_limits",
         }
 
     def test_the_weekdays_come_monday_first_and_missing_ones_are_zero(self, alice: User) -> None:
@@ -210,6 +247,7 @@ class TestSportsAndStretching:
             "sports": ["running"],
             "stretching": True,
             "limitations": "Knee",
+            **INTENSITY,
         }
 
     def test_the_other_settings_leave_the_choice_as_it_was(self, alice: User) -> None:
@@ -244,6 +282,163 @@ class TestSportsAndStretching:
         assert set(body(response)) == {"sports", "stretching"}
 
 
+class TestIntensity:
+    OWN = {
+        "max_hard_days": 3,
+        "progression_warning_percent": 110,
+        "progression_error_percent": 160,
+        "easy_share_percent": 70,
+    }
+
+    def test_a_new_user_has_normal_without_own_limits(self, alice: User) -> None:
+        answer = read(signed_in(alice))
+
+        assert {key: answer[key] for key in INTENSITY} == INTENSITY
+
+    def test_the_level_is_chosen_and_kept(self, alice: User) -> None:
+        api = signed_in(alice)
+
+        for level in ("relaxed", "intensive", "normal"):
+            assert body(save(api, {"intensity_level": level}))["intensity_level"] == level
+            assert read(api)["intensity_level"] == level
+
+    def test_own_limits_are_saved_and_null_gives_the_levels_back(self, alice: User) -> None:
+        api = signed_in(alice)
+
+        assert body(save(api, self.OWN)) == {**EMPTY, **self.OWN}
+        assert AvailabilitySettings.objects.get(owner=alice).limits == Limits(3, 110, 160, 70)
+
+        save(api, {"progression_warning_percent": None, "easy_share_percent": None})
+
+        settings = AvailabilitySettings.objects.get(owner=alice)
+        assert settings.own_limits == {**self.OWN, "progression_warning_percent": None,
+                                       "easy_share_percent": None}  # fmt: skip
+        assert settings.limits == Limits(3, 120, 160, 80)
+
+    @pytest.mark.parametrize("name", LIMIT_NAMES)
+    def test_every_own_limit_alone_leaves_the_rest_as_it_was(self, alice: User, name: str) -> None:
+        api = signed_in(alice)
+        save(api, {"weekdays": WEEK, "limitations": "Knee", "intensity_level": "intensive"})
+        before = read(api)
+
+        save(api, {name: self.OWN[name]})
+
+        assert read(api) == {**before, name: self.OWN[name]}
+
+    def test_the_level_alone_leaves_the_own_limits_as_they_were(self, alice: User) -> None:
+        api = signed_in(alice)
+        save(api, {"max_hard_days": 4, "easy_share_percent": 60})
+
+        save(api, {"intensity_level": "relaxed"})
+
+        answer = read(api)
+        assert (answer["max_hard_days"], answer["easy_share_percent"]) == (4, 60)
+
+    def test_the_other_settings_leave_the_intensity_as_it_was(self, alice: User) -> None:
+        api = signed_in(alice)
+        save(api, {"intensity_level": "relaxed", **self.OWN})
+
+        save(api, {"weekdays": WEEK, "sports": ["running"], "limitations": "Knee"})
+
+        answer = read(api)
+        assert answer["intensity_level"] == "relaxed"
+        assert {name: answer[name] for name in self.OWN} == self.OWN
+
+    def test_the_ends_of_the_ranges_are_accepted(self, alice: User) -> None:
+        api = signed_in(alice)
+
+        for data in (
+            {"max_hard_days": 0, "easy_share_percent": 50},
+            {"max_hard_days": 4, "easy_share_percent": 100},
+            {"progression_warning_percent": 100, "progression_error_percent": 300},
+            {"progression_warning_percent": 200, "progression_error_percent": 201},
+        ):
+            assert save(api, data).status_code == HTTPStatus.OK, data
+
+    @pytest.mark.parametrize(
+        ("name", "value", "message"),
+        [
+            ("max_hard_days", -1, "Enter a whole number of days between 0 and 4."),
+            ("max_hard_days", 5, "Enter a whole number of days between 0 and 4."),
+            ("max_hard_days", "2", "Enter a whole number of days between 0 and 4."),
+            ("max_hard_days", 2.5, "Enter a whole number of days between 0 and 4."),
+            ("max_hard_days", True, "Enter a whole number of days between 0 and 4."),
+            ("progression_warning_percent", 99, "Enter a whole percent between 100 and 200."),
+            ("progression_warning_percent", 201, "Enter a whole percent between 100 and 200."),
+            ("progression_error_percent", 301, "Enter a whole percent between 100 and 300."),
+            ("easy_share_percent", 49, "Enter a whole percent between 50 and 100."),
+            ("easy_share_percent", [80], "Enter a whole percent between 50 and 100."),
+        ],
+    )
+    def test_an_own_limit_out_of_range_is_refused(
+        self, alice: User, name: str, value: Any, message: str
+    ) -> None:
+        response = save(signed_in(alice), {name: value})
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert body(response) == {name: [message]}
+        assert rows() == (0, 0)
+
+    @pytest.mark.parametrize("level", ["brutal", "Normal", "", None, 1, True, ["normal"]])
+    def test_an_unknown_level_is_refused(self, alice: User, level: Any) -> None:
+        response = save(signed_in(alice), {"intensity_level": level})
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert body(response) == {"intensity_level": ["Choose one of: relaxed, normal, intensive."]}
+        assert rows() == (0, 0)
+
+    def test_a_warning_at_or_above_the_error_is_refused(self, alice: User) -> None:
+        response = save(
+            signed_in(alice),
+            {"progression_warning_percent": 150, "progression_error_percent": 150},
+        )
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert body(response) == {
+            "progression_error_percent": [
+                "The warning limit (150 %) must be below the error limit (150 %)."
+            ]
+        }
+        assert rows() == (0, 0)
+
+    def test_the_order_is_checked_against_what_is_stored(self, alice: User) -> None:
+        api = signed_in(alice)
+        save(api, {"progression_warning_percent": 135})  # normal: error 140
+
+        refused = save(api, {"intensity_level": "relaxed"})  # relaxed: error 130
+
+        assert refused.status_code == HTTPStatus.BAD_REQUEST
+        assert body(refused) == {
+            "progression_warning_percent": [
+                "The warning limit (135 %) must be below the error limit (130 %)."
+            ]
+        }
+        assert read(api)["intensity_level"] == "normal"
+        # with an own error limit sent along it is fine
+        accepted = save(api, {"intensity_level": "relaxed", "progression_error_percent": 160})
+        assert accepted.status_code == HTTPStatus.OK
+
+    def test_a_null_that_breaks_the_order_is_refused(self, alice: User) -> None:
+        api = signed_in(alice)
+        save(api, {"progression_warning_percent": 145, "progression_error_percent": 160})
+
+        response = save(api, {"progression_error_percent": None})  # normal: error 140
+
+        assert body(response) == {
+            "progression_warning_percent": [
+                "The warning limit (145 %) must be below the error limit (140 %)."
+            ]
+        }
+
+    def test_the_stored_values_of_another_user_do_not_count(self, alice: User, bob: User) -> None:
+        save(signed_in(bob), {"progression_warning_percent": 135})
+
+        response = save(signed_in(alice), {"intensity_level": "relaxed"})
+
+        assert response.status_code == HTTPStatus.OK
+        assert read(signed_in(bob))["intensity_level"] == "normal"
+
+
 class TestSaving:
     def test_everything_at_once(self, alice: User) -> None:
         api = signed_in(alice)
@@ -260,6 +455,7 @@ class TestSaving:
             "sports": ALL_SPORTS,
             "stretching": False,
             "limitations": "No running",
+            **INTENSITY,
         }
         assert read(api) == body(response)
         assert rows() == (7, 1)
@@ -277,6 +473,7 @@ class TestSaving:
             "sports": ALL_SPORTS,
             "stretching": False,
             "limitations": "Knee",
+            **INTENSITY,
         }
 
     def test_the_budget_alone_leaves_the_rest_as_it_was(self, alice: User) -> None:
@@ -292,6 +489,7 @@ class TestSaving:
             "sports": ALL_SPORTS,
             "stretching": False,
             "limitations": "Knee",
+            **INTENSITY,
         }
 
     def test_the_limitations_alone_leave_the_rest_as_it_was(self, alice: User) -> None:
@@ -307,6 +505,7 @@ class TestSaving:
             "sports": ALL_SPORTS,
             "stretching": False,
             "limitations": "Knee",
+            **INTENSITY,
         }
 
     def test_the_typical_week_can_be_set_changed_and_removed(self, alice: User) -> None:
@@ -343,6 +542,7 @@ class TestSaving:
             "sports": ALL_SPORTS,
             "stretching": False,
             "limitations": "Knee",
+            **INTENSITY,
         }
 
     def test_the_other_settings_leave_the_typical_week_as_it_was(self, alice: User) -> None:
@@ -407,6 +607,7 @@ class TestSaving:
             "sports": ALL_SPORTS,
             "stretching": False,
             "limitations": "",
+            **INTENSITY,
         }
 
     def test_the_limits_themselves_are_accepted(self, alice: User) -> None:
@@ -454,6 +655,7 @@ class TestSaving:
             "sports": ALL_SPORTS,
             "stretching": False,
             "limitations": "Bob",
+            **INTENSITY,
         }
 
     def test_a_failure_while_saving_leaves_the_weekdays_as_they_were(
@@ -568,6 +770,7 @@ class TestRefusals:
             "sports": ALL_SPORTS,
             "stretching": False,
             "limitations": "Knee",
+            **INTENSITY,
         }
 
     def test_every_problem_is_named_at_once(self, alice: User) -> None:
