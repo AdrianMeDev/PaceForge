@@ -29,6 +29,10 @@ import {
   PeriodKind,
   PeriodStatus,
   SaveAvailabilityResult,
+  SportPreference,
+  SportPreferences,
+  SportRole,
+  StrengthFocus,
   UpdateLimitationResult,
   UpdatePeriodResult,
 } from './availability-models';
@@ -54,6 +58,9 @@ const BODY_PARTS: readonly string[] = [
 ];
 const LIMITATION_STATUSES: readonly string[] = ['current', 'healed'];
 const SPORTS: readonly string[] = ['running', 'cycling', 'swimming', 'strength'];
+const ROLES: readonly string[] = ['goal', 'secondary', 'supplementary'];
+const FOCUSES: readonly string[] = ['legs', 'core', 'upper_body', 'full_body'];
+const SESSIONS_MAX = 14;
 const SLOTS: readonly string[] = ['morning', 'afternoon', 'evening'];
 const STATUSES: readonly string[] = ['current', 'upcoming', 'past'];
 const LEVELS: readonly IntensityLevel[] = ['relaxed', 'normal', 'intensive'];
@@ -261,6 +268,7 @@ function toAvailability(raw: unknown, reply: Reply): Availability {
   const budget = item['weekly_budget_minutes'];
   const typical = item['typical_weekly_minutes'];
   const minimum = item['min_weekly_minutes'];
+  const focus = item['strength_focus'];
   const trainingDays = item['training_days'];
   const longRun = item['long_run_day'];
   const longRide = item['long_ride_day'];
@@ -281,6 +289,7 @@ function toAvailability(raw: unknown, reply: Reply): Availability {
     (budget !== null && !isMinutes(budget)) ||
     (typical !== null && !isMinutes(typical)) ||
     (minimum !== null && !isMinutes(minimum)) ||
+    (focus !== null && !isOneOf<StrengthFocus>(focus, FOCUSES)) ||
     (trainingDays !== null && !isWholeNumberIn(trainingDays, 1, 7)) ||
     (longRun !== null && !isWholeNumberIn(longRun, 0, 6)) ||
     (longRide !== null && !isWholeNumberIn(longRide, 0, 6)) ||
@@ -298,7 +307,10 @@ function toAvailability(raw: unknown, reply: Reply): Availability {
     throw unexpected(reply);
   }
   const levelLimits = asObject(item['level_limits'], reply);
+  const preferences = toSportPreferences(item['sport_preferences'], reply);
   return {
+    sport_preferences: preferences,
+    strength_focus: focus as StrengthFocus | null,
     weekdays: [...(weekdays as number[])],
     double_days: [...(doubleDays as boolean[])],
     time_windows: (windows as AvailabilitySlot[][]).map((day) => [...day]),
@@ -323,6 +335,32 @@ function toAvailability(raw: unknown, reply: Reply): Availability {
       intensive: toLimits(levelLimits['intensive'], reply),
     },
   };
+}
+
+/** All four sports, each with a known role or `null` and counts of sessions in range or `null`. */
+function toSportPreferences(raw: unknown, reply: Reply): SportPreferences {
+  const item = asObject(raw, reply);
+  const result: Partial<SportPreferences> = {};
+  for (const sport of SPORTS as readonly AvailabilitySport[]) {
+    const one = asObject(item[sport], reply);
+    const role = one['role'];
+    const low = one['sessions_min'];
+    const high = one['sessions_max'];
+    if (
+      (role !== null && !isOneOf<SportRole>(role, ROLES)) ||
+      (low !== null && !isWholeNumberIn(low, 0, SESSIONS_MAX)) ||
+      (high !== null && !isWholeNumberIn(high, 0, SESSIONS_MAX))
+    ) {
+      throw unexpected(reply);
+    }
+    const preference: SportPreference = {
+      role: role as SportRole | null,
+      sessions_min: low as number | null,
+      sessions_max: high as number | null,
+    };
+    result[sport] = preference;
+  }
+  return result as SportPreferences;
 }
 
 /** The four limits of a level, each a whole number. */

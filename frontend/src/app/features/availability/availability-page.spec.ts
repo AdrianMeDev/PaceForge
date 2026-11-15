@@ -54,6 +54,16 @@ const DAY_OPTIONS = {
     EVERY_PART,
   ],
 };
+const NO_PREFERENCE = { role: null, sessions_min: null, sessions_max: null };
+const NO_PREFERENCES = {
+  sport_preferences: {
+    running: NO_PREFERENCE,
+    cycling: NO_PREFERENCE,
+    swimming: NO_PREFERENCE,
+    strength: NO_PREFERENCE,
+  },
+  strength_focus: null,
+};
 const NO_WISHES = {
   min_weekly_minutes: null,
   training_days: null,
@@ -63,6 +73,7 @@ const NO_WISHES = {
 const SAVED: Availability = {
   weekdays: [60, 0, 90, 0, 0, 120, 180],
   ...NO_WISHES,
+  ...NO_PREFERENCES,
   ...DAY_OPTIONS,
   weekly_budget_minutes: 300,
   typical_weekly_minutes: 360,
@@ -77,6 +88,7 @@ const SAVED: Availability = {
 const NOTHING: Availability = {
   weekdays: [0, 0, 0, 0, 0, 0, 0],
   ...NO_WISHES,
+  ...NO_PREFERENCES,
   ...DAY_OPTIONS,
   weekly_budget_minutes: null,
   typical_weekly_minutes: null,

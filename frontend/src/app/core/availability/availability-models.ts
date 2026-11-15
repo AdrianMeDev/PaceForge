@@ -8,6 +8,25 @@ export type AvailabilitySport = 'running' | 'cycling' | 'swimming' | 'strength';
 /** The parts of a day a session can be in, earliest first. */
 export type AvailabilitySlot = 'morning' | 'afternoon' | 'evening';
 
+/** What a sport is for the user: the sport of their goal, a second one, or one that supports. */
+export type SportRole = 'goal' | 'secondary' | 'supplementary';
+
+/** What strength training is for. */
+export type StrengthFocus = 'legs' | 'core' | 'upper_body' | 'full_body';
+
+/**
+ * What one sport is for the user: its role and the least and the most sessions a week they want
+ * of it; `null` for what they did not say.
+ */
+export interface SportPreference {
+  role: SportRole | null;
+  sessions_min: number | null;
+  sessions_max: number | null;
+}
+
+/** All four sports, each with what the user said about it. */
+export type SportPreferences = Record<AvailabilitySport, SportPreference>;
+
 /** How hard plans may be; each level sets the limits of the planning rules. */
 export type IntensityLevel = 'relaxed' | 'normal' | 'intensive';
 
@@ -68,6 +87,8 @@ export interface Availability extends OwnLimits {
   double_days: boolean[];
   time_windows: AvailabilitySlot[][];
   weekly_budget_minutes: number | null;
+  sport_preferences: SportPreferences;
+  strength_focus: StrengthFocus | null;
   min_weekly_minutes: number | null;
   training_days: number | null;
   long_run_day: number | null;
