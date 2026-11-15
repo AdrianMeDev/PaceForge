@@ -1,6 +1,10 @@
+from collections.abc import Callable
+from dataclasses import replace
+from datetime import timedelta
 from typing import Any
 
 import pytest
+from django.db.models import F
 
 from accounts.models import User
 from integrations import services as integrations
@@ -19,10 +23,11 @@ from planning.push import (
     UNEXPECTED,
     NotConfirmed,
     PushResult,
+    export_state,
     external_id,
     push,
 )
-from planning.schema import WeekPlan
+from planning.schema import WeekPlan, Workout
 
 from .fake_calendar import Calendar
 from .test_services import MONDAY, NEXT_MONDAY, good_week, prepared, workout
@@ -70,7 +75,7 @@ class TestSendingAWeek:
 
         assert result == PushResult(synced=4, failed=0, removed=0, left_behind=0)
         assert len(calendar.events) == 4
-        ids = {row.pk: external_id(row.pk) for row in PlannedWorkout.objects.filter(plan=plan)}
+        ids = {row.pk: external_id(row.lineage) for row in PlannedWorkout.objects.filter(plan=plan)}
         assert {event["external_id"] for event in calendar.events.values()} == set(ids.values())
         assert calendar.keys == [KEY]  # the key of the user, once
 
@@ -100,7 +105,7 @@ class TestSendingAWeek:
             assert row.workout is not None
             assert row.workout.plan_id == plan.pk
             assert row.event_id in calendar.events
-            assert row.external_id == external_id(row.workout.pk)
+            assert row.external_id == external_id(row.workout.lineage)
 
     def test_sending_again_changes_nothing_in_the_calendar(
         self, alice: User, calendar: Calendar
@@ -221,6 +226,168 @@ class TestANewVersion:
         assert result == PushResult(synced=1, failed=0, removed=0, left_behind=0)
         assert len(calendar.events) == 5
         assert WorkoutExport.objects.filter(week_start=MONDAY).count() == 4
+
+
+def revised(
+    user: User, old: WeeklyPlan, change: Callable[[tuple[Workout, ...]], tuple[Workout, ...]]
+) -> WeeklyPlan:
+    """The next version of a week, made from the one before: its workouts, changed, with their
+    lineages, confirmed."""
+    copy = services.load(user, old.pk)
+    newer = services.save_draft(
+        user, WeekPlan(copy.week_start, change(copy.workouts), copy.rationale), parent=old.pk
+    )
+    return services.confirm(user, newer.pk)
+
+
+def light_week() -> WeekPlan:
+    """Four short workouts (Monday, Wednesday, Friday, Saturday) that leave room on each day, so
+    that a workout can be moved or added without breaking a rule."""
+    return WeekPlan(MONDAY, tuple(workout(MONDAY, offset, 30) for offset in (0, 2, 4, 5)))
+
+
+class TestAVersionMadeFromAnother:
+    def test_nothing_changed_updates_every_event_and_removes_nothing(
+        self, alice: User, calendar: Calendar
+    ) -> None:
+        old = confirmed(alice)
+        push(alice, old.pk)
+        before = dict(calendar.events)
+
+        newer = revised(alice, old, lambda workouts: workouts)
+        result = push(alice, newer.pk)
+
+        assert result == PushResult(synced=4, failed=0, removed=0, left_behind=0)
+        assert set(calendar.events) == set(before)  # the same events, not new ones
+        assert calendar.count("delete") == 0
+        assert WorkoutExport.objects.count() == 4
+
+    def test_a_workout_that_was_moved_updates_its_event_to_the_new_day(
+        self, alice: User, calendar: Calendar
+    ) -> None:
+        old = confirmed(alice, light_week())
+        push(alice, old.pk)
+        events = {e["external_id"]: event_id for event_id, e in calendar.events.items()}
+        moved = services.load(alice, old.pk).workouts[0]  # Monday
+        wednesday = moved.day + timedelta(days=2)
+
+        def move(workouts: tuple[Workout, ...]) -> tuple[Workout, ...]:
+            return (replace(moved, day=wednesday), *workouts[1:])
+
+        newer = revised(alice, old, move)
+        result = push(alice, newer.pk)
+
+        assert result == PushResult(synced=4, failed=0, removed=0, left_behind=0)
+        key = external_id(moved.lineage)  # type: ignore[arg-type]
+        assert calendar.events[events[key]]["start_date_local"].startswith(wednesday.isoformat())
+        assert {e["external_id"] for e in calendar.events.values()} == set(events)
+
+    def test_the_export_row_follows_the_workout_of_the_new_version(
+        self, alice: User, calendar: Calendar
+    ) -> None:
+        old = confirmed(alice)
+        push(alice, old.pk)
+        newer = revised(alice, old, lambda workouts: workouts)
+
+        push(alice, newer.pk)
+
+        assert {row.workout.plan_id for row in exports(alice).values() if row.workout} == {newer.pk}
+        for row in exports(alice).values():
+            assert row.workout is not None
+            assert row.external_id == external_id(row.workout.lineage)
+
+    def test_a_workout_that_was_taken_out_loses_its_event_and_only_that(
+        self, alice: User, calendar: Calendar
+    ) -> None:
+        old = confirmed(alice)
+        push(alice, old.pk)
+        gone = services.load(alice, old.pk).workouts[3]
+
+        newer = revised(alice, old, lambda workouts: workouts[:3])
+        result = push(alice, newer.pk)
+
+        assert result == PushResult(synced=3, failed=0, removed=1, left_behind=0)
+        assert len(calendar.events) == 3
+        assert external_id(gone.lineage) not in {  # type: ignore[arg-type]
+            e["external_id"] for e in calendar.events.values()
+        }
+
+    def test_a_workout_that_was_added_gets_an_event_and_the_others_stay(
+        self, alice: User, calendar: Calendar
+    ) -> None:
+        old = confirmed(alice, light_week())
+        push(alice, old.pk)
+        before = set(calendar.events)
+
+        newer = revised(alice, old, lambda workouts: (*workouts, workout(MONDAY, 0, 30)))
+        result = push(alice, newer.pk)
+
+        assert result == PushResult(synced=5, failed=0, removed=0, left_behind=0)
+        assert before < set(calendar.events) and len(calendar.events) == 5
+
+    def test_a_week_the_coach_drafted_anew_still_replaces_the_events_of_the_version_before(
+        self, alice: User, calendar: Calendar
+    ) -> None:
+        old = confirmed(alice)
+        push(alice, old.pk)
+        before = set(calendar.events)
+        newer = services.save_draft(alice, good_week(rationale="Again"), parent=old.pk)
+        services.confirm(alice, newer.pk)
+
+        result = push(alice, newer.pk)
+
+        assert result == PushResult(synced=4, failed=0, removed=4, left_behind=0)
+        assert not before & set(calendar.events)
+
+    def test_the_state_of_an_unsent_version_is_that_of_the_events_of_its_lineages(
+        self, alice: User, calendar: Calendar
+    ) -> None:
+        old = confirmed(alice, light_week())
+        push(alice, old.pk)
+
+        newer = revised(alice, old, lambda workouts: (*workouts[:3], workout(MONDAY, 0, 30)))
+        state = export_state(alice, newer)
+
+        assert sorted(w.status for w in state.workouts) == [
+            "not_sent",
+            "synced",
+            "synced",
+            "synced",
+        ]
+        assert state.older == 1  # the event of the workout that was taken out
+
+    def test_a_workout_of_a_new_version_the_coach_drafted_shows_as_not_sent(
+        self, alice: User, calendar: Calendar
+    ) -> None:
+        old = confirmed(alice)
+        push(alice, old.pk)
+        newer = services.save_draft(alice, good_week(rationale="Again"), parent=old.pk)
+        services.confirm(alice, newer.pk)
+
+        state = export_state(alice, newer)
+
+        assert {w.status for w in state.workouts} == {"not_sent"}
+        assert state.older == 4
+
+
+class TestEventsThatWereSentBeforeTheLineageExisted:
+    def test_a_key_made_from_the_id_of_a_workout_is_still_the_key_when_it_is_its_own_lineage(
+        self, alice: User, calendar: Calendar
+    ) -> None:
+        plan = confirmed(alice)
+        # What the migration did to every workout that existed: its lineage is its own id.
+        PlannedWorkout.objects.filter(plan=plan).update(lineage=F("pk"))
+        for row in PlannedWorkout.objects.filter(plan=plan):
+            assert external_id(row.lineage) == f"paceforge-{row.pk}"
+
+        push(alice, plan.pk)
+        push(alice, plan.pk)
+
+        assert WorkoutExport.objects.count() == 4
+        assert len(calendar.events) == 4
+        assert calendar.count("delete") == 0
+        keys = {row.external_id for row in WorkoutExport.objects.all()}
+        assert keys == {f"paceforge-{row.pk}" for row in PlannedWorkout.objects.filter(plan=plan)}
 
 
 class TestOtherUsers:
@@ -370,7 +537,7 @@ def test_the_prefix_makes_the_ids_recognisable(alice: User) -> None:
     row = PlannedWorkout.objects.filter(plan=plan).first()
 
     assert row is not None
-    assert external_id(row.pk) == f"paceforge-{row.pk}"
+    assert external_id(row.lineage) == f"paceforge-{row.lineage}"
 
 
 def test_the_week_of_the_exports_is_the_week_of_the_plan(alice: User, calendar: Calendar) -> None:

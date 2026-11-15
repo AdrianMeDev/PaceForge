@@ -400,7 +400,7 @@ when confirming. It uses the API key the user connected (see the README, section
 | `type` | `Run`, `Ride`, `Swim` or `WeightTraining`, by the sport. |
 | `name` | The title of the workout. |
 | `start_date_local` | The day and a start time: 07:00 for `morning`, 12:00 for `afternoon`, 18:00 for `evening`, 00:00 (all day) without a time of day. |
-| `external_id` | `paceforge-<id of the workout>`: the key at Intervals.icu, so that the same workout is updated and never added twice. |
+| `external_id` | `paceforge-<lineage of the workout>`: the key at Intervals.icu, so that the same workout is updated and never added twice, also when a new version of the week has moved it. |
 | `description` | The workout in the syntax of Intervals.icu (below). |
 | `moving_time` | Strength only: the duration in seconds. |
 
@@ -435,9 +435,13 @@ in `<n>x`, so Intervals.icu cannot read them as a step or a repeat. Titles go in
 is not parsed.
 
 **Sending again, new versions, conflicts.** Sending the same plan again updates the same events.
-A new version of a week has new workouts and so new ids: sending it removes the events of the
-versions it replaces (PaceForge remembers them in `WorkoutExport`) and of every workout that is
-gone. **PaceForge wins:** what the user changed in an event in Intervals.icu is overwritten, and an
+The key of an event is the **lineage** of its workout (see [The format](#the-format)). A version
+of a week that was made from another one (changed by hand, restored) keeps the lineage of the
+workouts it copies: sending it **updates their events**, also where a workout was moved to another
+day, creates the events of workouts that were added and removes those of workouts that were taken
+out (PaceForge remembers the events in `WorkoutExport`). A version that the coach drafted anew has
+new workouts and so new lineages: sending it removes the events of the version it replaces. A
+workout that was sent before there were lineages is its own lineage, so its event is found again. **PaceForge wins:** what the user changed in an event in Intervals.icu is overwritten, and an
 event the user deleted there comes back. An event that is gone at Intervals.icu counts as removed.
 
 **One workout at a time.** Each workout is sent on its own, so each has its own result. One that

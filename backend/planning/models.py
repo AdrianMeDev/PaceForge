@@ -230,9 +230,10 @@ class WorkoutExport(OwnedModel):
     """What PaceForge knows about one event it put into the user's Intervals.icu calendar.
 
     ``external_id`` is the key at Intervals.icu (the same id again updates the same event) and is
-    made from the id of the workout, so a new version of a week, whose workouts are new, has other
-    ids. The row stays when the workout is gone (the plan was deleted, or a newer version was
-    pushed instead): it is what lets the next push remove the event from the calendar.
+    made from the lineage of the workout, so a version of a week that was made from another keeps
+    the keys of the workouts it copies, and a version the coach drafted anew, whose workouts are
+    new, has other keys. The row stays when the workout is gone (the plan was deleted, or a newer
+    version was pushed instead): it is what lets the next push remove the event from the calendar.
 
     ``error_code`` is one of the fixed codes of ``planning.push``, never what Intervals.icu said or
     anything of the workout.
