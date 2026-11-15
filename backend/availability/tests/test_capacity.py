@@ -489,6 +489,54 @@ class TestTheSharedLimitationsText:
         assert len(queries) == 3
 
 
+class TestTheWishesForAWeek:
+    def test_a_user_with_none_has_none(self, alice: User) -> None:
+        result = week_capacity(alice, MONDAY)
+
+        assert (result.training_days, result.min_weekly_minutes) == (None, None)
+        assert (result.long_run_day, result.long_ride_day) == (None, None)
+
+    def test_they_are_read_as_given(self, alice: User) -> None:
+        AvailabilitySettings.objects.create(
+            owner=alice,
+            training_days=4,
+            min_weekly_minutes=300,
+            long_run_day=5,
+            long_ride_day=6,
+            weekly_budget_minutes=600,
+        )
+
+        result = week_capacity(alice, MONDAY)
+
+        assert (result.training_days, result.min_weekly_minutes) == (4, 300)
+        assert (result.long_run_day, result.long_ride_day) == (5, 6)
+
+    def test_they_change_nothing_about_what_the_week_offers(self, alice: User) -> None:
+        declare(alice, 60, 0, 90)
+        AvailabilitySettings.objects.create(
+            owner=alice, training_days=1, min_weekly_minutes=5000, long_run_day=0
+        )
+
+        result = week_capacity(alice, MONDAY)
+
+        assert (result.minutes, result.budget, result.total) == ((60, 0, 90, 0, 0, 0, 0), None, 150)
+
+    def test_the_wishes_of_another_user_are_not_seen(self, alice: User, bob: User) -> None:
+        AvailabilitySettings.objects.create(owner=bob, training_days=2, long_ride_day=3)
+
+        result = week_capacity(alice, MONDAY)
+
+        assert (result.training_days, result.long_ride_day) == (None, None)
+
+    def test_they_still_take_three_queries(self, alice: User) -> None:
+        AvailabilitySettings.objects.create(owner=alice, training_days=3, long_run_day=5)
+
+        with CaptureQueriesContext(connection) as queries:
+            week_capacity(alice, MONDAY)
+
+        assert len(queries) == 3
+
+
 class TestTheWholeWeek:
     def test_nothing_declared_offers_nothing(self, alice: User) -> None:
         assert week_capacity(alice, MONDAY) == WeekCapacity((0,) * 7, (None,) * 7, None, 0)

@@ -31,6 +31,14 @@ import {
   readOwnLimits,
 } from './intensity-settings';
 import { LimitationsPanel } from './limitations-panel';
+import {
+  NO_WISH_TEXTS,
+  WISH_FIELDS,
+  WeekWishes,
+  WishErrors,
+  WishTexts,
+  readWishes,
+} from './week-wishes';
 import { PeriodsPanel } from './periods-panel';
 import { UNKNOWN_PROVIDER, providerLine } from './provider-line';
 
@@ -51,6 +59,11 @@ const SPORT_CHOICES: { value: AvailabilitySport; label: string }[] = [
 const NO_SPORT = 'Choose at least one sport.';
 const NO_ERRORS: (string | null)[] = DAYS.map(() => null);
 
+/** A number as the text of a form field, empty for none. */
+function numberText(value: number | null): string {
+  return value === null ? '' : String(value);
+}
+
 /** A day field: empty means no time. */
 function dayMinutes(text: string): Parsed<number> {
   return text.trim() === '' ? { ok: true, value: 0 } : parseMinutes(text, DAY_MAX_MINUTES);
@@ -67,7 +80,7 @@ function dayMinutes(text: string): Parsed<number> {
  */
 @Component({
   selector: 'app-availability-page',
-  imports: [RouterLink, PeriodsPanel, LimitationsPanel, IntensitySettings, DayOptions],
+  imports: [RouterLink, PeriodsPanel, LimitationsPanel, IntensitySettings, DayOptions, WeekWishes],
   templateUrl: './availability-page.html',
   styleUrls: ['../auth/auth-form.css', './availability-page.css'],
 })
@@ -87,6 +100,8 @@ export class AvailabilityPage implements OnInit {
   protected readonly stretching = signal(false);
   protected readonly limitations = signal('');
   protected readonly shareText = signal(false);
+  protected readonly wishes = signal<WishTexts>(NO_WISH_TEXTS);
+  protected readonly wishErrors = signal<WishErrors>({});
   protected readonly intensityLevel = signal<IntensityLevel>('normal');
   protected readonly ownLimits = signal<OwnLimitTexts>(NO_OWN_LIMIT_TEXTS);
   /** The limits of every level as the server has them; set with the first answer. */
@@ -263,6 +278,16 @@ export class AvailabilityPage implements OnInit {
       usable = false;
     }
 
+    const read = readWishes(this.wishes(), weeklyBudget);
+    let wishValues: Partial<AvailabilityChanges> = {};
+    if (read.ok) {
+      wishValues = read.value;
+      this.wishErrors.set({});
+    } else {
+      this.wishErrors.set(read.errors);
+      usable = false;
+    }
+
     let typicalWeek: number | null = null;
     const typicalText = this.typical().trim();
     const typical = typicalText === '' ? null : parseMinutes(typicalText, WEEK_MAX_MINUTES);
@@ -313,6 +338,7 @@ export class AvailabilityPage implements OnInit {
           double_days: this.doubleDays(),
           time_windows: this.timeWindows(),
           weekly_budget_minutes: weeklyBudget,
+          ...wishValues,
           typical_weekly_minutes: typicalWeek,
           sports,
           stretching: this.stretching(),
@@ -340,6 +366,16 @@ export class AvailabilityPage implements OnInit {
     this.stretching.set(availability.stretching);
     this.limitations.set(availability.limitations);
     this.shareText.set(availability.share_limitations_text);
+    this.wishes.set({
+      trainingDays: numberText(availability.training_days),
+      minimum:
+        availability.min_weekly_minutes === null
+          ? ''
+          : formatMinutes(availability.min_weekly_minutes),
+      longRunDay: numberText(availability.long_run_day),
+      longRideDay: numberText(availability.long_ride_day),
+    });
+    this.wishErrors.set({});
     this.intensityLevel.set(availability.intensity_level);
     this.ownLimits.set(ownLimitTexts(availability));
     this.levelLimits.set(availability.level_limits);
@@ -370,6 +406,14 @@ export class AvailabilityPage implements OnInit {
     this.stretchingError.set(join('stretching'));
     this.limitationsError.set(join('limitations'));
     this.shareTextError.set(join('share_limitations_text'));
+    const wishes: WishErrors = {};
+    for (const name of WISH_FIELDS) {
+      const message = join(name);
+      if (message !== null) {
+        wishes[name] = message;
+      }
+    }
+    this.wishErrors.set(wishes);
     const intensity: IntensityErrors = {};
     for (const name of ['intensity_level', ...LIMIT_NAMES] as const) {
       const message = join(name);
@@ -388,6 +432,7 @@ export class AvailabilityPage implements OnInit {
       'stretching',
       'limitations',
       'share_limitations_text',
+      ...WISH_FIELDS,
       ...INTENSITY_FIELDS,
     ];
     const rest = Object.entries(fields)

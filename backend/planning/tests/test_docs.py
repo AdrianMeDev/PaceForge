@@ -186,8 +186,8 @@ class TestTheRules:
 
     def test_every_check_of_the_rules_is_covered_by_the_table(self) -> None:
         # the number of checks and of codes can only move together with the page
-        assert len(rules.ALL_CHECKS) == 19
-        assert len(self.in_the_code()) == 24
+        assert len(rules.ALL_CHECKS) == 22
+        assert len(self.in_the_code()) == 27
 
 
 class TestTheZoneSystems:
@@ -424,6 +424,24 @@ class TestTheReadmeOnTheTypicalWeek:
         assert f"the newest {briefing.MAX_LIMITATIONS_TOLD}" in FLAT_README
         for part in BodyPart:
             assert part.label.lower().split()[0] in FLAT_README.lower(), part
+
+
+class TestTheReadmeOnTheWishesForAWeek:
+    HTML = (ROOT / "frontend/src/app/features/availability/week-wishes.html").read_text()
+
+    def test_the_labels_of_the_page_are_the_words_of_the_readme(self) -> None:
+        for label in (
+            "Days a week you want to train on, at most",
+            "Least you want to train in a week",
+            "Day of your long run",
+            "Day of your long ride",
+        ):
+            assert label in self.HTML, label
+            assert f"**{label}**" in FLAT_README, label
+
+    def test_the_three_warnings_are_named_in_the_checks_page(self) -> None:
+        for code in ("too_many_training_days", "below_minimum_minutes", "long_session_elsewhere"):
+            assert f"`{code}`" in DOC, code
 
 
 class TestTheReadmeOnSportsAndDoubleDays:

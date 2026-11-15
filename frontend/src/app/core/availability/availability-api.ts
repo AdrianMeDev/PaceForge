@@ -260,6 +260,10 @@ function toAvailability(raw: unknown, reply: Reply): Availability {
   const item = asObject(raw, reply);
   const budget = item['weekly_budget_minutes'];
   const typical = item['typical_weekly_minutes'];
+  const minimum = item['min_weekly_minutes'];
+  const trainingDays = item['training_days'];
+  const longRun = item['long_run_day'];
+  const longRide = item['long_ride_day'];
   const sports = item['sports'];
   const weekdays = item['weekdays'];
   const doubleDays = item['double_days'];
@@ -276,6 +280,10 @@ function toAvailability(raw: unknown, reply: Reply): Availability {
     !windows.every(isTimeWindow) ||
     (budget !== null && !isMinutes(budget)) ||
     (typical !== null && !isMinutes(typical)) ||
+    (minimum !== null && !isMinutes(minimum)) ||
+    (trainingDays !== null && !isWholeNumberIn(trainingDays, 1, 7)) ||
+    (longRun !== null && !isWholeNumberIn(longRun, 0, 6)) ||
+    (longRide !== null && !isWholeNumberIn(longRide, 0, 6)) ||
     // At least one sport, each of the known ones once.
     !Array.isArray(sports) ||
     sports.length === 0 ||
@@ -296,6 +304,10 @@ function toAvailability(raw: unknown, reply: Reply): Availability {
     time_windows: (windows as AvailabilitySlot[][]).map((day) => [...day]),
     weekly_budget_minutes: budget,
     typical_weekly_minutes: typical,
+    min_weekly_minutes: minimum,
+    training_days: trainingDays,
+    long_run_day: longRun,
+    long_ride_day: longRide,
     sports: [...(sports as AvailabilitySport[])],
     stretching: item['stretching'],
     limitations: item['limitations'],
@@ -409,6 +421,10 @@ function isTimeWindow(value: unknown): value is AvailabilitySlot[] {
 
 function isMinutes(value: unknown): value is number {
   return isWholeNumber(value);
+}
+
+function isWholeNumberIn(value: unknown, low: number, high: number): value is number {
+  return isWholeNumber(value) && value >= low && value <= high;
 }
 
 function isWholeNumber(value: unknown): value is number {

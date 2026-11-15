@@ -65,6 +65,12 @@ class PlanContext:
     limitations: tuple[ActiveLimitation, ...] = ()
     # The athlete's free text about their limitations, only if they let it go to the coach.
     limitations_text: str | None = None
+    # The wishes for a week, ``None`` where there is none: on how many days to train at most, the
+    # least to train in a week (minutes), and for each sport with a long day the place of that day
+    # in the week (Monday is 0).
+    training_days: int | None = None
+    min_weekly_minutes: int | None = None
+    long_days: tuple[tuple[Sport, int], ...] = ()
 
     def offset(self, day: date) -> int | None:
         """The place of ``day`` in the week (Monday is 0), ``None`` if it lies outside."""
@@ -94,6 +100,16 @@ def build_context(user: User, monday: date) -> PlanContext:
             frozenset(Slot(slot) for slot in window) for window in capacity.time_windows
         ),
         limitations_text=capacity.shared_limitations_text,
+        training_days=capacity.training_days,
+        min_weekly_minutes=capacity.min_weekly_minutes,
+        long_days=tuple(
+            (sport, day)
+            for sport, day in (
+                (Sport.RUNNING, capacity.long_run_day),
+                (Sport.CYCLING, capacity.long_ride_day),
+            )
+            if day is not None
+        ),
         limitations=tuple(
             ActiveLimitation(body_part, frozenset(Sport(sport) for sport in sports))
             for body_part, sports in current_limitations(user)

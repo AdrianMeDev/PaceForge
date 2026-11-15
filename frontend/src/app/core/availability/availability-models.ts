@@ -55,7 +55,9 @@ export type PeriodStatus = 'current' | 'upcoming' | 'past';
  * the planning after a break (`null`: not given), never a limit; `sports` are the ones the user
  * wants in a plan (at least one; all four if the user never chose); `stretching` says whether
  * stretching may be added to sessions (never as a session of its own); the limitations are free
- * text, and `share_limitations_text` says whether that text may go to the AI coach (off until the
+ * text. The wishes for a week are `null` where there is none: the least to train in a week (never
+ * above the budget), on how many days to train at most (1 to 7), and the weekday (0 is Monday) of
+ * the long run and of the long ride. `share_limitations_text` says whether that text may go to the AI coach (off until the
  * user turns it on). `double_days` say for each weekday, Monday first, whether two sessions are allowed and
  * `time_windows` which parts of the day are open (at least one each, in the order of the day).
  * The intensity level and the own limits set the limits of the planning rules; `level_limits`
@@ -66,6 +68,10 @@ export interface Availability extends OwnLimits {
   double_days: boolean[];
   time_windows: AvailabilitySlot[][];
   weekly_budget_minutes: number | null;
+  min_weekly_minutes: number | null;
+  training_days: number | null;
+  long_run_day: number | null;
+  long_ride_day: number | null;
   typical_weekly_minutes: number | null;
   sports: AvailabilitySport[];
   stretching: boolean;

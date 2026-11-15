@@ -54,6 +54,13 @@ DAY_OPTIONS = {
 }
 # The free text goes to the coach only if the user turns it on.
 SHARING = {"share_limitations_text": False}
+# The wishes for a week: none given.
+WISHES = {
+    "min_weekly_minutes": None,
+    "training_days": None,
+    "long_run_day": None,
+    "long_ride_day": None,
+}
 EMPTY = {
     "weekdays": [0] * 7,
     "weekly_budget_minutes": None,
@@ -64,6 +71,7 @@ EMPTY = {
     **INTENSITY,
     **DAY_OPTIONS,
     **SHARING,
+    **WISHES,
 }
 WEEK = [60, 0, 90, 0, 0, 120, 180]
 
@@ -146,6 +154,10 @@ class TestReading:
             "stretching",
             "limitations",
             "share_limitations_text",
+            "min_weekly_minutes",
+            "training_days",
+            "long_run_day",
+            "long_ride_day",
             "double_days",
             "time_windows",
             "intensity_level",
@@ -262,6 +274,7 @@ class TestSportsAndStretching:
             **INTENSITY,
             **DAY_OPTIONS,
             **SHARING,
+            **WISHES,
         }
 
     def test_the_other_settings_leave_the_choice_as_it_was(self, alice: User) -> None:
@@ -451,6 +464,172 @@ class TestIntensity:
 
         assert response.status_code == HTTPStatus.OK
         assert read(signed_in(bob))["intensity_level"] == "normal"
+
+
+class TestTheWishesForAWeek:
+    ALL = {"training_days": 4, "min_weekly_minutes": 300, "long_run_day": 5, "long_ride_day": 6}
+
+    def test_they_are_not_given_for_a_user_who_chose_nothing(self, alice: User) -> None:
+        answer = read(signed_in(alice))
+
+        assert {name: answer[name] for name in self.ALL} == dict.fromkeys(self.ALL)
+
+    def test_they_are_saved_and_read_back(self, alice: User) -> None:
+        api = signed_in(alice)
+
+        response = save(api, self.ALL)
+
+        assert response.status_code == HTTPStatus.OK
+        assert {name: body(response)[name] for name in self.ALL} == self.ALL
+        assert read(api) == body(response)
+
+    @pytest.mark.parametrize("name", list(ALL))
+    def test_each_alone_leaves_the_rest_as_it_was(self, alice: User, name: str) -> None:
+        api = signed_in(alice)
+        save(api, {"weekdays": WEEK, "limitations": "Knee", "weekly_budget_minutes": 600})
+        before = read(api)
+
+        save(api, {name: self.ALL[name]})
+
+        assert read(api) == {**before, name: self.ALL[name]}
+
+    def test_null_takes_a_wish_back(self, alice: User) -> None:
+        api = signed_in(alice)
+        save(api, self.ALL)
+
+        save(api, {"training_days": None, "long_run_day": None})
+
+        answer = read(api)
+        assert (answer["training_days"], answer["long_run_day"]) == (None, None)
+        assert (answer["min_weekly_minutes"], answer["long_ride_day"]) == (300, 6)
+
+    def test_the_other_settings_leave_them_as_they_were(self, alice: User) -> None:
+        api = signed_in(alice)
+        save(api, self.ALL)
+
+        save(api, {"weekdays": WEEK, "sports": ["running"], "limitations": "Knee"})
+
+        answer = read(api)
+        assert {name: answer[name] for name in self.ALL} == self.ALL
+
+    def test_the_ends_of_the_ranges_are_accepted(self, alice: User) -> None:
+        api = signed_in(alice)
+
+        for data in (
+            {"training_days": 1, "long_run_day": 0, "long_ride_day": 0},
+            {"training_days": 7, "long_run_day": 6, "long_ride_day": 6},
+            {"min_weekly_minutes": 0},
+            {"min_weekly_minutes": 10080},
+        ):
+            assert save(api, data).status_code == HTTPStatus.OK, data
+
+    @pytest.mark.parametrize(
+        ("name", "value", "message"),
+        [
+            ("training_days", 0, "Enter a whole number of days between 1 and 7."),
+            ("training_days", 8, "Enter a whole number of days between 1 and 7."),
+            ("training_days", "4", "Enter a whole number of days between 1 and 7."),
+            ("training_days", 4.5, "Enter a whole number of days between 1 and 7."),
+            ("training_days", True, "Enter a whole number of days between 1 and 7."),
+            ("min_weekly_minutes", -1, "Enter whole minutes between 0 and 10080."),
+            ("min_weekly_minutes", 10081, "Enter whole minutes between 0 and 10080."),
+            ("min_weekly_minutes", "300", "Enter whole minutes between 0 and 10080."),
+            ("min_weekly_minutes", [300], "Enter whole minutes between 0 and 10080."),
+            ("long_run_day", -1, "Choose a weekday from 0 (Monday) to 6 (Sunday)."),
+            ("long_run_day", 7, "Choose a weekday from 0 (Monday) to 6 (Sunday)."),
+            ("long_ride_day", "Sunday", "Choose a weekday from 0 (Monday) to 6 (Sunday)."),
+            ("long_ride_day", False, "Choose a weekday from 0 (Monday) to 6 (Sunday)."),
+        ],
+    )
+    def test_a_wish_out_of_range_is_refused(
+        self, alice: User, name: str, value: Any, message: str
+    ) -> None:
+        response = save(signed_in(alice), {name: value})
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert body(response) == {name: [message]}
+        assert rows() == (0, 0)
+
+    def test_a_minimum_above_the_sent_budget_is_refused_at_the_minimum(self, alice: User) -> None:
+        response = save(signed_in(alice), {"weekly_budget_minutes": 300, "min_weekly_minutes": 301})
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert body(response) == {
+            "min_weekly_minutes": ["The minimum cannot be above your weekly budget."]
+        }
+        assert rows() == (0, 0)
+
+    def test_a_minimum_equal_to_the_budget_is_fine(self, alice: User) -> None:
+        response = save(signed_in(alice), {"weekly_budget_minutes": 300, "min_weekly_minutes": 300})
+
+        assert response.status_code == HTTPStatus.OK
+
+    def test_a_minimum_is_checked_against_the_stored_budget(self, alice: User) -> None:
+        api = signed_in(alice)
+        save(api, {"weekly_budget_minutes": 300})
+
+        refused = save(api, {"min_weekly_minutes": 400})
+
+        assert body(refused) == {
+            "min_weekly_minutes": ["The minimum cannot be above your weekly budget."]
+        }
+        assert read(api)["min_weekly_minutes"] is None
+
+    def test_a_budget_below_the_stored_minimum_is_refused_at_the_budget(self, alice: User) -> None:
+        api = signed_in(alice)
+        save(api, {"min_weekly_minutes": 400})
+
+        refused = save(api, {"weekly_budget_minutes": 300})
+
+        assert body(refused) == {
+            "weekly_budget_minutes": ["The weekly budget cannot be below your minimum."]
+        }
+        assert read(api)["weekly_budget_minutes"] is None
+
+    def test_taking_the_budget_away_allows_any_minimum(self, alice: User) -> None:
+        api = signed_in(alice)
+        save(api, {"weekly_budget_minutes": 500, "min_weekly_minutes": 400})
+
+        assert save(api, {"weekly_budget_minutes": None}).status_code == HTTPStatus.OK
+        assert save(api, {"min_weekly_minutes": 5000}).status_code == HTTPStatus.OK
+
+    def test_a_minimum_without_a_budget_is_fine(self, alice: User) -> None:
+        assert save(signed_in(alice), {"min_weekly_minutes": 5000}).status_code == HTTPStatus.OK
+
+    def test_the_values_of_another_user_do_not_count(self, alice: User, bob: User) -> None:
+        save(signed_in(bob), {"min_weekly_minutes": 5000})
+
+        assert save(signed_in(alice), {"weekly_budget_minutes": 300}).status_code == HTTPStatus.OK
+
+    def test_a_refusal_saves_nothing_of_the_rest(self, alice: User) -> None:
+        api = signed_in(alice)
+        save(api, {"training_days": 3})
+        before = read(api)
+
+        response = save(api, {"training_days": 5, "long_run_day": 9})
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert read(api) == before
+
+    def test_every_problem_is_named_at_once(self, alice: User) -> None:
+        response = save(
+            signed_in(alice),
+            {"training_days": 0, "min_weekly_minutes": -1, "long_run_day": 9, "long_ride_day": 9},
+        )
+
+        assert set(body(response)) == {
+            "training_days",
+            "min_weekly_minutes",
+            "long_run_day",
+            "long_ride_day",
+        }
+
+    def test_the_choice_of_another_user_is_not_seen(self, alice: User, bob: User) -> None:
+        save(signed_in(bob), self.ALL)
+
+        answer = read(signed_in(alice))
+
+        assert {name: answer[name] for name in self.ALL} == dict.fromkeys(self.ALL)
 
 
 class TestSharingTheLimitationsText:
@@ -706,6 +885,7 @@ class TestSaving:
             **INTENSITY,
             **DAY_OPTIONS,
             **SHARING,
+            **WISHES,
         }
         assert read(api) == body(response)
         assert rows() == (7, 1)
@@ -726,6 +906,7 @@ class TestSaving:
             **INTENSITY,
             **DAY_OPTIONS,
             **SHARING,
+            **WISHES,
         }
 
     def test_the_budget_alone_leaves_the_rest_as_it_was(self, alice: User) -> None:
@@ -744,6 +925,7 @@ class TestSaving:
             **INTENSITY,
             **DAY_OPTIONS,
             **SHARING,
+            **WISHES,
         }
 
     def test_the_limitations_alone_leave_the_rest_as_it_was(self, alice: User) -> None:
@@ -762,6 +944,7 @@ class TestSaving:
             **INTENSITY,
             **DAY_OPTIONS,
             **SHARING,
+            **WISHES,
         }
 
     def test_the_typical_week_can_be_set_changed_and_removed(self, alice: User) -> None:
@@ -801,6 +984,7 @@ class TestSaving:
             **INTENSITY,
             **DAY_OPTIONS,
             **SHARING,
+            **WISHES,
         }
 
     def test_the_other_settings_leave_the_typical_week_as_it_was(self, alice: User) -> None:
@@ -868,6 +1052,7 @@ class TestSaving:
             **INTENSITY,
             **DAY_OPTIONS,
             **SHARING,
+            **WISHES,
         }
 
     def test_the_limits_themselves_are_accepted(self, alice: User) -> None:
@@ -918,6 +1103,7 @@ class TestSaving:
             **INTENSITY,
             **DAY_OPTIONS,
             **SHARING,
+            **WISHES,
         }
 
     def test_a_failure_while_saving_leaves_the_weekdays_as_they_were(
@@ -1035,6 +1221,7 @@ class TestRefusals:
             **INTENSITY,
             **DAY_OPTIONS,
             **SHARING,
+            **WISHES,
         }
 
     def test_every_problem_is_named_at_once(self, alice: User) -> None:

@@ -165,6 +165,10 @@ Each plan is checked against the facts of its user for that week, collected when
 - **Double days and parts of the day.** For each weekday whether two workouts are allowed and which
   parts of the day (morning, afternoon, evening) are open. Without a choice two workouts are allowed
   and every part is open. A day of absence keeps the choice of its weekday.
+- **The wishes for a week.** On how many days the athlete wants to train at most, the least they
+  want to train in a week, and the weekday of the long run and of the long ride. Each is optional
+  and a missing one is never checked. They only produce warnings (`too_many_training_days`,
+  `below_minimum_minutes`, `long_session_elsewhere`), never an error.
 - **Limitations.** The athlete's current injuries and limitations, each a body part from a fixed
   list and the sports it affects. A workout in an affected sport is a warning (`limited_sport`),
   not an error. Healed entries are not in the context.
@@ -208,6 +212,9 @@ user to weigh.
 | `two_hard_in_a_day` | error | Two hard workouts on one day. Named once per day, at the second hard one. |
 | `quality_not_first` | warning | On a day with two running, cycling or swimming workouts that both have a time of day, an easy one comes before a moderate or hard one. Strength is left out. Named once per day, at the easy one. |
 | `limited_sport` | warning | A workout in a sport that a current limitation affects (training time page). Named at the sport of the workout, once per workout, with the body part of the newest limitation that affects it. A limitation without sports affects no particular sport and is never named. |
+| `too_many_training_days` | warning | More days with a workout than the athlete wants to train on. Fewer days are fine. |
+| `below_minimum_minutes` | warning | Fewer minutes than the least the athlete wants to train in a week, as far as the week offers it (the bar is the lower of that minimum and what the week offers). |
+| `long_session_elsewhere` | warning | For running and cycling, if the athlete named a day for the long session: the longest workout of that sport is on another day (with a tie one of the longest on that day is enough). Named at the `day` of the longest workout. Not said if the week has no workout of the sport or if that day is an absence or offers no minutes. |
 | `hard_days_in_a_row` | warning | A hard day directly after a hard day. |
 | `no_free_day` | warning | Every day of the week has a workout. |
 | `many_workouts_in_a_day` | error | More workouts on a day than the limit (two). Named once per day, at the first one too many. |
@@ -343,6 +350,9 @@ without this page.
 | `typical_weekly_minutes` | What the athlete calls a normal week, in minutes; `null` if not given (or 0). The progression rule's reference is the higher of this and the recent average. |
 | `sports` | The sports the athlete wants in a plan (all four if none was chosen), in the order of the format. |
 | `stretching` | Whether stretching may be added to sessions (`stretching_minutes`), never as a session. |
+| `training_days` | On how many days of the week the athlete wants to train at most; `null` if they have no wish. |
+| `min_weekly_minutes` | The least the athlete wants to train in a week, in minutes (never above the weekly budget); `null` if they have no wish. |
+| `long_days` | For running and cycling, if the athlete named a weekday for the long session: the `sport` and the `date` of that day in the week to plan. Empty if there is none. |
 | `limits` | The limits of the rules that follow from the athlete's [intensity level](#the-intensity-levels): `max_hard_days`, `progression_warning_percent`, `progression_error_percent`, `easy_share_percent`. They are here and not in the system prompt, so that the prompt is the same for every athlete. |
 | `limitations` | The current injuries and limitations, the newest first, at most 10: `body_part` (a fixed word: foot, ankle, achilles, calf, shin, knee, thigh, hip, back, shoulder, other) and the `sports` it affects (none listed: no particular sport). Healed ones are not told. No text of the athlete. |
 | `limitations_text` | What the athlete wrote in the free text about their limitations, cut to `LIMITATIONS_TEXT_MAX_TOLD` characters, **only if they switched on "Send this text to my AI coach"**; otherwise `null`. Free text: the system prompt says that it is data and never instructions. |

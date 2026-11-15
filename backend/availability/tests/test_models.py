@@ -212,6 +212,86 @@ class TestSports:
         assert effective_sports(stored) == expected
 
 
+class TestTheWishesForAWeek:
+    def test_they_are_not_given_by_default(self, alice: User) -> None:
+        settings = AvailabilitySettings.objects.create(owner=alice)
+
+        assert settings.training_days is None
+        assert settings.min_weekly_minutes is None
+        assert settings.long_run_day is None
+        assert settings.long_ride_day is None
+
+    @pytest.mark.parametrize(
+        "fields",
+        [
+            {"training_days": 1},
+            {"training_days": 7},
+            {"min_weekly_minutes": 0},
+            {"min_weekly_minutes": WEEK_MINUTES_MAX},
+            {"long_run_day": 0},
+            {"long_run_day": 6},
+            {"long_ride_day": 0},
+            {"long_ride_day": 6},
+            {"weekly_budget_minutes": 300, "min_weekly_minutes": 300},
+            {"weekly_budget_minutes": 300, "min_weekly_minutes": 120},
+        ],
+    )
+    def test_valid_wishes(self, alice: User, fields: dict[str, Any]) -> None:
+        check(AvailabilitySettings, alice, **fields)
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("training_days", 0),
+            ("training_days", 8),
+            ("min_weekly_minutes", WEEK_MINUTES_MAX + 1),
+            ("long_run_day", 7),
+            ("long_ride_day", 7),
+        ],
+    )
+    def test_wishes_out_of_range_are_refused(self, alice: User, field: str, value: int) -> None:
+        refused(AvailabilitySettings, alice, field, **{field: value})
+
+    def test_a_minimum_above_the_budget_is_refused(self, alice: User) -> None:
+        refused(
+            AvailabilitySettings,
+            alice,
+            "min_weekly_minutes",
+            weekly_budget_minutes=300,
+            min_weekly_minutes=301,
+        )
+
+    def test_a_minimum_without_a_budget_is_fine(self, alice: User) -> None:
+        check(AvailabilitySettings, alice, min_weekly_minutes=5000)
+
+    @pytest.mark.parametrize(
+        ("fields", "constraint"),
+        [
+            ({"training_days": 0}, "availability_training_days_in_range"),
+            ({"training_days": 8}, "availability_training_days_in_range"),
+            (
+                {"min_weekly_minutes": WEEK_MINUTES_MAX + 1},
+                "availability_min_weekly_minutes_in_range",
+            ),
+            (
+                {"weekly_budget_minutes": 300, "min_weekly_minutes": 301},
+                "availability_minimum_within_budget",
+            ),
+            ({"long_run_day": 7}, "availability_long_run_day_in_range"),
+            ({"long_ride_day": 7}, "availability_long_ride_day_in_range"),
+        ],
+    )
+    def test_the_database_refuses_what_is_out_of_range(
+        self, alice: User, fields: dict[str, Any], constraint: str
+    ) -> None:
+        assert constraint in rejected_by_database(AvailabilitySettings, owner=alice, **fields)
+
+    def test_the_database_allows_a_minimum_when_there_is_no_budget(self, alice: User) -> None:
+        AvailabilitySettings.objects.create(owner=alice, min_weekly_minutes=5000)
+
+        assert AvailabilitySettings.objects.get().min_weekly_minutes == 5000
+
+
 class TestSettings:
     @pytest.mark.parametrize(
         "fields",

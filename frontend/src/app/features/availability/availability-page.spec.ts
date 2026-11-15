@@ -54,8 +54,15 @@ const DAY_OPTIONS = {
     EVERY_PART,
   ],
 };
+const NO_WISHES = {
+  min_weekly_minutes: null,
+  training_days: null,
+  long_run_day: null,
+  long_ride_day: null,
+};
 const SAVED: Availability = {
   weekdays: [60, 0, 90, 0, 0, 120, 180],
+  ...NO_WISHES,
   ...DAY_OPTIONS,
   weekly_budget_minutes: 300,
   typical_weekly_minutes: 360,
@@ -69,6 +76,7 @@ const SAVED: Availability = {
 };
 const NOTHING: Availability = {
   weekdays: [0, 0, 0, 0, 0, 0, 0],
+  ...NO_WISHES,
   ...DAY_OPTIONS,
   weekly_budget_minutes: null,
   typical_weekly_minutes: null,
@@ -748,6 +756,7 @@ describe('AvailabilityPage', () => {
         weekdays: [90, 0, 90, 0, 0, 0, 180],
         ...DAY_OPTIONS,
         weekly_budget_minutes: 300,
+        ...NO_WISHES,
         typical_weekly_minutes: 510,
         sports: ['running', 'cycling', 'swimming', 'strength'],
         stretching: false,
@@ -767,6 +776,7 @@ describe('AvailabilityPage', () => {
         weekdays: [0, 0, 0, 0, 0, 0, 0],
         ...DAY_OPTIONS,
         weekly_budget_minutes: null,
+        ...NO_WISHES,
         typical_weekly_minutes: null,
         sports: ['running', 'cycling', 'swimming', 'strength'],
         stretching: false,
@@ -1096,6 +1106,103 @@ describe('AvailabilityPage', () => {
 
       expect(alerts()).toEqual(['Something went wrong. Please try again.']);
       expect(page.querySelector('form')).not.toBeNull();
+    });
+  });
+
+  describe('the wishes for a week', () => {
+    const select = (id: string) => query<HTMLSelectElement>(page, `#${id}`);
+
+    async function choose(id: string, value: string): Promise<void> {
+      const box = select(id);
+      box.value = value;
+      box.dispatchEvent(new Event('change'));
+      await settle(fixture);
+    }
+
+    it('are empty for a user who chose nothing and shown as saved otherwise', async () => {
+      await setup(
+        ok({
+          ...SAVED,
+          min_weekly_minutes: 240,
+          training_days: 4,
+          long_run_day: 5,
+          long_ride_day: 6,
+        }),
+      );
+
+      expect(select('wish-training-days').value).toBe('4');
+      expect(value('#wish-minimum')).toBe('4:00');
+      expect(select('wish-long-run').value).toBe('5');
+      expect(select('wish-long-ride').value).toBe('6');
+    });
+
+    it('are sent with everything else, empty ones as null', async () => {
+      await setup(ok(NOTHING));
+
+      await choose('wish-training-days', '3');
+      await choose('wish-long-ride', '6');
+      await type('#wish-minimum', '4:30');
+      await save();
+
+      expect(api.save.mock.calls[0][0]).toMatchObject({
+        training_days: 3,
+        min_weekly_minutes: 270,
+        long_run_day: null,
+        long_ride_day: 6,
+      });
+    });
+
+    it('send no wish for a user who chose none', async () => {
+      await setup(ok(NOTHING));
+
+      await save();
+
+      expect(api.save.mock.calls[0][0]).toMatchObject({
+        training_days: null,
+        min_weekly_minutes: null,
+        long_run_day: null,
+        long_ride_day: null,
+      });
+    });
+
+    it('do not send a minimum above the budget and say so at the minimum', async () => {
+      await setup(ok(NOTHING));
+      await type('#budget', '4:00');
+      await type('#wish-minimum', '5:00');
+
+      await save();
+
+      expect(api.save).not.toHaveBeenCalled();
+      expect(alerts()).toEqual(['The minimum cannot be above your weekly budget.']);
+      expect(select('wish-training-days').getAttribute('aria-invalid')).toBeNull();
+      expect(query(page, '#wish-minimum').getAttribute('aria-invalid')).toBe('true');
+    });
+
+    it('show the server’s message at the field', async () => {
+      await setup(ok(NOTHING));
+      const message = 'The weekly budget cannot be below your minimum.';
+      api.save.mockResolvedValue({
+        kind: 'invalid',
+        errors: [message],
+        fields: { weekly_budget_minutes: [message] },
+      });
+
+      await save();
+
+      expect(alerts()).toEqual([message]);
+    });
+
+    it('show what the server saved', async () => {
+      await setup(ok(NOTHING));
+      api.save.mockResolvedValue({
+        kind: 'ok',
+        availability: { ...NOTHING, training_days: 5, min_weekly_minutes: 120 },
+      });
+
+      await save();
+
+      expect(select('wish-training-days').value).toBe('5');
+      expect(value('#wish-minimum')).toBe('2:00');
     });
   });
 

@@ -564,6 +564,85 @@ def check_double_day_order(plan: WeekPlan, context: PlanContext) -> list[Finding
     return found
 
 
+def check_training_days(plan: WeekPlan, context: PlanContext) -> list[Finding]:
+    """More days with a workout than the athlete wants to train on (a warning). Fewer are fine,
+    and without a wish nothing is checked."""
+    _same_week(plan, context)
+    wanted = context.training_days
+    days = len(_workouts_by_day(plan, context))
+    if wanted is None or days <= wanted:
+        return []
+    return [
+        Finding(
+            Severity.WARNING,
+            "too_many_training_days",
+            f"The week has workouts on {days} days; you wanted to train on at most {wanted}.",
+            "workouts",
+        )
+    ]
+
+
+def check_minimum_minutes(plan: WeekPlan, context: PlanContext) -> list[Finding]:
+    """Fewer minutes than the athlete wants to train in a week (a warning), as far as the week
+    offers it: the bar is the lower of the minimum and what the days and the budget add up to."""
+    _same_week(plan, context)
+    minimum = context.min_weekly_minutes
+    if minimum is None:
+        return []
+    bar = min(minimum, context.weekly_minutes)
+    planned = sum(
+        workout.duration_minutes
+        for workout in plan.workouts
+        if context.offset(workout.day) is not None
+    )
+    if planned >= bar:
+        return []
+    return [
+        Finding(
+            Severity.WARNING,
+            "below_minimum_minutes",
+            f"The week adds up to {planned} minutes; you wanted to train at least {bar}.",
+            "workouts",
+        )
+    ]
+
+
+def check_long_days(plan: WeekPlan, context: PlanContext) -> list[Finding]:
+    """The longest workout of a sport is on the day the athlete wants the long session of that
+    sport (a warning, at the day of the longest workout). With a tie it is enough that one of the
+    longest is on that day. Nothing is said if the week has no workout of the sport, or if that day
+    is a day of absence or offers no minutes: the wish cannot be met then."""
+    _same_week(plan, context)
+    found = []
+    for sport, wanted in context.long_days:
+        if context.absences[wanted] is not None or context.minutes[wanted] == 0:
+            continue
+        mine = [
+            (index, workout)
+            for index, workout in enumerate(plan.workouts)
+            if workout.sport is sport and context.offset(workout.day) is not None
+        ]
+        if not mine:
+            continue
+        longest = max(workout.duration_minutes for _, workout in mine)
+        top = [(index, workout) for index, workout in mine if workout.duration_minutes == longest]
+        if any(context.offset(workout.day) == wanted for _, workout in top):
+            continue
+        index, workout = top[0]
+        offset = context.offset(workout.day)
+        assert offset is not None
+        found.append(
+            Finding(
+                Severity.WARNING,
+                "long_session_elsewhere",
+                f"The longest {sport.value} workout is on {_WEEKDAYS[offset]}; you wanted the "
+                f"long {sport.value} session on {_WEEKDAYS[wanted]}.",
+                f"workouts[{index}].day",
+            )
+        )
+    return found
+
+
 def check_limitations(plan: WeekPlan, context: PlanContext) -> list[Finding]:
     """A workout in a sport that a current limitation affects (a warning, once per workout, at
     its sport, naming the newest limitation that affects it). A limitation without sports affects
@@ -655,6 +734,9 @@ RHYTHM_CHECKS: tuple[Check, ...] = (
     check_times_of_day,
     check_double_day_order,
     check_limitations,
+    check_training_days,
+    check_minimum_minutes,
+    check_long_days,
 )
 
 ALL_CHECKS: tuple[Check, ...] = BASIC_CHECKS + RHYTHM_CHECKS

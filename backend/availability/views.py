@@ -78,6 +78,10 @@ class AvailabilityView(APIView):
                 name
                 for name in (
                     "weekly_budget_minutes",
+                    "min_weekly_minutes",
+                    "training_days",
+                    "long_run_day",
+                    "long_ride_day",
                     "typical_weekly_minutes",
                     "sports",
                     "stretching",

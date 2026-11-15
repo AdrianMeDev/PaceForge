@@ -21,6 +21,11 @@ from .intensity import (
 DAY_MINUTES_MAX = 1440
 WEEK_MINUTES_MAX = 7 * DAY_MINUTES_MAX
 LIMITATIONS_MAX = 1000
+# The wishes for a week: training days 1 to 7, the days of the week 0 (Monday) to 6.
+TRAINING_DAYS_MIN = 1
+TRAINING_DAYS_MAX = 7
+WEEKDAY_MAX = 6
+MINIMUM_ABOVE_BUDGET = "The minimum cannot be above your weekly budget."
 NOTE_MAX = 200
 # The longest period of absence: a year (and a leap day).
 PERIOD_MAX_DAYS = 366
@@ -60,6 +65,10 @@ class AvailabilitySettings(OwnedModel):
 
     The intensity level sets the limits of the planning rules (``availability.intensity``); each of
     the four own limits replaces the level's value when it is set (empty: the level's value).
+
+    The wishes for a week (all optional): on how many days a week the athlete wants to train, the
+    least they want to train in a week (in minutes, never above the weekly budget) and the weekday
+    (0 is Monday) of the long run and of the long ride.
     """
 
     weekly_budget_minutes = models.PositiveIntegerField(null=True, blank=True)
@@ -76,9 +85,37 @@ class AvailabilitySettings(OwnedModel):
     progression_warning_percent = models.PositiveSmallIntegerField(null=True, blank=True)
     progression_error_percent = models.PositiveSmallIntegerField(null=True, blank=True)
     easy_share_percent = models.PositiveSmallIntegerField(null=True, blank=True)
+    training_days = models.PositiveSmallIntegerField(null=True, blank=True)
+    min_weekly_minutes = models.PositiveIntegerField(null=True, blank=True)
+    long_run_day = models.PositiveSmallIntegerField(null=True, blank=True)
+    long_ride_day = models.PositiveSmallIntegerField(null=True, blank=True)
 
     class Meta:
         constraints = [
+            models.CheckConstraint(
+                condition=Q(training_days__isnull=True)
+                | Q(training_days__gte=TRAINING_DAYS_MIN, training_days__lte=TRAINING_DAYS_MAX),
+                name="availability_training_days_in_range",
+            ),
+            models.CheckConstraint(
+                condition=Q(min_weekly_minutes__isnull=True)
+                | Q(min_weekly_minutes__lte=WEEK_MINUTES_MAX),
+                name="availability_min_weekly_minutes_in_range",
+            ),
+            models.CheckConstraint(
+                condition=Q(min_weekly_minutes__isnull=True)
+                | Q(weekly_budget_minutes__isnull=True)
+                | Q(min_weekly_minutes__lte=F("weekly_budget_minutes")),
+                name="availability_minimum_within_budget",
+            ),
+            models.CheckConstraint(
+                condition=Q(long_run_day__isnull=True) | Q(long_run_day__lte=WEEKDAY_MAX),
+                name="availability_long_run_day_in_range",
+            ),
+            models.CheckConstraint(
+                condition=Q(long_ride_day__isnull=True) | Q(long_ride_day__lte=WEEKDAY_MAX),
+                name="availability_long_ride_day_in_range",
+            ),
             models.CheckConstraint(
                 condition=Q(intensity_level__in=IntensityLevel.values),
                 name="availability_intensity_level_known",
@@ -122,6 +159,24 @@ class AvailabilitySettings(OwnedModel):
             and len(set(sports)) == len(sports)
         ):
             errors["sports"] = "Use each of running, cycling, swimming and strength at most once."
+        days = self.training_days
+        if days is not None and not TRAINING_DAYS_MIN <= days <= TRAINING_DAYS_MAX:
+            errors["training_days"] = (
+                f"Enter a whole number of days between {TRAINING_DAYS_MIN} and {TRAINING_DAYS_MAX}."
+            )
+        minimum = self.min_weekly_minutes
+        if minimum is not None and minimum > WEEK_MINUTES_MAX:
+            errors["min_weekly_minutes"] = f"Enter at most {WEEK_MINUTES_MAX} minutes (a week)."
+        elif (
+            minimum is not None
+            and self.weekly_budget_minutes is not None
+            and minimum > self.weekly_budget_minutes
+        ):
+            errors["min_weekly_minutes"] = MINIMUM_ABOVE_BUDGET
+        for name in ("long_run_day", "long_ride_day"):
+            day = getattr(self, name)
+            if day is not None and not 0 <= day <= WEEKDAY_MAX:
+                errors[name] = f"Choose a weekday from 0 (Monday) to {WEEKDAY_MAX} (Sunday)."
         if self.intensity_level in IntensityLevel.values:
             errors.update(limit_problems(self.intensity_level, self.own_limits))
         if errors:

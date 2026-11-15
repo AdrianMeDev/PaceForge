@@ -26,10 +26,14 @@ from .intensity import (
 from .models import (
     DAY_MINUTES_MAX,
     LIMITATIONS_MAX,
+    MINIMUM_ABOVE_BUDGET,
     NOTE_MAX,
     SLOTS,
     SPORTS,
+    TRAINING_DAYS_MAX,
+    TRAINING_DAYS_MIN,
     WEEK_MINUTES_MAX,
+    WEEKDAY_MAX,
     AvailabilitySettings,
     BodyPart,
     Limitation,
@@ -50,6 +54,11 @@ TIME_WINDOWS = (
     f"{', '.join(SLOTS)}."
 )
 SHARE_CHOICE = "Send true or false."
+TRAINING_DAYS_RANGE = (
+    f"Enter a whole number of days between {TRAINING_DAYS_MIN} and {TRAINING_DAYS_MAX}."
+)
+LONG_DAY_RANGE = f"Choose a weekday from 0 (Monday) to {WEEKDAY_MAX} (Sunday)."
+BUDGET_BELOW_MINIMUM = "The weekly budget cannot be below your minimum."
 LEVEL_CHOICE = f"Choose one of: {', '.join(IntensityLevel.values)}."
 MAX_PERIODS = 100
 TOO_MANY_PERIODS = f"You can have at most {MAX_PERIODS} periods. Delete one first."
@@ -195,6 +204,51 @@ class AvailabilityInput(serializers.Serializer[Any]):
             "max_value": BUDGET_RANGE,
         },
     )
+    training_days = WholeNumberField(
+        min_value=TRAINING_DAYS_MIN,
+        max_value=TRAINING_DAYS_MAX,
+        allow_null=True,
+        required=False,
+        error_messages={
+            "invalid": TRAINING_DAYS_RANGE,
+            "min_value": TRAINING_DAYS_RANGE,
+            "max_value": TRAINING_DAYS_RANGE,
+        },
+    )
+    # The least the user wants to train in a week: the same range as the budget, and never above it.
+    min_weekly_minutes = WholeNumberField(
+        min_value=0,
+        max_value=WEEK_MINUTES_MAX,
+        allow_null=True,
+        required=False,
+        error_messages={
+            "invalid": BUDGET_RANGE,
+            "min_value": BUDGET_RANGE,
+            "max_value": BUDGET_RANGE,
+        },
+    )
+    long_run_day = WholeNumberField(
+        min_value=0,
+        max_value=WEEKDAY_MAX,
+        allow_null=True,
+        required=False,
+        error_messages={
+            "invalid": LONG_DAY_RANGE,
+            "min_value": LONG_DAY_RANGE,
+            "max_value": LONG_DAY_RANGE,
+        },
+    )
+    long_ride_day = WholeNumberField(
+        min_value=0,
+        max_value=WEEKDAY_MAX,
+        allow_null=True,
+        required=False,
+        error_messages={
+            "invalid": LONG_DAY_RANGE,
+            "min_value": LONG_DAY_RANGE,
+            "max_value": LONG_DAY_RANGE,
+        },
+    )
     sports = SportsField(required=False, error_messages={"null": SPORTS_CHOICE})
     stretching = StrictBooleanField(required=False, error_messages={"null": STRETCHING_CHOICE})
     limitations = TextField(max_length=LIMITATIONS_MAX, allow_blank=True, required=False)
@@ -216,6 +270,15 @@ class AvailabilityInput(serializers.Serializer[Any]):
         level = attrs.get("intensity_level", stored.intensity_level)
         own = {name: attrs.get(name, getattr(stored, name)) for name in LIMIT_NAMES}
         problems = limit_problems(level, own)
+        # The minimum against the budget as both will be after saving: what is sent, and what is
+        # stored for the one that is not. The message stands at the field that was sent.
+        minimum = attrs.get("min_weekly_minutes", stored.min_weekly_minutes)
+        budget = attrs.get("weekly_budget_minutes", stored.weekly_budget_minutes)
+        if minimum is not None and budget is not None and minimum > budget:
+            if "min_weekly_minutes" in attrs or "weekly_budget_minutes" not in attrs:
+                problems["min_weekly_minutes"] = MINIMUM_ABOVE_BUDGET
+            else:
+                problems["weekly_budget_minutes"] = BUDGET_BELOW_MINIMUM
         if problems:
             raise serializers.ValidationError({name: [text] for name, text in problems.items()})
         return attrs
@@ -226,12 +289,13 @@ def availability_data(
 ) -> dict[str, Any]:
     """The answer: the seven weekdays (Monday first, 0 where nothing is saved), for each of them
     whether two sessions are allowed and the parts of the day that are open (all of them where
-    nothing is saved), the weekly budget
-    and the typical week (``null`` for none), the sports of the plan (all of them if none was
-    chosen), whether stretching may be added, the limitations and whether they may be sent to the
-    coach (off by default), the intensity level with the own
-    limits (``null`` for the level's value) and the limits of every level, so that a client need
-    not repeat them. No row ids, no owner."""
+    nothing is saved), the weekly budget, the least the user wants to train in a week, the days a
+    week they want to train on and the weekdays of the long run and the long ride (``null`` for
+    none of these), the typical week (``null`` for none), the sports of the plan (all of them if
+    none was chosen), whether stretching may be added, the limitations and whether they may be sent
+    to the coach (off by default), the intensity level with the own limits (``null`` for the
+    level's value) and the limits of every level, so that a client need not repeat them. No row
+    ids, no owner."""
     minutes = [0] * 7
     double_days = [True] * 7
     time_windows = [list(SLOTS) for _ in range(7)]
@@ -244,6 +308,10 @@ def availability_data(
         "double_days": double_days,
         "time_windows": time_windows,
         "weekly_budget_minutes": settings.weekly_budget_minutes if settings else None,
+        "min_weekly_minutes": settings.min_weekly_minutes if settings else None,
+        "training_days": settings.training_days if settings else None,
+        "long_run_day": settings.long_run_day if settings else None,
+        "long_ride_day": settings.long_ride_day if settings else None,
         "typical_weekly_minutes": settings.typical_weekly_minutes if settings else None,
         "sports": effective_sports(settings.sports if settings else None),
         "stretching": settings.stretching if settings else False,

@@ -28,8 +28,11 @@ from planning.rules import (
     check_hard_days,
     check_hard_days_in_a_row,
     check_limitations,
+    check_long_days,
+    check_minimum_minutes,
     check_progression,
     check_times_of_day,
+    check_training_days,
     check_workouts_per_day,
     easy_minutes,
     intensity_of,
@@ -712,6 +715,172 @@ class TestLimitedSports:
         assert all(word.isalpha() or " " in word for word in rules.BODY_PART_WORDS.values())
 
 
+class TestTheWishesForTheWeek:
+    def days(self, wanted: int | None, *offsets: int) -> list[Finding]:
+        plan = week(*(workout(offset, 30) for offset in offsets))
+        return check_training_days(plan, context(training_days=wanted))
+
+    def test_more_days_than_wanted_is_a_warning(self) -> None:
+        assert self.days(3, 0, 1, 2, 4) == [
+            Finding(
+                Severity.WARNING,
+                "too_many_training_days",
+                "The week has workouts on 4 days; you wanted to train on at most 3.",
+                "workouts",
+            )
+        ]
+
+    def test_as_many_or_fewer_days_are_fine(self) -> None:
+        assert self.days(3, 0, 1, 2) == []
+        assert self.days(3, 0) == []
+        assert self.days(3) == []
+
+    def test_a_day_counts_once_however_many_workouts_it_has(self) -> None:
+        assert self.days(2, 0, 0, 0, 1) == []
+
+    def test_workouts_outside_the_week_do_not_count(self) -> None:
+        assert self.days(1, 0, 8, -1) == []
+
+    def test_without_a_wish_nothing_is_checked(self) -> None:
+        assert self.days(None, 0, 1, 2, 3, 4, 5, 6) == []
+
+    def minutes(self, minimum: int | None, planned: int, offered: int = 600) -> list[Finding]:
+        plan = week(workout(1, planned)) if planned else week()
+        return check_minimum_minutes(
+            plan, context(min_weekly_minutes=minimum, weekly_minutes=offered)
+        )
+
+    def test_fewer_minutes_than_the_minimum_is_a_warning(self) -> None:
+        assert self.minutes(300, 200) == [
+            Finding(
+                Severity.WARNING,
+                "below_minimum_minutes",
+                "The week adds up to 200 minutes; you wanted to train at least 300.",
+                "workouts",
+            )
+        ]
+
+    def test_exactly_the_minimum_and_more_are_fine(self) -> None:
+        assert self.minutes(300, 300) == []
+        assert self.minutes(300, 400) == []
+
+    def test_an_empty_week_is_told_too(self) -> None:
+        assert [f.code for f in self.minutes(300, 0)] == ["below_minimum_minutes"]
+
+    def test_the_bar_is_what_the_week_offers_when_that_is_less(self) -> None:
+        # the days offer 200 minutes, so 200 planned is all that can be asked
+        assert self.minutes(300, 200, offered=200) == []
+        found = self.minutes(300, 150, offered=200)
+        assert found[0].message == (
+            "The week adds up to 150 minutes; you wanted to train at least 200."
+        )
+
+    def test_a_week_that_offers_nothing_asks_for_nothing(self) -> None:
+        assert self.minutes(300, 0, offered=0) == []
+
+    def test_without_a_minimum_nothing_is_checked(self) -> None:
+        assert self.minutes(None, 0) == []
+
+    def test_minutes_outside_the_week_do_not_count(self) -> None:
+        plan = week(workout(8, 500))
+
+        found = check_minimum_minutes(plan, context(min_weekly_minutes=300, weekly_minutes=600))
+
+        assert [f.code for f in found] == ["below_minimum_minutes"]
+
+
+class TestTheLongDays:
+    RUN, RIDE = Sport.RUNNING, Sport.CYCLING
+
+    def found(self, *workouts: Workout, long_days: tuple[tuple[Sport, int], ...], **fields: Any):
+        return check_long_days(week(*workouts), context(long_days=long_days, **fields))
+
+    def run(self, offset: int, minutes: int) -> Workout:
+        return workout(offset, minutes, sport=self.RUN)
+
+    def test_the_longest_run_on_its_day_is_fine(self) -> None:
+        found = self.found(self.run(1, 40), self.run(5, 90), long_days=((self.RUN, 5),))
+
+        assert found == []
+
+    def test_the_longest_run_on_another_day_is_a_warning_at_that_workout(self) -> None:
+        found = self.found(self.run(1, 90), self.run(5, 40), long_days=((self.RUN, 5),))
+
+        assert found == [
+            Finding(
+                Severity.WARNING,
+                "long_session_elsewhere",
+                "The longest running workout is on Tuesday; you wanted the long running session "
+                "on Saturday.",
+                "workouts[0].day",
+            )
+        ]
+
+    def test_with_a_tie_one_on_the_day_is_enough(self) -> None:
+        found = self.found(self.run(1, 90), self.run(5, 90), long_days=((self.RUN, 5),))
+
+        assert found == []
+
+    def test_with_a_tie_elsewhere_the_first_is_named(self) -> None:
+        found = self.found(self.run(1, 90), self.run(2, 90), long_days=((self.RUN, 5),))
+
+        assert [f.path for f in found] == ["workouts[0].day"]
+
+    def test_a_week_without_a_run_asks_nothing(self) -> None:
+        found = self.found(workout(1, 90, sport=self.RIDE), long_days=((self.RUN, 5),))
+
+        assert found == []
+
+    def test_another_sport_does_not_count_for_the_run(self) -> None:
+        found = self.found(
+            self.run(1, 40), workout(5, 200, sport=self.RIDE), long_days=((self.RUN, 1),)
+        )
+
+        assert found == []
+
+    def test_each_sport_is_judged_for_itself(self) -> None:
+        found = self.found(
+            self.run(1, 90),
+            workout(2, 60, sport=self.RIDE),
+            workout(6, 30, sport=self.RIDE),
+            long_days=((self.RUN, 5), (self.RIDE, 6)),
+        )
+
+        assert [f.message.split()[2] for f in found] == ["running", "cycling"]
+
+    def test_a_long_day_in_an_absence_cannot_be_asked_for(self) -> None:
+        absences = (None,) * 5 + ("illness", None)
+        found = self.found(self.run(1, 90), long_days=((self.RUN, 5),), absences=absences)
+
+        assert found == []
+
+    def test_a_long_day_that_offers_no_minutes_cannot_be_asked_for(self) -> None:
+        found = self.found(
+            self.run(1, 90),
+            long_days=((self.RUN, 5),),
+            minutes=(120, 120, 120, 120, 120, 0, 120),
+        )
+
+        assert found == []
+
+    def test_workouts_outside_the_week_are_left_alone(self) -> None:
+        found = self.found(self.run(9, 300), self.run(5, 40), long_days=((self.RUN, 5),))
+
+        assert found == []
+
+    def test_without_a_long_day_nothing_is_checked(self) -> None:
+        assert self.found(self.run(1, 90), long_days=()) == []
+
+    def test_the_title_and_the_notes_are_not_repeated(self) -> None:
+        found = self.found(
+            workout(1, 90, sport=self.RUN, title="SECRETMARKER", notes="SECRETMARKER"),
+            long_days=((self.RUN, 5),),
+        )
+
+        assert found
+        assert "SECRETMARKER" not in repr(found)
+
+
 class TestTheSameWorkoutTwice:
     def test_the_same_sport_goal_and_duration_on_one_day_is_a_warning_at_the_repeat(self) -> None:
         plan = week(workout(1, 60), workout(1, 60))
@@ -1185,6 +1354,9 @@ class TestTheLists:
             check_times_of_day,
             check_double_day_order,
             check_limitations,
+            check_training_days,
+            check_minimum_minutes,
+            check_long_days,
         )
 
     def test_which_rules_are_errors_and_which_warnings(self) -> None:

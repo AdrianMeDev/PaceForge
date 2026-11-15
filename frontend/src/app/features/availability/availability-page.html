@@ -96,6 +96,9 @@
           </p>
         </div>
 
+        <h2>Your week</h2>
+        <app-week-wishes [(wishes)]="wishes" [errors]="wishErrors()" />
+
         <h2>A normal week</h2>
         <div class="field">
           <label for="typical">What a normal week of training is for you (optional)</label>
