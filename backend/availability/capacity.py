@@ -10,6 +10,7 @@ from datetime import date, timedelta
 
 from accounts.models import User
 
+from .intensity import DEFAULT_LEVEL, LEVEL_LIMITS, LIMIT_NAMES, Limits, effective_limits
 from .models import (
     SPORTS,
     AvailabilitySettings,
@@ -41,6 +42,8 @@ class WeekCapacity:
     # may be added to sessions. Choices, not time: they change nothing about what the week offers.
     sports: tuple[str, ...] = SPORTS
     stretching: bool = False
+    # The limits of the planning rules: the user's intensity level with their own values.
+    limits: Limits = LEVEL_LIMITS[DEFAULT_LEVEL]
 
 
 def week_capacity(user: User, monday: date) -> WeekCapacity:
@@ -51,10 +54,22 @@ def week_capacity(user: User, monday: date) -> WeekCapacity:
     minutes = tuple(offered for offered, _ in days)
     row = (
         AvailabilitySettings.objects.for_user(user)
-        .values_list("weekly_budget_minutes", "typical_weekly_minutes", "sports", "stretching")
+        .values_list(
+            "weekly_budget_minutes",
+            "typical_weekly_minutes",
+            "sports",
+            "stretching",
+            "intensity_level",
+            *LIMIT_NAMES,
+        )
         .first()
     )
-    budget, typical, chosen, stretching = row if row is not None else (None, None, [], False)
+    if row is None:
+        budget, typical, chosen, stretching = None, None, [], False
+        limits = LEVEL_LIMITS[DEFAULT_LEVEL]
+    else:
+        budget, typical, chosen, stretching, level, *own = row
+        limits = effective_limits(level, dict(zip(LIMIT_NAMES, own, strict=True)))
     total = sum(minutes)
     return WeekCapacity(
         minutes=minutes,
@@ -64,6 +79,7 @@ def week_capacity(user: User, monday: date) -> WeekCapacity:
         typical_weekly_minutes=typical,
         sports=tuple(effective_sports(chosen)),
         stretching=stretching,
+        limits=limits,
     )
 
 

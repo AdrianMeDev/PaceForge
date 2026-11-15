@@ -70,6 +70,7 @@ def build_context(user: User, monday: date) -> PlanContext:
         typical_weekly_minutes=capacity.typical_weekly_minutes,
         sports=frozenset(Sport(sport) for sport in capacity.sports),
         stretching=capacity.stretching,
+        limits=capacity.limits,
     )
 
 

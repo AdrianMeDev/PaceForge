@@ -1,3 +1,4 @@
+import dataclasses
 import json
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
@@ -12,7 +13,7 @@ from django.test.utils import CaptureQueriesContext
 from accounts.models import User
 from accounts.tests.conftest import AuthApi
 from athletes.models import ThresholdValue
-from availability.models import WeekdayMinutes
+from availability.models import AvailabilitySettings, WeekdayMinutes
 from coach.models import AIProviderConfiguration, AIUsageRecord
 from coach.providers.base import (
     EndpointNotAllowedError,
@@ -1051,6 +1052,55 @@ class TestConfirming:
         assert response.status_code == HTTPStatus.NOT_FOUND
         plan.refresh_from_db()
         assert plan.status == Status.DRAFT
+
+
+class TestTheIntensityLevel:
+    """The rules use the limits of the user's level: three hard days are too many for "normal"."""
+
+    @staticmethod
+    def three_hard_days() -> tuple[Workout, ...]:
+        return tuple(dataclasses.replace(ride(d), goal=Goal.THRESHOLD) for d in (0, 2, 4))
+
+    def test_normal_refuses_to_confirm_three_hard_days(self, alice: User) -> None:
+        plan = draft(alice, *self.three_hard_days())
+
+        response = signed_in(alice).call("POST", plan_url(plan.pk, "confirm/"))
+
+        assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+        assert [f["code"] for f in body(response)["findings"] if f["severity"] == "error"] == [
+            "too_many_hard_days"
+        ]
+
+    def test_intensive_confirms_them(self, alice: User) -> None:
+        plan = draft(alice, *self.three_hard_days())
+        AvailabilitySettings.objects.create(owner=alice, intensity_level="intensive")
+
+        response = signed_in(alice).call("POST", plan_url(plan.pk, "confirm/"))
+
+        assert response.status_code == HTTPStatus.OK
+        assert body(response)["status"] == "confirmed"
+
+    def test_an_own_number_of_hard_days_counts_too(self, alice: User) -> None:
+        plan = draft(alice, *self.three_hard_days())
+        AvailabilitySettings.objects.create(owner=alice, intensity_level="relaxed", max_hard_days=3)
+
+        assert signed_in(alice).call("POST", plan_url(plan.pk, "confirm/")).status_code == (
+            HTTPStatus.OK
+        )
+
+    def test_the_check_of_the_editor_uses_the_level_of_the_user(
+        self, alice: User, bob: User
+    ) -> None:
+        data = edited(*self.three_hard_days())
+        AvailabilitySettings.objects.create(owner=bob, intensity_level="intensive")
+
+        def errors() -> list[str]:
+            answer = body(signed_in(alice).call("POST", check_url(), data))
+            return [f["code"] for f in answer["findings"] if f["severity"] == "error"]
+
+        assert errors() == ["too_many_hard_days"]
+        AvailabilitySettings.objects.create(owner=alice, intensity_level="intensive")
+        assert errors() == []
 
 
 class TestDiscarding:
