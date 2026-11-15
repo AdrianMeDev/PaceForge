@@ -5,6 +5,26 @@ export type { Forbidden, Invalid, NotFound };
 /** The sports a plan can contain, in the order the server lists them. */
 export type AvailabilitySport = 'running' | 'cycling' | 'swimming' | 'strength';
 
+/** How hard plans may be; each level sets the limits of the planning rules. */
+export type IntensityLevel = 'relaxed' | 'normal' | 'intensive';
+
+/**
+ * The limits of the planning rules: hard days a week at most, the planned minutes in percent of
+ * the reference week above which there is a warning and an error, and the share of easy minutes
+ * in the endurance minutes of a week below which there is a warning.
+ */
+export interface Limits {
+  max_hard_days: number;
+  progression_warning_percent: number;
+  progression_error_percent: number;
+  easy_share_percent: number;
+}
+
+export type LimitName = keyof Limits;
+
+/** The user's own limits: a number replaces the level's value, `null` keeps it. */
+export type OwnLimits = Record<LimitName, number | null>;
+
 export type PeriodKind = 'vacation' | 'illness' | 'other';
 /** Where a period stands today, by the user's own day: going on, still to come, or over. */
 export type PeriodStatus = 'current' | 'upcoming' | 'past';
@@ -16,19 +36,22 @@ export type PeriodStatus = 'current' | 'upcoming' | 'past';
  * the planning after a break (`null`: not given), never a limit; `sports` are the ones the user
  * wants in a plan (at least one; all four if the user never chose); `stretching` says whether
  * stretching may be added to sessions (never as a session of its own); the limitations are free
- * text.
+ * text. The intensity level and the own limits set the limits of the planning rules;
+ * `level_limits` are the limits of every level as the server has them (read only).
  */
-export interface Availability {
+export interface Availability extends OwnLimits {
   weekdays: number[];
   weekly_budget_minutes: number | null;
   typical_weekly_minutes: number | null;
   sports: AvailabilitySport[];
   stretching: boolean;
   limitations: string;
+  intensity_level: IntensityLevel;
+  level_limits: Record<IntensityLevel, Limits>;
 }
 
-/** What is sent to save the availability: any of the six, the rest stays as it is. */
-export type AvailabilityChanges = Partial<Availability>;
+/** What is sent to save the availability: any of the fields, the rest stays as it is. */
+export type AvailabilityChanges = Partial<Omit<Availability, 'level_limits'>>;
 
 /**
  * A stretch of days on which the user cannot train. Both dates belong to it (calendar dates,

@@ -11,6 +11,32 @@ import {
 import { query, settle, typeInto } from '../../testing/dom';
 import { AvailabilityPage } from './availability-page';
 
+const LEVEL_LIMITS: Availability['level_limits'] = {
+  relaxed: {
+    max_hard_days: 1,
+    progression_warning_percent: 115,
+    progression_error_percent: 130,
+    easy_share_percent: 85,
+  },
+  normal: {
+    max_hard_days: 2,
+    progression_warning_percent: 120,
+    progression_error_percent: 140,
+    easy_share_percent: 80,
+  },
+  intensive: {
+    max_hard_days: 3,
+    progression_warning_percent: 130,
+    progression_error_percent: 150,
+    easy_share_percent: 75,
+  },
+};
+const NO_OWN_LIMITS = {
+  max_hard_days: null,
+  progression_warning_percent: null,
+  progression_error_percent: null,
+  easy_share_percent: null,
+};
 const SAVED: Availability = {
   weekdays: [60, 0, 90, 0, 0, 120, 180],
   weekly_budget_minutes: 300,
@@ -18,6 +44,9 @@ const SAVED: Availability = {
   sports: ['running', 'cycling'],
   stretching: true,
   limitations: 'No running on consecutive days',
+  intensity_level: 'normal',
+  ...NO_OWN_LIMITS,
+  level_limits: LEVEL_LIMITS,
 };
 const NOTHING: Availability = {
   weekdays: [0, 0, 0, 0, 0, 0, 0],
@@ -26,6 +55,9 @@ const NOTHING: Availability = {
   sports: ['running', 'cycling', 'swimming', 'strength'],
   stretching: false,
   limitations: '',
+  intensity_level: 'normal',
+  ...NO_OWN_LIMITS,
+  level_limits: LEVEL_LIMITS,
 };
 
 const ok = (availability: Availability): GetAvailabilityResult => ({ kind: 'ok', availability });

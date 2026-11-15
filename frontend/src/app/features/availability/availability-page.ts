@@ -1,7 +1,11 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { AvailabilityApi } from '../../core/availability/availability-api';
-import { Availability, AvailabilitySport } from '../../core/availability/availability-models';
+import {
+  Availability,
+  AvailabilityChanges,
+  AvailabilitySport,
+} from '../../core/availability/availability-models';
 import {
   DAY_MAX_MINUTES,
   WEEKDAY_NAMES,
@@ -179,7 +183,7 @@ export class AvailabilityPage implements OnInit {
   }
 
   /** The request for what is in the form, or `null` (with the messages set) if it is unusable. */
-  private build(): Availability | null {
+  private build(): AvailabilityChanges | null {
     let usable = true;
     const weekdays: number[] = [];
     const dayErrors: (string | null)[] = [];
