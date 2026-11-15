@@ -4,8 +4,10 @@ import { CoachApi } from '../../core/coach/coach-api';
 import { AiProviderState, GetProviderResult } from '../../core/coach/coach-models';
 import { PlanningApi } from '../../core/planning/planning-api';
 import {
+  CheckPlanResult,
   ConfirmPlanResult,
   DiscardPlanResult,
+  EditedPlan,
   Finding,
   GenerateResult,
   GetPlanResult,
@@ -14,6 +16,8 @@ import {
   PlannableWeek,
   PushOutcome,
   PushPlanResult,
+  RestorePlanResult,
+  RevisePlanResult,
   WeekPlan,
   WorkoutExport,
 } from '../../core/planning/planning-models';
@@ -206,6 +210,9 @@ function createStubs() {
       confirm: vi.fn<(id: string, push?: boolean) => Promise<ConfirmPlanResult>>(),
       push: vi.fn<(id: string) => Promise<PushPlanResult>>(),
       discard: vi.fn<(id: string) => Promise<DiscardPlanResult>>(),
+      check: vi.fn<(week: string, plan: EditedPlan) => Promise<CheckPlanResult>>(),
+      revise: vi.fn<(id: string, plan: EditedPlan) => Promise<RevisePlanResult>>(),
+      restore: vi.fn<(id: string) => Promise<RestorePlanResult>>(),
     },
     coach: { get: vi.fn<() => Promise<GetProviderResult>>() },
   };
@@ -241,6 +248,11 @@ describe('PlanningPage', () => {
       [CONFIRMED_ID]: { kind: 'ok', plan: CONFIRMED },
     };
     stubs.planning.get.mockImplementation(async (id) => plans[id] ?? { kind: 'not_found' });
+    stubs.planning.check.mockImplementation(async (_week, sent) => ({
+      kind: 'ok',
+      report: { valid: true, findings: [] },
+      order: sent.workouts.map((_, index) => index),
+    }));
     TestBed.configureTestingModule({
       imports: [PlanningPage],
       providers: [
@@ -1448,6 +1460,264 @@ describe('PlanningPage', () => {
       expect(stubs.planning.get).toHaveBeenCalledTimes(1);
       pending.resolve({ kind: 'not_found' });
       await first;
+    });
+  });
+
+  describe('changing a plan by hand', () => {
+    const NEW_ID = '01a1d73d-0000-7000-8000-0000000000aa';
+    const editor = () => page.querySelector('app-plan-editor');
+
+    /** The draft the server stores for a change: version 3, with its checks. */
+    function changed(report: WeekPlan['report'] = { valid: true, findings: [] }): WeekPlan {
+      return plan({ id: NEW_ID, version: 3, parent: DRAFT_ID, report });
+    }
+
+    async function open() {
+      await click('change-plan');
+    }
+
+    describe('offering it', () => {
+      it('is offered on a draft', async () => {
+        await setup();
+
+        expect(byId('change-plan')).toBeTruthy();
+        expect(byId('change-plan')?.textContent?.trim()).toBe('Change this plan');
+      });
+
+      it('is offered on a confirmed plan', async () => {
+        await setup({ weeks: ok(weeks([CONFIRMED_VERSION])) });
+
+        expect(byId('status')?.textContent).toBe('Confirmed');
+        expect(byId('change-plan')).toBeTruthy();
+      });
+
+      it('is not offered on a version that was discarded or replaced', async () => {
+        await setup();
+
+        await click('version-1'); // discarded
+
+        expect(byId('status')?.textContent).toBe('Discarded');
+        expect(byId('change-plan')).toBeNull();
+      });
+
+      it('is not offered when there is no plan', async () => {
+        await setup({ weeks: ok(weeks([OLD])) });
+
+        expect(byId('change-plan')).toBeNull();
+      });
+
+      it('is switched off while something else runs', async () => {
+        await setup();
+        const pending = deferred<DiscardPlanResult>();
+        stubs.planning.discard.mockReturnValue(pending.promise);
+
+        button('discard').click();
+        await fixture.whenStable();
+
+        expect(button('change-plan').disabled).toBe(true);
+        pending.resolve({ kind: 'ok', plan: plan({ status: 'discarded', report: null }) });
+        await settle(fixture);
+      });
+    });
+
+    describe('while it is changed', () => {
+      it('shows the editor in the place of the plan and checks the plan as it is', async () => {
+        await setup();
+
+        await open();
+
+        expect(editor()).toBeTruthy();
+        expect(page.querySelector('article.plan')).toBeNull();
+        expect(page.querySelector('app-plan-editor h2')?.textContent).toBe('Changing version 2');
+        expect(stubs.planning.check).toHaveBeenCalledTimes(1);
+        expect(stubs.planning.check.mock.calls[0][0]).toBe(NEXT);
+      });
+
+      it('drops the messages of before', async () => {
+        await setup();
+        stubs.planning.generate.mockResolvedValue({ kind: 'rate_limited' });
+        await click('generate');
+        expect(alerts().length).toBeGreaterThan(0);
+
+        await open();
+
+        expect(alerts()).toEqual([]);
+      });
+
+      it('allows nothing else to start', async () => {
+        await setup();
+        await open();
+
+        expect(select().disabled).toBe(true);
+        expect(button('generate').disabled).toBe(true);
+        expect(page.querySelector<HTMLButtonElement>('[data-testid="version-1"]')?.disabled).toBe(
+          true,
+        );
+        expect(byId('confirm')).toBeNull();
+        expect(byId('discard')).toBeNull();
+      });
+
+      it('lets no other action in even when it is called', async () => {
+        await setup();
+        await open();
+        stubs.planning.get.mockClear();
+
+        await fixture.componentInstance['selectWeek'](LATER);
+        await fixture.componentInstance['generate']();
+        await fixture.componentInstance['confirm']();
+        await fixture.componentInstance['discard']();
+        await fixture.componentInstance['send']();
+        await fixture.componentInstance['open'](OLD_ID);
+
+        expect(stubs.planning.generate).not.toHaveBeenCalled();
+        expect(stubs.planning.confirm).not.toHaveBeenCalled();
+        expect(stubs.planning.discard).not.toHaveBeenCalled();
+        expect(stubs.planning.push).not.toHaveBeenCalled();
+        expect(stubs.planning.get).not.toHaveBeenCalled();
+        expect(select().value).toBe(NEXT);
+      });
+
+      it('does not open a second editor', async () => {
+        await setup();
+        await open();
+
+        fixture.componentInstance['startChanging']();
+        await settle(fixture);
+
+        expect(page.querySelectorAll('app-plan-editor')).toHaveLength(1);
+        expect(stubs.planning.check).toHaveBeenCalledTimes(1);
+      });
+
+      it('sends nothing to be stored before the changes are saved', async () => {
+        await setup();
+        await open();
+        await click('remove-0');
+
+        expect(stubs.planning.revise).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('dropping the changes', () => {
+      it('brings back the plan as it was and stores nothing', async () => {
+        await setup();
+        await open();
+        await click('remove-0');
+
+        await click('discard-changes');
+
+        expect(editor()).toBeNull();
+        expect(byId('status')?.textContent).toBe('Draft');
+        expect(page.querySelectorAll('[data-testid^="workout-"]').length).toBe(3);
+        expect(stubs.planning.revise).not.toHaveBeenCalled();
+        expect(select().disabled).toBe(false);
+        expect(button('generate').disabled).toBe(false);
+      });
+
+      it('offers to change it again, from the plan as it was', async () => {
+        await setup();
+        await open();
+        await click('remove-0');
+        await click('discard-changes');
+
+        await open();
+
+        expect(
+          page.querySelectorAll('app-plan-editor [data-testid^="editor-workout-"]'),
+        ).toHaveLength(3);
+      });
+    });
+
+    describe('saving the changes', () => {
+      it('shows the new draft with its checks, says so and fetches the versions again', async () => {
+        await setup();
+        await open();
+        await click('remove-0');
+        stubs.planning.revise.mockResolvedValue({ kind: 'ok', plan: changed() });
+        stubs.planning.weeks.mockClear();
+
+        await click('save-version');
+
+        expect(stubs.planning.revise).toHaveBeenCalledTimes(1);
+        expect(stubs.planning.revise.mock.calls[0][0]).toBe(DRAFT_ID);
+        expect(editor()).toBeNull();
+        expect(page.querySelector('.plan h2')?.textContent).toBe('Version 3');
+        expect(byId('status')?.textContent).toBe('Draft');
+        expect(notice()).toBe(
+          'Your changes were saved as version 3. Read it, then confirm it to make it the plan of the week.',
+        );
+        expect(stubs.planning.weeks).toHaveBeenCalledTimes(1);
+        expect(select().disabled).toBe(false);
+      });
+
+      it('says that a draft with errors cannot be confirmed yet', async () => {
+        await setup();
+        await open();
+        await click('remove-0');
+        stubs.planning.revise.mockResolvedValue({
+          kind: 'ok',
+          plan: changed({ valid: false, findings: [MISMATCH] }),
+        });
+
+        await click('save-version');
+
+        expect(notice()).toBe(
+          'Your changes were saved as version 3. It has errors and cannot be confirmed yet.',
+        );
+        expect(button('confirm').disabled).toBe(true);
+      });
+
+      it('can be confirmed like any draft', async () => {
+        await setup();
+        await open();
+        await click('remove-0');
+        stubs.planning.revise.mockResolvedValue({ kind: 'ok', plan: changed() });
+        await click('save-version');
+        stubs.planning.confirm.mockResolvedValue({
+          kind: 'ok',
+          plan: plan({ id: NEW_ID, version: 3, status: 'confirmed', report: null }),
+          push: null,
+        });
+
+        await click('confirm');
+
+        expect(stubs.planning.confirm).toHaveBeenCalledExactlyOnceWith(NEW_ID, false);
+      });
+
+      it('keeps the editor and the changes when the server refuses', async () => {
+        await setup();
+        await open();
+        await click('remove-0');
+        stubs.planning.revise.mockResolvedValue({ kind: 'not_revisable' });
+
+        await click('save-version');
+
+        expect(editor()).toBeTruthy();
+        expect(
+          page.querySelectorAll('app-plan-editor [data-testid^="editor-workout-"]'),
+        ).toHaveLength(2);
+        expect(byId('editor-message')?.textContent).toContain('cannot be changed any more');
+      });
+
+      it('says when the session has ended', async () => {
+        await setup();
+        await open();
+        await click('remove-0');
+        stubs.planning.revise.mockResolvedValue({ kind: 'forbidden' });
+
+        await click('save-version');
+
+        expect(alerts()).toEqual(['Your session has ended. Please sign in again.']);
+        expect(editor()).toBeNull();
+      });
+
+      it('says when the session ends during a check', async () => {
+        await setup();
+        stubs.planning.check.mockResolvedValue({ kind: 'forbidden' });
+
+        await open();
+
+        expect(alerts()).toEqual(['Your session has ended. Please sign in again.']);
+      });
     });
   });
 });

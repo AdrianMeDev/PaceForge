@@ -26,6 +26,7 @@ import {
   targetText,
   weekRange,
 } from './plan-format';
+import { PlanEditor } from './plan-editor';
 
 type View = 'loading' | 'unreachable' | 'ready' | 'signed_out';
 /** What the page is waiting for; one thing at a time. */
@@ -57,7 +58,7 @@ interface PlanDay {
  */
 @Component({
   selector: 'app-planning-page',
-  imports: [RouterLink, DatePipe],
+  imports: [RouterLink, DatePipe, PlanEditor],
   templateUrl: './planning-page.html',
   styleUrls: ['../auth/auth-form.css', './planning-page.css'],
 })
@@ -92,6 +93,13 @@ export class PlanningPage implements OnInit {
   );
   protected readonly days = computed<PlanDay[]>(() => this.group(this.plan()));
   protected readonly findings = computed(() => this.plan()?.report?.findings ?? []);
+  /** The plan is being changed by hand: nothing else may start until that is saved or dropped. */
+  protected readonly changing = signal(false);
+  protected readonly busy = computed(() => this.work() !== null || this.changing());
+  /** A draft and a confirmed plan can be changed; a version that was replaced is restored first. */
+  protected readonly canChange = computed(
+    () => this.plan()?.status === 'draft' || this.plan()?.status === 'confirmed',
+  );
   protected readonly canConfirm = computed(
     () => this.plan()?.status === 'draft' && this.plan()?.report?.valid === true,
   );
@@ -134,7 +142,7 @@ export class PlanningPage implements OnInit {
   }
 
   protected async selectWeek(value: string): Promise<void> {
-    if (this.work() !== null || !this.weeks().some((week) => week.week_start === value)) {
+    if (this.busy() || !this.weeks().some((week) => week.week_start === value)) {
       return;
     }
     this.clearMessages();
@@ -144,7 +152,7 @@ export class PlanningPage implements OnInit {
   }
 
   protected async open(id: string): Promise<void> {
-    if (this.work() !== null) {
+    if (this.busy()) {
       return;
     }
     this.clearMessages();
@@ -152,7 +160,7 @@ export class PlanningPage implements OnInit {
   }
 
   protected async generate(): Promise<void> {
-    if (this.work() !== null || !this.configured()) {
+    if (this.busy() || !this.configured()) {
       return;
     }
     this.clearMessages();
@@ -201,9 +209,42 @@ export class PlanningPage implements OnInit {
     }
   }
 
+  protected startChanging(): void {
+    if (this.busy() || !this.canChange()) {
+      return;
+    }
+    this.clearMessages();
+    this.changing.set(true);
+  }
+
+  /** The changes are dropped: nothing was stored before they were saved. */
+  protected stopChanging(): void {
+    this.changing.set(false);
+  }
+
+  /** The changes were stored as a new version of the week; it is shown, with its checks. */
+  protected async changesSaved(plan: WeekPlan): Promise<void> {
+    this.changing.set(false);
+    this.clearMessages();
+    this.plan.set(plan);
+    const errors = plan.report?.valid === false;
+    this.notice.set(
+      `Your changes were saved as version ${plan.version}.` +
+        (errors
+          ? ' It has errors and cannot be confirmed yet.'
+          : ' Read it, then confirm it to make it the plan of the week.'),
+    );
+    await this.refresh();
+  }
+
+  protected signOut(): void {
+    this.changing.set(false);
+    this.view.set('signed_out');
+  }
+
   protected async confirm(): Promise<void> {
     const current = this.plan();
-    if (this.work() !== null || current === null || !this.canConfirm()) {
+    if (this.busy() || current === null || !this.canConfirm()) {
       return;
     }
     this.clearMessages();
@@ -236,7 +277,7 @@ export class PlanningPage implements OnInit {
   /** Sends the confirmed plan to Intervals.icu (again): what is in the calendar is updated. */
   protected async send(): Promise<void> {
     const current = this.plan();
-    if (this.work() !== null || current === null || current.status !== 'confirmed') {
+    if (this.busy() || current === null || current.status !== 'confirmed') {
       return;
     }
     this.clearMessages();
@@ -289,7 +330,7 @@ export class PlanningPage implements OnInit {
 
   protected async discard(): Promise<void> {
     const current = this.plan();
-    if (this.work() !== null || current === null || current.status !== 'draft') {
+    if (this.busy() || current === null || current.status !== 'draft') {
       return;
     }
     this.clearMessages();
