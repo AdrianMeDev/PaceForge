@@ -1,9 +1,11 @@
+import dataclasses
 import random
 from datetime import date, timedelta
 from typing import Any
 
 import pytest
 
+from availability.intensity import LEVEL_LIMITS, IntensityLevel, Limits
 from planning import rules
 from planning.context import PlanContext
 from planning.rules import (
@@ -11,10 +13,7 @@ from planning.rules import (
     BASIC_CHECKS,
     EASY_UP_TO_ZONE,
     HARD_FROM_ZONE,
-    MAX_HARD_DAYS,
     MAX_WORKOUTS_PER_DAY,
-    PROGRESSION_ERROR_PERCENT,
-    PROGRESSION_WARNING_PERCENT,
     RHYTHM_CHECKS,
     Finding,
     Intensity,
@@ -41,6 +40,10 @@ from planning.schema import (
 
 MONDAY = date(2027, 7, 12)
 assert MONDAY.weekday() == 0
+
+# Most tests here use the limits of "intensive" (3 hard days, 130 and 150 %), which were the fixed
+# limits before there were levels; ``TestTheLimitsOfTheContext`` covers the others.
+INTENSIVE = LEVEL_LIMITS[IntensityLevel.INTENSIVE]
 
 
 def day(offset: int) -> date:
@@ -76,6 +79,7 @@ def context(**fields: Any) -> PlanContext:
         "weekly_minutes": 4200,
         "zone_systems": frozenset(),
         "recent_weeks": (),
+        "limits": INTENSIVE,
         **fields,
     }
     return PlanContext(**data)
@@ -142,8 +146,9 @@ class TestHowHardAWorkoutIs:
 
     def test_the_limits_are_the_documented_ones(self) -> None:
         assert (HARD_FROM_ZONE, EASY_UP_TO_ZONE) == (4, 2)
-        assert (MAX_HARD_DAYS, MAX_WORKOUTS_PER_DAY) == (3, 2)
-        assert (PROGRESSION_WARNING_PERCENT, PROGRESSION_ERROR_PERCENT) == (130, 150)
+        assert MAX_WORKOUTS_PER_DAY == 2
+        assert (INTENSIVE.max_hard_days, INTENSIVE.progression_warning_percent) == (3, 130)
+        assert INTENSIVE.progression_error_percent == 150
 
 
 class TestTooManyHardDays:
@@ -157,7 +162,7 @@ class TestTooManyHardDays:
             Finding(
                 Severity.ERROR,
                 "too_many_hard_days",
-                "The week has 4 hard days; at most 3 are sensible.",
+                "The week has 4 hard days; your intensity settings allow at most 3.",
                 "workouts",
             )
         ]
@@ -176,6 +181,91 @@ class TestTooManyHardDays:
         plan = week(hard(0), hard(2), hard(4), hard(8), hard(-1))
 
         assert check_hard_days(plan, context()) == []
+
+
+class TestTheLimitsOfTheContext:
+    """The hard days and the progression limits are those of the athlete's level or own values."""
+
+    @staticmethod
+    def limits(level: IntensityLevel, **own: int) -> Limits:
+        return dataclasses.replace(LEVEL_LIMITS[level], **own)
+
+    def test_a_context_without_limits_has_those_of_normal(self) -> None:
+        bare = PlanContext(
+            week_start=MONDAY,
+            minutes=(600,) * 7,
+            absences=(None,) * 7,
+            weekly_budget=None,
+            weekly_minutes=4200,
+            zone_systems=frozenset(),
+            recent_weeks=(),
+        )
+
+        assert bare.limits == LEVEL_LIMITS[IntensityLevel.NORMAL]
+
+    @pytest.mark.parametrize(
+        ("level", "allowed"),
+        [(IntensityLevel.RELAXED, 1), (IntensityLevel.NORMAL, 2), (IntensityLevel.INTENSIVE, 3)],
+    )
+    def test_each_level_allows_its_number_of_hard_days(
+        self, level: IntensityLevel, allowed: int
+    ) -> None:
+        ctx = context(limits=LEVEL_LIMITS[level])
+        days = [0, 2, 4, 6]
+
+        assert check_hard_days(week(*(hard(d) for d in days[:allowed])), ctx) == []
+        found = check_hard_days(week(*(hard(d) for d in days[: allowed + 1])), ctx)
+        assert [f.code for f in found] == ["too_many_hard_days"]
+        assert found[0].message.endswith(f"allow at most {allowed}.")
+
+    def test_one_hard_day_too_many_reads_well(self) -> None:
+        found = check_hard_days(
+            week(hard(2)), context(limits=self.limits(IntensityLevel.NORMAL, max_hard_days=0))
+        )
+
+        assert (
+            found[0].message == "The week has 1 hard day; your intensity settings allow at most 0."
+        )
+
+    def test_an_own_number_of_hard_days_counts(self) -> None:
+        ctx = context(limits=self.limits(IntensityLevel.RELAXED, max_hard_days=4))
+
+        assert check_hard_days(week(hard(0), hard(2), hard(4), hard(6)), ctx) == []
+
+    @pytest.mark.parametrize(
+        ("level", "warning", "error"),
+        [
+            (IntensityLevel.RELAXED, 115, 130),
+            (IntensityLevel.NORMAL, 120, 140),
+            (IntensityLevel.INTENSIVE, 130, 150),
+        ],
+    )
+    def test_each_level_has_its_progression_limits(
+        self, level: IntensityLevel, warning: int, error: int
+    ) -> None:
+        ctx = context(limits=LEVEL_LIMITS[level], recent_weeks=(100,))
+
+        def codes(minutes: int) -> list[str]:
+            return [f.code for f in check_progression(week(workout(1, minutes)), ctx)]
+
+        assert codes(warning) == []
+        assert codes(warning + 1) == ["volume_increase"]
+        assert codes(error) == ["volume_increase"]
+        assert codes(error + 1) == ["volume_jump"]
+
+    def test_own_progression_limits_count(self) -> None:
+        own = self.limits(
+            IntensityLevel.NORMAL, progression_warning_percent=105, progression_error_percent=110
+        )
+        ctx = context(limits=own, typical_weekly_minutes=200)
+
+        def codes(minutes: int) -> list[str]:
+            return [f.code for f in check_progression(week(workout(1, minutes)), ctx)]
+
+        assert codes(210) == []
+        assert codes(211) == ["volume_increase"]
+        assert codes(220) == ["volume_increase"]
+        assert codes(221) == ["volume_jump"]
 
 
 class TestHardDaysInARow:

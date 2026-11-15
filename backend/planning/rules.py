@@ -6,7 +6,9 @@ problems), and its message is a fixed text built from numbers, weekdays and fixe
 nothing the coach wrote (titles, notes) is repeated. An *error* makes a plan unfit to confirm, a
 *warning* is for the user to weigh.
 
-The limits are the constants below, in one place, so that they can be read and changed there.
+The fixed limits are the constants below, in one place, so that they can be read and changed there.
+The limits that depend on how hard the athlete wants to train (hard days, progression) come with
+the context (``context.limits``, see ``availability.intensity``).
 """
 
 from collections.abc import Callable
@@ -29,16 +31,11 @@ SPORT_ZONE_SYSTEMS: dict[Sport, frozenset[ZoneSystem]] = {
 }
 
 # The rhythm of a week. A workout is hard from this zone on (whatever the zone system) or if its
-# goal is threshold or VO2max; it is easy up to this zone or without any zone.
+# goal is threshold or VO2max; it is easy up to this zone or without any zone. How many hard days
+# a week may have is a limit of the athlete's intensity level.
 HARD_FROM_ZONE = 4
 EASY_UP_TO_ZONE = 2
-MAX_HARD_DAYS = 3
 MAX_WORKOUTS_PER_DAY = 2
-# The planned minutes against the average of the recent weeks, in percent: above the first it is
-# a warning, above the second an error. Without a reference (or with 0 minutes) the rule is
-# skipped.
-PROGRESSION_WARNING_PERCENT = 130
-PROGRESSION_ERROR_PERCENT = 150
 # How much of the athlete's own "typical week" counts as the reference, in percent. The reference
 # is the higher of this and the average of the recent weeks, so that someone coming back from a
 # break is not held to the few weeks since. 100 takes the athlete at their word; a lower number
@@ -215,16 +212,18 @@ def intensity_of(workout: Workout) -> Intensity:
 
 
 def check_hard_days(plan: WeekPlan, context: PlanContext) -> list[Finding]:
-    """No more than ``MAX_HARD_DAYS`` days with a hard workout in a week."""
+    """No more days with a hard workout in a week than the athlete's limit allows."""
     _same_week(plan, context)
     hard = _hard_workouts_by_day(plan, context)
-    if len(hard) <= MAX_HARD_DAYS:
+    allowed = context.limits.max_hard_days
+    if len(hard) <= allowed:
         return []
+    days = "1 hard day" if len(hard) == 1 else f"{len(hard)} hard days"
     return [
         Finding(
             Severity.ERROR,
             "too_many_hard_days",
-            f"The week has {len(hard)} hard days; at most {MAX_HARD_DAYS} are sensible.",
+            f"The week has {days}; your intensity settings allow at most {allowed}.",
             "workouts",
         )
     ]
@@ -307,9 +306,9 @@ def check_progression(plan: WeekPlan, context: PlanContext) -> list[Finding]:
     """The planned minutes stay within a plausible step from what the athlete has been doing.
 
     The reference is the higher of the average of ``context.recent_weeks`` and the typical week of
-    the athlete (``TYPICAL_VOLUME_PERCENT`` of it). Above ``PROGRESSION_WARNING_PERCENT`` of it is
-    a warning, above ``PROGRESSION_ERROR_PERCENT`` an error. Without a reference, or with a
-    reference of no minutes, nothing is checked: a number is not made up."""
+    the athlete (``TYPICAL_VOLUME_PERCENT`` of it). Above the warning limit of ``context.limits``
+    (percent of the reference) is a warning, above its error limit an error. Without a reference,
+    or with a reference of no minutes, nothing is checked: a number is not made up."""
     _same_week(plan, context)
     reference = _reference_week(context)
     if reference is None:
@@ -322,9 +321,9 @@ def check_progression(plan: WeekPlan, context: PlanContext) -> list[Finding]:
     )
     # planned / per_week > percent / 100, exactly (no rounding of the reference)
     scaled = Fraction(planned * 100) / per_week
-    if scaled > PROGRESSION_ERROR_PERCENT:
+    if scaled > context.limits.progression_error_percent:
         severity, code = Severity.ERROR, "volume_jump"
-    elif scaled > PROGRESSION_WARNING_PERCENT:
+    elif scaled > context.limits.progression_warning_percent:
         severity, code = Severity.WARNING, "volume_increase"
     else:
         return []

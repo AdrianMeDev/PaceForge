@@ -14,6 +14,7 @@ from collections.abc import Sequence
 from datetime import date
 from typing import Any
 
+from availability.intensity import DEFAULT_LEVEL, LEVEL_LIMITS
 from coach.answers import AnswerFormatError, read_json_object
 from coach.providers.base import Message
 
@@ -22,10 +23,7 @@ from .rules import (
     DURATION_TOLERANCE_SECONDS,
     EASY_UP_TO_ZONE,
     HARD_FROM_ZONE,
-    MAX_HARD_DAYS,
     MAX_WORKOUTS_PER_DAY,
-    PROGRESSION_ERROR_PERCENT,
-    PROGRESSION_WARNING_PERCENT,
     TYPICAL_VOLUME_PERCENT,
     Finding,
 )
@@ -53,6 +51,9 @@ from .schema import (
 MAX_ANSWER_CHARS = 200_000
 # How many problems and findings the repair message lists; the rest is counted.
 MAX_LISTED = 20
+
+# Every athlete has the limits of the default level until the level can be chosen.
+_LIMITS = LEVEL_LIMITS[DEFAULT_LEVEL]
 
 
 def _words(enum: Any) -> str:
@@ -109,16 +110,16 @@ The plan is checked by these rules; an answer that breaks one marked (error) can
 - If you give segments, they add up (seconds times repeat) to the duration of the workout, \
 within {DURATION_TOLERANCE_SECONDS} seconds. (error)
 - A workout is hard if its goal is "threshold" or "vo2max" or its zone is {HARD_FROM_ZONE} or \
-higher; it is easy up to zone {EASY_UP_TO_ZONE}. At most {MAX_HARD_DAYS} days of the week have a \
-hard workout. (error) Do not put hard days back to back, keep at least one day free and at most \
-{MAX_WORKOUTS_PER_DAY} workouts on a day. (warnings)
-- The minutes of the week stay below {PROGRESSION_WARNING_PERCENT} percent of the reference \
-(warning), and never reach {PROGRESSION_ERROR_PERCENT} percent. (error) The reference is the \
-higher of the average of "recent_weeks_minutes" and {TYPICAL_VOLUME_PERCENT} percent of \
-"typical_weekly_minutes", which is what the athlete calls a normal week (it may be null). That \
-second number is where a return to training is headed, not where it starts: after a break climb \
-towards it over several weeks, and prefer a few sessions of a useful length to many very short \
-ones. Without either there is no such limit; then plan carefully.
+higher; it is easy up to zone {EASY_UP_TO_ZONE}. At most {_LIMITS.max_hard_days} days of the \
+week have a hard workout. (error) Do not put hard days back to back, keep at least one day free \
+and at most {MAX_WORKOUTS_PER_DAY} workouts on a day. (warnings)
+- The minutes of the week stay below {_LIMITS.progression_warning_percent} percent of the \
+reference (warning), and never reach {_LIMITS.progression_error_percent} percent. (error) The \
+reference is the higher of the average of "recent_weeks_minutes" and {TYPICAL_VOLUME_PERCENT} \
+percent of "typical_weekly_minutes", which is what the athlete calls a normal week (it may be \
+null). That second number is where a return to training is headed, not where it starts: after a \
+break climb towards it over several weeks, and prefer a few sessions of a useful length to many \
+very short ones. Without either there is no such limit; then plan carefully.
 - Plan only the sports listed in "sports" in the data. (error)
 - A day may have two sessions, rarely three, where the minutes of the day and of the week allow it \
 and the sports fit: for example an easy run in the morning and a ride in the afternoon, or \

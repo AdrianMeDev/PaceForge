@@ -211,10 +211,7 @@ decisions, not coaching science; better ones will come from using the feature.
 | `DURATION_TOLERANCE_SECONDS` | 60 | How far the segments may differ from the duration. |
 | `HARD_FROM_ZONE` | 4 | From this zone on a workout is hard. |
 | `EASY_UP_TO_ZONE` | 2 | Up to this zone a workout is easy. |
-| `MAX_HARD_DAYS` | 3 | Hard days a week. |
 | `MAX_WORKOUTS_PER_DAY` | 2 | Workouts a day before the warning. |
-| `PROGRESSION_WARNING_PERCENT` | 130 | Planned minutes in percent of the reference: warning above. |
-| `PROGRESSION_ERROR_PERCENT` | 150 | Planned minutes in percent of the reference: error above. |
 | `TYPICAL_VOLUME_PERCENT` | 100 | How much of the typical week counts as a reference (100: all of it). A lower number, say 70, makes the first weeks back more careful. |
 | `TITLE_MAX` | 100 | Characters of a title. |
 | `NOTES_MAX` | 500 | Characters of notes. |
@@ -232,6 +229,21 @@ passes it. There is no absolute allowance: a recent average of 60 minutes makes 
 error, unless the athlete has given a typical week that is higher. With a recent average of 108 and
 a typical week of 360 minutes the limits are 468 (warning above) and 540 (error above) instead of
 140 and 162. The message of a finding says which of the two was the reference.
+
+## The intensity levels
+
+How many hard days a week may have and the two progression limits are not constants: they come
+from the intensity level of the athlete (`availability/intensity.py`) and reach the rules with the
+context (`PlanContext.limits`). Every athlete has the level "normal".
+
+| Level | Hard days (at most) | Progression warning above (%) | Progression error above (%) |
+| ----- | ------------------- | ----------------------------- | --------------------------- |
+| `relaxed` | 1 | 115 | 130 |
+| `normal` | 2 | 120 | 140 |
+| `intensive` | 3 | 130 | 150 |
+
+The percentages are of the reference above, as before. "intensive" has the limits that applied to
+every athlete before there were levels.
 
 ## Saving, versions and confirming
 

@@ -5,6 +5,7 @@ from typing import Any
 
 import pytest
 
+from availability.intensity import DEFAULT_LEVEL, LEVEL_LIMITS
 from planning import briefing as briefing_module
 from planning.prompt import (
     MAX_ANSWER_CHARS,
@@ -15,8 +16,6 @@ from planning.prompt import (
     repair_message,
 )
 from planning.rules import (
-    PROGRESSION_ERROR_PERCENT,
-    PROGRESSION_WARNING_PERCENT,
     TYPICAL_VOLUME_PERCENT,
     Finding,
     Severity,
@@ -336,8 +335,9 @@ class TestTheSystemPrompt:
             assert f"{system} has {count}" in SYSTEM_PROMPT, system
 
     def test_it_explains_the_reference_of_the_progression_rule(self) -> None:
-        assert f"{PROGRESSION_WARNING_PERCENT} percent of the reference" in SYSTEM_PROMPT
-        assert f"reach {PROGRESSION_ERROR_PERCENT} percent" in SYSTEM_PROMPT
+        limits = LEVEL_LIMITS[DEFAULT_LEVEL]
+        assert f"{limits.progression_warning_percent} percent of the reference" in SYSTEM_PROMPT
+        assert f"reach {limits.progression_error_percent} percent" in SYSTEM_PROMPT
         assert '"recent_weeks_minutes"' in SYSTEM_PROMPT
         assert f'{TYPICAL_VOLUME_PERCENT} percent of "typical_weekly_minutes"' in SYSTEM_PROMPT
 

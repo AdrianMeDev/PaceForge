@@ -13,6 +13,7 @@ from django.conf import settings
 from django.urls import get_resolver
 
 from accounts.models import User
+from availability.intensity import LEVEL_LIMITS
 from availability.models import SPORTS
 from availability.serializers import availability_data
 from coach import views as coach_views
@@ -76,7 +77,8 @@ def rows(text: str) -> list[list[str]]:
     return [
         row
         for row in found
-        if row[0] not in {"Field", "Code", "Constant", "System", "Status", "Key", "Endpoint"}
+        if row[0]
+        not in {"Field", "Code", "Constant", "System", "Status", "Key", "Endpoint", "Level"}
     ]
 
 
@@ -149,6 +151,23 @@ class TestTheLimits:
         }
 
         assert defined == documented
+
+
+class TestTheIntensityLevels:
+    def test_the_table_has_the_limits_of_every_level(self) -> None:
+        documented = {
+            row[0]: (int(row[1]), int(row[2]), int(row[3]))
+            for row in rows(section("The intensity levels"))
+        }
+
+        assert documented == {
+            level.value: (
+                limits.max_hard_days,
+                limits.progression_warning_percent,
+                limits.progression_error_percent,
+            )
+            for level, limits in LEVEL_LIMITS.items()
+        }
 
 
 class TestTheRules:
