@@ -1,0 +1,79 @@
+<div class="wishes">
+  <div class="field">
+    <label for="wish-training-days">Days a week you want to train on, at most (optional)</label>
+    <select
+      id="wish-training-days"
+      [attr.aria-invalid]="errors().training_days ? true : null"
+      (change)="set('trainingDays', $event)"
+    >
+      <option value="" [selected]="wishes().trainingDays === ''">No wish</option>
+      @for (count of dayCounts; track count) {
+        <option [value]="count" [selected]="wishes().trainingDays === '' + count">
+          {{ count }}
+        </option>
+      }
+    </select>
+    @if (errors().training_days; as message) {
+      <p class="field-error" role="alert">{{ message }}</p>
+    }
+  </div>
+
+  <div class="field">
+    <label for="wish-minimum">Least you want to train in a week (optional)</label>
+    <input
+      id="wish-minimum"
+      type="text"
+      inputmode="numeric"
+      autocomplete="off"
+      [value]="wishes().minimum"
+      [attr.aria-invalid]="errors().min_weekly_minutes ? true : null"
+      (input)="set('minimum', $event)"
+    />
+    @if (errors().min_weekly_minutes; as message) {
+      <p class="field-error" role="alert">{{ message }}</p>
+    }
+  </div>
+
+  <div class="field">
+    <label for="wish-long-run">Day of your long run (optional)</label>
+    <select
+      id="wish-long-run"
+      [attr.aria-invalid]="errors().long_run_day ? true : null"
+      (change)="set('longRunDay', $event)"
+    >
+      <option value="" [selected]="wishes().longRunDay === ''">No wish</option>
+      @for (day of weekdays; track day.value) {
+        <option [value]="day.value" [selected]="wishes().longRunDay === '' + day.value">
+          {{ day.name }}
+        </option>
+      }
+    </select>
+    @if (errors().long_run_day; as message) {
+      <p class="field-error" role="alert">{{ message }}</p>
+    }
+  </div>
+
+  <div class="field">
+    <label for="wish-long-ride">Day of your long ride (optional)</label>
+    <select
+      id="wish-long-ride"
+      [attr.aria-invalid]="errors().long_ride_day ? true : null"
+      (change)="set('longRideDay', $event)"
+    >
+      <option value="" [selected]="wishes().longRideDay === ''">No wish</option>
+      @for (day of weekdays; track day.value) {
+        <option [value]="day.value" [selected]="wishes().longRideDay === '' + day.value">
+          {{ day.name }}
+        </option>
+      }
+    </select>
+    @if (errors().long_ride_day; as message) {
+      <p class="field-error" role="alert">{{ message }}</p>
+    }
+  </div>
+
+  <p class="hint">
+    Your coach plans for these wishes and the checks warn when a plan differs. Hours and minutes per
+    week, for example 5:00; the least cannot be above your weekly budget.
+  </p>
+</div>
