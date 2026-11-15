@@ -53,6 +53,7 @@ function plan(changes: Partial<WeekPlan> = {}): WeekPlan {
     confirmed_at: null,
     workouts: [
       {
+        lineage: '01a1d73d-bbbb-7000-8000-000000000001',
         day: '2026-11-16',
         sport: 'cycling',
         title: 'Endurance ride',
@@ -68,6 +69,7 @@ function plan(changes: Partial<WeekPlan> = {}): WeekPlan {
         segments: [],
       },
       {
+        lineage: '01a1d73d-bbbb-7000-8000-000000000002',
         day: '2026-11-16',
         sport: 'strength',
         title: 'Core',
@@ -83,6 +85,7 @@ function plan(changes: Partial<WeekPlan> = {}): WeekPlan {
         segments: [],
       },
       {
+        lineage: '01a1d73d-bbbb-7000-8000-000000000003',
         day: '2026-11-20',
         sport: 'running',
         title: 'Intervals',

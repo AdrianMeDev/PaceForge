@@ -6,7 +6,7 @@ import {
 import { TestBed } from '@angular/core/testing';
 import { provideApiClient } from '../api/api-providers';
 import { PlanningApi } from './planning-api';
-import { ListWeeksResult, WeekPlan } from './planning-models';
+import { EditedPlan, ListWeeksResult, WeekPlan, Workout } from './planning-models';
 
 const WEEKS_URL = '/api/planning/weeks/';
 const DRAFT_ID = '01a1d73d-2f26-7356-907e-f1475fc2aeab';
@@ -28,6 +28,7 @@ const DRAFT = {
   confirmed_at: null,
   workouts: [
     {
+      lineage: '01a1d73d-aaaa-7000-8000-000000000001',
       day: '2026-11-16',
       sport: 'cycling',
       title: 'Endurance ride',
@@ -43,6 +44,7 @@ const DRAFT = {
       segments: [],
     },
     {
+      lineage: '01a1d73d-aaaa-7000-8000-000000000002',
       day: '2026-11-18',
       sport: 'cycling',
       title: 'Tempo ride',
@@ -58,6 +60,7 @@ const DRAFT = {
       segments: [],
     },
     {
+      lineage: '01a1d73d-aaaa-7000-8000-000000000003',
       day: '2026-11-20',
       sport: 'cycling',
       title: 'Intervals',
@@ -103,6 +106,7 @@ const CONFIRMED = {
   confirmed_at: '2026-11-13T23:28:07.353166Z',
   workouts: [
     {
+      lineage: '01a1d73d-aaaa-7000-8000-000000000004',
       day: '2026-11-23',
       sport: 'cycling',
       title: 'Endurance ride',
@@ -307,6 +311,10 @@ const WRONG_PLANS: [string, unknown][] = [
   ['a time of day in other letters', altered(DRAFT, [[...WORKOUT, 'slot'], 'Morning'])],
   ['an empty text as time of day', altered(DRAFT, [[...WORKOUT, 'slot'], ''])],
   ['a number as time of day', altered(DRAFT, [[...WORKOUT, 'slot'], 5])],
+  ['no lineage', altered(DRAFT, [[...WORKOUT, 'lineage'], REMOVE])],
+  ['null as lineage', altered(DRAFT, [[...WORKOUT, 'lineage'], null])],
+  ['a lineage that is no uuid', altered(DRAFT, [[...WORKOUT, 'lineage'], 'x'])],
+  ['a number as lineage', altered(DRAFT, [[...WORKOUT, 'lineage'], 5])],
   ['no stretching', altered(DRAFT, [[...WORKOUT, 'stretching_minutes'], REMOVE])],
   ['null as stretching', altered(DRAFT, [[...WORKOUT, 'stretching_minutes'], null])],
   ['a text as stretching', altered(DRAFT, [[...WORKOUT, 'stretching_minutes'], '10'])],
@@ -1296,6 +1304,368 @@ describe('PlanningApi', () => {
 
     it('rejects when the network fails', async () => {
       await failsOnTheNetwork(api.discard(DRAFT_ID), URL);
+    });
+  });
+
+  /** The first workout of the draft as the page sends it back (no `target`, no `export`). */
+  function sent(workouts: Workout[] = DRAFT.workouts as Workout[]): EditedPlan {
+    return {
+      week_start: '2026-11-16',
+      rationale: 'Base week with one tempo session.',
+      workouts: workouts.map((workout) => ({
+        lineage: workout.lineage,
+        day: workout.day,
+        sport: workout.sport,
+        title: workout.title,
+        goal: workout.goal,
+        duration_minutes: workout.duration_minutes,
+        zone_system: workout.zone_system,
+        zone: workout.zone,
+        notes: workout.notes,
+        slot: workout.slot,
+        stretching_minutes: workout.stretching_minutes,
+        segments: workout.segments.map((segment) => ({
+          kind: segment.kind,
+          seconds: segment.seconds,
+          repeat: segment.repeat,
+          zone_system: segment.zone_system,
+          zone: segment.zone,
+        })),
+      })),
+    };
+  }
+
+  const PROBLEMS = {
+    detail: 'The plan cannot be read. Please check the problems.',
+    code: 'invalid_plan',
+    problems: [{ path: 'workouts[0].lineage', message: 'A lineage is an id or null.' }],
+  };
+  const NOT_PLANNABLE = { detail: 'This week cannot be planned.', code: 'week_not_plannable' };
+
+  describe('check', () => {
+    const URL = '/api/planning/weeks/2026-11-16/check/';
+    const ANSWER = { valid: true, findings: [], order: [0, 1, 2] };
+
+    it('posts the plan and returns the report with the order', async () => {
+      const { result, request } = await run(
+        api.check('2026-11-16', sent()),
+        'POST',
+        URL,
+        ANSWER,
+        200,
+      );
+
+      expect(request.request.body).toEqual(sent());
+      expect(result).toEqual({
+        kind: 'ok',
+        report: { valid: true, findings: [] },
+        order: [0, 1, 2],
+      });
+    });
+
+    it('returns the findings of a plan with errors', async () => {
+      const { result } = await run(
+        api.check('2026-11-16', sent()),
+        'POST',
+        URL,
+        {
+          valid: false,
+          findings: [
+            {
+              severity: 'error',
+              code: 'day_over_capacity',
+              message: 'Too long for this day.',
+              path: 'workouts[1]',
+            },
+          ],
+          order: [2, 0, 1],
+        },
+        200,
+      );
+
+      expect(result).toEqual({
+        kind: 'ok',
+        report: {
+          valid: false,
+          findings: [
+            {
+              severity: 'error',
+              code: 'day_over_capacity',
+              message: 'Too long for this day.',
+              path: 'workouts[1]',
+            },
+          ],
+        },
+        order: [2, 0, 1],
+      });
+    });
+
+    it('sends only the fields of the format, never the target or the export', async () => {
+      const crowded = (DRAFT.workouts as Workout[]).map((workout) => ({
+        ...workout,
+        target: { low: 1, high: 2, unit: 'W' as const },
+        export: {
+          status: 'synced' as const,
+          error_code: '' as const,
+          pushed_at: '2026-11-14T08:00:00Z',
+        },
+        segments: workout.segments.map((segment) => ({
+          ...segment,
+          target: { low: 1, high: 2, unit: 'W' as const },
+        })),
+      }));
+
+      const { request } = await run(
+        api.check('2026-11-16', { ...sent(), workouts: crowded }),
+        'POST',
+        URL,
+        ANSWER,
+        200,
+      );
+
+      expect(request.request.body).toEqual(sent());
+      expect(JSON.stringify(request.request.body)).not.toContain('target');
+      expect(JSON.stringify(request.request.body)).not.toContain('export');
+    });
+
+    it('sends a new workout with a null lineage', async () => {
+      const plan = sent();
+      plan.workouts[1] = { ...plan.workouts[1], lineage: null };
+
+      const { request } = await run(api.check('2026-11-16', plan), 'POST', URL, ANSWER, 200);
+
+      expect((request.request.body as EditedPlan).workouts[1].lineage).toBeNull();
+    });
+
+    it('sends nothing for a week that is no date', async () => {
+      expect(await api.check('../x', sent())).toEqual({ kind: 'not_plannable' });
+      expect(await api.check('2026-02-30', sent())).toEqual({ kind: 'not_plannable' });
+      backend.expectNone(() => true);
+    });
+
+    it('says when the week cannot be planned', async () => {
+      const { result } = await run(
+        api.check('2026-11-16', sent()),
+        'POST',
+        URL,
+        NOT_PLANNABLE,
+        404,
+      );
+
+      expect(result).toEqual({ kind: 'not_plannable' });
+    });
+
+    it('returns what was wrong with the plan', async () => {
+      const { result } = await run(api.check('2026-11-16', sent()), 'POST', URL, PROBLEMS, 422);
+
+      expect(result).toEqual({
+        kind: 'invalid',
+        problems: [{ path: 'workouts[0].lineage', message: 'A lineage is an id or null.' }],
+      });
+    });
+
+    it('says when the session is gone', async () => {
+      for (const status of [401, 403]) {
+        const { result } = await run(
+          api.check('2026-11-16', sent()),
+          'POST',
+          URL,
+          NO_SESSION,
+          status,
+        );
+        expect(result).toEqual({ kind: 'forbidden' });
+      }
+    });
+
+    it.each([
+      ['no order', { valid: true, findings: [] }],
+      ['an order of the wrong length', { valid: true, findings: [], order: [0, 1] }],
+      ['an order with a place twice', { valid: true, findings: [], order: [0, 0, 1] }],
+      ['an order with a place that is not there', { valid: true, findings: [], order: [0, 1, 3] }],
+      ['an order of texts', { valid: true, findings: [], order: ['0', '1', '2'] }],
+      ['an order with a fraction', { valid: true, findings: [], order: [0, 1, 1.5] }],
+      ['a negative place', { valid: true, findings: [], order: [0, 1, -1] }],
+      [
+        'a verdict that does not fit the findings',
+        {
+          valid: true,
+          findings: [{ severity: 'error', code: 'x', message: 'm', path: '' }],
+          order: [0, 1, 2],
+        },
+      ],
+      ['no report', { order: [0, 1, 2] }],
+    ])('rejects an answer with %s', async (_name, bad) => {
+      await runFailing(api.check('2026-11-16', sent()), 'POST', URL, bad, 200);
+    });
+
+    it.each([400, 409, 429, 500])('rejects the unexpected status %i', async (status) => {
+      await runFailing(api.check('2026-11-16', sent()), 'POST', URL, 'oops', status);
+    });
+
+    it('rejects when the network fails', async () => {
+      await failsOnTheNetwork(api.check('2026-11-16', sent()), URL);
+    });
+
+    it('rejects problems of the wrong shape', async () => {
+      await runFailing(api.check('2026-11-16', sent()), 'POST', URL, { problems: 'x' }, 422);
+      await runFailing(
+        api.check('2026-11-16', sent()),
+        'POST',
+        URL,
+        { problems: [{ path: 1 }] },
+        422,
+      );
+    });
+  });
+
+  describe('revise', () => {
+    const URL = `/api/planning/plans/${CONFIRMED_ID}/revise/`;
+    const NEW_DRAFT = { ...DRAFT, version: 2, parent: CONFIRMED_ID, reason: 'Changed by hand' };
+
+    it('posts the plan and returns the new draft with its checks', async () => {
+      const { result, request } = await run(
+        api.revise(CONFIRMED_ID, sent()),
+        'POST',
+        URL,
+        NEW_DRAFT,
+        201,
+      );
+
+      expect(request.request.body).toEqual(sent());
+      expect(result).toEqual({ kind: 'ok', plan: NEW_DRAFT as WeekPlan });
+    });
+
+    it('sends nothing for an id that is no uuid', async () => {
+      expect(await api.revise('../x', sent())).toEqual({ kind: 'not_found' });
+      backend.expectNone(() => true);
+    });
+
+    it('tells a plan that does not exist from a week that cannot be planned', async () => {
+      const gone = await run(api.revise(CONFIRMED_ID, sent()), 'POST', URL, NOT_FOUND, 404);
+      const week = await run(api.revise(CONFIRMED_ID, sent()), 'POST', URL, NOT_PLANNABLE, 404);
+      const other = await run(api.revise(CONFIRMED_ID, sent()), 'POST', URL, '<html>', 404);
+
+      expect(gone.result).toEqual({ kind: 'not_found' });
+      expect(week.result).toEqual({ kind: 'not_plannable' });
+      expect(other.result).toEqual({ kind: 'not_found' });
+    });
+
+    it('says when the plan cannot be changed', async () => {
+      const { result } = await run(
+        api.revise(CONFIRMED_ID, sent()),
+        'POST',
+        URL,
+        { detail: 'Only a draft or a confirmed plan can be changed.', code: 'not_revisable' },
+        409,
+      );
+
+      expect(result).toEqual({ kind: 'not_revisable' });
+    });
+
+    it('returns what was wrong with the plan', async () => {
+      const { result } = await run(api.revise(CONFIRMED_ID, sent()), 'POST', URL, PROBLEMS, 422);
+
+      expect(result).toEqual({
+        kind: 'invalid',
+        problems: [{ path: 'workouts[0].lineage', message: 'A lineage is an id or null.' }],
+      });
+    });
+
+    it.each([401, 403])('says when the session is gone (%i)', async (status) => {
+      const { result } = await run(
+        api.revise(CONFIRMED_ID, sent()),
+        'POST',
+        URL,
+        NO_SESSION,
+        status,
+      );
+
+      expect(result).toEqual({ kind: 'forbidden' });
+    });
+
+    it.each(WRONG_PLANS)('rejects a stored plan with %s', async (_name, bad) => {
+      await runFailing(api.revise(CONFIRMED_ID, sent()), 'POST', URL, bad as object | null, 201);
+    });
+
+    it('rejects a draft without its checks', async () => {
+      await runFailing(
+        api.revise(CONFIRMED_ID, sent()),
+        'POST',
+        URL,
+        { ...NEW_DRAFT, report: null },
+        201,
+      );
+    });
+
+    it.each([400, 429, 500])('rejects the unexpected status %i', async (status) => {
+      await runFailing(api.revise(CONFIRMED_ID, sent()), 'POST', URL, 'oops', status);
+    });
+
+    it('rejects when the network fails', async () => {
+      await failsOnTheNetwork(api.revise(CONFIRMED_ID, sent()), URL);
+    });
+  });
+
+  describe('restore', () => {
+    const URL = `/api/planning/plans/${CONFIRMED_ID}/restore/`;
+    const RESTORED = {
+      ...DRAFT,
+      version: 3,
+      parent: CONFIRMED_ID,
+      reason: 'Restored from version 1',
+    };
+
+    it('posts to the restore address and returns the new draft', async () => {
+      const { result, request } = await run(api.restore(CONFIRMED_ID), 'POST', URL, RESTORED, 201);
+
+      expect(request.request.body).toEqual({});
+      expect(result).toEqual({ kind: 'ok', plan: RESTORED as WeekPlan });
+    });
+
+    it('sends nothing for an id that is no uuid', async () => {
+      expect(await api.restore('../x')).toEqual({ kind: 'not_found' });
+      backend.expectNone(() => true);
+    });
+
+    it('tells a plan that does not exist from a week that cannot be planned', async () => {
+      const gone = await run(api.restore(CONFIRMED_ID), 'POST', URL, NOT_FOUND, 404);
+      const week = await run(api.restore(CONFIRMED_ID), 'POST', URL, NOT_PLANNABLE, 404);
+
+      expect(gone.result).toEqual({ kind: 'not_found' });
+      expect(week.result).toEqual({ kind: 'not_plannable' });
+    });
+
+    it('says when the version cannot be restored', async () => {
+      const { result } = await run(
+        api.restore(CONFIRMED_ID),
+        'POST',
+        URL,
+        {
+          detail: 'Only a version that was replaced or discarded can be restored.',
+          code: 'not_restorable',
+        },
+        409,
+      );
+
+      expect(result).toEqual({ kind: 'not_restorable' });
+    });
+
+    it.each([401, 403])('says when the session is gone (%i)', async (status) => {
+      const { result } = await run(api.restore(CONFIRMED_ID), 'POST', URL, NO_SESSION, status);
+
+      expect(result).toEqual({ kind: 'forbidden' });
+    });
+
+    it.each(WRONG_PLANS)('rejects a stored plan with %s', async (_name, bad) => {
+      await runFailing(api.restore(CONFIRMED_ID), 'POST', URL, bad as object | null, 201);
+    });
+
+    it.each([400, 422, 429, 500])('rejects the unexpected status %i', async (status) => {
+      await runFailing(api.restore(CONFIRMED_ID), 'POST', URL, 'oops', status);
+    });
+
+    it('rejects when the network fails', async () => {
+      await failsOnTheNetwork(api.restore(CONFIRMED_ID), URL);
     });
   });
 });
