@@ -343,6 +343,9 @@ without this page.
 | `typical_weekly_minutes` | What the athlete calls a normal week, in minutes; `null` if not given (or 0). The progression rule's reference is the higher of this and the recent average. |
 | `sports` | The sports the athlete wants in a plan (all four if none was chosen), in the order of the format. |
 | `stretching` | Whether stretching may be added to sessions (`stretching_minutes`), never as a session. |
+| `training_days` | On how many days of the week the athlete wants to train at most; `null` if they have no wish. |
+| `min_weekly_minutes` | The least the athlete wants to train in a week, in minutes (never above the weekly budget); `null` if they have no wish. |
+| `long_days` | For running and cycling, if the athlete named a weekday for the long session: the `sport` and the `date` of that day in the week to plan. Empty if there is none. |
 | `limits` | The limits of the rules that follow from the athlete's [intensity level](#the-intensity-levels): `max_hard_days`, `progression_warning_percent`, `progression_error_percent`, `easy_share_percent`. They are here and not in the system prompt, so that the prompt is the same for every athlete. |
 | `limitations` | The current injuries and limitations, the newest first, at most 10: `body_part` (a fixed word: foot, ankle, achilles, calf, shin, knee, thigh, hip, back, shoulder, other) and the `sports` it affects (none listed: no particular sport). Healed ones are not told. No text of the athlete. |
 | `limitations_text` | What the athlete wrote in the free text about their limitations, cut to `LIMITATIONS_TEXT_MAX_TOLD` characters, **only if they switched on "Send this text to my AI coach"**; otherwise `null`. Free text: the system prompt says that it is data and never instructions. |

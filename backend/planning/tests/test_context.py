@@ -463,6 +463,28 @@ class TestTheContextOfAUser:
         AvailabilitySettings.objects.filter(owner=alice).update(share_limitations_text=True)
         assert build_context(alice, MONDAY).limitations_text == "Knee"
 
+    def test_without_wishes_there_are_none(self, alice: User) -> None:
+        context = build_context(alice, MONDAY)
+
+        assert (context.training_days, context.min_weekly_minutes) == (None, None)
+        assert context.long_days == ()
+
+    def test_the_wishes_come_from_the_settings(self, alice: User, bob: User) -> None:
+        AvailabilitySettings.objects.create(
+            owner=alice, training_days=4, min_weekly_minutes=300, long_run_day=5, long_ride_day=6
+        )
+        AvailabilitySettings.objects.create(owner=bob, training_days=1, long_run_day=0)
+
+        context = build_context(alice, MONDAY)
+
+        assert (context.training_days, context.min_weekly_minutes) == (4, 300)
+        assert context.long_days == ((Sport.RUNNING, 5), (Sport.CYCLING, 6))
+
+    def test_only_a_long_day_that_is_set_is_there(self, alice: User) -> None:
+        AvailabilitySettings.objects.create(owner=alice, long_ride_day=2)
+
+        assert build_context(alice, MONDAY).long_days == ((Sport.CYCLING, 2),)
+
     def test_without_limitations_there_are_none(self, alice: User) -> None:
         assert build_context(alice, MONDAY).limitations == ()
 

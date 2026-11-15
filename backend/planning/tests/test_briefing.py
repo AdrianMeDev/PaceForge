@@ -82,6 +82,9 @@ ALLOWED_KEYS = {
     "typical_weekly_minutes",
     "sports",
     "stretching",
+    "training_days",
+    "min_weekly_minutes",
+    "long_days",
     "limits",
     "limitations",
     "body_part",
@@ -199,6 +202,9 @@ class TestTheBriefingOfAUserWithNothing:
             "typical_weekly_minutes": None,
             "sports": ["running", "cycling", "swimming", "strength"],
             "stretching": False,
+            "training_days": None,
+            "min_weekly_minutes": None,
+            "long_days": [],
             "limits": {
                 "max_hard_days": 2,
                 "progression_warning_percent": 120,
@@ -493,6 +499,9 @@ class TestTheGoals:
             "typical_weekly_minutes",
             "sports",
             "stretching",
+            "training_days",
+            "min_weekly_minutes",
+            "long_days",
             "limits",
             "limitations",
             "limitations_not_shown",
@@ -729,6 +738,69 @@ class TestTheFreeTextAboutLimitations:
         assert {**off, "limitations_text": None} == {**on, "limitations_text": None}
 
 
+class TestTheWishesForAWeek:
+    def told(self, user: User) -> dict[str, Any]:
+        briefing = build_briefing(user, MONDAY)
+        return {
+            name: briefing[name] for name in ("training_days", "min_weekly_minutes", "long_days")
+        }
+
+    def test_a_user_with_no_wishes_has_none_told(self, alice: User) -> None:
+        assert self.told(alice) == {
+            "training_days": None,
+            "min_weekly_minutes": None,
+            "long_days": [],
+        }
+
+    def test_the_wishes_are_told_as_given(self, alice: User) -> None:
+        AvailabilitySettings.objects.create(
+            owner=alice, training_days=4, min_weekly_minutes=300, weekly_budget_minutes=600
+        )
+
+        told = self.told(alice)
+
+        assert (told["training_days"], told["min_weekly_minutes"]) == (4, 300)
+
+    def test_the_long_days_are_told_as_dates_of_the_week(self, alice: User) -> None:
+        AvailabilitySettings.objects.create(owner=alice, long_run_day=5, long_ride_day=6)
+
+        assert self.told(alice)["long_days"] == [
+            {"sport": "running", "date": "2027-07-24"},
+            {"sport": "cycling", "date": "2027-07-25"},
+        ]
+
+    def test_only_the_long_day_that_is_set_is_told(self, alice: User) -> None:
+        AvailabilitySettings.objects.create(owner=alice, long_ride_day=0)
+
+        assert self.told(alice)["long_days"] == [{"sport": "cycling", "date": "2027-07-19"}]
+
+    def test_the_dates_follow_the_week_that_is_planned(self, alice: User) -> None:
+        AvailabilitySettings.objects.create(owner=alice, long_run_day=2)
+
+        later = build_briefing(alice, MONDAY + timedelta(days=7))
+
+        assert later["long_days"] == [{"sport": "running", "date": "2027-07-28"}]
+
+    def test_the_wishes_of_another_user_are_not_told(self, alice: User, bob: User) -> None:
+        AvailabilitySettings.objects.create(
+            owner=bob, training_days=2, min_weekly_minutes=100, long_run_day=1
+        )
+
+        assert self.told(alice) == {
+            "training_days": None,
+            "min_weekly_minutes": None,
+            "long_days": [],
+        }
+
+    def test_they_are_in_the_text_the_coach_gets(self, alice: User) -> None:
+        AvailabilitySettings.objects.create(owner=alice, training_days=3, long_run_day=5)
+
+        text = to_json(build_briefing(alice, MONDAY))
+
+        assert '"training_days":3' in text
+        assert '"long_days":[{"date":"2027-07-24","sport":"running"}]' in text
+
+
 class TestTheRecentWeeks:
     def test_the_minutes_done_come_from_the_activities(self, alice: User, bob: User) -> None:
         for owner, day, seconds in ((alice, 12, 3600), (alice, 5, 1800), (bob, 13, 9000)):
@@ -837,7 +909,13 @@ class TestWhatIsSent:
                 sports=["running", "cycling", "swimming", "strength"],
             )
         AvailabilitySettings.objects.create(
-            owner=alice, limitations="\x01" * 1000, share_limitations_text=True
+            owner=alice,
+            limitations="\x01" * 1000,
+            share_limitations_text=True,
+            training_days=7,
+            min_weekly_minutes=10080,
+            long_run_day=6,
+            long_ride_day=6,
         )
 
         size = len(to_json(build_briefing(alice, MONDAY)).encode())

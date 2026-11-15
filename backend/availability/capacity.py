@@ -51,6 +51,13 @@ class WeekCapacity:
     shared_limitations_text: str | None = None
     # The limits of the planning rules: the user's intensity level with their own values.
     limits: Limits = LEVEL_LIMITS[DEFAULT_LEVEL]
+    # The wishes for a week, ``None`` where there is none: on how many days to train at most, the
+    # least to train in a week (minutes) and the weekday (0 is Monday) of the long run and of the
+    # long ride. Wishes, not time: they change nothing about what the week offers.
+    training_days: int | None = None
+    min_weekly_minutes: int | None = None
+    long_run_day: int | None = None
+    long_ride_day: int | None = None
     # Per day, Monday first: whether two sessions are allowed, and the parts of the day that are
     # open (in the order of the day). Choices, not time: they change nothing about the minutes.
     double_days: tuple[bool, ...] = (True,) * 7
@@ -72,6 +79,10 @@ def week_capacity(user: User, monday: date) -> WeekCapacity:
             "stretching",
             "limitations",
             "share_limitations_text",
+            "training_days",
+            "min_weekly_minutes",
+            "long_run_day",
+            "long_ride_day",
             "intensity_level",
             *LIMIT_NAMES,
         )
@@ -79,9 +90,11 @@ def week_capacity(user: User, monday: date) -> WeekCapacity:
     )
     if row is None:
         budget, typical, chosen, stretching, text = None, None, [], False, None
+        wishes: tuple[int | None, ...] = (None, None, None, None)
         limits = LEVEL_LIMITS[DEFAULT_LEVEL]
     else:
-        budget, typical, chosen, stretching, written, share, level, *own = row
+        budget, typical, chosen, stretching, written, share, *rest = row
+        wishes, (level, *own) = tuple(rest[:4]), rest[4:]
         text = written.strip() if share and written.strip() else None
         limits = effective_limits(level, dict(zip(LIMIT_NAMES, own, strict=True)))
     total = sum(minutes)
@@ -95,6 +108,10 @@ def week_capacity(user: User, monday: date) -> WeekCapacity:
         stretching=stretching,
         shared_limitations_text=text,
         limits=limits,
+        training_days=wishes[0],
+        min_weekly_minutes=wishes[1],
+        long_run_day=wishes[2],
+        long_ride_day=wishes[3],
         double_days=tuple(day.double_allowed for day in days),
         time_windows=tuple(day.slots for day in days),
     )

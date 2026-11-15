@@ -78,6 +78,10 @@ def build_briefing(user: User, monday: date) -> dict[str, Any]:
         # and whether stretching may be added to sessions.
         "sports": [sport.value for sport in Sport if sport in context.sports],
         "stretching": context.stretching,
+        # The wishes for a week (``null``: none) and the dates of the long sessions of the week.
+        "training_days": context.training_days,
+        "min_weekly_minutes": context.min_weekly_minutes,
+        "long_days": _long_days(context),
         "limits": _limits(context),
         "limitations": _limitations(context),
         "limitations_not_shown": max(0, len(context.limitations) - MAX_LIMITATIONS_TOLD),
@@ -89,6 +93,14 @@ def build_briefing(user: User, monday: date) -> dict[str, Any]:
         "previous_week_plan": _previous_week(user, monday),
         "previous_week_review": _previous_week_review(user, monday),
     }
+
+
+def _long_days(context: PlanContext) -> list[dict[str, str]]:
+    """The day of this week on which the athlete wants the long session of a sport, as a date."""
+    return [
+        {"sport": sport.value, "date": (context.week_start + timedelta(days=offset)).isoformat()}
+        for sport, offset in context.long_days
+    ]
 
 
 def _limits(context: PlanContext) -> dict[str, int]:
