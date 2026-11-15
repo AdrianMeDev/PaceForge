@@ -10,6 +10,7 @@ import {
   doneShareText,
   loadText,
   ratingText,
+  recommendationText,
   statusChoiceOf,
   weekOptionText,
 } from './review-format';
@@ -182,6 +183,14 @@ describe('review-format', () => {
       [AUTOMATIC, 'missed', { activity: null, no_activity: false, status: 'missed' }],
     ])('turns the choices %j and %j into a decision', (choice, status, expected) => {
       expect(correctionOf(choice, status)).toEqual(expected);
+    });
+  });
+
+  describe('recommendationText', () => {
+    it('puts the three recommendations in words', () => {
+      expect(recommendationText('increase')).toBe('increase the volume a little');
+      expect(recommendationText('hold')).toBe('keep the volume about the same');
+      expect(recommendationText('reduce')).toBe('reduce the volume');
     });
   });
 });

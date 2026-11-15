@@ -4,6 +4,7 @@ import { ActivitiesApi } from '../../core/activities/activities-api';
 import { RateActivityResult } from '../../core/activities/activities-models';
 import { ReviewApi } from '../../core/review/review-api';
 import {
+  AskCoachResult,
   CorrectResult,
   GetReviewResult,
   ListReviewWeeksResult,
@@ -158,6 +159,7 @@ function createStubs() {
       week: vi.fn<(week: string) => Promise<GetReviewResult>>(),
       correct: vi.fn<(week: string, workoutId: string, input: unknown) => Promise<CorrectResult>>(),
       saveFeedback: vi.fn<(week: string, input: unknown) => Promise<SaveFeedbackResult>>(),
+      askCoach: vi.fn<(week: string) => Promise<AskCoachResult>>(),
     },
     activities: { rate: vi.fn<(id: string, input: unknown) => Promise<RateActivityResult>>() },
   };
@@ -936,6 +938,142 @@ describe('ReviewPage', () => {
       pending.resolve({ kind: 'ok', review: review() });
       await settle(fixture);
       expect(feedbackButton().disabled).toBe(false);
+    });
+  });
+
+  describe('the comment of the coach', () => {
+    const askButton = () => query<HTMLButtonElement>(page, '[data-testid="ask"]');
+    const COMMENT = {
+      comment: 'One of two done.',
+      next_week: 'hold' as const,
+      created_at: '2026-11-15T08:00:00Z',
+    };
+
+    it('shows the section for the week, also for a week without a plan', async () => {
+      await setup();
+      expect(page.querySelector('app-coach-comment')).toBeTruthy();
+      expect(byId('coach-none')).toBeTruthy();
+    });
+
+    it('shows the comment that is stored', async () => {
+      await setup({ shown: ok(review({ comment: COMMENT })) });
+
+      expect(byId('coach-text')?.textContent).toBe('One of two done.');
+      expect(byId('coach-recommendation')?.textContent).toContain('keep the volume about the same');
+    });
+
+    it('tells the coach is not over when workouts are open', async () => {
+      await setup({
+        shown: ok(
+          review({
+            comparison: {
+              ...review().comparison,
+              statuses: { done: 1, partial: 0, missed: 0, replaced: 0, open: 2 },
+            },
+          }),
+        ),
+      });
+
+      expect(byId('coach-open')?.textContent).toContain('2 workouts of this week are');
+    });
+
+    it('asks for the selected week and shows the week that comes back', async () => {
+      await setup();
+      stubs.api.askCoach.mockResolvedValue({
+        kind: 'ok',
+        review: review({ comment: COMMENT }),
+      });
+
+      askButton().click();
+      await settle(fixture);
+
+      expect(stubs.api.askCoach).toHaveBeenCalledExactlyOnceWith(FIRST);
+      expect(byId('coach-text')?.textContent).toBe('One of two done.');
+      expect(notice()).toBe('Your coach commented on the week.');
+      expect(weekSelect().value).toBe(FIRST);
+    });
+
+    it('drops an earlier error when the coach commented', async () => {
+      await setup();
+      stubs.api.correct.mockResolvedValue({ kind: 'activity_taken' });
+      await press('w1');
+      expect(alerts().length).toBe(1);
+      stubs.api.askCoach.mockResolvedValue({ kind: 'ok', review: review() });
+
+      askButton().click();
+      await settle(fixture);
+
+      expect(alerts()).toEqual([]);
+    });
+
+    it('switches everything else off while the coach is asked', async () => {
+      await setup();
+      const pending = deferred<AskCoachResult>();
+      stubs.api.askCoach.mockReturnValue(pending.promise);
+
+      askButton().click();
+      await fixture.whenStable();
+
+      expect(weekSelect().disabled).toBe(true);
+      expect(save('w1').disabled).toBe(true);
+      expect(query<HTMLButtonElement>(page, '[data-testid="feedback-save"]').disabled).toBe(true);
+      expect(query<HTMLButtonElement>(page, '[data-testid="rating-save-a1"]').disabled).toBe(true);
+      expect(byId('coach-waiting')).toBeTruthy();
+
+      pending.resolve({ kind: 'ok', review: review() });
+      await settle(fixture);
+
+      expect(weekSelect().disabled).toBe(false);
+      expect(save('w1').disabled).toBe(false);
+    });
+
+    it('does not let another action start while the coach is asked', async () => {
+      await setup();
+      const pending = deferred<AskCoachResult>();
+      stubs.api.askCoach.mockReturnValue(pending.promise);
+      askButton().click();
+      await fixture.whenStable();
+
+      await fixture.componentInstance['selectWeek']('2026-10-19');
+      await fixture.componentInstance['correct'](workout(), '', '');
+
+      expect(stubs.api.week).toHaveBeenCalledTimes(1);
+      expect(stubs.api.correct).not.toHaveBeenCalled();
+      pending.resolve({ kind: 'forbidden' });
+      await settle(fixture);
+    });
+
+    it('says so and fetches the weeks again when the week cannot be reviewed any more', async () => {
+      await setup();
+      stubs.api.askCoach.mockResolvedValue({ kind: 'not_reviewable' });
+      stubs.api.weeks.mockClear();
+
+      askButton().click();
+      await settle(fixture);
+
+      expect(alerts()).toEqual(['This week cannot be reviewed.']);
+      expect(stubs.api.weeks).toHaveBeenCalledTimes(1);
+    });
+
+    it('says when the session has ended', async () => {
+      await setup();
+      stubs.api.askCoach.mockResolvedValue({ kind: 'forbidden' });
+
+      askButton().click();
+      await settle(fixture);
+
+      expect(alerts()).toEqual(['Your session has ended. Please sign in again.']);
+    });
+
+    it('shows what went wrong next to the button and keeps the week', async () => {
+      await setup();
+      stubs.api.askCoach.mockResolvedValue({ kind: 'not_configured' });
+
+      askButton().click();
+      await settle(fixture);
+
+      expect(byId('coach-message')?.textContent).toContain('No AI provider is set up.');
+      expect(byId('week')).toBeTruthy();
     });
   });
 });

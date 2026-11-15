@@ -1,0 +1,59 @@
+<section class="coach" aria-labelledby="coach-title">
+  <h2 id="coach-title">What your coach says</h2>
+
+  @if (comment(); as shown) {
+    <p class="text" data-testid="coach-text">{{ shown.comment }}</p>
+    <p class="recommendation" data-testid="coach-recommendation">
+      Next week: {{ recommendation(shown.next_week) }}
+    </p>
+    <p class="hint" data-testid="coach-time">
+      Written {{ shown.created_at | date: 'MMM d, HH:mm' }}.
+    </p>
+  } @else {
+    <p class="hint" data-testid="coach-none">Your coach has not looked at this week yet.</p>
+  }
+
+  @if (openWorkouts() > 0) {
+    <p class="hint" data-testid="coach-open">
+      {{ openWorkouts() }}
+      {{ openWorkouts() === 1 ? 'workout of this week is' : 'workouts of this week are' }}
+      still open. The coach is told that the week is not over.
+    </p>
+  }
+
+  @if (asking()) {
+    <p role="status" data-testid="coach-waiting">
+      Your coach is looking at the week. This can take a minute or two.
+    </p>
+  }
+  @if (message(); as text) {
+    <p class="alert" role="alert" data-testid="coach-message">
+      {{ text }}
+      @if (needsProvider()) {
+        <a routerLink="/settings/connections" data-testid="coach-connect">Set one up</a>
+      }
+    </p>
+  }
+  @if (problems().length > 0) {
+    <ul class="problems" aria-label="What was wrong with the answer" data-testid="coach-problems">
+      @for (problem of problems(); track $index) {
+        <li>{{ problem.message }}</li>
+      }
+    </ul>
+  }
+
+  <button
+    type="button"
+    class="primary"
+    data-testid="ask"
+    [disabled]="disabled() || asking()"
+    (click)="ask()"
+  >
+    {{ comment() === null ? 'Ask the coach' : 'Ask again' }}
+  </button>
+  <p class="hint">
+    Your coach is told numbers only (the status of each workout, minutes, ratings, load and the
+    three scales), never your notes. Every request goes to your AI provider with your key and is
+    billed to you.
+  </p>
+</section>
