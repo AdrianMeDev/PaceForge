@@ -9,7 +9,7 @@ from accounts.models import User
 from accounts.tests.conftest import AuthApi
 from availability.capacity import minutes_in_week
 from availability.intensity import LIMIT_NAMES, Limits
-from availability.models import AvailabilitySettings, WeekdayMinutes
+from availability.models import AvailabilitySettings, SportPreference, WeekdayMinutes
 
 from .conftest import make_user, signed_in
 
@@ -61,6 +61,12 @@ WISHES = {
     "long_run_day": None,
     "long_ride_day": None,
 }
+# What each sport is for the user: nothing said, and no focus for strength training.
+NO_PREFERENCE = {"role": None, "sessions_min": None, "sessions_max": None}
+PREFERENCES = {
+    "sport_preferences": dict.fromkeys(ALL_SPORTS, NO_PREFERENCE),
+    "strength_focus": None,
+}
 EMPTY = {
     "weekdays": [0] * 7,
     "weekly_budget_minutes": None,
@@ -72,6 +78,7 @@ EMPTY = {
     **DAY_OPTIONS,
     **SHARING,
     **WISHES,
+    **PREFERENCES,
 }
 WEEK = [60, 0, 90, 0, 0, 120, 180]
 
@@ -158,6 +165,8 @@ class TestReading:
             "training_days",
             "long_run_day",
             "long_ride_day",
+            "sport_preferences",
+            "strength_focus",
             "double_days",
             "time_windows",
             "intensity_level",
@@ -275,6 +284,7 @@ class TestSportsAndStretching:
             **DAY_OPTIONS,
             **SHARING,
             **WISHES,
+            **PREFERENCES,
         }
 
     def test_the_other_settings_leave_the_choice_as_it_was(self, alice: User) -> None:
@@ -464,6 +474,178 @@ class TestIntensity:
 
         assert response.status_code == HTTPStatus.OK
         assert read(signed_in(bob))["intensity_level"] == "normal"
+
+
+def preferences(**given: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """All four sports, nothing said except what is given: ``running={"role": "goal"}``."""
+    return {sport: NO_PREFERENCE | given.get(sport, {}) for sport in ALL_SPORTS}
+
+
+class TestSportPreferences:
+    GIVEN = preferences(
+        running={"role": "goal", "sessions_min": 3, "sessions_max": 5},
+        strength={"role": "supplementary", "sessions_max": 2},
+        cycling={"sessions_min": 0},
+    )
+
+    def test_a_user_who_said_nothing_gets_nothing_for_every_sport(self, alice: User) -> None:
+        answer = read(signed_in(alice))
+
+        assert answer["sport_preferences"] == preferences()
+        assert answer["strength_focus"] is None
+
+    def test_they_are_saved_and_read_back(self, alice: User) -> None:
+        api = signed_in(alice)
+
+        response = save(api, {"sport_preferences": self.GIVEN, "strength_focus": "legs"})
+
+        assert response.status_code == HTTPStatus.OK
+        assert body(response)["sport_preferences"] == self.GIVEN
+        assert body(response)["strength_focus"] == "legs"
+        assert read(api) == body(response)
+
+    def test_a_sport_with_nothing_said_has_no_row(self, alice: User) -> None:
+        api = signed_in(alice)
+
+        save(api, {"sport_preferences": self.GIVEN})
+
+        assert sorted(SportPreference.objects.values_list("sport", flat=True)) == [
+            "cycling",
+            "running",
+            "strength",
+        ]
+
+    def test_a_zero_is_something_said(self, alice: User) -> None:
+        save(signed_in(alice), {"sport_preferences": preferences(swimming={"sessions_max": 0})})
+
+        assert SportPreference.objects.get().sport == "swimming"
+
+    def test_saving_again_changes_and_removes_rows(self, alice: User) -> None:
+        api = signed_in(alice)
+        save(api, {"sport_preferences": self.GIVEN})
+
+        save(api, {"sport_preferences": preferences(running={"role": "secondary"})})
+
+        assert SportPreference.objects.count() == 1
+        assert read(api)["sport_preferences"] == preferences(running={"role": "secondary"})
+
+    def test_they_alone_leave_the_rest_as_it_was(self, alice: User) -> None:
+        api = signed_in(alice)
+        save(api, {"weekdays": WEEK, "limitations": "Knee", "strength_focus": "core"})
+        before = read(api)
+
+        save(api, {"sport_preferences": self.GIVEN})
+
+        assert read(api) == {**before, "sport_preferences": self.GIVEN}
+
+    def test_the_other_settings_leave_them_as_they_were(self, alice: User) -> None:
+        api = signed_in(alice)
+        save(api, {"sport_preferences": self.GIVEN, "strength_focus": "legs"})
+
+        save(api, {"weekdays": WEEK, "sports": ["running"], "limitations": "Knee"})
+
+        answer = read(api)
+        assert answer["sport_preferences"] == self.GIVEN
+        assert answer["strength_focus"] == "legs"
+
+    @pytest.mark.parametrize("focus", ["legs", "core", "upper_body", "full_body"])
+    def test_every_focus_is_chosen(self, alice: User, focus: str) -> None:
+        assert body(save(signed_in(alice), {"strength_focus": focus}))["strength_focus"] == focus
+
+    def test_null_takes_the_focus_back(self, alice: User) -> None:
+        api = signed_in(alice)
+        save(api, {"strength_focus": "legs"})
+
+        assert body(save(api, {"strength_focus": None}))["strength_focus"] is None
+
+    @pytest.mark.parametrize("focus", ["arms", "Legs", "", 5, True, ["legs"]])
+    def test_an_unknown_focus_is_refused(self, alice: User, focus: Any) -> None:
+        response = save(signed_in(alice), {"strength_focus": focus})
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert list(body(response)) == ["strength_focus"]
+        assert body(response)["strength_focus"] == [
+            "Choose one of: legs, core, upper_body, full_body."
+        ]
+        assert rows() == (0, 0)
+
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            None,
+            [],
+            "running",
+            {},
+            {"running": NO_PREFERENCE},
+            {**preferences(), "golf": NO_PREFERENCE},
+            {**preferences(), "running": None},
+            {**preferences(), "running": {"role": None}},
+            {**preferences(), "running": {**NO_PREFERENCE, "extra": 1}},
+            {**preferences(), "running": {**NO_PREFERENCE, "role": "main"}},
+            {**preferences(), "running": {**NO_PREFERENCE, "role": 5}},
+        ],
+    )
+    def test_a_wrong_shape_or_role_is_refused_with_one_message(self, alice: User, bad: Any) -> None:
+        response = save(signed_in(alice), {"sport_preferences": bad})
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert list(body(response)) == ["sport_preferences"]
+        assert body(response)["sport_preferences"][0].startswith("Send an object with running")
+        assert rows() == (0, 0)
+
+    @pytest.mark.parametrize(
+        "counts",
+        [
+            {"sessions_min": -1},
+            {"sessions_max": 15},
+            {"sessions_min": "2"},
+            {"sessions_min": 2.5},
+            {"sessions_max": True},
+            {"sessions_min": 3, "sessions_max": 2},
+        ],
+    )
+    def test_counts_out_of_range_or_upside_down_are_refused(
+        self, alice: User, counts: dict[str, Any]
+    ) -> None:
+        response = save(signed_in(alice), {"sport_preferences": preferences(running=counts)})
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert body(response) == {
+            "sport_preferences": [
+                "Enter a whole number of sessions between 0 and 14, the least not above the most."
+            ]
+        }
+        assert not SportPreference.objects.exists()
+
+    def test_the_ends_of_the_range_are_accepted(self, alice: User) -> None:
+        given = preferences(running={"sessions_min": 0, "sessions_max": 14})
+
+        assert save(signed_in(alice), {"sport_preferences": given}).status_code == HTTPStatus.OK
+
+    def test_a_refusal_saves_nothing_of_the_rest(self, alice: User) -> None:
+        api = signed_in(alice)
+        save(api, {"sport_preferences": self.GIVEN})
+        before = read(api)
+
+        response = save(
+            api,
+            {
+                "sport_preferences": preferences(running={"role": "main"}),
+                "strength_focus": "core",
+            },
+        )
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert read(api) == before
+
+    def test_the_rows_of_another_user_are_not_seen_or_changed(self, alice: User, bob: User) -> None:
+        save(signed_in(bob), {"sport_preferences": self.GIVEN, "strength_focus": "legs"})
+
+        assert read(signed_in(alice))["sport_preferences"] == preferences()
+        save(signed_in(alice), {"sport_preferences": preferences()})
+
+        assert read(signed_in(bob))["sport_preferences"] == self.GIVEN
+        assert read(signed_in(alice))["strength_focus"] is None
 
 
 class TestTheWishesForAWeek:
@@ -886,6 +1068,7 @@ class TestSaving:
             **DAY_OPTIONS,
             **SHARING,
             **WISHES,
+            **PREFERENCES,
         }
         assert read(api) == body(response)
         assert rows() == (7, 1)
@@ -907,6 +1090,7 @@ class TestSaving:
             **DAY_OPTIONS,
             **SHARING,
             **WISHES,
+            **PREFERENCES,
         }
 
     def test_the_budget_alone_leaves_the_rest_as_it_was(self, alice: User) -> None:
@@ -926,6 +1110,7 @@ class TestSaving:
             **DAY_OPTIONS,
             **SHARING,
             **WISHES,
+            **PREFERENCES,
         }
 
     def test_the_limitations_alone_leave_the_rest_as_it_was(self, alice: User) -> None:
@@ -945,6 +1130,7 @@ class TestSaving:
             **DAY_OPTIONS,
             **SHARING,
             **WISHES,
+            **PREFERENCES,
         }
 
     def test_the_typical_week_can_be_set_changed_and_removed(self, alice: User) -> None:
@@ -985,6 +1171,7 @@ class TestSaving:
             **DAY_OPTIONS,
             **SHARING,
             **WISHES,
+            **PREFERENCES,
         }
 
     def test_the_other_settings_leave_the_typical_week_as_it_was(self, alice: User) -> None:
@@ -1053,6 +1240,7 @@ class TestSaving:
             **DAY_OPTIONS,
             **SHARING,
             **WISHES,
+            **PREFERENCES,
         }
 
     def test_the_limits_themselves_are_accepted(self, alice: User) -> None:
@@ -1104,6 +1292,7 @@ class TestSaving:
             **DAY_OPTIONS,
             **SHARING,
             **WISHES,
+            **PREFERENCES,
         }
 
     def test_a_failure_while_saving_leaves_the_weekdays_as_they_were(
@@ -1222,6 +1411,7 @@ class TestRefusals:
             **DAY_OPTIONS,
             **SHARING,
             **WISHES,
+            **PREFERENCES,
         }
 
     def test_every_problem_is_named_at_once(self, alice: User) -> None:

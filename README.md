@@ -643,7 +643,8 @@ business.
 
 The API is `GET` and `PATCH` on `/api/availability/` (`weekdays` Monday first, `double_days` and `time_windows` per weekday,
 `weekly_budget_minutes`, `min_weekly_minutes`, `training_days`, `long_run_day`, `long_ride_day`,
-`typical_weekly_minutes`, `sports`, `stretching`, `limitations`,
+`typical_weekly_minutes`, `sport_preferences`, `strength_focus`, `sports`, `stretching`,
+`limitations`,
 `share_limitations_text`,
 `intensity_level`, the own limits `max_hard_days`, `progression_warning_percent`,
 `progression_error_percent` and `easy_share_percent`, and the read-only `level_limits` of every
