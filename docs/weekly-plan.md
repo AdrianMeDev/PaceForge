@@ -350,6 +350,8 @@ without this page.
 | `typical_weekly_minutes` | What the athlete calls a normal week, in minutes; `null` if not given (or 0). The progression rule's reference is the higher of this and the recent average. |
 | `sports` | The sports the athlete wants in a plan (all four if none was chosen), in the order of the format. |
 | `stretching` | Whether stretching may be added to sessions (`stretching_minutes`), never as a session. |
+| `sport_preferences` | For every sport the athlete said something about: the `sport`, its `role` (`goal`, `secondary` or `supplementary`, `null` for none) and the least and the most sessions a week they want of it (`sessions_min`, `sessions_max`, `null` for no wish). A sport they said nothing about is not listed. |
+| `strength_focus` | What strength training is for: `legs`, `core`, `upper_body` or `full_body`; `null` if not said. |
 | `training_days` | On how many days of the week the athlete wants to train at most; `null` if they have no wish. |
 | `min_weekly_minutes` | The least the athlete wants to train in a week, in minutes (never above the weekly budget); `null` if they have no wish. |
 | `long_days` | For running and cycling, if the athlete named a weekday for the long session: the `sport` and the `date` of that day in the week to plan. Empty if there is none. |

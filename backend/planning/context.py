@@ -16,6 +16,7 @@ from athletes.thresholds import all_candidates
 from availability.capacity import week_capacity
 from availability.intensity import DEFAULT_LEVEL, LEVEL_LIMITS, Limits
 from availability.limitations import current_limitations
+from availability.preferences import sport_preferences
 from goals.services import time_zone_of
 
 from .schema import Slot, Sport, ZoneSystem
@@ -31,6 +32,17 @@ class ActiveLimitation:
 
     body_part: str
     sports: frozenset[Sport]
+
+
+@dataclass(frozen=True)
+class SportFacts:
+    """What the athlete said about one sport: its role (``None``: none) and the least and the most
+    sessions a week they want of it (``None``: no wish)."""
+
+    sport: Sport
+    role: str | None
+    sessions_min: int | None
+    sessions_max: int | None
 
 
 @dataclass(frozen=True)
@@ -71,6 +83,10 @@ class PlanContext:
     training_days: int | None = None
     min_weekly_minutes: int | None = None
     long_days: tuple[tuple[Sport, int], ...] = ()
+    # What the athlete said about their sports (only the sports they said something about, in the
+    # order of the format) and what strength training is for (``None``: not said).
+    sport_preferences: tuple[SportFacts, ...] = ()
+    strength_focus: str | None = None
 
     def offset(self, day: date) -> int | None:
         """The place of ``day`` in the week (Monday is 0), ``None`` if it lies outside."""
@@ -100,6 +116,11 @@ def build_context(user: User, monday: date) -> PlanContext:
             frozenset(Slot(slot) for slot in window) for window in capacity.time_windows
         ),
         limitations_text=capacity.shared_limitations_text,
+        strength_focus=capacity.strength_focus,
+        sport_preferences=tuple(
+            SportFacts(Sport(sport), role, low, high)
+            for sport, role, low, high in sport_preferences(user)
+        ),
         training_days=capacity.training_days,
         min_weekly_minutes=capacity.min_weekly_minutes,
         long_days=tuple(

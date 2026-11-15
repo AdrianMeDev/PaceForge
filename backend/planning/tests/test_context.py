@@ -14,6 +14,7 @@ from availability.intensity import LEVEL_LIMITS, IntensityLevel, Limits
 from availability.models import (
     AvailabilitySettings,
     Limitation,
+    SportPreference,
     UnavailablePeriod,
     WeekdayMinutes,
 )
@@ -21,6 +22,7 @@ from planning.context import (
     RECENT_WEEKS,
     ActiveLimitation,
     PlanContext,
+    SportFacts,
     build_context,
     recent_weekly_minutes,
     usable_zone_systems,
@@ -346,7 +348,7 @@ class TestTheContextOfAUser:
             MONDAY, (0,) * 7, (None,) * 7, None, 0, frozenset(), ()
         )
 
-    def test_it_takes_seven_queries_however_much_data_there_is(self, alice: User) -> None:
+    def test_it_takes_eight_queries_however_much_data_there_is(self, alice: User) -> None:
         with CaptureQueriesContext(connection) as empty:
             build_context(alice, MONDAY)
         for weekday in range(7):
@@ -369,6 +371,8 @@ class TestTheContextOfAUser:
             self.held(alice, "ride", metric)
         for _ in range(15):
             Limitation.objects.create(owner=alice, body_part="knee", sports=["running"])
+        for sport in ("running", "cycling", "swimming", "strength"):
+            SportPreference.objects.create(owner=alice, sport=sport, role="goal")
         for n in range(30):
             self.activity(alice, f"2027-07-{(n % 17) + 1:02d}T{8 + n // 17:02d}:00", 600, n=n)
         AthleteProfile.objects.create(owner=alice, timezone="Europe/Berlin")
@@ -376,7 +380,7 @@ class TestTheContextOfAUser:
         with CaptureQueriesContext(connection) as full:
             build_context(alice, MONDAY)
 
-        assert len(empty) == len(full) == 7
+        assert len(empty) == len(full) == 8
 
     def test_the_typical_week_comes_from_the_settings(self, alice: User, bob: User) -> None:
         AvailabilitySettings.objects.create(owner=alice, typical_weekly_minutes=420)
@@ -462,6 +466,29 @@ class TestTheContextOfAUser:
         assert build_context(alice, MONDAY).limitations_text is None
         AvailabilitySettings.objects.filter(owner=alice).update(share_limitations_text=True)
         assert build_context(alice, MONDAY).limitations_text == "Knee"
+
+    def test_without_preferences_there_are_none(self, alice: User) -> None:
+        context = build_context(alice, MONDAY)
+
+        assert context.sport_preferences == ()
+        assert context.strength_focus is None
+
+    def test_the_preferences_come_in_the_order_of_the_format(self, alice: User, bob: User) -> None:
+        SportPreference.objects.create(owner=alice, sport="strength", role="supplementary")
+        SportPreference.objects.create(
+            owner=alice, sport="running", role="goal", sessions_min=2, sessions_max=4
+        )
+        SportPreference.objects.create(owner=alice, sport="swimming")
+        SportPreference.objects.create(owner=bob, sport="cycling", role="goal")
+        AvailabilitySettings.objects.create(owner=alice, strength_focus="legs")
+
+        context = build_context(alice, MONDAY)
+
+        assert context.sport_preferences == (
+            SportFacts(Sport.RUNNING, "goal", 2, 4),
+            SportFacts(Sport.STRENGTH, "supplementary", None, None),
+        )
+        assert context.strength_focus == "legs"
 
     def test_without_wishes_there_are_none(self, alice: User) -> None:
         context = build_context(alice, MONDAY)

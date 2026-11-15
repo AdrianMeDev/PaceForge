@@ -81,6 +81,8 @@ def build_briefing(user: User, monday: date) -> dict[str, Any]:
         "training_days": context.training_days,
         "min_weekly_minutes": context.min_weekly_minutes,
         "long_days": _long_days(context),
+        "sport_preferences": _sport_preferences(context),
+        "strength_focus": context.strength_focus,
         "limits": _limits(context),
         "limitations": _limitations(context),
         "limitations_not_shown": max(0, len(context.limitations) - MAX_LIMITATIONS_TOLD),
@@ -99,6 +101,20 @@ def _long_days(context: PlanContext) -> list[dict[str, str]]:
     return [
         {"sport": sport.value, "date": (context.week_start + timedelta(days=offset)).isoformat()}
         for sport, offset in context.long_days
+    ]
+
+
+def _sport_preferences(context: PlanContext) -> list[dict[str, Any]]:
+    """What the athlete said about each sport they said something about: its role and the least
+    and the most sessions a week they want of it (``null`` for what they did not say)."""
+    return [
+        {
+            "sport": facts.sport.value,
+            "role": facts.role,
+            "sessions_min": facts.sessions_min,
+            "sessions_max": facts.sessions_max,
+        }
+        for facts in context.sport_preferences
     ]
 
 
