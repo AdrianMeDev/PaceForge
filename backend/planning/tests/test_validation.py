@@ -139,7 +139,7 @@ class TestTheOrder:
             (
                 workout(9, 60),  # outside the week
                 workout(4, 10, goal=Goal.THRESHOLD),
-                workout(4, 10, goal=Goal.THRESHOLD),  # twice the same on a day
+                workout(4, 10, goal=Goal.THRESHOLD),  # twice the same on a day, two hard ones
                 workout(5, 10, goal=Goal.THRESHOLD),  # hard in a row
             ),
         )
@@ -152,6 +152,7 @@ class TestTheOrder:
             "duplicate_workout",
             "easy_share_low",
             "slot_missing",
+            "two_hard_in_a_day",
         ]
 
     def test_the_findings_follow_the_list_of_checks(self) -> None:

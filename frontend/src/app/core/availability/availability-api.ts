@@ -5,6 +5,7 @@ import { API_BASE } from '../api/api-providers';
 import {
   Availability,
   AvailabilityChanges,
+  AvailabilitySlot,
   AvailabilitySport,
   CreatePeriodResult,
   DeletePeriodResult,
@@ -29,6 +30,7 @@ const INVALID_FALLBACK = 'The input was not accepted.';
 const HANDLED_ERRORS = [400, 401, 403, 404];
 const KINDS: readonly string[] = ['vacation', 'illness', 'other'];
 const SPORTS: readonly string[] = ['running', 'cycling', 'swimming', 'strength'];
+const SLOTS: readonly string[] = ['morning', 'afternoon', 'evening'];
 const STATUSES: readonly string[] = ['current', 'upcoming', 'past'];
 const LEVELS: readonly IntensityLevel[] = ['relaxed', 'normal', 'intensive'];
 const LIMIT_NAMES: readonly LimitName[] = [
@@ -168,10 +170,18 @@ function toAvailability(raw: unknown, reply: Reply): Availability {
   const typical = item['typical_weekly_minutes'];
   const sports = item['sports'];
   const weekdays = item['weekdays'];
+  const doubleDays = item['double_days'];
+  const windows = item['time_windows'];
   if (
     !Array.isArray(weekdays) ||
     weekdays.length !== 7 ||
     !weekdays.every(isMinutes) ||
+    !Array.isArray(doubleDays) ||
+    doubleDays.length !== 7 ||
+    !doubleDays.every((flag) => typeof flag === 'boolean') ||
+    !Array.isArray(windows) ||
+    windows.length !== 7 ||
+    !windows.every(isTimeWindow) ||
     (budget !== null && !isMinutes(budget)) ||
     (typical !== null && !isMinutes(typical)) ||
     // At least one sport, each of the known ones once.
@@ -189,6 +199,8 @@ function toAvailability(raw: unknown, reply: Reply): Availability {
   const levelLimits = asObject(item['level_limits'], reply);
   return {
     weekdays: [...(weekdays as number[])],
+    double_days: [...(doubleDays as boolean[])],
+    time_windows: (windows as AvailabilitySlot[][]).map((day) => [...day]),
     weekly_budget_minutes: budget,
     typical_weekly_minutes: typical,
     sports: [...(sports as AvailabilitySport[])],
@@ -260,6 +272,16 @@ function asObject(raw: unknown, reply: Reply): Record<string, unknown> {
     throw unexpected(reply);
   }
   return raw as Record<string, unknown>;
+}
+
+/** At least one part of the day, each of the known ones at most once. */
+function isTimeWindow(value: unknown): value is AvailabilitySlot[] {
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every((slot) => isOneOf<AvailabilitySlot>(slot, SLOTS)) &&
+    new Set(value).size === value.length
+  );
 }
 
 function isMinutes(value: unknown): value is number {

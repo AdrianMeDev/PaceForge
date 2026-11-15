@@ -111,7 +111,7 @@ within {DURATION_TOLERANCE_SECONDS} seconds. (error)
 higher; it is easy up to zone {EASY_UP_TO_ZONE}. "limits" in the data holds the limits that follow \
 from how hard the athlete wants to train; take them as they are. No more days of the week than \
 "max_hard_days" have a hard workout. (error) Do not put hard days back to back, keep at least one \
-day free and at most {MAX_WORKOUTS_PER_DAY} workouts on a day. (warnings)
+day free. (warnings) At most {MAX_WORKOUTS_PER_DAY} workouts on a day. (error)
 - The minutes of the week stay at most "progression_warning_percent" percent of the reference \
 (warning), and never more than "progression_error_percent" percent. (error) The \
 reference is the higher of the average of "recent_weeks_minutes" and {TYPICAL_VOLUME_PERCENT} \
@@ -124,11 +124,15 @@ very short ones. Without either there is no such limit; then plan carefully.
 to zone {EASY_UP_TO_ZONE} is easy; without a zone a warm-up, recovery or cool-down is easy and \
 any other segment is as easy as the workout). Strength does not count.
 - Plan only the sports listed in "sports" in the data. (error)
-- A day may have two sessions, rarely three, where the minutes of the day and of the week allow it \
-and the sports fit: for example an easy run in the morning and a ride in the afternoon, or \
-strength in the morning and a run in the evening. Give every session of such a day its own \
-"slot", no two in the same part of the day (error); a day with one session needs no slot. Do not \
-double two hard sessions.
+- A day may have two sessions, never more, where the minutes of the day and of the week allow it \
+and the sports fit, and only if "double_allowed" is true for that day in "days" (a second session \
+on any other day is an error): for example an easy run in the morning and a ride in the \
+afternoon, or strength in the morning and a run in the evening. Give every session of such a day \
+its own "slot", no two in the same part of the day (error); a day with one session needs no slot. \
+Never two hard sessions on a day. (error) Put the harder running, cycling or swimming session of \
+a day first and the easier one after it. (warning)
+- A session with a "slot" lies in a part of the day that is listed in "slots" of its day in \
+"days". (error)
 - Stretching is never a session of its own: no workout has stretching as its sport or its title. \
 If "stretching" in the data is true you may add "stretching_minutes" to a session, usually 5 to \
 15, and it is not part of "duration_minutes". If it is false, leave the field out. (error)

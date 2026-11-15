@@ -17,7 +17,7 @@ from availability.capacity import week_capacity
 from availability.intensity import DEFAULT_LEVEL, LEVEL_LIMITS, Limits
 from goals.services import time_zone_of
 
-from .schema import Sport, ZoneSystem
+from .schema import Slot, Sport, ZoneSystem
 
 # How many weeks before the plan's week make up the reference volume.
 RECENT_WEEKS = 4
@@ -47,6 +47,10 @@ class PlanContext:
     stretching: bool = False
     # The limits of the rules that follow from the athlete's intensity level and own values.
     limits: Limits = LEVEL_LIMITS[DEFAULT_LEVEL]
+    # Per day, Monday first: whether two workouts are allowed, and the parts of the day that are
+    # open. Without a choice two are allowed and every part of the day is open.
+    double_days: tuple[bool, ...] = (True,) * 7
+    time_windows: tuple[frozenset[Slot], ...] = (frozenset(Slot),) * 7
 
     def offset(self, day: date) -> int | None:
         """The place of ``day`` in the week (Monday is 0), ``None`` if it lies outside."""
@@ -71,6 +75,10 @@ def build_context(user: User, monday: date) -> PlanContext:
         sports=frozenset(Sport(sport) for sport in capacity.sports),
         stretching=capacity.stretching,
         limits=capacity.limits,
+        double_days=capacity.double_days,
+        time_windows=tuple(
+            frozenset(Slot(slot) for slot in window) for window in capacity.time_windows
+        ),
     )
 
 

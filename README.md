@@ -519,6 +519,18 @@ the minutes always with two digits and below 60); at most 24:00 (1440 minutes) p
 leave empty counts as **no time**, and so does a user who has entered nothing: PaceForge never
 assumes that you are free. While you type, the page adds the days up ("Together: 7:30 per week").
 
+**Parts of the day and two sessions.** Under the weekdays, a table with a row for each of them:
+tick the parts of the day you can train in (**Morning**, **Afternoon**, **Evening**; at least one
+per day, the page says which day has none) and whether **Two sessions** are fine on that day. Until
+you say otherwise every day has all three parts open and allows two sessions, so nothing changes for
+you before you untick something. Your coach is told, and the checks of every plan hold to it: a
+session with a time of day only in a part you left open, a second session only on a day that allows
+two, never a third, never two hard sessions on one day, and where a day has two running, cycling or
+swimming sessions with a time of day each the harder one comes first (a warning). A session without
+a time of day is not held to the parts of the day. Unticking a part or a day does not move sessions
+of drafts you already have: they show an error until you change them (see **Changing a plan by
+hand**).
+
 **Weekly budget.** Optional, up to 168:00 (10080 minutes). It caps what the days add up to: with
 7:30 in the fields and a budget of 5:00, a week offers 5:00. A budget below the sum is allowed on
 purpose (it is the most you *want* to train) and the page says what it means. Leave the field empty
@@ -581,8 +593,8 @@ and shown as plain text, never as markup. Nothing interprets it, and it is not s
 either: it is free text about you, and the only free text the coach sees is the title and notes of
 your goals.
 
-**Save** sends the weekdays, the budget, the normal week, the sports, the stretching choice, the
-intensity with your own limits and the limitations together. The page checks the limits
+**Save** sends the weekdays, the parts of the day and two sessions, the budget, the normal week,
+the sports, the stretching choice, the intensity with your own limits and the limitations together. The page checks the limits
 first and names every problem next to its field; if the server still refuses something, its message
 appears in the same place. Nothing is saved until every field is usable.
 
@@ -602,7 +614,7 @@ functions `minutes_on` and `minutes_in_week` in `backend/availability/capacity.p
 the planning that will use it; they take calendar days, so which day it is stays the caller's
 business.
 
-The API is `GET` and `PATCH` on `/api/availability/` (`weekdays` Monday first,
+The API is `GET` and `PATCH` on `/api/availability/` (`weekdays` Monday first, `double_days` and `time_windows` per weekday,
 `weekly_budget_minutes`, `typical_weekly_minutes`, `sports`, `stretching`, `limitations`,
 `intensity_level`, the own limits `max_hard_days`, `progression_warning_percent`,
 `progression_error_percent` and `easy_share_percent`, and the read-only `level_limits` of every
@@ -634,11 +646,13 @@ links to the Connections page.
 "Power zone 2 · 138–188 W", worked out from your thresholds (see
 [Athlete profile](#athlete-profile)). Without the threshold for a zone the page shows only the zone.
 
-**Two sessions a day.** A day may have two sessions, rarely three, for example an easy run in the
-morning and a ride in the afternoon. Each of them has a time of day (**morning**, **afternoon** or
+**Two sessions a day.** A day may have two sessions, never three, for example an easy run in the
+morning and a ride in the afternoon. A weekday you did not allow two sessions on (see **Training
+time**) has one. Each of them has a time of day (**morning**, **afternoon** or
 **evening**) shown next to it; no two sessions of a day share one, and a day with several sessions
 should name a time for each (the checks say so). The time you have is still given **per day**: the
-coach splits it over the day, and does not know that you can only train in the evening. Stretching
+coach splits it over the day, and knows from the Training time page in which parts of the day you
+can train. Stretching
 comes as "+ 10 min stretching" under a session, only if you switched it on, and never as a session.
 
 **Changing a plan by hand.** **Change this plan** (on a draft and on a confirmed plan) opens an

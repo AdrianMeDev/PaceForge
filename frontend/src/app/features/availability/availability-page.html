@@ -61,6 +61,20 @@
           <p class="hint" data-testid="cap-note">{{ text }}</p>
         }
 
+        <h2>Parts of the day and two sessions</h2>
+        <p class="hint">
+          Tick the parts of the day you can train in on each weekday, and the days on which two
+          sessions are fine. Your coach keeps to this, and the checks refuse a plan that does not.
+        </p>
+        @if (dayOptionsError(); as message) {
+          <p class="field-error" role="alert">{{ message }}</p>
+        }
+        <app-day-options
+          [(doubleDays)]="doubleDays"
+          [(timeWindows)]="timeWindows"
+          [errors]="windowErrors()"
+        />
+
         <h2>Weekly budget</h2>
         <div class="field">
           <label for="budget">Most you want to train in a week (optional)</label>

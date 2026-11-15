@@ -5,6 +5,9 @@ export type { Forbidden, Invalid, NotFound };
 /** The sports a plan can contain, in the order the server lists them. */
 export type AvailabilitySport = 'running' | 'cycling' | 'swimming' | 'strength';
 
+/** The parts of a day a session can be in, earliest first. */
+export type AvailabilitySlot = 'morning' | 'afternoon' | 'evening';
+
 /** How hard plans may be; each level sets the limits of the planning rules. */
 export type IntensityLevel = 'relaxed' | 'normal' | 'intensive';
 
@@ -36,11 +39,15 @@ export type PeriodStatus = 'current' | 'upcoming' | 'past';
  * the planning after a break (`null`: not given), never a limit; `sports` are the ones the user
  * wants in a plan (at least one; all four if the user never chose); `stretching` says whether
  * stretching may be added to sessions (never as a session of its own); the limitations are free
- * text. The intensity level and the own limits set the limits of the planning rules;
- * `level_limits` are the limits of every level as the server has them (read only).
+ * text. `double_days` say for each weekday, Monday first, whether two sessions are allowed and
+ * `time_windows` which parts of the day are open (at least one each, in the order of the day).
+ * The intensity level and the own limits set the limits of the planning rules; `level_limits`
+ * are the limits of every level as the server has them (read only).
  */
 export interface Availability extends OwnLimits {
   weekdays: number[];
+  double_days: boolean[];
+  time_windows: AvailabilitySlot[][];
   weekly_budget_minutes: number | null;
   typical_weekly_minutes: number | null;
   sports: AvailabilitySport[];

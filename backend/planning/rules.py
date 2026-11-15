@@ -267,21 +267,38 @@ def check_a_free_day(plan: WeekPlan, context: PlanContext) -> list[Finding]:
 
 
 def check_workouts_per_day(plan: WeekPlan, context: PlanContext) -> list[Finding]:
-    """No more than ``MAX_WORKOUTS_PER_DAY`` workouts on a day (a warning, named once per day)."""
+    """No more than ``MAX_WORKOUTS_PER_DAY`` workouts on a day (an error, named once per day, at
+    the first workout that is too many)."""
     _same_week(plan, context)
     found = []
     for offset, workouts in sorted(_workouts_by_day(plan, context).items()):
         if len(workouts) > MAX_WORKOUTS_PER_DAY:
             found.append(
                 Finding(
-                    Severity.WARNING,
+                    Severity.ERROR,
                     "many_workouts_in_a_day",
-                    f"{_WEEKDAYS[offset]} has {len(workouts)} workouts; more than "
-                    f"{MAX_WORKOUTS_PER_DAY} in a day is a lot.",
+                    f"{_WEEKDAYS[offset]} has {len(workouts)} workouts; at most "
+                    f"{MAX_WORKOUTS_PER_DAY} in a day are allowed.",
                     f"workouts[{workouts[MAX_WORKOUTS_PER_DAY][0]}]",
                 )
             )
     return found
+
+
+def check_double_days(plan: WeekPlan, context: PlanContext) -> list[Finding]:
+    """A second workout on a day only where the athlete allows two (an error, named once per day
+    at the second workout in the order of the plan)."""
+    _same_week(plan, context)
+    return [
+        Finding(
+            Severity.ERROR,
+            "double_day_not_allowed",
+            f"{_WEEKDAYS[offset]} is not a day for two workouts; you did not allow a second one.",
+            f"workouts[{workouts[1][0]}]",
+        )
+        for offset, workouts in sorted(_workouts_by_day(plan, context).items())
+        if len(workouts) > 1 and not context.double_days[offset]
+    ]
 
 
 def check_duplicates(plan: WeekPlan, context: PlanContext) -> list[Finding]:
@@ -462,6 +479,75 @@ def check_stretching(plan: WeekPlan, context: PlanContext) -> list[Finding]:
     ]
 
 
+def check_time_windows(plan: WeekPlan, context: PlanContext) -> list[Finding]:
+    """A workout with a time of day lies in a part of the day that is open on its weekday (an
+    error, named at the time of day of the workout). A workout without a time of day is not
+    checked: the rule about several workouts on a day asks for one when it matters."""
+    _same_week(plan, context)
+    return [
+        Finding(
+            Severity.ERROR,
+            "slot_outside_window",
+            f"{_WEEKDAYS[offset]} is not open for training in the {workout.slot.value}; you did "
+            "not allow that part of the day.",
+            f"workouts[{index}].slot",
+        )
+        for offset, workouts in sorted(_workouts_by_day(plan, context).items())
+        for index, workout in workouts
+        if workout.slot is not None and workout.slot not in context.time_windows[offset]
+    ]
+
+
+def check_double_day_order(plan: WeekPlan, context: PlanContext) -> list[Finding]:
+    """What a day with several workouts asks for: no two hard ones, the harder one first.
+
+    A second hard workout on a day is an error (named once per day, at the second hard one in the
+    order of the plan). The quality session comes first, easy training after it: where two
+    running, cycling or swimming workouts of a day have a time of day each (in the order of the
+    day, not of the plan), an easy one before a moderate or hard one is a warning, named once per
+    day at the easy one. Strength is left out, so a strength session in the morning and a run in
+    the evening stay as they are."""
+    _same_week(plan, context)
+    found: list[Finding] = []
+    order = list(Slot)
+    for offset, workouts in sorted(_workouts_by_day(plan, context).items()):
+        weekday = _WEEKDAYS[offset]
+        hard = [index for index, workout in workouts if intensity_of(workout) is Intensity.HARD]
+        if len(hard) > 1:
+            found.append(
+                Finding(
+                    Severity.ERROR,
+                    "two_hard_in_a_day",
+                    f"{weekday} has {len(hard)} hard workouts; do not double hard sessions.",
+                    f"workouts[{hard[1]}]",
+                )
+            )
+        timed = sorted(
+            (
+                (order.index(workout.slot), index, intensity_of(workout))
+                for index, workout in workouts
+                if workout.slot is not None and workout.sport in ENDURANCE_SPORTS
+            ),
+            key=lambda entry: entry[0],
+        )
+        for position, (slot, index, intensity) in enumerate(timed):
+            if intensity is Intensity.EASY and any(
+                later_slot > slot and later is not Intensity.EASY
+                for later_slot, _, later in timed[position + 1 :]
+            ):
+                found.append(
+                    Finding(
+                        Severity.WARNING,
+                        "quality_not_first",
+                        f"{weekday} has an easy workout before a harder one; put the quality "
+                        "session first.",
+                        f"workouts[{index}].slot",
+                    )
+                )
+                break
+    return found
+
+
 def check_times_of_day(plan: WeekPlan, context: PlanContext) -> list[Finding]:
     """Several workouts on a day need a time of day each, and no two share one.
 
@@ -510,6 +596,7 @@ BASIC_CHECKS: tuple[Check, ...] = (
     check_week_capacity,
     check_sports,
     check_stretching,
+    check_time_windows,
 )
 
 
@@ -519,10 +606,12 @@ RHYTHM_CHECKS: tuple[Check, ...] = (
     check_hard_days_in_a_row,
     check_a_free_day,
     check_workouts_per_day,
+    check_double_days,
     check_duplicates,
     check_progression,
     check_easy_share,
     check_times_of_day,
+    check_double_day_order,
 )
 
 ALL_CHECKS: tuple[Check, ...] = BASIC_CHECKS + RHYTHM_CHECKS

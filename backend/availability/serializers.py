@@ -27,6 +27,7 @@ from .models import (
     DAY_MINUTES_MAX,
     LIMITATIONS_MAX,
     NOTE_MAX,
+    SLOTS,
     SPORTS,
     WEEK_MINUTES_MAX,
     AvailabilitySettings,
@@ -40,6 +41,11 @@ DAY_RANGE = f"Enter whole minutes between 0 and {DAY_MINUTES_MAX} for every day.
 BUDGET_RANGE = f"Enter whole minutes between 0 and {WEEK_MINUTES_MAX}."
 SPORTS_CHOICE = f"Choose at least one of: {', '.join(SPORTS)}."
 STRETCHING_CHOICE = "Send true or false."
+DOUBLE_DAYS = "Enter seven values of true or false, Monday first."
+TIME_WINDOWS = (
+    "Enter seven lists of parts of the day, Monday first, each with at least one of: "
+    f"{', '.join(SLOTS)}."
+)
 LEVEL_CHOICE = f"Choose one of: {', '.join(IntensityLevel.values)}."
 MAX_PERIODS = 100
 TOO_MANY_PERIODS = f"You can have at most {MAX_PERIODS} periods. Delete one first."
@@ -83,6 +89,45 @@ class SportsField(serializers.Field[list[str], list[str], list[str], Any]):
         return value
 
 
+class DoubleDaysField(serializers.Field[list[bool], list[bool], list[bool], Any]):
+    """Seven ``true`` or ``false``, Monday first: whether two sessions are allowed on the day."""
+
+    def to_internal_value(self, data: Any) -> list[bool]:
+        if (
+            not isinstance(data, list)
+            or len(data) != 7
+            or not all(isinstance(flag, bool) for flag in data)
+        ):
+            raise serializers.ValidationError(DOUBLE_DAYS)
+        return list(data)
+
+    def to_representation(self, value: list[bool]) -> list[bool]:
+        return value
+
+
+class TimeWindowsField(serializers.Field[list[list[str]], list[list[str]], list[list[str]], Any]):
+    """Seven lists of parts of the day, Monday first. Each has at least one of the known ones, each
+    at most once; it is stored in the order of the day, whatever the order sent."""
+
+    def to_internal_value(self, data: Any) -> list[list[str]]:
+        if not isinstance(data, list) or len(data) != 7:
+            raise serializers.ValidationError(TIME_WINDOWS)
+        windows = []
+        for day in data:
+            if (
+                not isinstance(day, list)
+                or not day
+                or not all(isinstance(slot, str) and slot in SLOTS for slot in day)
+                or len(set(day)) != len(day)
+            ):
+                raise serializers.ValidationError(TIME_WINDOWS)
+            windows.append([slot for slot in SLOTS if slot in day])
+        return windows
+
+    def to_representation(self, value: list[list[str]]) -> list[list[str]]:
+        return value
+
+
 class StrictBooleanField(serializers.Field[bool, bool, bool, Any]):
     """``true`` or ``false`` and nothing else: no ``"true"``, no ``1``."""
 
@@ -116,6 +161,8 @@ class AvailabilityInput(serializers.Serializer[Any]):
     """
 
     weekdays = WeekdaysField(required=False)
+    double_days = DoubleDaysField(required=False, error_messages={"null": DOUBLE_DAYS})
+    time_windows = TimeWindowsField(required=False, error_messages={"null": TIME_WINDOWS})
     weekly_budget_minutes = WholeNumberField(
         min_value=0,
         max_value=WEEK_MINUTES_MAX,
@@ -165,16 +212,24 @@ class AvailabilityInput(serializers.Serializer[Any]):
 def availability_data(
     settings: AvailabilitySettings | None, weekdays: list[WeekdayMinutes]
 ) -> dict[str, Any]:
-    """The answer: the seven weekdays (Monday first, 0 where nothing is saved), the weekly budget
+    """The answer: the seven weekdays (Monday first, 0 where nothing is saved), for each of them
+    whether two sessions are allowed and the parts of the day that are open (all of them where
+    nothing is saved), the weekly budget
     and the typical week (``null`` for none), the sports of the plan (all of them if none was
     chosen), whether stretching may be added, the limitations, the intensity level with the own
     limits (``null`` for the level's value) and the limits of every level, so that a client need
     not repeat them. No row ids, no owner."""
     minutes = [0] * 7
+    double_days = [True] * 7
+    time_windows = [list(SLOTS) for _ in range(7)]
     for row in weekdays:
         minutes[row.weekday] = row.minutes
+        double_days[row.weekday] = row.double_allowed
+        time_windows[row.weekday] = row.open_slots
     return {
         "weekdays": minutes,
+        "double_days": double_days,
+        "time_windows": time_windows,
         "weekly_budget_minutes": settings.weekly_budget_minutes if settings else None,
         "typical_weekly_minutes": settings.typical_weekly_minutes if settings else None,
         "sports": effective_sports(settings.sports if settings else None),

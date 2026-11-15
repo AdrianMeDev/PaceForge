@@ -21,10 +21,11 @@ from planning.rules import (
     check_segments_add_up,
     check_sports,
     check_stretching,
+    check_time_windows,
     check_week_capacity,
     check_zone_systems,
 )
-from planning.schema import Goal, Segment, SegmentKind, Sport, WeekPlan, Workout, ZoneSystem
+from planning.schema import Goal, Segment, SegmentKind, Slot, Sport, WeekPlan, Workout, ZoneSystem
 
 MONDAY = date(2027, 7, 12)
 assert MONDAY.weekday() == 0
@@ -592,6 +593,63 @@ class TestStretchingThatWasNotAskedFor:
         assert "SECRETMARKER" not in repr(found)
 
 
+class TestTheTimeWindows:
+    M, A, E = Slot.MORNING, Slot.AFTERNOON, Slot.EVENING
+    # Tuesday is only open in the evening, Thursday not in the afternoon, the rest all day.
+    WINDOWS = tuple(
+        frozenset({Slot.EVENING}) if d == 1 else frozenset({Slot.MORNING, Slot.EVENING})
+        if d == 3 else frozenset(Slot)
+        for d in range(7)
+    )  # fmt: skip
+
+    def found(self, *workouts: Workout) -> list[Finding]:
+        return check_time_windows(week(*workouts), context(time_windows=self.WINDOWS))
+
+    def test_a_workout_in_an_open_part_of_the_day_is_fine(self) -> None:
+        assert self.found(workout(1, 60, slot=self.E), workout(3, 60, slot=self.M)) == []
+
+    def test_a_workout_in_a_closed_part_of_the_day_is_an_error_at_its_time(self) -> None:
+        assert self.found(workout(0, 30), workout(1, 60, slot=self.M)) == [
+            Finding(
+                Severity.ERROR,
+                "slot_outside_window",
+                "Tuesday is not open for training in the morning; you did not allow that part "
+                "of the day.",
+                "workouts[1].slot",
+            )
+        ]
+
+    def test_the_closed_part_depends_on_the_day(self) -> None:
+        found = self.found(workout(1, 60, slot=self.A), workout(3, 60, slot=self.A))
+
+        assert [f.message[:8] for f in found] == ["Tuesday ", "Thursday"]
+        assert [f.path for f in found] == ["workouts[0].slot", "workouts[1].slot"]
+
+    def test_a_workout_without_a_time_of_day_is_not_checked(self) -> None:
+        assert self.found(workout(1, 60), workout(3, 60)) == []
+
+    def test_every_workout_that_does_not_fit_is_named(self) -> None:
+        found = self.found(
+            workout(1, 30, slot=self.M), workout(1, 30, slot=self.A), workout(1, 30, slot=self.E)
+        )
+
+        assert [f.path for f in found] == ["workouts[0].slot", "workouts[1].slot"]
+
+    def test_a_context_without_windows_leaves_every_part_of_the_day_open(self) -> None:
+        plan = week(*(workout(d, 30, slot=slot) for d in range(7) for slot in Slot))
+
+        assert check_time_windows(plan, context()) == []
+
+    def test_workouts_outside_the_week_are_left_alone(self) -> None:
+        assert self.found(workout(8, 60, slot=self.M), workout(-1, 60, slot=self.M)) == []
+
+    def test_the_title_and_the_notes_are_not_repeated(self) -> None:
+        found = self.found(workout(1, 60, slot=self.M, title="SECRETMARKER", notes="SECRETMARKER"))
+
+        assert found
+        assert "SECRETMARKER" not in repr(found)
+
+
 class TestAllTogether:
     def test_the_checks_are_listed_in_a_fixed_order(self) -> None:
         assert BASIC_CHECKS == (
@@ -602,6 +660,7 @@ class TestAllTogether:
             check_week_capacity,
             check_sports,
             check_stretching,
+            check_time_windows,
         )
 
     def test_a_good_plan_has_no_findings(self) -> None:

@@ -162,6 +162,9 @@ Each plan is checked against the facts of its user for that week, collected when
 - **Time.** The minutes per weekday that the user offers (an empty weekday is 0, not "free"), a day
   inside a vacation, an illness or another absence offers 0 (where absences overlap, the illness is
   named before the vacation), and the weekly budget caps what the week adds up to.
+- **Double days and parts of the day.** For each weekday whether two workouts are allowed and which
+  parts of the day (morning, afternoon, evening) are open. Without a choice two workouts are allowed
+  and every part is open. A day of absence keeps the choice of its weekday.
 - **Sports and stretching.** The sports the athlete ticked (all four if none was chosen) and whether
   stretching may be added to sessions. Stretching minutes are not a workout and not time: they do
   not use up the minutes of a day or a week and do not count for the progression rule.
@@ -192,15 +195,19 @@ user to weigh.
 | `day_over_capacity` | error | The workouts of a day add up to more than the day offers. The workout that tips the day is named. |
 | `sport_not_selected` | error | A workout in a sport the athlete did not tick on the training time page. |
 | `stretching_not_wanted` | error | Stretching minutes on a workout although stretching is switched off. |
+| `slot_outside_window` | error | A workout whose time of day is not an open part of its weekday (training time page). A workout without a time of day is not checked. |
 | `same_slot` | error | Two workouts of one day in the same part of the day. The later one is named. |
 | `slot_missing` | warning | A day with several workouts of which one has no time of day. Named once per day. |
 | `day_in_absence` | error | A workout on a day of vacation, illness or another absence. |
 | `week_over_capacity` | error | The week adds up to more than the user offers, the weekly budget included. |
 | `too_many_hard_days` | error | More hard days than the limit. A day counts once. |
 | `volume_jump` | error | The planned minutes are above the error limit of the reference (the recent average, or the typical week if that is higher). |
+| `two_hard_in_a_day` | error | Two hard workouts on one day. Named once per day, at the second hard one. |
+| `quality_not_first` | warning | On a day with two running, cycling or swimming workouts that both have a time of day, an easy one comes before a moderate or hard one. Strength is left out. Named once per day, at the easy one. |
 | `hard_days_in_a_row` | warning | A hard day directly after a hard day. |
 | `no_free_day` | warning | Every day of the week has a workout. |
-| `many_workouts_in_a_day` | warning | More workouts on a day than the limit. |
+| `many_workouts_in_a_day` | error | More workouts on a day than the limit (two). Named once per day, at the first one too many. |
+| `double_day_not_allowed` | error | A second workout on a weekday that the athlete did not allow two workouts on (training time page). Named once per day, at the second workout. |
 | `duplicate_workout` | warning | The same sport, goal and duration twice on a day. |
 | `volume_increase` | warning | The planned minutes are above the warning limit of the reference (the recent average, or the typical week if that is higher). |
 | `easy_share_low` | warning | Less of the endurance minutes are easy than the intensity level asks for. |
@@ -219,7 +226,7 @@ decisions, not coaching science; better ones will come from using the feature.
 | `DURATION_TOLERANCE_SECONDS` | 60 | How far the segments may differ from the duration. |
 | `HARD_FROM_ZONE` | 4 | From this zone on a workout is hard. |
 | `EASY_UP_TO_ZONE` | 2 | Up to this zone a workout is easy. |
-| `MAX_WORKOUTS_PER_DAY` | 2 | Workouts a day before the warning. |
+| `MAX_WORKOUTS_PER_DAY` | 2 | Most workouts on a day; a third is an error. |
 | `TYPICAL_VOLUME_PERCENT` | 100 | How much of the typical week counts as a reference (100: all of it). A lower number, say 70, makes the first weeks back more careful. |
 | `TITLE_MAX` | 100 | Characters of a title. |
 | `NOTES_MAX` | 500 | Characters of notes. |
@@ -322,7 +329,7 @@ without this page.
 | --- | ------- |
 | `week_start` | The Monday of the week to plan. |
 | `today` | The day it is for the user, in their time zone. |
-| `days` | Seven entries (date, minutes on offer, kind of absence) from Monday. |
+| `days` | Seven entries from Monday: the date, the minutes on offer, the kind of absence, `double_allowed` (whether two workouts may be on that weekday) and `slots` (the parts of the day that are open on it, in the order of the day). |
 | `weekly_budget_minutes` | The weekly budget, none if not set. |
 | `weekly_minutes_available` | What the week offers in all, the budget applied. |
 | `zone_systems` | For each zone system the athlete can use: sport, threshold and the zone table. |

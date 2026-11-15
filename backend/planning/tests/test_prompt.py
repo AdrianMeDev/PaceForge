@@ -402,13 +402,23 @@ class TestTheSystemPrompt:
         assert 'Plan only the sports listed in "sports" in the data.' in SYSTEM_PROMPT
 
     def test_it_welcomes_two_sessions_on_a_day_with_a_time_each(self) -> None:
-        assert "A day may have two sessions, rarely three" in SYSTEM_PROMPT
+        assert "A day may have two sessions, never more" in SYSTEM_PROMPT
+        assert 'only if "double_allowed" is true for that day in "days"' in SYSTEM_PROMPT
         assert "an easy run in the morning and a ride in the afternoon" in SYSTEM_PROMPT
         assert "strength in the morning and a run in the evening" in SYSTEM_PROMPT
         # no example may break the rule it stands next to
         assert "run and strength in the evening" not in SYSTEM_PROMPT
         assert 'its own "slot", no two in the same part of the day' in SYSTEM_PROMPT
-        assert "Do not double two hard sessions." in SYSTEM_PROMPT
+        flat = " ".join(SYSTEM_PROMPT.split())
+        assert "Never two hard sessions on a day. (error)" in flat
+        assert "Put the harder running, cycling or swimming session of a day first" in flat
+        assert "and the easier one after it. (warning)" in flat
+
+    def test_it_says_that_a_slot_must_be_open_on_its_day(self) -> None:
+        assert (
+            'lies in a part of the day that is listed in "slots" of its day in "days". (error)'
+            in " ".join(SYSTEM_PROMPT.split())
+        )
 
     def test_it_says_that_stretching_is_never_a_session(self) -> None:
         assert "Stretching is never a session of its own" in SYSTEM_PROMPT

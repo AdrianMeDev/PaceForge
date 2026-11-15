@@ -380,6 +380,84 @@ class TestTheLimits:
         assert len(queries) == 3
 
 
+class TestTheDoubleDaysAndTheTimeWindows:
+    EVERY_PART = ("morning", "afternoon", "evening")
+
+    def test_without_a_choice_every_day_allows_two_and_has_every_part_of_the_day(
+        self, alice: User
+    ) -> None:
+        result = week_capacity(alice, MONDAY)
+
+        assert result.double_days == (True,) * 7
+        assert result.time_windows == (self.EVERY_PART,) * 7
+
+    def test_a_declared_day_without_a_choice_has_the_defaults(self, alice: User) -> None:
+        declare(alice, 60, 0, 90)
+
+        result = week_capacity(alice, MONDAY)
+
+        assert result.double_days == (True,) * 7
+        assert result.time_windows == (self.EVERY_PART,) * 7
+
+    def test_the_choice_is_read_day_by_day_and_the_parts_come_in_the_order_of_the_day(
+        self, alice: User
+    ) -> None:
+        WeekdayMinutes.objects.create(
+            owner=alice, weekday=1, minutes=60, double_allowed=False, slots=["evening", "morning"]
+        )
+        WeekdayMinutes.objects.create(owner=alice, weekday=6, minutes=0, slots=["afternoon"])
+
+        result = week_capacity(alice, MONDAY)
+
+        assert result.double_days == (True, False, True, True, True, True, True)
+        assert result.time_windows[1] == ("morning", "evening")
+        assert result.time_windows[6] == ("afternoon",)
+        assert result.time_windows[0] == self.EVERY_PART
+
+    def test_a_day_of_absence_keeps_its_choice(self, alice: User) -> None:
+        WeekdayMinutes.objects.create(
+            owner=alice, weekday=2, minutes=60, double_allowed=False, slots=["morning"]
+        )
+        away(alice, MONDAY + timedelta(days=2))
+
+        result = week_capacity(alice, MONDAY)
+
+        assert (result.minutes[2], result.absences[2]) == (0, "vacation")
+        assert (result.double_days[2], result.time_windows[2]) == (False, ("morning",))
+
+    def test_the_choice_of_another_user_is_not_seen(self, alice: User, bob: User) -> None:
+        WeekdayMinutes.objects.create(
+            owner=bob, weekday=0, minutes=60, double_allowed=False, slots=["morning"]
+        )
+
+        result = week_capacity(alice, MONDAY)
+
+        assert result.double_days[0] is True
+        assert result.time_windows[0] == self.EVERY_PART
+
+    def test_they_change_nothing_about_the_minutes(self, alice: User) -> None:
+        declare(alice, 60, 0, 90)
+        WeekdayMinutes.objects.filter(owner=alice).update(double_allowed=False, slots=["morning"])
+
+        assert week_capacity(alice, MONDAY).minutes == (60, 0, 90, 0, 0, 0, 0)
+
+    def test_minutes_on_a_day_still_work(self, alice: User) -> None:
+        WeekdayMinutes.objects.create(
+            owner=alice, weekday=0, minutes=75, double_allowed=False, slots=["evening"]
+        )
+
+        assert minutes_on(alice, MONDAY) == 75
+
+    def test_they_still_take_three_queries(self, alice: User) -> None:
+        declare(alice, 60, 60, 60, 60, 60, 60, 60)
+        WeekdayMinutes.objects.filter(owner=alice).update(double_allowed=False)
+
+        with CaptureQueriesContext(connection) as queries:
+            week_capacity(alice, MONDAY)
+
+        assert len(queries) == 3
+
+
 class TestTheWholeWeek:
     def test_nothing_declared_offers_nothing(self, alice: User) -> None:
         assert week_capacity(alice, MONDAY) == WeekCapacity((0,) * 7, (None,) * 7, None, 0)

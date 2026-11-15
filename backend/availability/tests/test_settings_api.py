@@ -47,6 +47,11 @@ INTENSITY = {
     "easy_share_percent": None,
     "level_limits": LEVEL_LIMITS_ANSWER,
 }
+# What a weekday offers until the user says otherwise: two sessions, every part of the day.
+DAY_OPTIONS = {
+    "double_days": [True] * 7,
+    "time_windows": [["morning", "afternoon", "evening"]] * 7,
+}
 EMPTY = {
     "weekdays": [0] * 7,
     "weekly_budget_minutes": None,
@@ -55,6 +60,7 @@ EMPTY = {
     "stretching": False,
     "limitations": "",
     **INTENSITY,
+    **DAY_OPTIONS,
 }
 WEEK = [60, 0, 90, 0, 0, 120, 180]
 
@@ -136,6 +142,8 @@ class TestReading:
             "sports",
             "stretching",
             "limitations",
+            "double_days",
+            "time_windows",
             "intensity_level",
             "max_hard_days",
             "progression_warning_percent",
@@ -248,6 +256,7 @@ class TestSportsAndStretching:
             "stretching": True,
             "limitations": "Knee",
             **INTENSITY,
+            **DAY_OPTIONS,
         }
 
     def test_the_other_settings_leave_the_choice_as_it_was(self, alice: User) -> None:
@@ -439,6 +448,189 @@ class TestIntensity:
         assert read(signed_in(bob))["intensity_level"] == "normal"
 
 
+class TestDoubleDaysAndTimeWindows:
+    DOUBLE = [True, False, True, True, False, True, True]
+    WINDOWS = [
+        ["evening"],
+        ["morning", "evening"],
+        ["morning", "afternoon", "evening"],
+        ["afternoon"],
+        ["morning"],
+        ["morning", "afternoon"],
+        ["afternoon", "evening"],
+    ]
+
+    def test_a_user_who_chose_nothing_gets_two_sessions_and_every_part_of_the_day(
+        self, alice: User
+    ) -> None:
+        answer = read(signed_in(alice))
+
+        assert answer["double_days"] == [True] * 7
+        assert answer["time_windows"] == [["morning", "afternoon", "evening"]] * 7
+
+    def test_they_are_saved_and_read_back(self, alice: User) -> None:
+        api = signed_in(alice)
+
+        response = save(api, {"double_days": self.DOUBLE, "time_windows": self.WINDOWS})
+
+        assert response.status_code == HTTPStatus.OK
+        assert body(response)["double_days"] == self.DOUBLE
+        assert body(response)["time_windows"] == self.WINDOWS
+        assert read(api) == body(response)
+        assert rows() == (7, 0)
+
+    def test_the_parts_of_a_day_are_stored_in_the_order_of_the_day(self, alice: User) -> None:
+        api = signed_in(alice)
+        windows = [["evening", "morning"]] + self.WINDOWS[1:]
+
+        save(api, {"time_windows": windows})
+
+        assert read(api)["time_windows"][0] == ["morning", "evening"]
+
+    def test_the_double_days_alone_leave_the_rest_as_it_was(self, alice: User) -> None:
+        api = signed_in(alice)
+        save(api, {"weekdays": WEEK, "time_windows": self.WINDOWS, "limitations": "Knee"})
+        before = read(api)
+
+        save(api, {"double_days": self.DOUBLE})
+
+        assert read(api) == {**before, "double_days": self.DOUBLE}
+
+    def test_the_time_windows_alone_leave_the_rest_as_it_was(self, alice: User) -> None:
+        api = signed_in(alice)
+        save(api, {"weekdays": WEEK, "double_days": self.DOUBLE, "limitations": "Knee"})
+        before = read(api)
+
+        save(api, {"time_windows": self.WINDOWS})
+
+        assert read(api) == {**before, "time_windows": self.WINDOWS}
+
+    def test_the_weekdays_alone_leave_them_as_they_were(self, alice: User) -> None:
+        api = signed_in(alice)
+        save(api, {"double_days": self.DOUBLE, "time_windows": self.WINDOWS})
+
+        save(api, {"weekdays": WEEK})
+
+        answer = read(api)
+        assert answer["weekdays"] == WEEK
+        assert (answer["double_days"], answer["time_windows"]) == (self.DOUBLE, self.WINDOWS)
+
+    def test_a_day_without_minutes_still_has_them(self, alice: User) -> None:
+        api = signed_in(alice)
+
+        save(api, {"double_days": self.DOUBLE})
+
+        assert read(api)["weekdays"] == [0] * 7
+        assert minutes_in_week(alice, MONDAY) == 0
+
+    def test_the_other_settings_leave_them_as_they_were(self, alice: User) -> None:
+        api = signed_in(alice)
+        save(api, {"double_days": self.DOUBLE, "time_windows": self.WINDOWS})
+
+        save(api, {"weekly_budget_minutes": 300, "sports": ["running"], "stretching": True})
+
+        answer = read(api)
+        assert (answer["double_days"], answer["time_windows"]) == (self.DOUBLE, self.WINDOWS)
+
+    def test_the_choice_of_another_user_is_not_seen(self, alice: User, bob: User) -> None:
+        save(signed_in(bob), {"double_days": self.DOUBLE, "time_windows": self.WINDOWS})
+
+        answer = read(signed_in(alice))
+
+        assert answer["double_days"] == [True] * 7
+        assert answer["time_windows"] == [["morning", "afternoon", "evening"]] * 7
+
+    def test_saving_one_user_leaves_the_other_alone(self, alice: User, bob: User) -> None:
+        bob_api = signed_in(bob)
+        save(bob_api, {"double_days": self.DOUBLE, "time_windows": self.WINDOWS})
+
+        save(signed_in(alice), {"double_days": [False] * 7})
+
+        assert read(bob_api)["double_days"] == self.DOUBLE
+
+    def test_rows_saved_before_the_choice_existed_read_as_the_defaults(self, alice: User) -> None:
+        WeekdayMinutes.objects.create(owner=alice, weekday=2, minutes=90)
+
+        answer = read(signed_in(alice))
+
+        assert answer["weekdays"][2] == 90
+        assert answer["double_days"] == [True] * 7
+        assert answer["time_windows"][2] == ["morning", "afternoon", "evening"]
+
+    @pytest.mark.parametrize(
+        "double_days",
+        [
+            [True] * 6,
+            [True] * 8,
+            [],
+            "TTTTTTT",
+            {"0": True},
+            None,
+            [1] * 7,
+            ["true"] * 7,
+            [None] * 7,
+            [[True]] * 7,
+        ],
+    )
+    def test_unusable_double_days_are_refused(self, alice: User, double_days: Any) -> None:
+        response = save(signed_in(alice), {"double_days": double_days})
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert body(response) == {
+            "double_days": ["Enter seven values of true or false, Monday first."]
+        }
+        assert rows() == (0, 0)
+
+    @pytest.mark.parametrize(
+        "windows",
+        [
+            [["morning"]] * 6,
+            [["morning"]] * 8,
+            [],
+            "morning",
+            None,
+            [[]] * 7,
+            [["noon"]] * 7,
+            [["Morning"]] * 7,
+            [["morning", "morning"]] * 7,
+            ["morning"] * 7,
+            [[1]] * 7,
+            [[None]] * 7,
+            [[["morning"]]] * 7,
+            [{"morning": True}] * 7,
+        ],
+    )
+    def test_unusable_time_windows_are_refused(self, alice: User, windows: Any) -> None:
+        response = save(signed_in(alice), {"time_windows": windows})
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert body(response) == {
+            "time_windows": [
+                "Enter seven lists of parts of the day, Monday first, each with at least one of: "
+                "morning, afternoon, evening."
+            ]
+        }
+        assert rows() == (0, 0)
+
+    def test_a_refusal_saves_nothing_of_the_rest(self, alice: User) -> None:
+        api = signed_in(alice)
+        save(api, {"weekdays": WEEK, "double_days": self.DOUBLE})
+        before = read(api)
+
+        response = save(api, {"weekdays": [10] * 7, "double_days": self.DOUBLE[:3]})
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert read(api) == before
+
+    def test_every_problem_is_named_at_once(self, alice: User) -> None:
+        response = save(
+            signed_in(alice),
+            {"weekdays": [0] * 3, "double_days": [True], "time_windows": [[]]},
+        )
+
+        assert set(body(response)) == {"weekdays", "double_days", "time_windows"}
+
+
 class TestSaving:
     def test_everything_at_once(self, alice: User) -> None:
         api = signed_in(alice)
@@ -456,6 +648,7 @@ class TestSaving:
             "stretching": False,
             "limitations": "No running",
             **INTENSITY,
+            **DAY_OPTIONS,
         }
         assert read(api) == body(response)
         assert rows() == (7, 1)
@@ -474,6 +667,7 @@ class TestSaving:
             "stretching": False,
             "limitations": "Knee",
             **INTENSITY,
+            **DAY_OPTIONS,
         }
 
     def test_the_budget_alone_leaves_the_rest_as_it_was(self, alice: User) -> None:
@@ -490,6 +684,7 @@ class TestSaving:
             "stretching": False,
             "limitations": "Knee",
             **INTENSITY,
+            **DAY_OPTIONS,
         }
 
     def test_the_limitations_alone_leave_the_rest_as_it_was(self, alice: User) -> None:
@@ -506,6 +701,7 @@ class TestSaving:
             "stretching": False,
             "limitations": "Knee",
             **INTENSITY,
+            **DAY_OPTIONS,
         }
 
     def test_the_typical_week_can_be_set_changed_and_removed(self, alice: User) -> None:
@@ -543,6 +739,7 @@ class TestSaving:
             "stretching": False,
             "limitations": "Knee",
             **INTENSITY,
+            **DAY_OPTIONS,
         }
 
     def test_the_other_settings_leave_the_typical_week_as_it_was(self, alice: User) -> None:
@@ -608,6 +805,7 @@ class TestSaving:
             "stretching": False,
             "limitations": "",
             **INTENSITY,
+            **DAY_OPTIONS,
         }
 
     def test_the_limits_themselves_are_accepted(self, alice: User) -> None:
@@ -656,6 +854,7 @@ class TestSaving:
             "stretching": False,
             "limitations": "Bob",
             **INTENSITY,
+            **DAY_OPTIONS,
         }
 
     def test_a_failure_while_saving_leaves_the_weekdays_as_they_were(
@@ -771,6 +970,7 @@ class TestRefusals:
             "stretching": False,
             "limitations": "Knee",
             **INTENSITY,
+            **DAY_OPTIONS,
         }
 
     def test_every_problem_is_named_at_once(self, alice: User) -> None:
