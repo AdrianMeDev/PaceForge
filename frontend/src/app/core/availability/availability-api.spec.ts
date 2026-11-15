@@ -47,6 +47,10 @@ const AVAILABILITY = {
     EVERY_PART,
   ],
   weekly_budget_minutes: 300,
+  min_weekly_minutes: 200,
+  training_days: 4,
+  long_run_day: 5,
+  long_ride_day: 6,
   typical_weekly_minutes: 360,
   sports: ['running', 'cycling', 'swimming', 'strength'],
   stretching: false,
@@ -72,6 +76,10 @@ const NOTHING_SAVED = {
     EVERY_PART,
   ],
   weekly_budget_minutes: null,
+  min_weekly_minutes: null,
+  training_days: null,
+  long_run_day: null,
+  long_ride_day: null,
   typical_weekly_minutes: null,
   sports: ['running', 'cycling', 'swimming', 'strength'],
   stretching: false,
@@ -229,6 +237,19 @@ describe('AvailabilityApi', () => {
     ],
     ['a number as a part', altered(AVAILABILITY, [['time_windows', 2], [1]])],
     ['null as the windows of a day', altered(AVAILABILITY, [['time_windows', 2], null])],
+    ['no minimum', altered(AVAILABILITY, [['min_weekly_minutes'], REMOVE])],
+    ['a text as minimum', altered(AVAILABILITY, [['min_weekly_minutes'], '200'])],
+    ['a negative minimum', altered(AVAILABILITY, [['min_weekly_minutes'], -1])],
+    ['a fraction as minimum', altered(AVAILABILITY, [['min_weekly_minutes'], 200.5])],
+    ['no training days', altered(AVAILABILITY, [['training_days'], REMOVE])],
+    ['zero training days', altered(AVAILABILITY, [['training_days'], 0])],
+    ['eight training days', altered(AVAILABILITY, [['training_days'], 8])],
+    ['a text as training days', altered(AVAILABILITY, [['training_days'], '4'])],
+    ['no long run day', altered(AVAILABILITY, [['long_run_day'], REMOVE])],
+    ['a seventh weekday', altered(AVAILABILITY, [['long_run_day'], 7])],
+    ['a negative long run day', altered(AVAILABILITY, [['long_run_day'], -1])],
+    ['a text as long ride day', altered(AVAILABILITY, [['long_ride_day'], 'Sunday'])],
+    ['no long ride day', altered(AVAILABILITY, [['long_ride_day'], REMOVE])],
     ['no sharing flag', altered(AVAILABILITY, [['share_limitations_text'], REMOVE])],
     ['a text as sharing flag', altered(AVAILABILITY, [['share_limitations_text'], 'true'])],
     ['a number as sharing flag', altered(AVAILABILITY, [['share_limitations_text'], 1])],
@@ -339,6 +360,28 @@ describe('AvailabilityApi', () => {
       const { result } = await run(api.get(), 'GET', URL, NOTHING_SAVED, 200);
 
       expect(result).toEqual({ kind: 'ok', availability: NOTHING_SAVED });
+    });
+
+    it('takes over the wishes for a week, a missing one as null', async () => {
+      const { result } = await run(api.get(), 'GET', URL, NOTHING_SAVED, 200);
+      const given = await run(api.get(), 'GET', URL, AVAILABILITY, 200);
+
+      expect(result).toMatchObject({
+        availability: {
+          min_weekly_minutes: null,
+          training_days: null,
+          long_run_day: null,
+          long_ride_day: null,
+        },
+      });
+      expect(given.result).toMatchObject({
+        availability: {
+          min_weekly_minutes: 200,
+          training_days: 4,
+          long_run_day: 5,
+          long_ride_day: 6,
+        },
+      });
     });
 
     it('takes over the double days and the time windows as copies', async () => {
@@ -477,6 +520,41 @@ describe('AvailabilityApi', () => {
       expect(stretching.request.request.body).toEqual({ stretching: true });
       expect(sports.result).toMatchObject({ availability: { sports: ['running'] } });
       expect(stretching.result).toMatchObject({ availability: { stretching: true } });
+    });
+
+    it('patches the wishes for a week, a removed one as null', async () => {
+      const changes = { training_days: null, min_weekly_minutes: 240, long_run_day: 0 };
+      const answer = altered(
+        AVAILABILITY,
+        [['training_days'], null],
+        [['min_weekly_minutes'], 240],
+        [['long_run_day'], 0],
+      );
+
+      const { result, request } = await run(api.save(changes), 'PATCH', URL, answer as object, 200);
+
+      expect(request.request.body).toEqual(changes);
+      expect(result).toMatchObject({
+        availability: { training_days: null, min_weekly_minutes: 240, long_run_day: 0 },
+      });
+    });
+
+    it('returns the message about a minimum above the budget at its field', async () => {
+      const refusal = { min_weekly_minutes: ['The minimum cannot be above your weekly budget.'] };
+
+      const { result } = await run(
+        api.save({ min_weekly_minutes: 999 }),
+        'PATCH',
+        URL,
+        refusal,
+        400,
+      );
+
+      expect(result).toEqual({
+        kind: 'invalid',
+        errors: refusal.min_weekly_minutes,
+        fields: refusal,
+      });
     });
 
     it('patches the double days and the time windows alone', async () => {

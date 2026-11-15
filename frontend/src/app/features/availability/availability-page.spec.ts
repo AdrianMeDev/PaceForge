@@ -54,8 +54,15 @@ const DAY_OPTIONS = {
     EVERY_PART,
   ],
 };
+const NO_WISHES = {
+  min_weekly_minutes: null,
+  training_days: null,
+  long_run_day: null,
+  long_ride_day: null,
+};
 const SAVED: Availability = {
   weekdays: [60, 0, 90, 0, 0, 120, 180],
+  ...NO_WISHES,
   ...DAY_OPTIONS,
   weekly_budget_minutes: 300,
   typical_weekly_minutes: 360,
@@ -69,6 +76,7 @@ const SAVED: Availability = {
 };
 const NOTHING: Availability = {
   weekdays: [0, 0, 0, 0, 0, 0, 0],
+  ...NO_WISHES,
   ...DAY_OPTIONS,
   weekly_budget_minutes: null,
   typical_weekly_minutes: null,
