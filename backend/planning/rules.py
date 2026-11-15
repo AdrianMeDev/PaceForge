@@ -17,7 +17,7 @@ from enum import StrEnum
 from fractions import Fraction
 
 from .context import PlanContext
-from .schema import Goal, Slot, Sport, WeekPlan, Workout, ZoneSystem
+from .schema import Goal, Segment, SegmentKind, Slot, Sport, WeekPlan, Workout, ZoneSystem
 
 # The segments of a workout may differ from its duration by this much before it is an error.
 DURATION_TOLERANCE_SECONDS = 60
@@ -41,6 +41,11 @@ MAX_WORKOUTS_PER_DAY = 2
 # break is not held to the few weeks since. 100 takes the athlete at their word; a lower number
 # (70, say) makes the first weeks back more careful.
 TYPICAL_VOLUME_PERCENT = 100
+
+# The sports whose minutes make up the share of easy training; strength counts neither way.
+ENDURANCE_SPORTS = frozenset({Sport.RUNNING, Sport.CYCLING, Sport.SWIMMING})
+# Segments of these kinds without a zone are easy whatever the workout is.
+_EASY_KINDS = frozenset({SegmentKind.WARMUP, SegmentKind.RECOVERY, SegmentKind.COOLDOWN})
 
 _WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 _ABSENCES = {"illness": "an illness", "vacation": "a vacation"}
@@ -337,6 +342,67 @@ def check_progression(plan: WeekPlan, context: PlanContext) -> list[Finding]:
     ]
 
 
+def check_easy_share(plan: WeekPlan, context: PlanContext) -> list[Finding]:
+    """Enough of the endurance minutes of the week are easy (a warning below the athlete's limit).
+
+    Only running, cycling and swimming count. A workout with segments counts segment by segment
+    (``easy_minutes``), one without by its intensity: easy or not at all, moderate is not easy. A
+    week without endurance minutes is not checked, and a week exactly at the limit passes."""
+    _same_week(plan, context)
+    total = 0
+    easy = Fraction(0)
+    for workouts in _workouts_by_day(plan, context).values():
+        for _, workout in workouts:
+            if workout.sport in ENDURANCE_SPORTS:
+                total += workout.duration_minutes
+                easy += easy_minutes(workout)
+    if total == 0:
+        return []
+    share = easy * 100 / total
+    wanted = context.limits.easy_share_percent
+    if share >= wanted:
+        return []
+    # rounded down, so that 79.9 % is told as 79 and not as the 80 % it missed
+    return [
+        Finding(
+            Severity.WARNING,
+            "easy_share_low",
+            f"{int(share)} % of the endurance minutes are easy; your intensity settings ask for "
+            f"at least {wanted} %.",
+            "workouts",
+        )
+    ]
+
+
+def easy_minutes(workout: Workout) -> Fraction:
+    """How many minutes of a workout are easy.
+
+    Without segments it is all of them or none, by ``intensity_of``. With segments each counts by
+    its share of the segments' time: easy if its zone is up to ``EASY_UP_TO_ZONE``; without a zone a
+    warm-up, recovery or cool-down is easy and any other segment is as easy as the workout itself
+    (its goal and its own zone)."""
+    if not workout.segments:
+        return Fraction(workout.duration_minutes if intensity_of(workout) is Intensity.EASY else 0)
+    whole_is_easy = workout.goal not in (Goal.THRESHOLD, Goal.VO2MAX) and (
+        workout.zone is None or workout.zone <= EASY_UP_TO_ZONE
+    )
+    total = sum(segment.seconds * segment.repeat for segment in workout.segments)
+    easy = sum(
+        segment.seconds * segment.repeat
+        for segment in workout.segments
+        if _segment_is_easy(segment, whole_is_easy)
+    )
+    if total == 0:
+        return Fraction(0)
+    return Fraction(easy * workout.duration_minutes, total)
+
+
+def _segment_is_easy(segment: Segment, whole_is_easy: bool) -> bool:
+    if segment.zone is not None:
+        return segment.zone <= EASY_UP_TO_ZONE
+    return segment.kind in _EASY_KINDS or whole_is_easy
+
+
 def _reference_week(context: PlanContext) -> tuple[str, Fraction] | None:
     """The reference minutes per week, with the words that say where it comes from: the higher of
     the recent average and the typical week. ``None`` if neither is more than no minutes."""
@@ -455,6 +521,7 @@ RHYTHM_CHECKS: tuple[Check, ...] = (
     check_workouts_per_day,
     check_duplicates,
     check_progression,
+    check_easy_share,
     check_times_of_day,
 )
 

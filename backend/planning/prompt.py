@@ -119,6 +119,10 @@ percent of "typical_weekly_minutes", which is what the athlete calls a normal we
 null). That second number is where a return to training is headed, not where it starts: after a \
 break climb towards it over several weeks, and prefer a few sessions of a useful length to many \
 very short ones. Without either there is no such limit; then plan carefully.
+- At least "easy_share_percent" percent of the minutes of running, cycling and swimming are easy \
+(warning): a workout without segments counts as a whole, one with segments segment by segment (up \
+to zone {EASY_UP_TO_ZONE} is easy; without a zone a warm-up, recovery or cool-down is easy and \
+any other segment is as easy as the workout). Strength does not count.
 - Plan only the sports listed in "sports" in the data. (error)
 - A day may have two sessions, rarely three, where the minutes of the day and of the week allow it \
 and the sports fit: for example an easy run in the morning and a ride in the afternoon, or \

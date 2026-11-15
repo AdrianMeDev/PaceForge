@@ -56,7 +56,7 @@ def good_week() -> WeekPlan:
                 zone=2,
                 segments=(Segment(SegmentKind.STEADY, 5400, 1, ZoneSystem.POWER, 2),),
             ),
-            workout(2, 60, sport=Sport.RUNNING, zone_system=ZoneSystem.PACE, zone=3),
+            workout(2, 60, sport=Sport.RUNNING, zone_system=ZoneSystem.PACE, zone=2),
             workout(
                 4,
                 100,
@@ -105,7 +105,7 @@ class TestTheReport:
         report = validate_week(plan, context())
 
         assert report.valid
-        assert [f.code for f in report.warnings] == ["hard_days_in_a_row"]
+        assert [f.code for f in report.warnings] == ["hard_days_in_a_row", "easy_share_low"]
         assert report.errors == ()
 
     def test_errors_and_warnings_are_told_apart(self) -> None:
@@ -150,6 +150,7 @@ class TestTheOrder:
             "outside_week",
             "hard_days_in_a_row",
             "duplicate_workout",
+            "easy_share_low",
             "slot_missing",
         ]
 

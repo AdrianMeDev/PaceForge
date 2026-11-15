@@ -148,6 +148,13 @@ For the rhythm rules a workout is **hard** if its goal is `threshold` or `vo2max
 highest zone of the session and its segments is 4 or more, whatever the system. It is **easy** if
 that zone is 2 or less or there is none. Everything else is **moderate**.
 
+For the share of easy minutes only running, cycling and swimming count; strength counts neither
+way. A workout without segments is easy or not as a whole (moderate is not easy). A workout with
+segments counts segment by segment, each by its share of the segments' time applied to the
+duration: a segment is easy if its zone is 2 or less; without a zone a warm-up, recovery or
+cool-down is easy and any other segment is as easy as the workout itself (its goal and its own
+zone). A share is told rounded down, and a week exactly at the limit passes.
+
 ## What the checks know
 
 Each plan is checked against the facts of its user for that week, collected when the check runs:
@@ -196,6 +203,7 @@ user to weigh.
 | `many_workouts_in_a_day` | warning | More workouts on a day than the limit. |
 | `duplicate_workout` | warning | The same sport, goal and duration twice on a day. |
 | `volume_increase` | warning | The planned minutes are above the warning limit of the reference (the recent average, or the typical week if that is higher). |
+| `easy_share_low` | warning | Less of the endurance minutes are easy than the intensity level asks for. |
 
 Workouts outside the week are ignored by every rule except `outside_week`. Nothing is checked
 against the next or the previous week, so Sunday and the following Monday are not "in a row".
@@ -232,15 +240,16 @@ a typical week of 360 minutes the limits are 468 (warning above) and 540 (error 
 
 ## The intensity levels
 
-How many hard days a week may have and the two progression limits are not constants: they come
+How many hard days a week may have, the two progression limits and the share of easy minutes are
+not constants: they come
 from the intensity level of the athlete (`availability/intensity.py`) and reach the rules with the
 context (`PlanContext.limits`). Every athlete has the level "normal".
 
-| Level | Hard days (at most) | Progression warning above (%) | Progression error above (%) |
-| ----- | ------------------- | ----------------------------- | --------------------------- |
-| `relaxed` | 1 | 115 | 130 |
-| `normal` | 2 | 120 | 140 |
-| `intensive` | 3 | 130 | 150 |
+| Level | Hard days (at most) | Progression warning above (%) | Progression error above (%) | Easy share (at least, %) |
+| ----- | ------------------- | ----------------------------- | --------------------------- | ------------------------ |
+| `relaxed` | 1 | 115 | 130 | 85 |
+| `normal` | 2 | 120 | 140 | 80 |
+| `intensive` | 3 | 130 | 150 | 75 |
 
 The percentages are of the reference above, as before. "intensive" has the limits that applied to
 every athlete before there were levels.
@@ -320,7 +329,7 @@ without this page.
 | `typical_weekly_minutes` | What the athlete calls a normal week, in minutes; `null` if not given (or 0). The progression rule's reference is the higher of this and the recent average. |
 | `sports` | The sports the athlete wants in a plan (all four if none was chosen), in the order of the format. |
 | `stretching` | Whether stretching may be added to sessions (`stretching_minutes`), never as a session. |
-| `limits` | The limits of the rules that follow from the athlete's [intensity level](#the-intensity-levels): `max_hard_days`, `progression_warning_percent`, `progression_error_percent`. They are here and not in the system prompt, so that the prompt is the same for every athlete. |
+| `limits` | The limits of the rules that follow from the athlete's [intensity level](#the-intensity-levels): `max_hard_days`, `progression_warning_percent`, `progression_error_percent`, `easy_share_percent`. They are here and not in the system prompt, so that the prompt is the same for every athlete. |
 | `previous_week_plan` | The confirmed plan of the week before: day, sport, goal, minutes. |
 | `previous_week_review` | How the week before went, from the [week review](../README.md#week-review): the number of workouts by status, the minutes planned and done, the sessions that were not planned, how many sessions were rated and their mean RPE, the three scales of the week feedback (`null` if none was given) and `next_week`, the recommendation of a review of that week by the coach (`increase`, `hold`, `reduce`; `null` if none was asked for). Numbers and one fixed word, no text of the user or of the coach. `null` if the week before has not begun or has nothing in it. |
 

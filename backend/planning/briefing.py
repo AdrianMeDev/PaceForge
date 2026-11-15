@@ -83,6 +83,7 @@ def _limits(context: PlanContext) -> dict[str, int]:
         "max_hard_days": limits.max_hard_days,
         "progression_warning_percent": limits.progression_warning_percent,
         "progression_error_percent": limits.progression_error_percent,
+        "easy_share_percent": limits.easy_share_percent,
     }
 
 

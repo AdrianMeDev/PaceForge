@@ -360,9 +360,16 @@ class TestTheSystemPrompt:
         keys = {"recent_weeks_minutes", "typical_weekly_minutes", "weekly_minutes_available",
                 "previous_week_plan", "previous_week_review", "zone_systems", "today", "sports",
                 "stretching", "limits", "max_hard_days", "progression_warning_percent",
-                "progression_error_percent"}  # fmt: skip
+                "progression_error_percent", "easy_share_percent"}  # fmt: skip
 
         assert keys <= named
+
+    def test_it_explains_the_share_of_easy_minutes(self) -> None:
+        assert (
+            'At least "easy_share_percent" percent of the minutes of running, cycling and swimming '
+            "are easy (warning)" in SYSTEM_PROMPT
+        )
+        assert "Strength does not count." in SYSTEM_PROMPT
 
     def test_the_limits_of_the_athlete_come_from_the_data_not_from_the_prompt(self) -> None:
         assert '"limits" in the data holds the limits' in SYSTEM_PROMPT
@@ -372,6 +379,7 @@ class TestTheSystemPrompt:
             for number in (limits.progression_warning_percent, limits.progression_error_percent):
                 assert f"{number} percent" not in SYSTEM_PROMPT
             assert f"At most {limits.max_hard_days} days" not in SYSTEM_PROMPT
+            assert f"At least {limits.easy_share_percent} percent" not in SYSTEM_PROMPT
 
     def test_it_names_the_review_of_the_week_before_and_what_to_do_with_it(self) -> None:
         assert '"previous_week_review" tells how the week before went' in SYSTEM_PROMPT

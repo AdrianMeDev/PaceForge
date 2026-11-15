@@ -77,6 +77,7 @@ ALLOWED_KEYS = {
     "max_hard_days",
     "progression_warning_percent",
     "progression_error_percent",
+    "easy_share_percent",
     "previous_week_plan",
     "day",
     "goal",
@@ -182,6 +183,7 @@ class TestTheBriefingOfAUserWithNothing:
                 "max_hard_days": 2,
                 "progression_warning_percent": 120,
                 "progression_error_percent": 140,
+                "easy_share_percent": 80,
             },
             "previous_week_plan": [],
             "previous_week_review": None,
@@ -489,6 +491,7 @@ class TestTheLimits:
             "max_hard_days": normal.max_hard_days,
             "progression_warning_percent": normal.progression_warning_percent,
             "progression_error_percent": normal.progression_error_percent,
+            "easy_share_percent": normal.easy_share_percent,
         }
 
     def test_they_are_the_limits_of_the_context(
@@ -508,8 +511,9 @@ class TestTheLimits:
             "max_hard_days": 4,
             "progression_warning_percent": 105,
             "progression_error_percent": 110,
+            "easy_share_percent": 60,
         }
-        assert '"limits":{"max_hard_days":4,' in to_json(briefing)
+        assert '"limits":{"easy_share_percent":60,"max_hard_days":4,' in to_json(briefing)
 
 
 class TestTheRecentWeeks:

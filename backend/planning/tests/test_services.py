@@ -104,7 +104,7 @@ def good_week(monday: date = MONDAY, rationale: str = "Build the base") -> WeekP
                 60,
                 sport=Sport.RUNNING,
                 zone_system=ZoneSystem.PACE,
-                zone=3,
+                zone=2,
                 notes="Easy",
             ),
             workout(
@@ -175,7 +175,7 @@ class TestSavingADraft:
 
         row = PlannedWorkout.objects.get(plan=plan, day=MONDAY + timedelta(days=2))
 
-        assert (row.zone_system, row.zone, row.notes) == ("pace", 3, "Easy")
+        assert (row.zone_system, row.zone, row.notes) == ("pace", 2, "Easy")
 
     def test_workouts_of_one_day_get_their_places_in_the_order_given(self, alice: User) -> None:
         plan = draft(
@@ -649,7 +649,10 @@ class TestConfirming:
             ),
         )
         plan = draft(alice, hard)
-        assert [f.code for f in validate(alice, plan.pk).warnings] == ["hard_days_in_a_row"]
+        assert [f.code for f in validate(alice, plan.pk).warnings] == [
+            "hard_days_in_a_row",
+            "easy_share_low",
+        ]
 
         assert confirm(alice, plan.pk).status == Status.CONFIRMED
 
