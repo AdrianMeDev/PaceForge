@@ -232,18 +232,21 @@ decisions, not coaching science; better ones will come from using the feature.
 | `STRETCHING_MAX` | 60 | Minutes of stretching added to one workout. |
 
 The progression rule compares without rounding the reference: with the weeks 100 and 101 (average
-100.5) 130 percent is 130.65, so 130 planned minutes pass and 131 do not. A week exactly at a limit
+100.5) a limit of 130 percent is 130.65, so 130 planned minutes pass and 131 do not. A week exactly at a limit
 passes it. There is no absolute allowance: a recent average of 60 minutes makes a 100-minute week an
 error, unless the athlete has given a typical week that is higher. With a recent average of 108 and
-a typical week of 360 minutes the limits are 468 (warning above) and 540 (error above) instead of
-140 and 162. The message of a finding says which of the two was the reference.
+a typical week of 360 minutes the limits of "intensive" (130 and 150 percent) are 468 (warning above)
+and 540 (error above) instead of 140 and 162. The message of a finding says which of the two was the reference.
 
 ## The intensity levels
 
 How many hard days a week may have, the two progression limits and the share of easy minutes are
-not constants: they come
-from the intensity level of the athlete (`availability/intensity.py`) and reach the rules with the
-context (`PlanContext.limits`). Every athlete has the level "normal".
+not constants: they come from the intensity level the athlete chose on the training time page
+(`availability/intensity.py`, "normal" unless chosen otherwise) and reach the rules with the context
+(`PlanContext.limits`). Each of the four can be replaced by an own value of the athlete (hard days 0
+to 4, warning 100 to 200, error 100 to 300, easy share 50 to 100; the warning limit below the error
+limit). The limits that count are those when a plan is checked: when it is drafted, checked in the
+editor or confirmed. The coach is told them in the briefing (`limits`), never in the system prompt.
 
 | Level | Hard days (at most) | Progression warning above (%) | Progression error above (%) | Easy share (at least, %) |
 | ----- | ------------------- | ----------------------------- | --------------------------- | ------------------------ |

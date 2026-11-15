@@ -531,8 +531,9 @@ planned minutes with what you have done in the last four weeks, and after a brea
 yardstick (an average of 108 minutes allows about 140, which is how a coach ends up with sessions of
 30 minutes). With a normal week of 6:00 the yardstick is that instead, as long as it is higher than
 your recent weeks. The coach is told the number and that it is where a return to training is
-headed, not where it starts. It is **your word and your responsibility**: 130 % of a normal week is
-a big first week after a long break, so enter what you really want to build up to. An operator who
+headed, not where it starts. It is **your word and your responsibility**: 120 % of a normal week
+(the warning limit of the level "normal", see **Intensity**) is a big first week after a long
+break, so enter what you really want to build up to. An operator who
 wants more care can lower `TYPICAL_VOLUME_PERCENT` in `backend/planning/rules.py` (100 counts the
 whole week, 70 would count 70 % of it).
 
@@ -542,13 +543,46 @@ plans only those, and the checks refuse a workout in any other sport. **Add stre
 lets the coach add a few minutes of stretching to a session: it is never a session of its own, it
 uses up none of your minutes and it does not count as a training day. Off is the default.
 
+**Intensity.** How hard your plans may be: **Relaxed**, **Normal** (the default) or **Intensive**.
+The level sets the limits that the checks of every plan use, and the coach is told them:
+
+| Level | Hard days a week, at most | Warning above | Error above | Easy share, at least |
+| --- | --- | --- | --- | --- |
+| Relaxed | 1 | 115 % | 130 % | 85 % |
+| Normal | 2 | 120 % | 140 % | 80 % |
+| Intensive | 3 | 130 % | 150 % | 75 % |
+
+A day is hard if it has a workout with the goal threshold or VO2max or in zone 4 or above, on any
+sport. The two percentages are the planned minutes of a week against your usual week: the average
+of your last four weeks, or **A normal week** if that is more. Above the warning limit the plan gets
+a warning, above the error limit an error, and a plan with an error cannot be confirmed. The easy
+share counts the minutes of running, cycling and swimming (not strength) that are easy (zone 2 or
+below, or no zone without a hard goal; intervals count part by part); less than the share is a
+warning. The stories behind the levels ask for 5, 8 or 10 % more a
+week; a steady rise of that size ends at about 113, 121 or 126 % of the four weeks before, which the
+warning limits round. **Intensive** has the limits that applied to everyone before there were
+levels.
+
+Under **Your own limits** each of the four can be given a value of its own (hard days 0 to 4,
+warning 100 to 200 %, error 100 to 300 %, easy share 50 to 100 %); an empty field keeps the value of
+the level, and each field shows that value while it is empty. The warning limit must stay below the
+error limit, also when only one of them is your own. A change applies from the next check: to the
+next draft, to the checks while you change a plan by hand and when you confirm one, so a draft with
+three hard days can be confirmed after switching to **Intensive**. Plans that are already confirmed
+are not checked again.
+
+**Before levels existed** every athlete had the limits of **Intensive**. Everyone now starts with
+**Normal**, which allows one hard day less and warns from 120 % instead of 130 %: a stored draft
+with three hard days shows an error until you pick **Intensive** or give your own number of hard
+days.
+
 **Limitations.** Free text of up to 1000 characters ("no running on consecutive days"). It is kept
 and shown as plain text, never as markup. Nothing interprets it, and it is not sent to the coach
 either: it is free text about you, and the only free text the coach sees is the title and notes of
 your goals.
 
-**Save** sends the weekdays, the budget, the normal week, the sports, the stretching choice and the
-limitations together. The page checks the limits
+**Save** sends the weekdays, the budget, the normal week, the sports, the stretching choice, the
+intensity with your own limits and the limitations together. The page checks the limits
 first and names every problem next to its field; if the server still refuses something, its message
 appears in the same place. Nothing is saved until every field is usable.
 
@@ -635,7 +669,8 @@ that is confirmed.
 
 **After a break.** If the plans look too small, enter **A normal week** on the
 [Training time](#training-time) page: the limit for how far a week may rise then follows what you
-are used to and not only the last four weeks.
+are used to and not only the last four weeks. If they look too hard or too easy, choose another
+**Intensity** there.
 
 **No time.** If the week offers no training time at all (nothing on any day, a weekly budget of 0,
 or away the whole week), the page says "You have no training time for this week." with a link to
