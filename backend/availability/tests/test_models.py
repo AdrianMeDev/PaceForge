@@ -13,11 +13,13 @@ from availability.models import (
     LIMITATIONS_MAX,
     NOTE_MAX,
     PERIOD_MAX_DAYS,
+    SLOTS,
     SPORTS,
     WEEK_MINUTES_MAX,
     AvailabilitySettings,
     UnavailablePeriod,
     WeekdayMinutes,
+    effective_slots,
     effective_sports,
 )
 from planning import schema
@@ -134,6 +136,12 @@ class TestIntensity:
         self, alice: User, fields: dict[str, Any]
     ) -> None:
         assert "availability_" in rejected_by_database(AvailabilitySettings, owner=alice, **fields)
+
+
+class TestSlots:
+    def test_they_are_the_parts_of_the_day_of_the_week_plan_in_the_same_order(self) -> None:
+        # availability does not import planning; this keeps the two lists in step
+        assert SLOTS == tuple(slot.value for slot in schema.Slot)
 
 
 class TestSports:
@@ -318,6 +326,82 @@ class TestWeekdays:
 
     def test_minutes_default_to_none(self, alice: User) -> None:
         assert WeekdayMinutes.objects.create(owner=alice, weekday=0).minutes == 0
+
+    def test_the_defaults_are_two_sessions_and_every_part_of_the_day(self, alice: User) -> None:
+        row = WeekdayMinutes.objects.create(owner=alice, weekday=0)
+
+        assert row.double_allowed is True
+        assert row.slots == ["morning", "afternoon", "evening"]
+        assert row.open_slots == list(SLOTS)
+
+    def test_the_default_list_is_not_shared_between_rows(self, alice: User) -> None:
+        first = WeekdayMinutes(owner=alice, weekday=0)
+        second = WeekdayMinutes(owner=alice, weekday=1)
+
+        first.slots.append("dawn")
+
+        assert second.slots == list(SLOTS)
+
+    @pytest.mark.parametrize("double_allowed", [True, False])
+    def test_a_weekday_can_forbid_or_allow_two_sessions(
+        self, alice: User, double_allowed: bool
+    ) -> None:
+        check(WeekdayMinutes, alice, weekday=0, minutes=60, double_allowed=double_allowed)
+
+    @pytest.mark.parametrize(
+        "slots",
+        [
+            ["morning"],
+            ["evening"],
+            ["morning", "evening"],
+            ["evening", "morning"],
+            list(SLOTS),
+        ],
+    )
+    def test_valid_time_windows(self, alice: User, slots: list[str]) -> None:
+        check(WeekdayMinutes, alice, weekday=0, minutes=60, slots=slots)
+
+    @pytest.mark.parametrize(
+        "slots",
+        [
+            [],
+            ["noon"],
+            ["Morning"],
+            ["morning", "morning"],
+            ["morning", "noon"],
+            "morning",
+            {"morning": True},
+            [1],
+            [None],
+            [["morning"]],
+            None,
+            5,
+            True,
+        ],
+    )
+    def test_unusable_time_windows_are_refused(self, alice: User, slots: Any) -> None:
+        refused(WeekdayMinutes, alice, "slots", weekday=0, minutes=60, slots=slots)
+
+    @pytest.mark.parametrize(
+        ("stored", "expected"),
+        [
+            (None, list(SLOTS)),
+            ([], list(SLOTS)),
+            (["evening"], ["evening"]),
+            (["evening", "morning"], ["morning", "evening"]),
+            ("morning", list(SLOTS)),
+            ({"a": 1}, list(SLOTS)),
+            (5, list(SLOTS)),
+            (["noon"], []),
+        ],
+    )
+    def test_the_effective_slots(self, stored: Any, expected: list[str]) -> None:
+        assert effective_slots(stored) == expected
+
+    def test_the_open_slots_come_in_the_order_of_the_day(self, alice: User) -> None:
+        row = WeekdayMinutes.objects.create(owner=alice, weekday=0, slots=["evening", "morning"])
+
+        assert row.open_slots == ["morning", "evening"]
 
     def test_the_text_names_the_day(self, alice: User) -> None:
         text = str(WeekdayMinutes(owner=alice, weekday=4, minutes=60))

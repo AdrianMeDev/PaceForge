@@ -38,6 +38,15 @@ class Sport(models.TextChoices):
 
 SPORTS: tuple[str, ...] = tuple(Sport.values)
 
+# The parts of the day a session can be in, earliest first. The same values as
+# ``planning.schema.Slot`` (a test keeps the two in step).
+SLOTS: tuple[str, ...] = ("morning", "afternoon", "evening")
+
+
+def default_slots() -> list[str]:
+    """Every part of the day: what a weekday offers until the user says otherwise."""
+    return list(SLOTS)
+
 
 class AvailabilitySettings(OwnedModel):
     """What a user says about their training time apart from the weekdays. One per user.
@@ -140,8 +149,18 @@ def effective_sports(chosen: object) -> list[str]:
     return list(SPORTS)
 
 
+def effective_slots(stored: object) -> list[str]:
+    """``stored`` (what a weekday row holds, or nothing) as the parts of the day that are open:
+    the stored ones in the order of ``SLOTS``, and all of them if there is nothing usable."""
+    if isinstance(stored, list) and stored:
+        return [slot for slot in SLOTS if slot in stored]
+    return default_slots()
+
+
 class WeekdayMinutes(OwnedModel):
-    """The minutes a user can train on one weekday. No row for a weekday means no time."""
+    """What a user can do on one weekday: the minutes, whether two sessions are allowed and in
+    which parts of the day. No row for a weekday means no time, with two sessions allowed and every
+    part of the day open (so that nothing changes for a user who never chose)."""
 
     class Weekday(models.IntegerChoices):
         MONDAY = 0, "Monday"
@@ -154,6 +173,8 @@ class WeekdayMinutes(OwnedModel):
 
     weekday = models.PositiveSmallIntegerField(choices=Weekday.choices)
     minutes = models.PositiveSmallIntegerField(default=0)
+    double_allowed = models.BooleanField(default=True)
+    slots = models.JSONField(default=default_slots, blank=True)
 
     class Meta:
         constraints = [
@@ -173,6 +194,21 @@ class WeekdayMinutes(OwnedModel):
         super().clean()
         if self.minutes is not None and self.minutes > DAY_MINUTES_MAX:
             raise ValidationError({"minutes": f"Enter at most {DAY_MINUTES_MAX} minutes (a day)."})
+        slots = self.slots
+        if not (
+            isinstance(slots, list)
+            and slots
+            and all(isinstance(slot, str) and slot in SLOTS for slot in slots)
+            and len(set(slots)) == len(slots)
+        ):
+            raise ValidationError(
+                {"slots": "Use at least one of morning, afternoon and evening, each at most once."}
+            )
+
+    @property
+    def open_slots(self) -> list[str]:
+        """The parts of the day open on this weekday, in the order of ``SLOTS``."""
+        return effective_slots(self.slots)
 
 
 class UnavailablePeriod(OwnedModel):
