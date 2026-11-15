@@ -451,6 +451,18 @@ class TestTheContextOfAUser:
         assert context.time_windows[1] == frozenset({Slot.MORNING, Slot.EVENING})
         assert context.time_windows[0] == frozenset(Slot)
 
+    def test_the_free_text_is_in_the_context_only_with_the_switch_on(
+        self, alice: User, bob: User
+    ) -> None:
+        AvailabilitySettings.objects.create(owner=alice, limitations="Knee")
+        AvailabilitySettings.objects.create(
+            owner=bob, limitations="Back", share_limitations_text=True
+        )
+
+        assert build_context(alice, MONDAY).limitations_text is None
+        AvailabilitySettings.objects.filter(owner=alice).update(share_limitations_text=True)
+        assert build_context(alice, MONDAY).limitations_text == "Knee"
+
     def test_without_limitations_there_are_none(self, alice: User) -> None:
         assert build_context(alice, MONDAY).limitations == ()
 

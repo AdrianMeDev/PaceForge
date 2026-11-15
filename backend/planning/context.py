@@ -63,6 +63,8 @@ class PlanContext:
     time_windows: tuple[frozenset[Slot], ...] = (frozenset(Slot),) * 7
     # The current limitations, the newest first. Healed ones are not in here.
     limitations: tuple[ActiveLimitation, ...] = ()
+    # The athlete's free text about their limitations, only if they let it go to the coach.
+    limitations_text: str | None = None
 
     def offset(self, day: date) -> int | None:
         """The place of ``day`` in the week (Monday is 0), ``None`` if it lies outside."""
@@ -91,6 +93,7 @@ def build_context(user: User, monday: date) -> PlanContext:
         time_windows=tuple(
             frozenset(Slot(slot) for slot in window) for window in capacity.time_windows
         ),
+        limitations_text=capacity.shared_limitations_text,
         limitations=tuple(
             ActiveLimitation(body_part, frozenset(Sport(sport) for sport in sports))
             for body_part, sports in current_limitations(user)

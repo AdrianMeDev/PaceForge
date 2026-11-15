@@ -46,6 +46,9 @@ class WeekCapacity:
     # may be added to sessions. Choices, not time: they change nothing about what the week offers.
     sports: tuple[str, ...] = SPORTS
     stretching: bool = False
+    # The free text about limitations, only if the user lets it go to the coach (``None`` if the
+    # switch is off or there is no text). Not time: it changes nothing about what the week offers.
+    shared_limitations_text: str | None = None
     # The limits of the planning rules: the user's intensity level with their own values.
     limits: Limits = LEVEL_LIMITS[DEFAULT_LEVEL]
     # Per day, Monday first: whether two sessions are allowed, and the parts of the day that are
@@ -67,16 +70,19 @@ def week_capacity(user: User, monday: date) -> WeekCapacity:
             "typical_weekly_minutes",
             "sports",
             "stretching",
+            "limitations",
+            "share_limitations_text",
             "intensity_level",
             *LIMIT_NAMES,
         )
         .first()
     )
     if row is None:
-        budget, typical, chosen, stretching = None, None, [], False
+        budget, typical, chosen, stretching, text = None, None, [], False, None
         limits = LEVEL_LIMITS[DEFAULT_LEVEL]
     else:
-        budget, typical, chosen, stretching, level, *own = row
+        budget, typical, chosen, stretching, written, share, level, *own = row
+        text = written.strip() if share and written.strip() else None
         limits = effective_limits(level, dict(zip(LIMIT_NAMES, own, strict=True)))
     total = sum(minutes)
     return WeekCapacity(
@@ -87,6 +93,7 @@ def week_capacity(user: User, monday: date) -> WeekCapacity:
         typical_weekly_minutes=typical,
         sports=tuple(effective_sports(chosen)),
         stretching=stretching,
+        shared_limitations_text=text,
         limits=limits,
         double_days=tuple(day.double_allowed for day in days),
         time_windows=tuple(day.slots for day in days),

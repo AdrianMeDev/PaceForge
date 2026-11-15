@@ -458,6 +458,37 @@ class TestTheDoubleDaysAndTheTimeWindows:
         assert len(queries) == 3
 
 
+class TestTheSharedLimitationsText:
+    def test_nothing_is_shared_for_a_user_who_wrote_nothing(self, alice: User) -> None:
+        assert week_capacity(alice, MONDAY).shared_limitations_text is None
+
+    def test_a_text_is_shared_only_with_the_switch_on(self, alice: User) -> None:
+        AvailabilitySettings.objects.create(owner=alice, limitations="  Right knee  ")
+
+        assert week_capacity(alice, MONDAY).shared_limitations_text is None
+
+        AvailabilitySettings.objects.filter(owner=alice).update(share_limitations_text=True)
+
+        assert week_capacity(alice, MONDAY).shared_limitations_text == "Right knee"
+
+    def test_a_text_of_white_space_is_no_text(self, alice: User) -> None:
+        AvailabilitySettings.objects.create(
+            owner=alice, limitations="   ", share_limitations_text=True
+        )
+
+        assert week_capacity(alice, MONDAY).shared_limitations_text is None
+
+    def test_it_still_takes_three_queries(self, alice: User) -> None:
+        AvailabilitySettings.objects.create(
+            owner=alice, limitations="Knee", share_limitations_text=True
+        )
+
+        with CaptureQueriesContext(connection) as queries:
+            week_capacity(alice, MONDAY)
+
+        assert len(queries) == 3
+
+
 class TestTheWholeWeek:
     def test_nothing_declared_offers_nothing(self, alice: User) -> None:
         assert week_capacity(alice, MONDAY) == WeekCapacity((0,) * 7, (None,) * 7, None, 0)

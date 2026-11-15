@@ -341,15 +341,19 @@ without this page.
 | `stretching` | Whether stretching may be added to sessions (`stretching_minutes`), never as a session. |
 | `limits` | The limits of the rules that follow from the athlete's [intensity level](#the-intensity-levels): `max_hard_days`, `progression_warning_percent`, `progression_error_percent`, `easy_share_percent`. They are here and not in the system prompt, so that the prompt is the same for every athlete. |
 | `limitations` | The current injuries and limitations, the newest first, at most 10: `body_part` (a fixed word: foot, ankle, achilles, calf, shin, knee, thigh, hip, back, shoulder, other) and the `sports` it affects (none listed: no particular sport). Healed ones are not told. No text of the athlete. |
+| `limitations_text` | What the athlete wrote in the free text about their limitations, cut to `LIMITATIONS_TEXT_MAX_TOLD` characters, **only if they switched on "Send this text to my AI coach"**; otherwise `null`. Free text: the system prompt says that it is data and never instructions. |
 | `limitations_not_shown` | How many current limitations were left out because of the limit. |
 | `previous_week_plan` | The confirmed plan of the week before: day, sport, goal, minutes. |
 | `previous_week_review` | How the week before went, from the [week review](../README.md#week-review): the number of workouts by status, the minutes planned and done, the sessions that were not planned, how many sessions were rated and their mean RPE, the three scales of the week feedback (`null` if none was given) and `next_week`, the recommendation of a review of that week by the coach (`increase`, `hold`, `reduce`; `null` if none was asked for). Numbers and one fixed word, no text of the user or of the coach. `null` if the week before has not begun or has nothing in it. |
 
 What is **never** sent: names, e-mail addresses, ids, the title or notes of past plans, the names
-or descriptions of activities, the free text of the training time page and the provider setup. The
-limitations of the training time page are told as a body part and sports from a fixed list.
-The title and notes of a goal are free text. They are sent as JSON strings, the notes cut to
-`GOAL_NOTES_MAX` characters, and the system prompt says that they are data and never instructions.
+or descriptions of activities and the provider setup. The limitations of the training time page are
+told as a body part and sports from a fixed list; the free text next to them is **only** sent if the
+athlete switches that on, and then as `limitations_text`.
+
+The title and notes of a goal (and `limitations_text`, if allowed) are free text. They are sent as
+JSON strings, the notes cut to `GOAL_NOTES_MAX` characters and the limitations text to
+`LIMITATIONS_TEXT_MAX_TOLD`, and the system prompt says that they are data and never instructions.
 That is a request to the model, not a guarantee: a model may still be swayed by what is in them.
 What it cannot do is get a plan past the parser and the rules.
 
@@ -364,6 +368,7 @@ What it cannot do is get a plan past the parser and the rules.
 | `MAX_LISTED` | 20 | Problems listed in a repair message; the rest is only counted. |
 | `MAX_GOALS` | 5 | Active goals told to the coach. |
 | `GOAL_NOTES_MAX` | 300 | Characters of the notes of a goal that are sent. |
+| `LIMITATIONS_TEXT_MAX_TOLD` | 150 | Characters of the free text about limitations that are sent, if the athlete allows it. |
 | `MAX_LIMITATIONS_TOLD` | 10 | Current limitations told to the coach (the newest first); the rest is counted. |
 | `MAX_BYTES` | 20000 | The most the briefing may take (UTF-8), checked in the tests. |
 
