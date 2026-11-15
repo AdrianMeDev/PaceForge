@@ -302,6 +302,7 @@ without this page.
 | `sports` | The sports the athlete wants in a plan (all four if none was chosen), in the order of the format. |
 | `stretching` | Whether stretching may be added to sessions (`stretching_minutes`), never as a session. |
 | `previous_week_plan` | The confirmed plan of the week before: day, sport, goal, minutes. |
+| `previous_week_review` | How the week before went, from the [week review](../README.md#week-review): the number of workouts by status, the minutes planned and done, the sessions that were not planned, how many sessions were rated and their mean RPE, the three scales of the week feedback (`null` if none was given) and `next_week`, the recommendation of a review of that week by the coach (`increase`, `hold`, `reduce`; `null` if none was asked for). Numbers and one fixed word, no text of the user or of the coach. `null` if the week before has not begun or has nothing in it. |
 
 What is **never** sent: names, e-mail addresses, ids, the title or notes of past plans, the names
 or descriptions of activities, the limitations of the training time page and the provider setup.

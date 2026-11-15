@@ -11,15 +11,9 @@ from rest_framework.throttling import BaseThrottle
 from rest_framework.views import APIView
 
 from accounts.models import User
-from coach.providers.base import (
-    EndpointNotAllowedError,
-    InvalidKeyError,
-    ProviderError,
-    ProviderUnavailableError,
-    RateLimitedError,
-)
+from coach.providers.base import ProviderError
 from coach.services import NotConfiguredError
-from coach.views import PROBLEMS
+from coach.views import provider_problem
 from integrations import services as integrations
 from integrations.intervals import IntervalsError
 from integrations.intervals import InvalidKeyError as IntervalsKeyError
@@ -148,7 +142,7 @@ class GenerateView(APIView):
                 problems=[{"path": p.path, "message": p.message} for p in error.problems],
             )
         except ProviderError as error:
-            return _provider_problem(error)
+            return provider_problem(error)
         response = _detail(user, generated.plan, generated.report)
         response.status_code = status.HTTP_201_CREATED
         return response
@@ -243,23 +237,3 @@ class DiscardView(APIView):
             return _error(status.HTTP_404_NOT_FOUND, "not_found", NOT_FOUND)
         except services.PlanStateError:
             return _error(status.HTTP_409_CONFLICT, "not_a_draft", NOT_A_DRAFT)
-
-
-def _provider_problem(error: ProviderError) -> Response:
-    if isinstance(error, InvalidKeyError):
-        return _error(status.HTTP_502_BAD_GATEWAY, "invalid_key", PROBLEMS["invalid_key"])
-    if isinstance(error, RateLimitedError):
-        response = _error(
-            status.HTTP_429_TOO_MANY_REQUESTS,
-            "rate_limited",
-            PROBLEMS["rate_limited"],
-            retry_after=error.retry_after,
-        )
-        if error.retry_after is not None:
-            response["Retry-After"] = str(error.retry_after)
-        return response
-    if isinstance(error, ProviderUnavailableError):
-        return _error(status.HTTP_503_SERVICE_UNAVAILABLE, "unavailable", PROBLEMS["unavailable"])
-    if isinstance(error, EndpointNotAllowedError):
-        return _error(status.HTTP_502_BAD_GATEWAY, "not_allowed", PROBLEMS["not_allowed"])
-    return _error(status.HTTP_502_BAD_GATEWAY, "unexpected", PROBLEMS["unexpected"])

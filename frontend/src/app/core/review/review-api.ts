@@ -3,8 +3,16 @@ import { Injectable, inject } from '@angular/core';
 import { Observable, firstValueFrom } from 'rxjs';
 import { ActivitySource, Sport as ActivitySport } from '../activities/activities-models';
 import { API_BASE } from '../api/api-providers';
-import { Sport as PlannedSport, WorkoutGoal, WorkoutSlot } from '../planning/planning-models';
 import {
+  ProviderProblem,
+  Sport as PlannedSport,
+  WorkoutGoal,
+  WorkoutSlot,
+} from '../planning/planning-models';
+import {
+  AskCoachResult,
+  CoachComment,
+  CommentProblem,
   Comparison,
   CorrectResult,
   CorrectionField,
@@ -15,6 +23,7 @@ import {
   GetReviewResult,
   ListReviewWeeksResult,
   Origin,
+  Recommendation,
   ReviewActivity,
   ReviewPlan,
   ReviewWorkout,
@@ -27,8 +36,9 @@ import {
 } from './review-models';
 
 const BASE = `${API_BASE}/reviews/weeks/`;
-const HANDLED_ERRORS = [400, 401, 403, 404, 409];
+const HANDLED_ERRORS = [400, 401, 403, 404, 409, 422, 429, 502, 503];
 const REJECTED_FALLBACK = 'Your entries could not be saved. Please check them.';
+const PROVIDER_FALLBACK = 'The AI provider could not be used right now. Please try again later.';
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 const ACTIVITY_SPORTS: readonly string[] = ['running', 'cycling', 'swimming', 'strength', 'other'];
@@ -46,6 +56,14 @@ const GOALS: readonly string[] = [
 const SLOTS: readonly string[] = ['morning', 'afternoon', 'evening'];
 const STATUSES: readonly WorkoutStatus[] = ['done', 'partial', 'missed', 'replaced', 'open'];
 const ORIGINS: readonly string[] = ['auto', 'user'];
+const RECOMMENDATIONS: readonly string[] = ['increase', 'hold', 'reduce'];
+const PROVIDER_PROBLEMS: readonly string[] = [
+  'invalid_key',
+  'rate_limited',
+  'unavailable',
+  'unexpected',
+  'not_allowed',
+];
 const CORRECTION_FIELDS: readonly CorrectionField[] = ['activity', 'no_activity', 'status'];
 const FEEDBACK_FIELDS: readonly FeedbackField[] = ['fatigue', 'motivation', 'pain', 'notes'];
 
@@ -151,6 +169,41 @@ export class ReviewApi {
     }
   }
 
+  /**
+   * Asks the user's own coach to comment on the week that starts on `week` (a Monday,
+   * YYYY-MM-DD). This takes a while: up to a minute or two. Something that is no date is not
+   * even sent.
+   */
+  async askCoach(week: string): Promise<AskCoachResult> {
+    if (!DATE.test(week)) {
+      return { kind: 'not_reviewable' };
+    }
+    const reply = await this.send(
+      this.http.post(`${BASE}${week}/comment/`, {}, { observe: 'response' }),
+    );
+    switch (reply.status) {
+      case 201:
+        return { kind: 'ok', review: toReview(reply.body, reply) };
+      case 404:
+        return { kind: 'not_reviewable' };
+      case 409:
+        return toConflict(reply);
+      case 422:
+        return { kind: 'not_usable', problems: toProblems(reply) };
+      case 429:
+        return toRateLimit(reply);
+      case 502:
+        return toProviderProblem(reply, 'unexpected');
+      case 503:
+        return toProviderProblem(reply, 'unavailable');
+      case 401:
+      case 403:
+        return { kind: 'forbidden' };
+      default:
+        throw unexpected(reply);
+    }
+  }
+
   private async send(request: Observable<HttpResponse<unknown>>): Promise<Reply> {
     try {
       const response = await firstValueFrom(request);
@@ -184,6 +237,7 @@ function toReview(body: unknown, reply: Reply): WeekReview {
   const item = object(body, reply);
   const plan = item['plan'];
   const feedback = item['feedback'];
+  const comment = item['comment'];
   return {
     week_start: date(item['week_start'], reply),
     today: date(item['today'], reply),
@@ -192,6 +246,7 @@ function toReview(body: unknown, reply: Reply): WeekReview {
     activities: list(item['activities'], reply).map((raw) => toActivity(raw, reply)),
     comparison: toComparison(item['comparison'], reply),
     feedback: feedback === null ? null : toFeedback(feedback, reply),
+    comment: comment === null ? null : toComment(comment, reply),
   };
 }
 
@@ -285,6 +340,71 @@ function toFeedback(raw: unknown, reply: Reply): WeekFeedback {
     pain: numberOrNull(item['pain'], reply),
     notes: string(item['notes'], reply),
     updated_at: text(item['updated_at'], reply),
+  };
+}
+
+function toComment(raw: unknown, reply: Reply): CoachComment {
+  const item = object(raw, reply);
+  return {
+    comment: text(item['comment'], reply),
+    next_week: oneOf(item['next_week'], RECOMMENDATIONS, reply) as Recommendation,
+    created_at: text(item['created_at'], reply),
+  };
+}
+
+/** 409 has two reasons that the code tells apart; any other code is not an answer of this API. */
+function toConflict(reply: Reply): AskCoachResult {
+  switch (codeOf(reply.body)) {
+    case 'nothing_to_review':
+      return { kind: 'nothing_to_review' };
+    case 'not_configured':
+      return { kind: 'not_configured' };
+    default:
+      throw unexpected(reply);
+  }
+}
+
+function toProblems(reply: Reply): CommentProblem[] {
+  return list(object(reply.body, reply)['problems'], reply).map((raw) => {
+    const item = object(raw, reply);
+    return { path: string(item['path'], reply), message: text(item['message'], reply) };
+  });
+}
+
+/**
+ * 429 comes from two places: the provider asking to slow down (the body has a code and the
+ * server's text) and this server's own limit (a plain throttling answer without a code).
+ */
+function toRateLimit(reply: Reply): AskCoachResult {
+  const body = reply.body;
+  if (typeof body === 'object' && body !== null && (body as Raw)['code']) {
+    return toProviderProblem(reply, 'rate_limited');
+  }
+  return { kind: 'rate_limited' };
+}
+
+/**
+ * The answer of the server names the problem and brings a text for users. A proxy in front of
+ * the server may replace it with a page of its own: the status alone still says what kind of
+ * problem it is (`fallback`) and the text is then a fixed one.
+ */
+function toProviderProblem(reply: Reply, fallback: ProviderProblem): AskCoachResult {
+  const body =
+    typeof reply.body === 'object' && reply.body !== null && !Array.isArray(reply.body)
+      ? (reply.body as Raw)
+      : {};
+  const code = body['code'];
+  const message = body['detail'];
+  const retryAfter = body['retry_after'];
+  const known = typeof code === 'string' && PROVIDER_PROBLEMS.includes(code);
+  return {
+    kind: 'provider_problem',
+    problem: known ? (code as ProviderProblem) : fallback,
+    message: known && typeof message === 'string' && message !== '' ? message : PROVIDER_FALLBACK,
+    retry_after:
+      known && typeof retryAfter === 'number' && Number.isInteger(retryAfter) && retryAfter >= 0
+        ? retryAfter
+        : null,
   };
 }
 

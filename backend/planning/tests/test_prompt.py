@@ -359,9 +359,23 @@ class TestTheSystemPrompt:
     def test_every_key_it_names_is_a_key_of_the_briefing(self) -> None:
         named = set(re.findall(r'"([a-z_]+)"', SYSTEM_PROMPT))
         keys = {"recent_weeks_minutes", "typical_weekly_minutes", "weekly_minutes_available",
-                "previous_week_plan", "zone_systems", "today", "sports", "stretching"}  # fmt: skip
+                "previous_week_plan", "previous_week_review", "zone_systems", "today", "sports",
+                "stretching"}  # fmt: skip
 
         assert keys <= named
+
+    def test_it_names_the_review_of_the_week_before_and_what_to_do_with_it(self) -> None:
+        assert '"previous_week_review" tells how the week before went' in SYSTEM_PROMPT
+        for word in ('"increase"', '"hold"', '"reduce"', '"next_week"', '"fatigue"', '"pain"'):
+            assert word in SYSTEM_PROMPT, word
+        assert "advice, not as a rule that overrides the rules above" in SYSTEM_PROMPT
+
+    def test_it_says_that_a_week_that_is_running_is_not_over(self) -> None:
+        assert 'still running ("open" workouts), it is not over' in SYSTEM_PROMPT
+        assert "do not read what is missing as missed" in SYSTEM_PROMPT
+
+    def test_it_says_that_the_review_may_be_missing(self) -> None:
+        assert "and is null if there is nothing to tell" in SYSTEM_PROMPT
 
     def test_it_names_the_time_of_day_and_the_stretching_in_the_format(self) -> None:
         assert '"slot": one of "morning", "afternoon", "evening"' in SYSTEM_PROMPT

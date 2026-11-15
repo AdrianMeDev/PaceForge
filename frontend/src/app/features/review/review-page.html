@@ -224,6 +224,16 @@
               Load is minutes times how hard it felt (AU). It is not the TSS of a platform.
             </p>
           }
+          <app-coach-comment
+            [week]="shown.week_start"
+            [comment]="shown.comment"
+            [openWorkouts]="shown.comparison.statuses.open"
+            [disabled]="work() !== null"
+            (asked)="coachAnswered($event)"
+            (busy)="coachBusy($event)"
+            (notReviewable)="notReviewable()"
+            (signedOut)="signOut()"
+          />
           <app-week-feedback-form
             [week]="shown.week_start"
             [feedback]="shown.feedback"

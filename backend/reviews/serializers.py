@@ -14,7 +14,7 @@ from activities.load import load_of
 from activities.serializers import TextField, WholeNumberField, checked_note
 
 from .comparison import Comparison, Figures
-from .models import NOTES_MAX, SCALE_MAX, SCALE_MIN, WeekFeedback, WorkoutReview
+from .models import NOTES_MAX, SCALE_MAX, SCALE_MIN, WeekComment, WeekFeedback, WorkoutReview
 from .services import WeekReview
 
 _TIME = serializers.DateTimeField()
@@ -103,6 +103,7 @@ def review_data(review: WeekReview) -> dict[str, Any]:
         ],
         "comparison": comparison_data(review.comparison),
         "feedback": None if review.feedback is None else feedback_data(review.feedback),
+        "comment": None if review.comment is None else comment_data(review.comment),
     }
 
 
@@ -124,6 +125,14 @@ def feedback_data(feedback: WeekFeedback) -> dict[str, Any]:
         "pain": feedback.pain,
         "notes": feedback.notes,
         "updated_at": _time(feedback.updated_at),
+    }
+
+
+def comment_data(comment: WeekComment) -> dict[str, Any]:
+    return {
+        "comment": comment.comment,
+        "next_week": comment.next_week,
+        "created_at": _time(comment.created_at),
     }
 
 

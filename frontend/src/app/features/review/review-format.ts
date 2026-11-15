@@ -4,6 +4,7 @@ import {
   Comparison,
   CorrectionInput,
   Figures,
+  Recommendation,
   ReviewActivity,
   ReviewWorkout,
   ReviewableWeek,
@@ -149,3 +150,14 @@ export const FEEDBACK_SCALES: {
     choices: scaleChoices(['None', 'Slight', 'Noticeable', 'Strong', 'Severe']),
   },
 ];
+
+const RECOMMENDATION_TEXTS: Record<Recommendation, string> = {
+  increase: 'increase the volume a little',
+  hold: 'keep the volume about the same',
+  reduce: 'reduce the volume',
+};
+
+/** What the coach recommends for the next week, in words ("keep the volume about the same"). */
+export function recommendationText(recommendation: Recommendation): string {
+  return RECOMMENDATION_TEXTS[recommendation];
+}

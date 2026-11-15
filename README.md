@@ -16,8 +16,8 @@ with a connection check and a usage overview), the model and the plausibility ch
 training week ([format and rules](docs/weekly-plan.md)), a **Week plan** page on which your own
 AI coach drafts a training week that you read, confirm or discard ([Week plan](#week-plan)), a
 **Week review** page that shows how a week went against the confirmed plan, on which you rate your
-sessions and say how the week felt ([Week review](#week-review)), and the data-isolation foundation
-the training features will build on.
+sessions, say how the week felt and ask your coach about it ([Week review](#week-review)), and the
+data-isolation foundation the training features will build on.
 **Not there yet:** reading activities from Intervals.icu over that connection (it can only ever
 work for activities that do not come from Strava, see [Activities](#activities)), sending
 invitations by email (the administrator hands the link on) and more of the coach: it drafts a
@@ -616,7 +616,8 @@ the Training time page. Nothing is sent to your provider then, so it costs nothi
 The coach is told only a fixed set of facts: the week and today, the minutes you can train on each
 day and your absences, your weekly budget, your zone tables, the sports you ticked and whether
 stretching is allowed, your active goals (title and notes), the minutes you trained in the last
-four weeks, your normal week if you gave one and a summary of last week's confirmed plan. **Not**
+four weeks, your normal week if you gave one, a summary of last week's confirmed plan and how that
+week went (see [Week review](#week-review)). **Not**
 your name, e-mail address, activities' names, the limitations you wrote on the training time page
 or anything of other users. A goal's title and notes are free text, and a model can be influenced by
 text; whatever it answers still has to pass the strict reading and the checks before it is a draft,
@@ -722,9 +723,36 @@ activities done and their minutes (every activity of the week counts, planned or
 of the loads of the rated sessions, with "(1 of 2 rated)" where not every session is rated. There is
 no planned load, because workouts have none yet.
 
-**What the coach is told.** Nothing of this is sent to your AI provider yet. The plan is that the
-coach will be told numbers only (statuses, minutes, ratings, load and the three scales) and never
-your notes, which are yours.
+**Ask the coach.** At the bottom of the page, *What your coach says* has the button **Ask the
+coach** (**Ask again** once there is a comment). It asks your own
+[AI provider](#ai-coach-bring-your-own-key) to look back on the week and brings back a **comment**
+of up to 600 characters (`COMMENT_MAX` in `backend/reviews/models.py`) and a **recommendation** for
+the next week: *increase the volume a little*, *keep the volume about the same* or *reduce the
+volume*. The comment is kept with the week; asking again replaces it, and a try that fails leaves
+the old one where it is. Any week of the list can be asked about, also the one that is running (the
+coach is then told that the open workouts are not over). A week with no confirmed plan, no activity
+and no feedback has nothing to look back on: nothing is sent then, so it costs nothing.
+
+**What the coach is told.** Numbers and fixed words only (`backend/reviews/briefing.py`): for each
+workout its day, sport, goal, planned minutes, status, the minutes done and the RPE; the sessions
+that were not planned (at most `MAX_UNPLANNED`, the rest is only counted); planned and done per
+sport and for the week; the statuses and the share done; and the three scales of the feedback.
+**Not** your notes (of a session or of the week), the titles and notes of workouts, names, e-mail
+addresses or ids: there is no free text in it at all. The comment is the coach's own text; it is
+shown as text, and it is **never sent back** to the coach, not even when it plans the next week.
+
+**The effect on the next week.** When your coach drafts a [week plan](#week-plan), it is told how
+the week before went (`previous_week_review`): the workouts by status, the minutes planned and
+done, the mean RPE, the three scales and the recommendation of your review of that week, if you
+asked for one. That is advice, not a rule: the checks of the plan stay as they are, and nothing is
+confirmed without you. The figures are worked out when the plan is drafted, so a correction or a
+rating you make later is in the next draft without asking the coach again.
+
+**Cost and limit.** Every request goes to your provider with your key and is **billed to you**: a
+comment costs one request, or two if the coach had to correct its answer. They are counted in the
+usage overview of the AI coach (the purpose "week review" is stored with each record). Asking is
+limited to 5 a minute per user, with a counter of its own. Like drafting, it waits for the provider
+inside the request, so the timeouts named under [Week plan](#week-plan) apply.
 
 The API (all of it needs a signed-in user, and what you send replaces what was there; a field that
 is not part of a form is refused):
@@ -732,15 +760,18 @@ is not part of a form is refused):
 | Request                                            | What it does                                              |
 | -------------------------------------------------- | --------------------------------------------------------- |
 | `GET /api/reviews/weeks/`                          | the weeks that can be reviewed                            |
-| `GET /api/reviews/weeks/<Monday>/`                 | one week: plan, match, activities, comparison, feedback   |
+| `GET /api/reviews/weeks/<Monday>/`                 | one week: plan, match, activities, comparison, feedback, comment |
 | `PUT /api/reviews/weeks/<Monday>/workouts/<id>/`   | `activity`, `no_activity`, `status` of one workout        |
 | `PUT /api/reviews/weeks/<Monday>/feedback/`        | `fatigue`, `motivation`, `pain`, `notes` of the week      |
+| `POST /api/reviews/weeks/<Monday>/comment/`        | asks the coach to comment on the week (`201`)             |
 | `PATCH /api/activities/<id>/`                      | `rpe` and `notes` of an activity (nothing else changes)  |
 
-The two `PUT`s answer with the whole week as the `GET` shows it.
+The two `PUT`s and the `POST` answer with the whole week as the `GET` shows it.
 
-**Not verified yet.** The page is tested with test doubles for the API, and the endpoints against a
-test database; it has not been used in a browser by the developer.
+**Not verified yet.** The page is tested with test doubles for the API, the endpoints against a
+test database and the comment with a provider that answers from a script; it has not been used in a
+browser by the developer, and the comment has not been tried against a real provider. Your first
+real comment is the first real test; please read it critically.
 
 ## Instance key
 

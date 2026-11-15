@@ -29,12 +29,13 @@ import {
   statusChoiceOf,
   weekOptionText,
 } from './review-format';
+import { CoachComment } from './coach-comment';
 import { SessionRating } from './session-rating';
 import { WeekFeedbackForm } from './week-feedback-form';
 
 type View = 'loading' | 'unreachable' | 'ready' | 'signed_out';
 /** What the page is waiting for; one thing at a time. */
-type Work = 'opening' | 'saving';
+type Work = 'opening' | 'saving' | 'asking';
 
 const FALLBACK = 'Something went wrong. Please try again.';
 const REFRESH_FAILED = 'The list of weeks could not be refreshed. Please try again.';
@@ -44,6 +45,7 @@ const ACTIVITY_TAKEN = 'That activity is already assigned to another workout. Fr
 const SAVED = 'Saved.';
 const RATED = 'The rating was saved.';
 const FEEDBACK_SAVED = 'Your feedback was saved.';
+const COMMENTED = 'Your coach commented on the week.';
 const NO_SUCH_ACTIVITY = 'That session does not exist any more.';
 /** The fields of the correction, in the order a person reads them. */
 const CORRECTION_FIELDS: readonly CorrectionField[] = ['activity', 'no_activity', 'status'];
@@ -64,7 +66,7 @@ interface ReviewDay {
  */
 @Component({
   selector: 'app-review-page',
-  imports: [RouterLink, SessionRating, WeekFeedbackForm],
+  imports: [RouterLink, SessionRating, WeekFeedbackForm, CoachComment],
   templateUrl: './review-page.html',
   styleUrls: ['../auth/auth-form.css', './review-page.css'],
 })
@@ -173,6 +175,18 @@ export class ReviewPage implements OnInit {
     this.errors.set([]);
     this.review.set(review);
     this.notice.set(FEEDBACK_SAVED);
+  }
+
+  /** The coach commented: the whole week comes back with the comment in it. */
+  protected coachAnswered(review: WeekReview): void {
+    this.errors.set([]);
+    this.review.set(review);
+    this.notice.set(COMMENTED);
+  }
+
+  /** The coach is being asked (it takes a while): nothing else may start meanwhile. */
+  protected coachBusy(busy: boolean): void {
+    this.work.set(busy ? 'asking' : null);
   }
 
   protected async notReviewable(): Promise<void> {

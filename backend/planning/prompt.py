@@ -10,12 +10,11 @@ ends in the strict parser. Problems found are described in fixed words, paths an
 of the answer is repeated, so that what the coach wrote cannot travel back to it or into a log.
 """
 
-import json
-import re
 from collections.abc import Sequence
 from datetime import date
 from typing import Any
 
+from coach.answers import AnswerFormatError, read_json_object
 from coach.providers.base import Message
 
 from . import briefing as briefing_module
@@ -131,9 +130,16 @@ If "stretching" in the data is true you may add "stretching_minutes" to a sessio
 15, and it is not part of "duration_minutes". If it is false, leave the field out. (error)
 - Plan for the athlete's goals, the main goal first, and use "previous_week_plan" to vary and \
 progress the week. Fewer workouts than the time allows is fine.
+- "previous_week_review" tells how the week before went, and is null if there is nothing to tell: \
+how many workouts are "done", "partial", "replaced", "missed" or still "open", the minutes planned \
+and done, how hard the sessions felt (the mean RPE, 1 easy to 10 maximal), how the athlete felt \
+about the week ("fatigue", "motivation" and "pain", each 1 to 5) and "next_week", what a review of \
+that week recommended for the next one: "increase", "hold", "reduce", or null if none was asked \
+for. Use it as advice, not as a rule that overrides the rules above. After "reduce", or with high \
+fatigue or pain, plan no more minutes than that week had and keep the hard days few; after "hold" \
+plan about the same; after "increase" you may raise the minutes, within the limits above. If that \
+week is still running ("open" workouts), it is not over: do not read what is missing as missed.
 """
-
-_FENCE = re.compile(r"\A```(?:json)?[ \t]*\r?\n(.*)\r?\n```\Z", re.DOTALL)
 
 
 def first_message(briefing: dict[str, Any]) -> Message:
@@ -183,45 +189,10 @@ def repair_message(problems: Sequence[Problem], findings: Sequence[Finding]) -> 
 
 
 def _read_json(text: str) -> object:
-    stripped = text.strip()
-    if len(stripped) > MAX_ANSWER_CHARS:
-        raise _format("The answer is too long.")
-    fenced = _FENCE.match(stripped)
-    if fenced:
-        stripped = fenced.group(1).strip()
-    if not (stripped.startswith("{") and stripped.endswith("}")):
-        raise _format("The answer is not one JSON object. Send the object and nothing else.")
     try:
-        return json.loads(
-            stripped, object_pairs_hook=_no_repeated_keys, parse_constant=_no_constants
-        )
-    except json.JSONDecodeError as error:
-        # the decoder's message is one of a few fixed phrases; the position is only numbers
-        raise _format(
-            f"The answer is not valid JSON ({error.msg}, line {error.lineno}, "
-            f"column {error.colno})."
-        ) from None
-    except _Refused as refused:
-        raise _format(str(refused)) from None
-    except ValueError, RecursionError:
-        raise _format("The answer holds a number or a nesting that cannot be read.") from None
-
-
-class _Refused(Exception):
-    pass
-
-
-def _no_repeated_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    result: dict[str, Any] = {}
-    for key, value in pairs:
-        if key in result:
-            raise _Refused("A key is given twice in the same object.")
-        result[key] = value
-    return result
-
-
-def _no_constants(_: str) -> Any:
-    raise _Refused("NaN and Infinity are not allowed.")
+        return read_json_object(text, MAX_ANSWER_CHARS)
+    except AnswerFormatError as error:
+        raise _format(str(error)) from None
 
 
 def _format(message: str) -> PlanFormatError:

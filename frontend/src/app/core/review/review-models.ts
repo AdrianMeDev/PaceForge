@@ -1,8 +1,14 @@
 import { ActivitySource, Sport as ActivitySport } from '../activities/activities-models';
 import { Forbidden } from '../goals/goals-models';
-import { Sport as PlannedSport, WorkoutGoal, WorkoutSlot } from '../planning/planning-models';
+import { RateLimited } from '../integrations/intervals-models';
+import {
+  ProviderProblem,
+  Sport as PlannedSport,
+  WorkoutGoal,
+  WorkoutSlot,
+} from '../planning/planning-models';
 
-export type { Forbidden };
+export type { Forbidden, RateLimited };
 
 /**
  * How a workout went. `open` is only ever computed (its day has not passed and no activity
@@ -103,6 +109,19 @@ export interface WeekFeedback {
   updated_at: string;
 }
 
+/** What the coach recommends for the volume of the next week. */
+export type Recommendation = 'increase' | 'hold' | 'reduce';
+
+/**
+ * What the user's coach said about a week when asked. `comment` is the coach's own text, never
+ * trusted: show it as text only. `created_at` is an ISO 8601 timestamp in UTC.
+ */
+export interface CoachComment {
+  comment: string;
+  next_week: Recommendation;
+  created_at: string;
+}
+
 /** One week as the server worked it out; the workouts and activities are in order. */
 export interface WeekReview {
   week_start: string;
@@ -113,6 +132,8 @@ export interface WeekReview {
   activities: ReviewActivity[];
   comparison: Comparison;
   feedback: WeekFeedback | null;
+  /** What the coach said when asked; `null`: it was not asked about this week. */
+  comment: CoachComment | null;
 }
 
 /** What the user decides about one workout; everything empty goes back to the automatic match. */
@@ -169,4 +190,31 @@ export type SaveFeedbackResult =
       errors: Partial<Record<FeedbackField, string[]>>;
       message: string | null;
     }
+  | Forbidden;
+
+/** What was wrong with an answer of the coach that could not be used (fixed texts only). */
+export interface CommentProblem {
+  path: string;
+  message: string;
+}
+
+export type AskCoachResult =
+  /** The whole week, with the comment of the coach in it. */
+  | { kind: 'ok'; review: WeekReview }
+  | NotReviewable
+  /** The week has no confirmed plan, no activity and no feedback: there is nothing to ask about. */
+  | { kind: 'nothing_to_review' }
+  /** No AI provider is set up. */
+  | { kind: 'not_configured' }
+  /** The coach gave no readable comment, even after being told what was wrong. */
+  | { kind: 'not_usable'; problems: CommentProblem[] }
+  /** The provider refused or could not be reached; `message` is the server's text for users. */
+  | {
+      kind: 'provider_problem';
+      problem: ProviderProblem;
+      message: string;
+      retry_after: number | null;
+    }
+  /** Too many requests in a short time (this server's limit, not the provider's). */
+  | RateLimited
   | Forbidden;

@@ -12,7 +12,7 @@ from accounts.tests.conftest import AuthApi
 from athletes.models import AthleteProfile
 from goals import services as goal_services
 from planning.models import PlannedWorkout
-from reviews.models import WeekFeedback, WorkoutReview
+from reviews.models import WeekComment, WeekFeedback, WorkoutReview
 
 from .builders import MONDAY, NOW, make_activity, make_plan
 from .conftest import make_user, signed_in
@@ -199,6 +199,36 @@ class TestOneWeek:
             "notes": "Tired",
         }
 
+    def test_the_comment_of_the_coach_is_part_of_the_week(self, alice: User) -> None:
+        assert body(get(alice, week_url()))["comment"] is None
+        written = datetime(2026, 11, 14, 9, 30, tzinfo=UTC)
+        WeekComment.objects.create(
+            owner=alice,
+            week_start=MONDAY,
+            comment="A <b>steady</b> week.\nKeep it up.",
+            next_week="hold",
+            created_at=written,
+        )
+
+        data = body(get(alice, week_url()))
+
+        assert data["comment"] == {
+            "comment": "A <b>steady</b> week.\nKeep it up.",
+            "next_week": "hold",
+            "created_at": "2026-11-14T09:30:00Z",
+        }
+
+    def test_only_the_comment_of_that_week_and_user_is_shown(self, alice: User, bob: User) -> None:
+        WeekComment.objects.create(
+            owner=alice, week_start=MONDAY - timedelta(weeks=1), comment="before", next_week="hold"
+        )
+        WeekComment.objects.create(owner=bob, week_start=MONDAY, comment=MARKER, next_week="reduce")
+
+        response = get(alice, week_url())
+
+        assert body(response)["comment"] is None
+        assert MARKER not in response.content.decode()
+
     def test_titles_and_notes_are_shown_as_stored(self, alice: User) -> None:
         plan = make_plan(alice, workouts=1)
         PlannedWorkout.objects.filter(plan=plan).update(
@@ -275,6 +305,9 @@ class TestOneWeek:
         )
         for hour in range(10):
             make_activity(alice, f"2026-11-1{hour % 4}T{hour:02d}:30", rpe=4)
+        WeekComment.objects.create(
+            owner=alice, week_start=MONDAY, comment="Fine.", next_week="hold"
+        )
         with CaptureQueriesContext(connection) as large:
             api.call("GET", week_url())
 
