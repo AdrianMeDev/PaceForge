@@ -4,6 +4,7 @@ import { AvailabilityApi } from '../../core/availability/availability-api';
 import {
   Availability,
   AvailabilityChanges,
+  AvailabilitySlot,
   GetAvailabilityResult,
   ListPeriodsResult,
   SaveAvailabilityResult,
@@ -37,8 +38,22 @@ const NO_OWN_LIMITS = {
   progression_error_percent: null,
   easy_share_percent: null,
 };
+const EVERY_PART: AvailabilitySlot[] = ['morning', 'afternoon', 'evening'];
+const DAY_OPTIONS = {
+  double_days: [true, true, true, true, true, true, true],
+  time_windows: [
+    EVERY_PART,
+    EVERY_PART,
+    EVERY_PART,
+    EVERY_PART,
+    EVERY_PART,
+    EVERY_PART,
+    EVERY_PART,
+  ],
+};
 const SAVED: Availability = {
   weekdays: [60, 0, 90, 0, 0, 120, 180],
+  ...DAY_OPTIONS,
   weekly_budget_minutes: 300,
   typical_weekly_minutes: 360,
   sports: ['running', 'cycling'],
@@ -50,6 +65,7 @@ const SAVED: Availability = {
 };
 const NOTHING: Availability = {
   weekdays: [0, 0, 0, 0, 0, 0, 0],
+  ...DAY_OPTIONS,
   weekly_budget_minutes: null,
   typical_weekly_minutes: null,
   sports: ['running', 'cycling', 'swimming', 'strength'],

@@ -33,8 +33,19 @@ const LEVEL_LIMITS = {
     easy_share_percent: 75,
   },
 };
+const EVERY_PART = ['morning', 'afternoon', 'evening'];
 const AVAILABILITY = {
   weekdays: [60, 0, 90, 0, 0, 120, 180],
+  double_days: [true, false, true, true, false, true, true],
+  time_windows: [
+    ['evening'],
+    EVERY_PART,
+    ['morning', 'evening'],
+    EVERY_PART,
+    ['afternoon'],
+    ['morning', 'afternoon'],
+    EVERY_PART,
+  ],
   weekly_budget_minutes: 300,
   typical_weekly_minutes: 360,
   sports: ['running', 'cycling', 'swimming', 'strength'],
@@ -49,6 +60,16 @@ const AVAILABILITY = {
 };
 const NOTHING_SAVED = {
   weekdays: [0, 0, 0, 0, 0, 0, 0],
+  double_days: [true, true, true, true, true, true, true],
+  time_windows: [
+    EVERY_PART,
+    EVERY_PART,
+    EVERY_PART,
+    EVERY_PART,
+    EVERY_PART,
+    EVERY_PART,
+    EVERY_PART,
+  ],
   weekly_budget_minutes: null,
   typical_weekly_minutes: null,
   sports: ['running', 'cycling', 'swimming', 'strength'],
@@ -165,6 +186,34 @@ describe('AvailabilityApi', () => {
     ['a fraction as a weekday', altered(AVAILABILITY, [['weekdays', 2], 90.5])],
     ['a negative weekday', altered(AVAILABILITY, [['weekdays', 2], -1])],
     ['null as a weekday', altered(AVAILABILITY, [['weekdays', 2], null])],
+    ['no double days', altered(AVAILABILITY, [['double_days'], REMOVE])],
+    [
+      'six double days',
+      altered(AVAILABILITY, [['double_days'], [true, true, true, true, true, true]]),
+    ],
+    ['eight double days', altered(AVAILABILITY, [['double_days'], Array(8).fill(true)])],
+    ['a text as double days', altered(AVAILABILITY, [['double_days'], 'ttttttt'])],
+    ['a text as a double day', altered(AVAILABILITY, [['double_days', 1], 'false'])],
+    ['a number as a double day', altered(AVAILABILITY, [['double_days', 1], 0])],
+    ['null as a double day', altered(AVAILABILITY, [['double_days', 1], null])],
+    ['null as double days', altered(AVAILABILITY, [['double_days'], null])],
+    ['no time windows', altered(AVAILABILITY, [['time_windows'], REMOVE])],
+    ['six time windows', altered(AVAILABILITY, [['time_windows'], Array(6).fill(EVERY_PART)])],
+    ['eight time windows', altered(AVAILABILITY, [['time_windows'], Array(8).fill(EVERY_PART)])],
+    ['a text as time windows', altered(AVAILABILITY, [['time_windows'], 'morning'])],
+    ['an empty day', altered(AVAILABILITY, [['time_windows', 2], []])],
+    ['a text as the windows of a day', altered(AVAILABILITY, [['time_windows', 2], 'morning'])],
+    ['an unknown part of the day', altered(AVAILABILITY, [['time_windows', 2], ['noon']])],
+    ['a part in other letters', altered(AVAILABILITY, [['time_windows', 2], ['Morning']])],
+    [
+      'a part twice',
+      altered(AVAILABILITY, [
+        ['time_windows', 2],
+        ['morning', 'morning'],
+      ]),
+    ],
+    ['a number as a part', altered(AVAILABILITY, [['time_windows', 2], [1]])],
+    ['null as the windows of a day', altered(AVAILABILITY, [['time_windows', 2], null])],
     ['no budget', altered(AVAILABILITY, [['weekly_budget_minutes'], REMOVE])],
     ['a text as budget', altered(AVAILABILITY, [['weekly_budget_minutes'], '300'])],
     ['a fraction as budget', altered(AVAILABILITY, [['weekly_budget_minutes'], 300.5])],
@@ -252,6 +301,27 @@ describe('AvailabilityApi', () => {
       const { result } = await run(api.get(), 'GET', URL, NOTHING_SAVED, 200);
 
       expect(result).toEqual({ kind: 'ok', availability: NOTHING_SAVED });
+    });
+
+    it('takes over the double days and the time windows as copies', async () => {
+      const body = altered(AVAILABILITY) as {
+        double_days: boolean[];
+        time_windows: string[][];
+      };
+
+      const { result } = await run(api.get(), 'GET', URL, body, 200);
+
+      expect(result).toMatchObject({
+        availability: {
+          double_days: AVAILABILITY.double_days,
+          time_windows: AVAILABILITY.time_windows,
+        },
+      });
+      if (result.kind !== 'ok') {
+        throw new Error('expected the availability');
+      }
+      expect(result.availability.double_days).not.toBe(body.double_days);
+      expect(result.availability.time_windows[0]).not.toBe(body.time_windows[0]);
     });
 
     it('takes over only the known limits of the known levels', async () => {
@@ -369,6 +439,45 @@ describe('AvailabilityApi', () => {
       expect(stretching.request.request.body).toEqual({ stretching: true });
       expect(sports.result).toMatchObject({ availability: { sports: ['running'] } });
       expect(stretching.result).toMatchObject({ availability: { stretching: true } });
+    });
+
+    it('patches the double days and the time windows alone', async () => {
+      const doubleDays = [false, true, true, true, true, true, true];
+      const windows = [['morning'], ...Array(6).fill(EVERY_PART)] as (
+        'morning' | 'afternoon' | 'evening'
+      )[][];
+
+      const days = await run(
+        api.save({ double_days: doubleDays }),
+        'PATCH',
+        URL,
+        altered(AVAILABILITY, [['double_days'], doubleDays]) as object,
+        200,
+      );
+      const parts = await run(
+        api.save({ time_windows: windows }),
+        'PATCH',
+        URL,
+        altered(AVAILABILITY, [['time_windows'], windows]) as object,
+        200,
+      );
+
+      expect(days.request.request.body).toEqual({ double_days: doubleDays });
+      expect(parts.request.request.body).toEqual({ time_windows: windows });
+      expect(days.result).toMatchObject({ availability: { double_days: doubleDays } });
+      expect(parts.result).toMatchObject({ availability: { time_windows: windows } });
+    });
+
+    it('returns the message about the time windows', async () => {
+      const refusal = {
+        time_windows: [
+          'Enter seven lists of parts of the day, Monday first, each with at least one of: morning, afternoon, evening.',
+        ],
+      };
+
+      const { result } = await run(api.save({ time_windows: [] }), 'PATCH', URL, refusal, 400);
+
+      expect(result).toEqual({ kind: 'invalid', errors: refusal.time_windows, fields: refusal });
     });
 
     it('patches the intensity level and own limits, a removed one as null', async () => {
