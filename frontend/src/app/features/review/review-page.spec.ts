@@ -140,6 +140,7 @@ function review(changes: Partial<WeekReview> = {}): WeekReview {
       done_percent: 50,
     },
     feedback: null,
+    comment: null,
     ...changes,
   };
 }

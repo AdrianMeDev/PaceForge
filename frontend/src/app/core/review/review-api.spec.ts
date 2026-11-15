@@ -94,6 +94,7 @@ const REVIEW = {
     notes: 'Heavy legs',
     updated_at: '2026-11-14T08:00:00.123456Z',
   },
+  comment: null,
 };
 const WEEKS = {
   weeks: [
@@ -234,6 +235,53 @@ describe('ReviewApi', () => {
       expect(result.kind === 'ok' && result.review.plan?.confirmed_at).toBeNull();
       expect(result.kind === 'ok' && result.review.activities[0].load).toBeNull();
       expect(result.kind === 'ok' && result.review.feedback?.fatigue).toBeNull();
+    });
+
+    it('returns the comment of the coach', async () => {
+      const commented = changed((review) => {
+        Object.assign(review, {
+          comment: {
+            comment: 'A <b>steady</b> week.\nKeep it up.',
+            next_week: 'hold',
+            created_at: '2026-11-14T09:30:00Z',
+            owner: 7,
+          },
+        });
+      });
+
+      const { result } = await run(api.week(WEEK), 'GET', `${BASE}${WEEK}/`, commented, 200);
+
+      expect(result.kind === 'ok' && result.review.comment).toEqual({
+        comment: 'A <b>steady</b> week.\nKeep it up.',
+        next_week: 'hold',
+        created_at: '2026-11-14T09:30:00Z',
+      });
+    });
+
+    it.each([
+      ['an unknown recommendation', { next_week: 'maintain' }],
+      ['an empty comment', { comment: '' }],
+      ['a comment that is no text', { comment: 5 }],
+      ['no time', { created_at: '' }],
+    ])('rejects a comment of the wrong shape: %s', async (_, change) => {
+      const broken = changed((review) => {
+        Object.assign(review, {
+          comment: {
+            comment: 'Fine.',
+            next_week: 'hold',
+            created_at: '2026-11-14T09:30:00Z',
+            ...change,
+          },
+        });
+      });
+
+      await runFailing(api.week(WEEK), 'GET', `${BASE}${WEEK}/`, broken, 200);
+    });
+
+    it('rejects an answer without the comment field', async () => {
+      const old = changed((review) => delete (review as { comment?: unknown }).comment);
+
+      await runFailing(api.week(WEEK), 'GET', `${BASE}${WEEK}/`, old, 200);
     });
 
     it('takes over only the known fields', async () => {
@@ -508,6 +556,175 @@ describe('ReviewApi', () => {
     it('rejects an answer of the wrong shape and a server error', async () => {
       await runFailing(api.saveFeedback(WEEK, INPUT), 'PUT', URL, [], 200);
       await runFailing(api.saveFeedback(WEEK, INPUT), 'PUT', URL, null, 503);
+    });
+  });
+
+  describe('askCoach', () => {
+    const URL = `${BASE}${WEEK}/comment/`;
+    const COMMENTED = {
+      ...REVIEW,
+      comment: {
+        comment: 'One of two done.',
+        next_week: 'reduce',
+        created_at: '2026-11-15T08:00:00Z',
+      },
+    };
+
+    it('posts and returns the whole week with the comment', async () => {
+      const { result, request } = await run(api.askCoach(WEEK), 'POST', URL, COMMENTED, 201);
+
+      expect(request.request.body).toEqual({});
+      expect(result).toEqual({ kind: 'ok', review: COMMENTED });
+    });
+
+    it('does not even send something that is no date', async () => {
+      for (const week of ['', 'Monday', '2026-11-9', '../planning']) {
+        expect(await api.askCoach(week)).toEqual({ kind: 'not_reviewable' });
+      }
+    });
+
+    it('says when the week cannot be reviewed', async () => {
+      const { result } = await run(
+        api.askCoach(WEEK),
+        'POST',
+        URL,
+        { detail: 'This week cannot be reviewed.', code: 'week_not_reviewable' },
+        404,
+      );
+
+      expect(result).toEqual({ kind: 'not_reviewable' });
+    });
+
+    it('tells the two conflicts apart', async () => {
+      const nothing = await run(
+        api.askCoach(WEEK),
+        'POST',
+        URL,
+        { detail: 'There is nothing to look back on in this week yet.', code: 'nothing_to_review' },
+        409,
+      );
+      const none = await run(
+        api.askCoach(WEEK),
+        'POST',
+        URL,
+        { detail: 'No AI provider is set up.', code: 'not_configured' },
+        409,
+      );
+
+      expect(nothing.result).toEqual({ kind: 'nothing_to_review' });
+      expect(none.result).toEqual({ kind: 'not_configured' });
+    });
+
+    it('rejects a conflict that is none of the two', async () => {
+      await runFailing(api.askCoach(WEEK), 'POST', URL, { code: 'other' }, 409);
+      await runFailing(api.askCoach(WEEK), 'POST', URL, '<html>', 409);
+    });
+
+    it('returns what was wrong with an answer that could not be used', async () => {
+      const { result } = await run(
+        api.askCoach(WEEK),
+        'POST',
+        URL,
+        {
+          detail: 'The coach did not give a comment that can be used. Please try again.',
+          code: 'not_usable',
+          problems: [{ path: 'next_week', message: 'Use one of "increase", "hold", "reduce".' }],
+          extra: 'x',
+        },
+        422,
+      );
+
+      expect(result).toEqual({
+        kind: 'not_usable',
+        problems: [{ path: 'next_week', message: 'Use one of "increase", "hold", "reduce".' }],
+      });
+    });
+
+    it('rejects problems of the wrong shape', async () => {
+      await runFailing(api.askCoach(WEEK), 'POST', URL, { problems: 'x' }, 422);
+      await runFailing(api.askCoach(WEEK), 'POST', URL, { problems: [{ path: 1 }] }, 422);
+      await runFailing(api.askCoach(WEEK), 'POST', URL, 'oops', 422);
+    });
+
+    it.each([
+      [502, 'invalid_key', 'The provider did not accept the key.', null],
+      [502, 'not_allowed', 'This address is no longer allowed on this server.', null],
+      [503, 'unavailable', 'The provider cannot be reached right now.', null],
+      [502, 'unexpected', 'The provider answered in an unexpected way.', null],
+    ])('returns a provider problem (%i %s)', async (status, code, detail, retry) => {
+      const { result } = await run(api.askCoach(WEEK), 'POST', URL, { code, detail }, status);
+
+      expect(result).toEqual({
+        kind: 'provider_problem',
+        problem: code,
+        message: detail,
+        retry_after: retry,
+      });
+    });
+
+    it('says how long to wait when the provider asks to slow down', async () => {
+      const { result } = await run(
+        api.askCoach(WEEK),
+        'POST',
+        URL,
+        { code: 'rate_limited', detail: 'The provider is asking to slow down.', retry_after: 17 },
+        429,
+      );
+
+      expect(result).toEqual({
+        kind: 'provider_problem',
+        problem: 'rate_limited',
+        message: 'The provider is asking to slow down.',
+        retry_after: 17,
+      });
+    });
+
+    it('tells the limit of this server from the limit of the provider', async () => {
+      const { result } = await run(
+        api.askCoach(WEEK),
+        'POST',
+        URL,
+        { detail: 'Request was throttled. Expected available in 60 seconds.' },
+        429,
+      );
+
+      expect(result).toEqual({ kind: 'rate_limited' });
+    });
+
+    it('uses a text of its own when a proxy answers instead of the server', async () => {
+      const bad = await run(api.askCoach(WEEK), 'POST', URL, '<html>Bad gateway</html>', 502);
+      const down = await run(api.askCoach(WEEK), 'POST', URL, '<html>Down</html>', 503);
+
+      expect(bad.result).toEqual({
+        kind: 'provider_problem',
+        problem: 'unexpected',
+        message: 'The AI provider could not be used right now. Please try again later.',
+        retry_after: null,
+      });
+      expect(down.result).toMatchObject({ problem: 'unavailable', retry_after: null });
+    });
+
+    it('ignores a retry time that is no whole number', async () => {
+      const { result } = await run(
+        api.askCoach(WEEK),
+        'POST',
+        URL,
+        { code: 'rate_limited', detail: 'Slow down.', retry_after: -3 },
+        429,
+      );
+
+      expect(result).toMatchObject({ retry_after: null });
+    });
+
+    it('says when the session has ended', async () => {
+      const { result } = await run(api.askCoach(WEEK), 'POST', URL, NO_SESSION, 403);
+
+      expect(result).toEqual({ kind: 'forbidden' });
+    });
+
+    it('rejects an answer of the wrong shape and a server error', async () => {
+      await runFailing(api.askCoach(WEEK), 'POST', URL, { week_start: WEEK }, 201);
+      await runFailing(api.askCoach(WEEK), 'POST', URL, null, 500);
     });
   });
 });
