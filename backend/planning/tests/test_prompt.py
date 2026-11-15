@@ -402,7 +402,8 @@ class TestTheSystemPrompt:
         assert 'Plan only the sports listed in "sports" in the data.' in SYSTEM_PROMPT
 
     def test_it_welcomes_two_sessions_on_a_day_with_a_time_each(self) -> None:
-        assert "A day may have two sessions, rarely three" in SYSTEM_PROMPT
+        assert "A day may have two sessions, never more" in SYSTEM_PROMPT
+        assert 'only if "double_allowed" is true for that day in "days"' in SYSTEM_PROMPT
         assert "an easy run in the morning and a ride in the afternoon" in SYSTEM_PROMPT
         assert "strength in the morning and a run in the evening" in SYSTEM_PROMPT
         # no example may break the rule it stands next to

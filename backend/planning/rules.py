@@ -267,21 +267,38 @@ def check_a_free_day(plan: WeekPlan, context: PlanContext) -> list[Finding]:
 
 
 def check_workouts_per_day(plan: WeekPlan, context: PlanContext) -> list[Finding]:
-    """No more than ``MAX_WORKOUTS_PER_DAY`` workouts on a day (a warning, named once per day)."""
+    """No more than ``MAX_WORKOUTS_PER_DAY`` workouts on a day (an error, named once per day, at
+    the first workout that is too many)."""
     _same_week(plan, context)
     found = []
     for offset, workouts in sorted(_workouts_by_day(plan, context).items()):
         if len(workouts) > MAX_WORKOUTS_PER_DAY:
             found.append(
                 Finding(
-                    Severity.WARNING,
+                    Severity.ERROR,
                     "many_workouts_in_a_day",
-                    f"{_WEEKDAYS[offset]} has {len(workouts)} workouts; more than "
-                    f"{MAX_WORKOUTS_PER_DAY} in a day is a lot.",
+                    f"{_WEEKDAYS[offset]} has {len(workouts)} workouts; at most "
+                    f"{MAX_WORKOUTS_PER_DAY} in a day are allowed.",
                     f"workouts[{workouts[MAX_WORKOUTS_PER_DAY][0]}]",
                 )
             )
     return found
+
+
+def check_double_days(plan: WeekPlan, context: PlanContext) -> list[Finding]:
+    """A second workout on a day only where the athlete allows two (an error, named once per day
+    at the second workout in the order of the plan)."""
+    _same_week(plan, context)
+    return [
+        Finding(
+            Severity.ERROR,
+            "double_day_not_allowed",
+            f"{_WEEKDAYS[offset]} is not a day for two workouts; you did not allow a second one.",
+            f"workouts[{workouts[1][0]}]",
+        )
+        for offset, workouts in sorted(_workouts_by_day(plan, context).items())
+        if len(workouts) > 1 and not context.double_days[offset]
+    ]
 
 
 def check_duplicates(plan: WeekPlan, context: PlanContext) -> list[Finding]:
@@ -519,6 +536,7 @@ RHYTHM_CHECKS: tuple[Check, ...] = (
     check_hard_days_in_a_row,
     check_a_free_day,
     check_workouts_per_day,
+    check_double_days,
     check_duplicates,
     check_progression,
     check_easy_share,

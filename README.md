@@ -634,8 +634,9 @@ links to the Connections page.
 "Power zone 2 · 138–188 W", worked out from your thresholds (see
 [Athlete profile](#athlete-profile)). Without the threshold for a zone the page shows only the zone.
 
-**Two sessions a day.** A day may have two sessions, rarely three, for example an easy run in the
-morning and a ride in the afternoon. Each of them has a time of day (**morning**, **afternoon** or
+**Two sessions a day.** A day may have two sessions, never three, for example an easy run in the
+morning and a ride in the afternoon. A weekday you did not allow two sessions on (see **Training
+time**) has one. Each of them has a time of day (**morning**, **afternoon** or
 **evening**) shown next to it; no two sessions of a day share one, and a day with several sessions
 should name a time for each (the checks say so). The time you have is still given **per day**: the
 coach splits it over the day, and does not know that you can only train in the evening. Stretching

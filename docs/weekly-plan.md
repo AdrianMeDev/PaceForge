@@ -200,7 +200,8 @@ user to weigh.
 | `volume_jump` | error | The planned minutes are above the error limit of the reference (the recent average, or the typical week if that is higher). |
 | `hard_days_in_a_row` | warning | A hard day directly after a hard day. |
 | `no_free_day` | warning | Every day of the week has a workout. |
-| `many_workouts_in_a_day` | warning | More workouts on a day than the limit. |
+| `many_workouts_in_a_day` | error | More workouts on a day than the limit (two). Named once per day, at the first one too many. |
+| `double_day_not_allowed` | error | A second workout on a weekday that the athlete did not allow two workouts on (training time page). Named once per day, at the second workout. |
 | `duplicate_workout` | warning | The same sport, goal and duration twice on a day. |
 | `volume_increase` | warning | The planned minutes are above the warning limit of the reference (the recent average, or the typical week if that is higher). |
 | `easy_share_low` | warning | Less of the endurance minutes are easy than the intensity level asks for. |
@@ -219,7 +220,7 @@ decisions, not coaching science; better ones will come from using the feature.
 | `DURATION_TOLERANCE_SECONDS` | 60 | How far the segments may differ from the duration. |
 | `HARD_FROM_ZONE` | 4 | From this zone on a workout is hard. |
 | `EASY_UP_TO_ZONE` | 2 | Up to this zone a workout is easy. |
-| `MAX_WORKOUTS_PER_DAY` | 2 | Workouts a day before the warning. |
+| `MAX_WORKOUTS_PER_DAY` | 2 | Most workouts on a day; a third is an error. |
 | `TYPICAL_VOLUME_PERCENT` | 100 | How much of the typical week counts as a reference (100: all of it). A lower number, say 70, makes the first weeks back more careful. |
 | `TITLE_MAX` | 100 | Characters of a title. |
 | `NOTES_MAX` | 500 | Characters of notes. |

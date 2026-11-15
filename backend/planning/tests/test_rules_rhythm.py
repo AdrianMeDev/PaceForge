@@ -20,6 +20,7 @@ from planning.rules import (
     Intensity,
     Severity,
     check_a_free_day,
+    check_double_days,
     check_duplicates,
     check_easy_share,
     check_hard_days,
@@ -357,17 +358,24 @@ class TestWorkoutsPerDay:
             check_workouts_per_day(week(workout(1), workout(1, goal=Goal.TEMPO)), context()) == []
         )
 
-    def test_a_third_workout_is_a_warning_at_the_third(self) -> None:
+    def test_a_third_workout_is_an_error_at_the_third(self) -> None:
         plan = week(workout(1, 30), workout(1, 40), workout(1, 50))
 
         assert check_workouts_per_day(plan, context()) == [
             Finding(
-                Severity.WARNING,
+                Severity.ERROR,
                 "many_workouts_in_a_day",
-                "Tuesday has 3 workouts; more than 2 in a day is a lot.",
+                "Tuesday has 3 workouts; at most 2 in a day are allowed.",
                 "workouts[2]",
             )
         ]
+
+    def test_a_double_day_does_not_make_a_third_workout_fine(self) -> None:
+        plan = week(workout(1, 30), workout(1, 40), workout(1, 50))
+
+        found = check_workouts_per_day(plan, context(double_days=(True,) * 7))
+
+        assert [f.code for f in found] == ["many_workouts_in_a_day"]
 
     def test_a_day_is_named_once_however_many_workouts_it_has(self) -> None:
         plan = week(*(workout(1, 10 + n) for n in range(5)))
@@ -397,6 +405,87 @@ class TestWorkoutsPerDay:
         plan = week(workout(8, 30), workout(8, 31), workout(8, 32))
 
         assert check_workouts_per_day(plan, context()) == []
+
+
+class TestDoubleDays:
+    NO_DOUBLE_ON_TUESDAY = (True, False, True, True, True, True, True)
+
+    def found(self, *workouts: Workout, **fields: Any) -> list[Finding]:
+        return check_double_days(week(*workouts), context(**fields))
+
+    def test_two_workouts_on_a_day_that_allows_them_are_fine(self) -> None:
+        assert self.found(workout(1, 30), workout(1, 40)) == []
+
+    def test_a_second_workout_on_another_day_is_an_error_at_the_second(self) -> None:
+        found = self.found(workout(1, 30), workout(1, 40), double_days=self.NO_DOUBLE_ON_TUESDAY)
+
+        assert found == [
+            Finding(
+                Severity.ERROR,
+                "double_day_not_allowed",
+                "Tuesday is not a day for two workouts; you did not allow a second one.",
+                "workouts[1]",
+            )
+        ]
+
+    def test_one_workout_on_such_a_day_is_fine(self) -> None:
+        assert self.found(workout(1, 30), double_days=self.NO_DOUBLE_ON_TUESDAY) == []
+
+    def test_the_other_days_are_not_affected(self) -> None:
+        found = self.found(workout(2, 30), workout(2, 40), double_days=self.NO_DOUBLE_ON_TUESDAY)
+
+        assert found == []
+
+    def test_a_day_is_named_once_however_many_workouts_it_has(self) -> None:
+        found = self.found(
+            *(workout(1, 10 + n) for n in range(4)), double_days=self.NO_DOUBLE_ON_TUESDAY
+        )
+
+        assert [f.path for f in found] == ["workouts[1]"]
+
+    def test_the_second_is_found_by_its_place_in_the_list(self) -> None:
+        found = self.found(
+            workout(1, 30),
+            workout(2, 30),
+            workout(1, 40),
+            double_days=self.NO_DOUBLE_ON_TUESDAY,
+        )
+
+        assert [f.path for f in found] == ["workouts[2]"]
+
+    def test_each_day_is_named_in_the_order_of_the_week(self) -> None:
+        found = self.found(
+            workout(4, 30),
+            workout(4, 40),
+            workout(1, 30),
+            workout(1, 40),
+            double_days=(True, False, True, True, False, True, True),
+        )
+
+        assert [f.message[:7] for f in found] == ["Tuesday", "Friday "]
+
+    def test_workouts_outside_the_week_are_left_alone(self) -> None:
+        assert self.found(workout(8, 30), workout(8, 40), double_days=(False,) * 7) == []
+
+    def test_a_day_of_absence_still_follows_the_choice_of_its_weekday(self) -> None:
+        found = self.found(
+            workout(1, 30),
+            workout(1, 40),
+            double_days=self.NO_DOUBLE_ON_TUESDAY,
+            absences=(None, "illness", None, None, None, None, None),
+        )
+
+        assert [f.code for f in found] == ["double_day_not_allowed"]
+
+    def test_the_title_and_the_notes_are_not_repeated(self) -> None:
+        found = self.found(
+            workout(1, 30, title="SECRETMARKER", notes="SECRETMARKER"),
+            workout(1, 40, title="SECRETMARKER"),
+            double_days=self.NO_DOUBLE_ON_TUESDAY,
+        )
+
+        assert found
+        assert "SECRETMARKER" not in repr(found)
 
 
 class TestTheSameWorkoutTwice:
@@ -865,6 +954,7 @@ class TestTheLists:
             check_hard_days_in_a_row,
             check_a_free_day,
             check_workouts_per_day,
+            check_double_days,
             check_duplicates,
             check_progression,
             check_easy_share,
@@ -884,7 +974,7 @@ class TestTheLists:
             "too_many_hard_days": Severity.ERROR,
             "hard_days_in_a_row": Severity.WARNING,
             "no_free_day": Severity.WARNING,
-            "many_workouts_in_a_day": Severity.WARNING,
+            "many_workouts_in_a_day": Severity.ERROR,
             "duplicate_workout": Severity.WARNING,
             "volume_jump": Severity.ERROR,
             "easy_share_low": Severity.WARNING,
