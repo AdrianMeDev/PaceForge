@@ -29,7 +29,7 @@ from reviews.services import WeekReview, week_summary
 
 from .context import PlanContext, build_context
 from .models import PlannedWorkout, WeeklyPlan
-from .schema import Sport, ZoneSystem
+from .schema import Slot, Sport, ZoneSystem
 
 # At most this many active goals are told, the main goal first; the rest is only counted.
 MAX_GOALS = 5
@@ -96,12 +96,14 @@ def _days(context: PlanContext) -> list[dict[str, Any]]:
     return [
         {
             "date": (context.week_start + timedelta(days=offset)).isoformat(),
-            "minutes": minutes,
-            "absence": absence,
+            "minutes": context.minutes[offset],
+            "absence": context.absences[offset],
+            # Whether two workouts are allowed, and the parts of the day that are open, in the
+            # order of the day.
+            "double_allowed": context.double_days[offset],
+            "slots": [slot.value for slot in Slot if slot in context.time_windows[offset]],
         }
-        for offset, (minutes, absence) in enumerate(
-            zip(context.minutes, context.absences, strict=True)
-        )
+        for offset in range(7)
     ]
 
 

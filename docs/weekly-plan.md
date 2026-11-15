@@ -322,7 +322,7 @@ without this page.
 | --- | ------- |
 | `week_start` | The Monday of the week to plan. |
 | `today` | The day it is for the user, in their time zone. |
-| `days` | Seven entries (date, minutes on offer, kind of absence) from Monday. |
+| `days` | Seven entries from Monday: the date, the minutes on offer, the kind of absence, `double_allowed` (whether two workouts may be on that weekday) and `slots` (the parts of the day that are open on it, in the order of the day). |
 | `weekly_budget_minutes` | The weekly budget, none if not set. |
 | `weekly_minutes_available` | What the week offers in all, the budget applied. |
 | `zone_systems` | For each zone system the athlete can use: sport, threshold and the zone table. |

@@ -43,6 +43,8 @@ ALLOWED_KEYS = {
     "date",
     "minutes",
     "absence",
+    "double_allowed",
+    "slots",
     "weekly_budget_minutes",
     "weekly_minutes_available",
     "zone_systems",
@@ -168,7 +170,14 @@ class TestTheBriefingOfAUserWithNothing:
             "week_start": "2027-07-19",
             "today": "2027-07-18",
             "days": [
-                {"date": f"2027-07-{19 + n}", "minutes": 0, "absence": None} for n in range(7)
+                {
+                    "date": f"2027-07-{19 + n}",
+                    "minutes": 0,
+                    "absence": None,
+                    "double_allowed": True,
+                    "slots": ["morning", "afternoon", "evening"],
+                }
+                for n in range(7)
             ],
             "weekly_budget_minutes": None,
             "weekly_minutes_available": 0,
@@ -222,6 +231,65 @@ class TestTodayAndTheTimeAvailable:
         WeekdayMinutes.objects.create(owner=bob, weekday=0, minutes=90)
 
         assert build_briefing(alice, MONDAY)["weekly_minutes_available"] == 0
+
+
+class TestTheDoubleDaysAndTheTimeWindows:
+    def test_without_a_choice_two_workouts_and_every_part_of_the_day_are_told(
+        self, alice: User
+    ) -> None:
+        days = build_briefing(alice, MONDAY)["days"]
+
+        assert [day["double_allowed"] for day in days] == [True] * 7
+        assert [day["slots"] for day in days] == [["morning", "afternoon", "evening"]] * 7
+
+    def test_the_choice_of_the_user_is_told_day_by_day_in_the_order_of_the_day(
+        self, alice: User
+    ) -> None:
+        WeekdayMinutes.objects.create(
+            owner=alice, weekday=0, minutes=60, double_allowed=False, slots=["evening", "morning"]
+        )
+        WeekdayMinutes.objects.create(owner=alice, weekday=3, minutes=60, slots=["afternoon"])
+
+        days = build_briefing(alice, MONDAY)["days"]
+
+        assert [(day["double_allowed"], day["slots"]) for day in days[:4]] == [
+            (False, ["morning", "evening"]),
+            (True, ["morning", "afternoon", "evening"]),
+            (True, ["morning", "afternoon", "evening"]),
+            (True, ["afternoon"]),
+        ]
+
+    def test_a_day_of_absence_keeps_its_choice(self, alice: User) -> None:
+        WeekdayMinutes.objects.create(owner=alice, weekday=2, minutes=60, double_allowed=False)
+        UnavailablePeriod.objects.create(
+            owner=alice,
+            kind="illness",
+            start_date=MONDAY + timedelta(days=2),
+            end_date=MONDAY + timedelta(days=2),
+        )
+
+        day = build_briefing(alice, MONDAY)["days"][2]
+
+        assert (day["minutes"], day["absence"], day["double_allowed"]) == (0, "illness", False)
+
+    def test_the_choice_of_another_user_is_not_told(self, alice: User, bob: User) -> None:
+        WeekdayMinutes.objects.create(
+            owner=bob, weekday=0, minutes=60, double_allowed=False, slots=["morning"]
+        )
+
+        day = build_briefing(alice, MONDAY)["days"][0]
+
+        assert (day["double_allowed"], day["slots"]) == (True, ["morning", "afternoon", "evening"])
+
+    def test_it_is_in_the_text_the_coach_gets(self, alice: User) -> None:
+        WeekdayMinutes.objects.create(
+            owner=alice, weekday=0, minutes=60, double_allowed=False, slots=["morning"]
+        )
+
+        text = to_json(build_briefing(alice, MONDAY))
+
+        assert '"double_allowed":false' in text
+        assert '"slots":["morning"]' in text
 
 
 class TestTheZoneSystems:

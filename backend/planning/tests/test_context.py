@@ -19,7 +19,7 @@ from planning.context import (
     recent_weekly_minutes,
     usable_zone_systems,
 )
-from planning.schema import Sport, ZoneSystem
+from planning.schema import Slot, Sport, ZoneSystem
 
 pytestmark = pytest.mark.django_db
 
@@ -420,6 +420,28 @@ class TestTheContextOfAUser:
         )
 
         assert build_context(alice, MONDAY).limits == Limits(3, 130, 150, 60)
+
+    def test_without_a_choice_two_workouts_and_every_part_of_the_day_are_allowed(
+        self, alice: User
+    ) -> None:
+        context = build_context(alice, MONDAY)
+
+        assert context.double_days == (True,) * 7
+        assert context.time_windows == (frozenset(Slot),) * 7
+
+    def test_the_double_days_and_the_time_windows_come_from_the_weekdays(
+        self, alice: User, bob: User
+    ) -> None:
+        WeekdayMinutes.objects.create(
+            owner=alice, weekday=1, minutes=60, double_allowed=False, slots=["evening", "morning"]
+        )
+        WeekdayMinutes.objects.create(owner=bob, weekday=0, minutes=60, double_allowed=False)
+
+        context = build_context(alice, MONDAY)
+
+        assert context.double_days == (True, False, True, True, True, True, True)
+        assert context.time_windows[1] == frozenset({Slot.MORNING, Slot.EVENING})
+        assert context.time_windows[0] == frozenset(Slot)
 
     def test_the_offset_of_a_day_in_the_week(self, alice: User) -> None:
         context = build_context(alice, MONDAY)
