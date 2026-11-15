@@ -1,9 +1,12 @@
+import dataclasses
 import random
 from datetime import date, timedelta
+from fractions import Fraction
 from typing import Any
 
 import pytest
 
+from availability.intensity import LEVEL_LIMITS, IntensityLevel, Limits
 from planning import rules
 from planning.context import PlanContext
 from planning.rules import (
@@ -11,21 +14,20 @@ from planning.rules import (
     BASIC_CHECKS,
     EASY_UP_TO_ZONE,
     HARD_FROM_ZONE,
-    MAX_HARD_DAYS,
     MAX_WORKOUTS_PER_DAY,
-    PROGRESSION_ERROR_PERCENT,
-    PROGRESSION_WARNING_PERCENT,
     RHYTHM_CHECKS,
     Finding,
     Intensity,
     Severity,
     check_a_free_day,
     check_duplicates,
+    check_easy_share,
     check_hard_days,
     check_hard_days_in_a_row,
     check_progression,
     check_times_of_day,
     check_workouts_per_day,
+    easy_minutes,
     intensity_of,
 )
 from planning.schema import (
@@ -41,6 +43,10 @@ from planning.schema import (
 
 MONDAY = date(2027, 7, 12)
 assert MONDAY.weekday() == 0
+
+# Most tests here use the limits of "intensive" (3 hard days, 130 and 150 %), which were the fixed
+# limits before there were levels; ``TestTheLimitsOfTheContext`` covers the others.
+INTENSIVE = LEVEL_LIMITS[IntensityLevel.INTENSIVE]
 
 
 def day(offset: int) -> date:
@@ -76,6 +82,7 @@ def context(**fields: Any) -> PlanContext:
         "weekly_minutes": 4200,
         "zone_systems": frozenset(),
         "recent_weeks": (),
+        "limits": INTENSIVE,
         **fields,
     }
     return PlanContext(**data)
@@ -142,8 +149,9 @@ class TestHowHardAWorkoutIs:
 
     def test_the_limits_are_the_documented_ones(self) -> None:
         assert (HARD_FROM_ZONE, EASY_UP_TO_ZONE) == (4, 2)
-        assert (MAX_HARD_DAYS, MAX_WORKOUTS_PER_DAY) == (3, 2)
-        assert (PROGRESSION_WARNING_PERCENT, PROGRESSION_ERROR_PERCENT) == (130, 150)
+        assert MAX_WORKOUTS_PER_DAY == 2
+        assert (INTENSIVE.max_hard_days, INTENSIVE.progression_warning_percent) == (3, 130)
+        assert INTENSIVE.progression_error_percent == 150
 
 
 class TestTooManyHardDays:
@@ -157,7 +165,7 @@ class TestTooManyHardDays:
             Finding(
                 Severity.ERROR,
                 "too_many_hard_days",
-                "The week has 4 hard days; at most 3 are sensible.",
+                "The week has 4 hard days; your intensity settings allow at most 3.",
                 "workouts",
             )
         ]
@@ -176,6 +184,91 @@ class TestTooManyHardDays:
         plan = week(hard(0), hard(2), hard(4), hard(8), hard(-1))
 
         assert check_hard_days(plan, context()) == []
+
+
+class TestTheLimitsOfTheContext:
+    """The hard days and the progression limits are those of the athlete's level or own values."""
+
+    @staticmethod
+    def limits(level: IntensityLevel, **own: int) -> Limits:
+        return dataclasses.replace(LEVEL_LIMITS[level], **own)
+
+    def test_a_context_without_limits_has_those_of_normal(self) -> None:
+        bare = PlanContext(
+            week_start=MONDAY,
+            minutes=(600,) * 7,
+            absences=(None,) * 7,
+            weekly_budget=None,
+            weekly_minutes=4200,
+            zone_systems=frozenset(),
+            recent_weeks=(),
+        )
+
+        assert bare.limits == LEVEL_LIMITS[IntensityLevel.NORMAL]
+
+    @pytest.mark.parametrize(
+        ("level", "allowed"),
+        [(IntensityLevel.RELAXED, 1), (IntensityLevel.NORMAL, 2), (IntensityLevel.INTENSIVE, 3)],
+    )
+    def test_each_level_allows_its_number_of_hard_days(
+        self, level: IntensityLevel, allowed: int
+    ) -> None:
+        ctx = context(limits=LEVEL_LIMITS[level])
+        days = [0, 2, 4, 6]
+
+        assert check_hard_days(week(*(hard(d) for d in days[:allowed])), ctx) == []
+        found = check_hard_days(week(*(hard(d) for d in days[: allowed + 1])), ctx)
+        assert [f.code for f in found] == ["too_many_hard_days"]
+        assert found[0].message.endswith(f"allow at most {allowed}.")
+
+    def test_one_hard_day_too_many_reads_well(self) -> None:
+        found = check_hard_days(
+            week(hard(2)), context(limits=self.limits(IntensityLevel.NORMAL, max_hard_days=0))
+        )
+
+        assert (
+            found[0].message == "The week has 1 hard day; your intensity settings allow at most 0."
+        )
+
+    def test_an_own_number_of_hard_days_counts(self) -> None:
+        ctx = context(limits=self.limits(IntensityLevel.RELAXED, max_hard_days=4))
+
+        assert check_hard_days(week(hard(0), hard(2), hard(4), hard(6)), ctx) == []
+
+    @pytest.mark.parametrize(
+        ("level", "warning", "error"),
+        [
+            (IntensityLevel.RELAXED, 115, 130),
+            (IntensityLevel.NORMAL, 120, 140),
+            (IntensityLevel.INTENSIVE, 130, 150),
+        ],
+    )
+    def test_each_level_has_its_progression_limits(
+        self, level: IntensityLevel, warning: int, error: int
+    ) -> None:
+        ctx = context(limits=LEVEL_LIMITS[level], recent_weeks=(100,))
+
+        def codes(minutes: int) -> list[str]:
+            return [f.code for f in check_progression(week(workout(1, minutes)), ctx)]
+
+        assert codes(warning) == []
+        assert codes(warning + 1) == ["volume_increase"]
+        assert codes(error) == ["volume_increase"]
+        assert codes(error + 1) == ["volume_jump"]
+
+    def test_own_progression_limits_count(self) -> None:
+        own = self.limits(
+            IntensityLevel.NORMAL, progression_warning_percent=105, progression_error_percent=110
+        )
+        ctx = context(limits=own, typical_weekly_minutes=200)
+
+        def codes(minutes: int) -> list[str]:
+            return [f.code for f in check_progression(week(workout(1, minutes)), ctx)]
+
+        assert codes(210) == []
+        assert codes(211) == ["volume_increase"]
+        assert codes(220) == ["volume_increase"]
+        assert codes(221) == ["volume_jump"]
 
 
 class TestHardDaysInARow:
@@ -541,6 +634,124 @@ class TestTheTypicalWeek:
         assert "the average of 300 minutes" in found[0].message
 
 
+class TestTheEasyShare:
+    """At least the level's share of the endurance minutes is easy (normal: 80 %)."""
+
+    def found(self, *workouts: Workout, **fields: Any) -> list[Finding]:
+        return check_easy_share(week(*workouts), context(**fields))
+
+    @staticmethod
+    def intervals(offset: int, minutes: int, **fields: Any) -> Workout:
+        # 10 warm-up, 4 x (5 work in zone 5 + 3 recovery without a zone), 18 cool-down: 60 minutes
+        segments = (
+            Segment(SegmentKind.WARMUP, 600, 1, ZoneSystem.POWER, 1),
+            Segment(SegmentKind.WORK, 300, 4, ZoneSystem.POWER, 5),
+            Segment(SegmentKind.RECOVERY, 180, 4),
+            Segment(SegmentKind.COOLDOWN, 1080, 1),
+        )
+        return workout(offset, minutes, goal=Goal.VO2MAX, segments=segments, **fields)
+
+    def test_too_little_easy_is_a_warning_with_the_share_rounded_down(self) -> None:
+        # 240 easy of 301: 79.7 %
+        found = self.found(workout(0, 240), hard(2, 61), limits=LEVEL_LIMITS[IntensityLevel.NORMAL])
+
+        assert found == [
+            Finding(
+                Severity.WARNING,
+                "easy_share_low",
+                "79 % of the endurance minutes are easy; your intensity settings ask for at "
+                "least 80 %.",
+                "workouts",
+            )
+        ]
+
+    def test_exactly_the_share_passes(self) -> None:
+        assert (
+            self.found(workout(0, 240), hard(2, 60), limits=LEVEL_LIMITS[IntensityLevel.NORMAL])
+            == []
+        )
+
+    @pytest.mark.parametrize(
+        ("level", "easy_minutes_needed"),
+        [(IntensityLevel.RELAXED, 85), (IntensityLevel.NORMAL, 80), (IntensityLevel.INTENSIVE, 75)],
+    )
+    def test_each_level_asks_for_its_share(
+        self, level: IntensityLevel, easy_minutes_needed: int
+    ) -> None:
+        ctx = {"limits": LEVEL_LIMITS[level]}
+        hard_minutes = 100 - easy_minutes_needed
+
+        assert self.found(workout(0, easy_minutes_needed), hard(2, hard_minutes), **ctx) == []
+        assert self.found(workout(0, easy_minutes_needed - 1), hard(2, hard_minutes + 1), **ctx)
+
+    def test_moderate_is_not_easy(self) -> None:
+        tempo = workout(2, 50, zone_system=ZoneSystem.POWER, zone=3)
+
+        assert [f.code for f in self.found(workout(0, 50), tempo)] == ["easy_share_low"]
+
+    def test_strength_counts_neither_way(self) -> None:
+        strength = workout(1, 300, sport=Sport.STRENGTH, goal=Goal.STRENGTH)
+
+        assert self.found(workout(0, 80), hard(2, 20), strength) == self.found(
+            workout(0, 80), hard(2, 20)
+        )
+        assert self.found(workout(0, 75), hard(2, 25), strength) == self.found(
+            workout(0, 75), hard(2, 25)
+        )
+
+    def test_a_week_without_endurance_minutes_is_not_checked(self) -> None:
+        assert self.found() == []
+        assert self.found(workout(1, 60, sport=Sport.STRENGTH, goal=Goal.STRENGTH)) == []
+
+    def test_running_and_swimming_count_like_cycling(self) -> None:
+        for sport in (Sport.RUNNING, Sport.SWIMMING):
+            assert self.found(workout(0, 50), hard(2, 50, sport=sport)) != []
+
+    def test_workouts_outside_the_week_do_not_count(self) -> None:
+        assert self.found(workout(1, 100), hard(8, 500), hard(-1, 500)) == []
+
+    def test_an_own_share_counts(self) -> None:
+        own = dataclasses.replace(INTENSIVE, easy_share_percent=50)
+
+        assert self.found(workout(0, 50), hard(2, 50), limits=own) == []
+
+    def test_segments_count_one_by_one(self) -> None:
+        # warm-up 10 (zone 1), recovery 12 (no zone), cool-down 18 (no zone): 40 of 60 easy
+        assert easy_minutes(self.intervals(0, 60)) == 40
+
+    def test_the_segments_share_is_applied_to_the_duration(self) -> None:
+        # the segments may differ from the duration by a minute; the share is what counts
+        assert easy_minutes(self.intervals(0, 61)) == Fraction(40 * 61, 60)
+
+    def test_a_segment_without_a_zone_is_as_easy_as_the_workout(self) -> None:
+        steady = (Segment(SegmentKind.STEADY, 3600),)
+
+        assert easy_minutes(workout(0, 60, segments=steady)) == 60
+        assert easy_minutes(workout(0, 60, goal=Goal.THRESHOLD, segments=steady)) == 0
+        assert (
+            easy_minutes(workout(0, 60, zone_system=ZoneSystem.POWER, zone=3, segments=steady)) == 0
+        )
+
+    def test_the_zone_of_a_segment_wins_over_the_workout(self) -> None:
+        easy_steady = (Segment(SegmentKind.STEADY, 3600, 1, ZoneSystem.POWER, 2),)
+        hard_warmup = (Segment(SegmentKind.WARMUP, 3600, 1, ZoneSystem.POWER, 4),)
+
+        assert easy_minutes(workout(0, 60, goal=Goal.THRESHOLD, segments=easy_steady)) == 60
+        assert easy_minutes(workout(0, 60, segments=hard_warmup)) == 0
+
+    def test_without_segments_a_workout_counts_by_its_intensity(self) -> None:
+        assert easy_minutes(workout(0, 60)) == 60
+        assert easy_minutes(workout(0, 60, zone_system=ZoneSystem.POWER, zone=2)) == 60
+        assert easy_minutes(workout(0, 60, zone_system=ZoneSystem.POWER, zone=3)) == 0
+        assert easy_minutes(hard(0, 60)) == 0
+
+    def test_a_typical_interval_week_passes_on_normal(self) -> None:
+        # two interval sessions and three easy rides: 80 easy of 120 + 3 x 120 = 440 of 480
+        plan = (self.intervals(1, 60), self.intervals(3, 60), *(workout(d, 120) for d in (0, 5, 6)))
+
+        assert self.found(*plan, limits=LEVEL_LIMITS[IntensityLevel.NORMAL]) == []
+
+
 class TestTheTimesOfDay:
     M, A, E = Slot.MORNING, Slot.AFTERNOON, Slot.EVENING
 
@@ -656,6 +867,7 @@ class TestTheLists:
             check_workouts_per_day,
             check_duplicates,
             check_progression,
+            check_easy_share,
             check_times_of_day,
         )
 
@@ -675,6 +887,7 @@ class TestTheLists:
             "many_workouts_in_a_day": Severity.WARNING,
             "duplicate_workout": Severity.WARNING,
             "volume_jump": Severity.ERROR,
+            "easy_share_low": Severity.WARNING,
             "slot_missing": Severity.WARNING,
         }
 

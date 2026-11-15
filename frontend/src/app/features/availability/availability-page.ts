@@ -1,7 +1,14 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { AvailabilityApi } from '../../core/availability/availability-api';
-import { Availability, AvailabilitySport } from '../../core/availability/availability-models';
+import {
+  Availability,
+  AvailabilityChanges,
+  AvailabilitySport,
+  IntensityLevel,
+  Limits,
+  OwnLimits,
+} from '../../core/availability/availability-models';
 import {
   DAY_MAX_MINUTES,
   WEEKDAY_NAMES,
@@ -10,6 +17,16 @@ import {
   parseMinutes,
 } from './availability-format';
 import { Parsed } from '../goals/goal-format';
+import {
+  INTENSITY_FIELDS,
+  IntensityErrors,
+  IntensitySettings,
+  LIMIT_NAMES,
+  NO_OWN_LIMIT_TEXTS,
+  OwnLimitTexts,
+  ownLimitTexts,
+  readOwnLimits,
+} from './intensity-settings';
 import { PeriodsPanel } from './periods-panel';
 
 type View = 'loading' | 'unreachable' | 'ready' | 'signed_out';
@@ -36,13 +53,14 @@ function dayMinutes(text: string): Parsed<number> {
  * How much time the user can train: minutes per weekday, an optional weekly budget that caps what
  * the days add up to, optionally what a normal week of training is for them (a reference for the
  * planning after a break, no limit), the sports they want in a plan, whether stretching may be
- * added to sessions, and limitations as free text. Everything is saved together with one Save.
+ * added to sessions, limitations as free text, and how hard plans may be (an intensity level with
+ * optional own limits). Everything is saved together with one Save.
  * What is checked here is what the server checks too, so that the message appears next to the
  * field; the server's own messages are shown the same way.
  */
 @Component({
   selector: 'app-availability-page',
-  imports: [RouterLink, PeriodsPanel],
+  imports: [RouterLink, PeriodsPanel, IntensitySettings],
   templateUrl: './availability-page.html',
   styleUrls: ['../auth/auth-form.css', './availability-page.css'],
 })
@@ -60,6 +78,11 @@ export class AvailabilityPage implements OnInit {
   );
   protected readonly stretching = signal(false);
   protected readonly limitations = signal('');
+  protected readonly intensityLevel = signal<IntensityLevel>('normal');
+  protected readonly ownLimits = signal<OwnLimitTexts>(NO_OWN_LIMIT_TEXTS);
+  /** The limits of every level as the server has them; set with the first answer. */
+  protected readonly levelLimits = signal<Record<IntensityLevel, Limits> | null>(null);
+  protected readonly intensityErrors = signal<IntensityErrors>({});
   protected readonly busy = signal(false);
   protected readonly errors = signal<string[]>([]);
   protected readonly notice = signal<string | null>(null);
@@ -179,7 +202,7 @@ export class AvailabilityPage implements OnInit {
   }
 
   /** The request for what is in the form, or `null` (with the messages set) if it is unusable. */
-  private build(): Availability | null {
+  private build(): AvailabilityChanges | null {
     let usable = true;
     const weekdays: number[] = [];
     const dayErrors: (string | null)[] = [];
@@ -229,6 +252,19 @@ export class AvailabilityPage implements OnInit {
     }
     this.stretchingError.set(null);
 
+    let own: OwnLimits | null = null;
+    const levels = this.levelLimits();
+    if (levels !== null) {
+      const read = readOwnLimits(this.ownLimits(), levels[this.intensityLevel()]);
+      if (read.ok) {
+        own = read.value;
+        this.intensityErrors.set({});
+      } else {
+        this.intensityErrors.set(read.errors);
+        usable = false;
+      }
+    }
+
     if (this.limitations().length > LIMITATIONS_MAX) {
       this.limitationsError.set(`Use at most ${LIMITATIONS_MAX} characters.`);
       usable = false;
@@ -244,6 +280,7 @@ export class AvailabilityPage implements OnInit {
           sports,
           stretching: this.stretching(),
           limitations: this.limitations(),
+          ...(own === null ? {} : { intensity_level: this.intensityLevel(), ...own }),
         }
       : null;
   }
@@ -264,6 +301,10 @@ export class AvailabilityPage implements OnInit {
     this.sports.set([...availability.sports]);
     this.stretching.set(availability.stretching);
     this.limitations.set(availability.limitations);
+    this.intensityLevel.set(availability.intensity_level);
+    this.ownLimits.set(ownLimitTexts(availability));
+    this.levelLimits.set(availability.level_limits);
+    this.intensityErrors.set({});
     this.dayErrors.set(NO_ERRORS);
     this.weekdaysError.set(null);
     this.budgetError.set(null);
@@ -281,6 +322,14 @@ export class AvailabilityPage implements OnInit {
     this.sportsError.set(join('sports'));
     this.stretchingError.set(join('stretching'));
     this.limitationsError.set(join('limitations'));
+    const intensity: IntensityErrors = {};
+    for (const name of ['intensity_level', ...LIMIT_NAMES] as const) {
+      const message = join(name);
+      if (message !== null) {
+        intensity[name] = message;
+      }
+    }
+    this.intensityErrors.set(intensity);
     const known = [
       'weekdays',
       'weekly_budget_minutes',
@@ -288,6 +337,7 @@ export class AvailabilityPage implements OnInit {
       'sports',
       'stretching',
       'limitations',
+      ...INTENSITY_FIELDS,
     ];
     const rest = Object.entries(fields)
       .filter(([name]) => !known.includes(name))

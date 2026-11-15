@@ -10,6 +10,7 @@ from django.test.utils import CaptureQueriesContext
 from accounts.models import User
 from activities.models import Activity
 from athletes.models import AthleteProfile, ThresholdValue
+from availability.intensity import LEVEL_LIMITS, IntensityLevel, Limits
 from availability.models import AvailabilitySettings, UnavailablePeriod, WeekdayMinutes
 from planning.context import (
     RECENT_WEEKS,
@@ -408,6 +409,17 @@ class TestTheContextOfAUser:
         assert context.stretching is False
         AvailabilitySettings.objects.create(owner=alice, weekly_budget_minutes=300)
         assert build_context(alice, MONDAY).sports == frozenset(Sport)
+
+    def test_the_limits_come_from_the_intensity_level_and_own_values(
+        self, alice: User, bob: User
+    ) -> None:
+        assert build_context(alice, MONDAY).limits == LEVEL_LIMITS[IntensityLevel.NORMAL]
+        AvailabilitySettings.objects.create(owner=bob, intensity_level="relaxed")
+        AvailabilitySettings.objects.create(
+            owner=alice, intensity_level="intensive", easy_share_percent=60
+        )
+
+        assert build_context(alice, MONDAY).limits == Limits(3, 130, 150, 60)
 
     def test_the_offset_of_a_day_in_the_week(self, alice: User) -> None:
         context = build_context(alice, MONDAY)

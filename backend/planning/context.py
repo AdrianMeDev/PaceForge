@@ -14,6 +14,7 @@ from accounts.models import User
 from activities.models import Activity
 from athletes.thresholds import all_candidates
 from availability.capacity import week_capacity
+from availability.intensity import DEFAULT_LEVEL, LEVEL_LIMITS, Limits
 from goals.services import time_zone_of
 
 from .schema import Sport, ZoneSystem
@@ -44,6 +45,8 @@ class PlanContext:
     # stretching may be added to sessions.
     sports: frozenset[Sport] = frozenset(Sport)
     stretching: bool = False
+    # The limits of the rules that follow from the athlete's intensity level and own values.
+    limits: Limits = LEVEL_LIMITS[DEFAULT_LEVEL]
 
     def offset(self, day: date) -> int | None:
         """The place of ``day`` in the week (Monday is 0), ``None`` if it lies outside."""
@@ -67,6 +70,7 @@ def build_context(user: User, monday: date) -> PlanContext:
         typical_weekly_minutes=capacity.typical_weekly_minutes,
         sports=frozenset(Sport(sport) for sport in capacity.sports),
         stretching=capacity.stretching,
+        limits=capacity.limits,
     )
 
 

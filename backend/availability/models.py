@@ -7,6 +7,16 @@ from django.db.models import DateField, ExpressionWrapper, F, Q
 
 from core.models import OwnedModel
 
+from .intensity import (
+    DEFAULT_LEVEL,
+    LIMIT_NAMES,
+    LIMIT_RANGES,
+    IntensityLevel,
+    Limits,
+    effective_limits,
+    limit_problems,
+)
+
 # A day has 1440 minutes and a week 10080.
 DAY_MINUTES_MAX = 1440
 WEEK_MINUTES_MAX = 7 * DAY_MINUTES_MAX
@@ -38,6 +48,9 @@ class AvailabilitySettings(OwnedModel):
     athlete wants in a plan (empty: none chosen, which means all of them) and ``stretching`` says
     whether stretching may be added to sessions. The limitations are free text and are never
     interpreted here.
+
+    The intensity level sets the limits of the planning rules (``availability.intensity``); each of
+    the four own limits replaces the level's value when it is set (empty: the level's value).
     """
 
     weekly_budget_minutes = models.PositiveIntegerField(null=True, blank=True)
@@ -45,9 +58,28 @@ class AvailabilitySettings(OwnedModel):
     sports = models.JSONField(default=list, blank=True)
     stretching = models.BooleanField(default=False)
     limitations = models.CharField(max_length=LIMITATIONS_MAX, blank=True)
+    intensity_level = models.CharField(
+        max_length=20, choices=IntensityLevel.choices, default=DEFAULT_LEVEL
+    )
+    max_hard_days = models.PositiveSmallIntegerField(null=True, blank=True)
+    progression_warning_percent = models.PositiveSmallIntegerField(null=True, blank=True)
+    progression_error_percent = models.PositiveSmallIntegerField(null=True, blank=True)
+    easy_share_percent = models.PositiveSmallIntegerField(null=True, blank=True)
 
     class Meta:
         constraints = [
+            models.CheckConstraint(
+                condition=Q(intensity_level__in=IntensityLevel.values),
+                name="availability_intensity_level_known",
+            ),
+            *(
+                models.CheckConstraint(
+                    condition=Q(**{f"{name}__isnull": True})
+                    | Q(**{f"{name}__gte": low, f"{name}__lte": high}),
+                    name=f"availability_{name}_in_range",
+                )
+                for name, (low, high) in LIMIT_RANGES.items()
+            ),
             models.UniqueConstraint(fields=["owner"], name="availability_one_settings_per_owner"),
             models.CheckConstraint(
                 condition=Q(weekly_budget_minutes__isnull=True)
@@ -79,8 +111,20 @@ class AvailabilitySettings(OwnedModel):
             and len(set(sports)) == len(sports)
         ):
             errors["sports"] = "Use each of running, cycling, swimming and strength at most once."
+        if self.intensity_level in IntensityLevel.values:
+            errors.update(limit_problems(self.intensity_level, self.own_limits))
         if errors:
             raise ValidationError(errors)
+
+    @property
+    def own_limits(self) -> dict[str, int | None]:
+        """The own values of the limits by name, ``None`` where the level's value counts."""
+        return {name: getattr(self, name) for name in LIMIT_NAMES}
+
+    @property
+    def limits(self) -> Limits:
+        """The limits of the planning rules: the level's with the own values in their place."""
+        return effective_limits(self.intensity_level, self.own_limits)
 
     @property
     def chosen_sports(self) -> list[str]:

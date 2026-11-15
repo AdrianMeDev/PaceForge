@@ -11,6 +11,32 @@ import {
 import { query, settle, typeInto } from '../../testing/dom';
 import { AvailabilityPage } from './availability-page';
 
+const LEVEL_LIMITS: Availability['level_limits'] = {
+  relaxed: {
+    max_hard_days: 1,
+    progression_warning_percent: 115,
+    progression_error_percent: 130,
+    easy_share_percent: 85,
+  },
+  normal: {
+    max_hard_days: 2,
+    progression_warning_percent: 120,
+    progression_error_percent: 140,
+    easy_share_percent: 80,
+  },
+  intensive: {
+    max_hard_days: 3,
+    progression_warning_percent: 130,
+    progression_error_percent: 150,
+    easy_share_percent: 75,
+  },
+};
+const NO_OWN_LIMITS = {
+  max_hard_days: null,
+  progression_warning_percent: null,
+  progression_error_percent: null,
+  easy_share_percent: null,
+};
 const SAVED: Availability = {
   weekdays: [60, 0, 90, 0, 0, 120, 180],
   weekly_budget_minutes: 300,
@@ -18,6 +44,9 @@ const SAVED: Availability = {
   sports: ['running', 'cycling'],
   stretching: true,
   limitations: 'No running on consecutive days',
+  intensity_level: 'normal',
+  ...NO_OWN_LIMITS,
+  level_limits: LEVEL_LIMITS,
 };
 const NOTHING: Availability = {
   weekdays: [0, 0, 0, 0, 0, 0, 0],
@@ -26,6 +55,9 @@ const NOTHING: Availability = {
   sports: ['running', 'cycling', 'swimming', 'strength'],
   stretching: false,
   limitations: '',
+  intensity_level: 'normal',
+  ...NO_OWN_LIMITS,
+  level_limits: LEVEL_LIMITS,
 };
 
 const ok = (availability: Availability): GetAvailabilityResult => ({ kind: 'ok', availability });
@@ -341,6 +373,116 @@ describe('AvailabilityPage', () => {
     });
   });
 
+  describe('intensity', () => {
+    const OWN: Availability = {
+      ...SAVED,
+      intensity_level: 'relaxed',
+      max_hard_days: 2,
+      progression_error_percent: 160,
+    };
+    const level = (name: string) => query<HTMLInputElement>(page, `#level-${name}`);
+
+    it('shows the level and the own limits as saved', async () => {
+      await setup(ok(OWN));
+
+      expect(level('relaxed').checked).toBe(true);
+      expect(value('#limit-max_hard_days')).toBe('2');
+      expect(value('#limit-progression_warning_percent')).toBe('');
+      expect(value('#limit-progression_error_percent')).toBe('160');
+      expect(query<HTMLInputElement>(page, '#limit-easy_share_percent').placeholder).toBe('85');
+    });
+
+    it('sends the level and the own limits with everything else, empty ones as null', async () => {
+      await setup();
+
+      await tick('#level-intensive');
+      await type('#limit-max_hard_days', '4');
+      await type('#limit-easy_share_percent', ' 70 ');
+      await save();
+
+      expect(api.save.mock.calls[0][0]).toMatchObject({
+        intensity_level: 'intensive',
+        max_hard_days: 4,
+        progression_warning_percent: null,
+        progression_error_percent: null,
+        easy_share_percent: 70,
+        limitations: SAVED.limitations,
+      });
+    });
+
+    it('takes back an own limit by emptying its field', async () => {
+      await setup(ok(OWN));
+
+      await type('#limit-max_hard_days', '');
+      await save();
+
+      expect(api.save.mock.calls[0][0]).toMatchObject({
+        intensity_level: 'relaxed',
+        max_hard_days: null,
+        progression_error_percent: 160,
+      });
+    });
+
+    it('does not send an own limit out of range and says so at the field', async () => {
+      await setup();
+
+      await type('#limit-max_hard_days', '7');
+      await save();
+
+      expect(api.save).not.toHaveBeenCalled();
+      expect(alerts()).toEqual(['Enter a whole number of days between 0 and 4.']);
+      expect(
+        query<HTMLInputElement>(page, '#limit-max_hard_days').getAttribute('aria-invalid'),
+      ).toBe('true');
+    });
+
+    it('checks the warning against the error of the level chosen now', async () => {
+      await setup();
+      await type('#limit-progression_warning_percent', '135');
+
+      await tick('#level-relaxed');
+      await save();
+
+      expect(api.save).not.toHaveBeenCalled();
+      expect(alerts()).toEqual([
+        'The warning limit (135 %) must be below the error limit (130 %).',
+      ]);
+    });
+
+    it('shows the server’s messages at the fields of the intensity', async () => {
+      await setup();
+      api.save.mockResolvedValue({
+        kind: 'invalid',
+        errors: ['The warning limit (150 %) must be below the error limit (140 %).'],
+        fields: {
+          progression_warning_percent: [
+            'The warning limit (150 %) must be below the error limit (140 %).',
+          ],
+        },
+      });
+
+      await save();
+
+      expect(query(page, '#limit-progression_warning_percent-error').textContent?.trim()).toBe(
+        'The warning limit (150 %) must be below the error limit (140 %).',
+      );
+      // shown at its field only, not once more at the top
+      expect(alerts()).toEqual([
+        'The warning limit (150 %) must be below the error limit (140 %).',
+      ]);
+    });
+
+    it('shows what the server saved', async () => {
+      await setup();
+      api.save.mockResolvedValue({ kind: 'ok', availability: OWN });
+
+      await save();
+
+      expect(level('relaxed').checked).toBe(true);
+      expect(value('#limit-progression_error_percent')).toBe('160');
+    });
+  });
+
   describe('the sum while typing', () => {
     beforeEach(() => setup(ok(NOTHING)));
 
@@ -434,6 +576,8 @@ describe('AvailabilityPage', () => {
         sports: ['running', 'cycling', 'swimming', 'strength'],
         stretching: false,
         limitations: 'Knee',
+        intensity_level: 'normal',
+        ...NO_OWN_LIMITS,
       });
     });
 
@@ -449,6 +593,8 @@ describe('AvailabilityPage', () => {
         sports: ['running', 'cycling', 'swimming', 'strength'],
         stretching: false,
         limitations: '',
+        intensity_level: 'normal',
+        ...NO_OWN_LIMITS,
       });
     });
 

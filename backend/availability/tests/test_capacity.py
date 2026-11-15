@@ -6,6 +6,7 @@ from django.test.utils import CaptureQueriesContext
 
 from accounts.models import User
 from availability.capacity import WeekCapacity, minutes_in_week, minutes_on, week_capacity
+from availability.intensity import LEVEL_LIMITS, IntensityLevel, Limits
 from availability.models import AvailabilitySettings, UnavailablePeriod, WeekdayMinutes
 
 pytestmark = pytest.mark.django_db
@@ -337,6 +338,41 @@ class TestTheSportsAndStretching:
     def test_it_still_takes_three_queries(self, alice: User) -> None:
         declare(alice, 60, 60)
         AvailabilitySettings.objects.create(owner=alice, sports=["running"], stretching=True)
+
+        with CaptureQueriesContext(connection) as queries:
+            week_capacity(alice, MONDAY)
+
+        assert len(queries) == 3
+
+
+class TestTheLimits:
+    def test_without_settings_they_are_those_of_normal(self, alice: User) -> None:
+        assert week_capacity(alice, MONDAY).limits == LEVEL_LIMITS[IntensityLevel.NORMAL]
+
+    @pytest.mark.parametrize("level", list(IntensityLevel))
+    def test_they_are_those_of_the_chosen_level(self, alice: User, level: IntensityLevel) -> None:
+        AvailabilitySettings.objects.create(owner=alice, intensity_level=level)
+
+        assert week_capacity(alice, MONDAY).limits == LEVEL_LIMITS[level]
+
+    def test_own_values_take_the_place_of_the_levels(self, alice: User) -> None:
+        AvailabilitySettings.objects.create(
+            owner=alice,
+            intensity_level="relaxed",
+            max_hard_days=2,
+            progression_error_percent=160,
+        )
+
+        assert week_capacity(alice, MONDAY).limits == Limits(2, 115, 160, 85)
+
+    def test_the_choice_of_another_user_is_not_seen(self, alice: User, bob: User) -> None:
+        AvailabilitySettings.objects.create(owner=bob, intensity_level="intensive", max_hard_days=4)
+
+        assert week_capacity(alice, MONDAY).limits == LEVEL_LIMITS[IntensityLevel.NORMAL]
+
+    def test_they_still_take_three_queries(self, alice: User) -> None:
+        declare(alice, 60)
+        AvailabilitySettings.objects.create(owner=alice, intensity_level="relaxed", max_hard_days=2)
 
         with CaptureQueriesContext(connection) as queries:
             week_capacity(alice, MONDAY)

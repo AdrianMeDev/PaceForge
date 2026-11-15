@@ -13,6 +13,7 @@ from django.conf import settings
 from django.urls import get_resolver
 
 from accounts.models import User
+from availability.intensity import LEVEL_LIMITS
 from availability.models import SPORTS
 from availability.serializers import availability_data
 from coach import views as coach_views
@@ -76,7 +77,8 @@ def rows(text: str) -> list[list[str]]:
     return [
         row
         for row in found
-        if row[0] not in {"Field", "Code", "Constant", "System", "Status", "Key", "Endpoint"}
+        if row[0]
+        not in {"Field", "Code", "Constant", "System", "Status", "Key", "Endpoint", "Level"}
     ]
 
 
@@ -151,6 +153,24 @@ class TestTheLimits:
         assert defined == documented
 
 
+class TestTheIntensityLevels:
+    def test_the_table_has_the_limits_of_every_level(self) -> None:
+        documented = {
+            row[0]: (int(row[1]), int(row[2]), int(row[3]), int(row[4]))
+            for row in rows(section("The intensity levels"))
+        }
+
+        assert documented == {
+            level.value: (
+                limits.max_hard_days,
+                limits.progression_warning_percent,
+                limits.progression_error_percent,
+                limits.easy_share_percent,
+            )
+            for level, limits in LEVEL_LIMITS.items()
+        }
+
+
 class TestTheRules:
     def in_the_code(self) -> set[tuple[str, str]]:
         source = Path(rules.__file__).read_text()
@@ -166,8 +186,8 @@ class TestTheRules:
 
     def test_every_check_of_the_rules_is_covered_by_the_table(self) -> None:
         # the number of checks and of codes can only move together with the page
-        assert len(rules.ALL_CHECKS) == 14
-        assert len(self.in_the_code()) == 18
+        assert len(rules.ALL_CHECKS) == 15
+        assert len(self.in_the_code()) == 19
 
 
 class TestTheZoneSystems:

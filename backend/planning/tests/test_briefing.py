@@ -11,6 +11,7 @@ from django.test.utils import CaptureQueriesContext
 from accounts.models import User
 from activities.models import Activity
 from athletes.models import AthleteProfile, ThresholdValue
+from availability.intensity import LEVEL_LIMITS, IntensityLevel, Limits
 from availability.models import AvailabilitySettings, UnavailablePeriod, WeekdayMinutes
 from goals import services as goal_services
 from goals.models import Goal
@@ -72,6 +73,11 @@ ALLOWED_KEYS = {
     "typical_weekly_minutes",
     "sports",
     "stretching",
+    "limits",
+    "max_hard_days",
+    "progression_warning_percent",
+    "progression_error_percent",
+    "easy_share_percent",
     "previous_week_plan",
     "day",
     "goal",
@@ -173,6 +179,12 @@ class TestTheBriefingOfAUserWithNothing:
             "typical_weekly_minutes": None,
             "sports": ["running", "cycling", "swimming", "strength"],
             "stretching": False,
+            "limits": {
+                "max_hard_days": 2,
+                "progression_warning_percent": 120,
+                "progression_error_percent": 140,
+                "easy_share_percent": 80,
+            },
             "previous_week_plan": [],
             "previous_week_review": None,
         }
@@ -399,6 +411,7 @@ class TestTheGoals:
             "typical_weekly_minutes",
             "sports",
             "stretching",
+            "limits",
             "previous_week_plan",
             "previous_week_review",
         ]
@@ -468,6 +481,39 @@ class TestTheSportsAndStretching:
 
         assert '"sports":["cycling"]' in text
         assert '"stretching":true' in text
+
+
+class TestTheLimits:
+    def test_without_a_choice_they_are_those_of_normal(self, alice: User) -> None:
+        normal = LEVEL_LIMITS[IntensityLevel.NORMAL]
+
+        assert build_briefing(alice, MONDAY)["limits"] == {
+            "max_hard_days": normal.max_hard_days,
+            "progression_warning_percent": normal.progression_warning_percent,
+            "progression_error_percent": normal.progression_error_percent,
+            "easy_share_percent": normal.easy_share_percent,
+        }
+
+    def test_they_are_the_limits_of_the_context(
+        self, alice: User, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        own = Limits(4, 105, 110, 60)
+        real = briefing_module.build_context
+
+        def with_own_limits(user: User, monday: date) -> PlanContext:
+            return replace(real(user, monday), limits=own)
+
+        monkeypatch.setattr(briefing_module, "build_context", with_own_limits)
+
+        briefing = build_briefing(alice, MONDAY)
+
+        assert briefing["limits"] == {
+            "max_hard_days": 4,
+            "progression_warning_percent": 105,
+            "progression_error_percent": 110,
+            "easy_share_percent": 60,
+        }
+        assert '"limits":{"easy_share_percent":60,"max_hard_days":4,' in to_json(briefing)
 
 
 class TestTheRecentWeeks:

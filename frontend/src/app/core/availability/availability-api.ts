@@ -9,7 +9,10 @@ import {
   CreatePeriodResult,
   DeletePeriodResult,
   GetAvailabilityResult,
+  IntensityLevel,
   Invalid,
+  LimitName,
+  Limits,
   ListPeriodsResult,
   Period,
   PeriodChanges,
@@ -27,6 +30,13 @@ const HANDLED_ERRORS = [400, 401, 403, 404];
 const KINDS: readonly string[] = ['vacation', 'illness', 'other'];
 const SPORTS: readonly string[] = ['running', 'cycling', 'swimming', 'strength'];
 const STATUSES: readonly string[] = ['current', 'upcoming', 'past'];
+const LEVELS: readonly IntensityLevel[] = ['relaxed', 'normal', 'intensive'];
+const LIMIT_NAMES: readonly LimitName[] = [
+  'max_hard_days',
+  'progression_warning_percent',
+  'progression_error_percent',
+  'easy_share_percent',
+];
 const CALENDAR_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 interface Reply {
@@ -170,10 +180,13 @@ function toAvailability(raw: unknown, reply: Reply): Availability {
     !sports.every((sport) => isOneOf<AvailabilitySport>(sport, SPORTS)) ||
     new Set(sports).size !== sports.length ||
     typeof item['stretching'] !== 'boolean' ||
-    typeof item['limitations'] !== 'string'
+    typeof item['limitations'] !== 'string' ||
+    !isOneOf<IntensityLevel>(item['intensity_level'], LEVELS) ||
+    !LIMIT_NAMES.every((name) => item[name] === null || isWholeNumber(item[name]))
   ) {
     throw unexpected(reply);
   }
+  const levelLimits = asObject(item['level_limits'], reply);
   return {
     weekdays: [...(weekdays as number[])],
     weekly_budget_minutes: budget,
@@ -181,6 +194,30 @@ function toAvailability(raw: unknown, reply: Reply): Availability {
     sports: [...(sports as AvailabilitySport[])],
     stretching: item['stretching'],
     limitations: item['limitations'],
+    intensity_level: item['intensity_level'],
+    max_hard_days: item['max_hard_days'] as number | null,
+    progression_warning_percent: item['progression_warning_percent'] as number | null,
+    progression_error_percent: item['progression_error_percent'] as number | null,
+    easy_share_percent: item['easy_share_percent'] as number | null,
+    level_limits: {
+      relaxed: toLimits(levelLimits['relaxed'], reply),
+      normal: toLimits(levelLimits['normal'], reply),
+      intensive: toLimits(levelLimits['intensive'], reply),
+    },
+  };
+}
+
+/** The four limits of a level, each a whole number. */
+function toLimits(raw: unknown, reply: Reply): Limits {
+  const item = asObject(raw, reply);
+  if (!LIMIT_NAMES.every((name) => isWholeNumber(item[name]))) {
+    throw unexpected(reply);
+  }
+  return {
+    max_hard_days: item['max_hard_days'] as number,
+    progression_warning_percent: item['progression_warning_percent'] as number,
+    progression_error_percent: item['progression_error_percent'] as number,
+    easy_share_percent: item['easy_share_percent'] as number,
   };
 }
 
@@ -226,6 +263,10 @@ function asObject(raw: unknown, reply: Reply): Record<string, unknown> {
 }
 
 function isMinutes(value: unknown): value is number {
+  return isWholeNumber(value);
+}
+
+function isWholeNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0;
 }
 

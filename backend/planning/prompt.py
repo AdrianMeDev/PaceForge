@@ -1,9 +1,11 @@
 """What the coach is asked to do, and how its answer is read.
 
 ``SYSTEM_PROMPT`` says what a week plan is (the format of ``planning.schema``, the rules of
-``planning.rules``, quoting their constants so that the two cannot drift apart) and that the
-briefing is data. ``first_message`` hands over the briefing, ``extract_plan`` reads the answer
-back and ``repair_message`` tells the coach what was wrong with it.
+``planning.rules``, quoting their constants so that the two cannot drift apart; the limits that
+depend on the athlete are named by their key in the briefing, so that the prompt is the same for
+everyone) and that the briefing is data. ``first_message`` hands over the briefing,
+``extract_plan`` reads the answer back and ``repair_message`` tells the coach what was wrong with
+it.
 
 Nothing here trusts the answer: ``extract_plan`` accepts one JSON object and nothing else, and it
 ends in the strict parser. Problems found are described in fixed words, paths and numbers; no text
@@ -22,10 +24,7 @@ from .rules import (
     DURATION_TOLERANCE_SECONDS,
     EASY_UP_TO_ZONE,
     HARD_FROM_ZONE,
-    MAX_HARD_DAYS,
     MAX_WORKOUTS_PER_DAY,
-    PROGRESSION_ERROR_PERCENT,
-    PROGRESSION_WARNING_PERCENT,
     TYPICAL_VOLUME_PERCENT,
     Finding,
 )
@@ -109,16 +108,21 @@ The plan is checked by these rules; an answer that breaks one marked (error) can
 - If you give segments, they add up (seconds times repeat) to the duration of the workout, \
 within {DURATION_TOLERANCE_SECONDS} seconds. (error)
 - A workout is hard if its goal is "threshold" or "vo2max" or its zone is {HARD_FROM_ZONE} or \
-higher; it is easy up to zone {EASY_UP_TO_ZONE}. At most {MAX_HARD_DAYS} days of the week have a \
-hard workout. (error) Do not put hard days back to back, keep at least one day free and at most \
-{MAX_WORKOUTS_PER_DAY} workouts on a day. (warnings)
-- The minutes of the week stay below {PROGRESSION_WARNING_PERCENT} percent of the reference \
-(warning), and never reach {PROGRESSION_ERROR_PERCENT} percent. (error) The reference is the \
-higher of the average of "recent_weeks_minutes" and {TYPICAL_VOLUME_PERCENT} percent of \
-"typical_weekly_minutes", which is what the athlete calls a normal week (it may be null). That \
-second number is where a return to training is headed, not where it starts: after a break climb \
-towards it over several weeks, and prefer a few sessions of a useful length to many very short \
-ones. Without either there is no such limit; then plan carefully.
+higher; it is easy up to zone {EASY_UP_TO_ZONE}. "limits" in the data holds the limits that follow \
+from how hard the athlete wants to train; take them as they are. No more days of the week than \
+"max_hard_days" have a hard workout. (error) Do not put hard days back to back, keep at least one \
+day free and at most {MAX_WORKOUTS_PER_DAY} workouts on a day. (warnings)
+- The minutes of the week stay at most "progression_warning_percent" percent of the reference \
+(warning), and never more than "progression_error_percent" percent. (error) The \
+reference is the higher of the average of "recent_weeks_minutes" and {TYPICAL_VOLUME_PERCENT} \
+percent of "typical_weekly_minutes", which is what the athlete calls a normal week (it may be \
+null). That second number is where a return to training is headed, not where it starts: after a \
+break climb towards it over several weeks, and prefer a few sessions of a useful length to many \
+very short ones. Without either there is no such limit; then plan carefully.
+- At least "easy_share_percent" percent of the minutes of running, cycling and swimming are easy \
+(warning): a workout without segments counts as a whole, one with segments segment by segment (up \
+to zone {EASY_UP_TO_ZONE} is easy; without a zone a warm-up, recovery or cool-down is easy and \
+any other segment is as easy as the workout). Strength does not count.
 - Plan only the sports listed in "sports" in the data. (error)
 - A day may have two sessions, rarely three, where the minutes of the day and of the week allow it \
 and the sports fit: for example an easy run in the morning and a ride in the afternoon, or \

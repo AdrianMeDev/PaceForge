@@ -13,6 +13,26 @@ const PERIODS = '/api/availability/periods/';
 const ID = '01a1d563-8869-7740-90ae-aadc415bbbeb';
 
 // The shapes are those of the real API (replayed with curl against a real Django).
+const LEVEL_LIMITS = {
+  relaxed: {
+    max_hard_days: 1,
+    progression_warning_percent: 115,
+    progression_error_percent: 130,
+    easy_share_percent: 85,
+  },
+  normal: {
+    max_hard_days: 2,
+    progression_warning_percent: 120,
+    progression_error_percent: 140,
+    easy_share_percent: 80,
+  },
+  intensive: {
+    max_hard_days: 3,
+    progression_warning_percent: 130,
+    progression_error_percent: 150,
+    easy_share_percent: 75,
+  },
+};
 const AVAILABILITY = {
   weekdays: [60, 0, 90, 0, 0, 120, 180],
   weekly_budget_minutes: 300,
@@ -20,6 +40,12 @@ const AVAILABILITY = {
   sports: ['running', 'cycling', 'swimming', 'strength'],
   stretching: false,
   limitations: 'No running <b>x</b>',
+  intensity_level: 'relaxed',
+  max_hard_days: 2,
+  progression_warning_percent: null,
+  progression_error_percent: 160,
+  easy_share_percent: null,
+  level_limits: LEVEL_LIMITS,
 };
 const NOTHING_SAVED = {
   weekdays: [0, 0, 0, 0, 0, 0, 0],
@@ -28,6 +54,12 @@ const NOTHING_SAVED = {
   sports: ['running', 'cycling', 'swimming', 'strength'],
   stretching: false,
   limitations: '',
+  intensity_level: 'normal',
+  max_hard_days: null,
+  progression_warning_percent: null,
+  progression_error_percent: null,
+  easy_share_percent: null,
+  level_limits: LEVEL_LIMITS,
 };
 const UPCOMING = {
   id: ID,
@@ -157,6 +189,31 @@ describe('AvailabilityApi', () => {
     ['no limitations', altered(AVAILABILITY, [['limitations'], REMOVE])],
     ['a number as limitations', altered(AVAILABILITY, [['limitations'], 5])],
     ['null as limitations', altered(AVAILABILITY, [['limitations'], null])],
+    ['no intensity level', altered(AVAILABILITY, [['intensity_level'], REMOVE])],
+    ['an unknown intensity level', altered(AVAILABILITY, [['intensity_level'], 'brutal'])],
+    ['a level in other letters', altered(AVAILABILITY, [['intensity_level'], 'Normal'])],
+    ['null as intensity level', altered(AVAILABILITY, [['intensity_level'], null])],
+    ['no own hard days', altered(AVAILABILITY, [['max_hard_days'], REMOVE])],
+    ['a text as own hard days', altered(AVAILABILITY, [['max_hard_days'], '2'])],
+    ['a fraction as own warning', altered(AVAILABILITY, [['progression_warning_percent'], 120.5])],
+    ['a negative own error', altered(AVAILABILITY, [['progression_error_percent'], -1])],
+    ['no own easy share', altered(AVAILABILITY, [['easy_share_percent'], REMOVE])],
+    ['no level limits', altered(AVAILABILITY, [['level_limits'], REMOVE])],
+    ['a list as level limits', altered(AVAILABILITY, [['level_limits'], []])],
+    ['a level without limits', altered(AVAILABILITY, [['level_limits', 'intensive'], REMOVE])],
+    ['null as the limits of a level', altered(AVAILABILITY, [['level_limits', 'normal'], null])],
+    [
+      'a limit of a level missing',
+      altered(AVAILABILITY, [['level_limits', 'normal', 'easy_share_percent'], REMOVE]),
+    ],
+    [
+      'null as a limit of a level',
+      altered(AVAILABILITY, [['level_limits', 'relaxed', 'max_hard_days'], null]),
+    ],
+    [
+      'a text as a limit of a level',
+      altered(AVAILABILITY, [['level_limits', 'relaxed', 'progression_error_percent'], '130']),
+    ],
   ];
 
   const WRONG_PERIODS: [string, unknown][] = [
@@ -195,6 +252,18 @@ describe('AvailabilityApi', () => {
       const { result } = await run(api.get(), 'GET', URL, NOTHING_SAVED, 200);
 
       expect(result).toEqual({ kind: 'ok', availability: NOTHING_SAVED });
+    });
+
+    it('takes over only the known limits of the known levels', async () => {
+      const body = altered(
+        AVAILABILITY,
+        [['level_limits', 'brutal'], LEVEL_LIMITS.intensive],
+        [['level_limits', 'normal', 'rest_days'], 1],
+      );
+
+      const { result } = await run(api.get(), 'GET', URL, body as object, 200);
+
+      expect(result).toEqual({ kind: 'ok', availability: AVAILABILITY });
     });
 
     it('takes over only the known fields and copies the weekdays', async () => {
@@ -300,6 +369,56 @@ describe('AvailabilityApi', () => {
       expect(stretching.request.request.body).toEqual({ stretching: true });
       expect(sports.result).toMatchObject({ availability: { sports: ['running'] } });
       expect(stretching.result).toMatchObject({ availability: { stretching: true } });
+    });
+
+    it('patches the intensity level and own limits, a removed one as null', async () => {
+      const changes = {
+        intensity_level: 'intensive' as const,
+        max_hard_days: null,
+        progression_warning_percent: 110,
+      };
+      const answer = altered(
+        AVAILABILITY,
+        [['intensity_level'], 'intensive'],
+        [['max_hard_days'], null],
+        [['progression_warning_percent'], 110],
+      );
+
+      const { result, request } = await run(api.save(changes), 'PATCH', URL, answer as object, 200);
+
+      expect(request.request.body).toEqual(changes);
+      expect(result).toMatchObject({
+        kind: 'ok',
+        availability: {
+          intensity_level: 'intensive',
+          max_hard_days: null,
+          progression_warning_percent: 110,
+          progression_error_percent: 160,
+          level_limits: LEVEL_LIMITS,
+        },
+      });
+    });
+
+    it('returns the messages of the own limits by field', async () => {
+      const refusal = {
+        progression_warning_percent: [
+          'The warning limit (135 %) must be below the error limit (130 %).',
+        ],
+      };
+
+      const { result } = await run(
+        api.save({ intensity_level: 'relaxed' }),
+        'PATCH',
+        URL,
+        refusal,
+        400,
+      );
+
+      expect(result).toEqual({
+        kind: 'invalid',
+        errors: refusal.progression_warning_percent,
+        fields: refusal,
+      });
     });
 
     it('takes over the sports as a copy, in the order of the server', async () => {

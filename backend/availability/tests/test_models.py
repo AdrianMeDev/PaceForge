@@ -7,6 +7,7 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 
 from accounts.models import User
+from availability.intensity import LEVEL_LIMITS, LIMIT_NAMES, IntensityLevel, Limits
 from availability.models import (
     DAY_MINUTES_MAX,
     LIMITATIONS_MAX,
@@ -64,6 +65,75 @@ class TestLimits:
         assert LIMITATIONS_MAX == 1000
         assert NOTE_MAX == 200
         assert PERIOD_MAX_DAYS == 366
+
+
+class TestIntensity:
+    def test_the_default_is_normal_without_own_limits(self, alice: User) -> None:
+        settings = AvailabilitySettings.objects.create(owner=alice)
+
+        assert settings.intensity_level == IntensityLevel.NORMAL
+        assert settings.own_limits == dict.fromkeys(LIMIT_NAMES)
+        assert settings.limits == LEVEL_LIMITS[IntensityLevel.NORMAL]
+
+    def test_own_limits_replace_the_levels(self, alice: User) -> None:
+        settings = AvailabilitySettings.objects.create(
+            owner=alice, intensity_level="relaxed", max_hard_days=2, easy_share_percent=70
+        )
+
+        assert settings.limits == Limits(2, 115, 130, 70)
+
+    @pytest.mark.parametrize(
+        "fields",
+        [
+            {"intensity_level": "intensive"},
+            {"max_hard_days": 0},
+            {"max_hard_days": 4},
+            {"progression_warning_percent": 100, "progression_error_percent": 300},
+            {"easy_share_percent": 50},
+            {"easy_share_percent": 100},
+        ],
+    )
+    def test_valid_settings(self, alice: User, fields: dict[str, Any]) -> None:
+        check(AvailabilitySettings, alice, **fields)
+
+    @pytest.mark.parametrize(
+        ("field", "fields"),
+        [
+            ("intensity_level", {"intensity_level": "brutal"}),
+            ("max_hard_days", {"max_hard_days": 5}),
+            ("progression_warning_percent", {"progression_warning_percent": 99}),
+            ("progression_error_percent", {"progression_error_percent": 301}),
+            ("easy_share_percent", {"easy_share_percent": 49}),
+            # the warning must stay below the error, the level's or an own one
+            ("progression_warning_percent", {"progression_warning_percent": 140}),
+            (
+                "progression_error_percent",
+                {"progression_warning_percent": 160, "progression_error_percent": 150},
+            ),
+        ],
+    )
+    def test_unusable_settings_are_refused(
+        self, alice: User, field: str, fields: dict[str, Any]
+    ) -> None:
+        refused(AvailabilitySettings, alice, field, **fields)
+
+    @pytest.mark.parametrize(
+        "fields",
+        [
+            {"intensity_level": "brutal"},
+            {"max_hard_days": 5},
+            {"progression_warning_percent": 99},
+            {"progression_warning_percent": 201},
+            {"progression_error_percent": 99},
+            {"progression_error_percent": 301},
+            {"easy_share_percent": 49},
+            {"easy_share_percent": 101},
+        ],
+    )
+    def test_the_database_refuses_what_is_out_of_range(
+        self, alice: User, fields: dict[str, Any]
+    ) -> None:
+        assert "availability_" in rejected_by_database(AvailabilitySettings, owner=alice, **fields)
 
 
 class TestSports:

@@ -6,7 +6,9 @@ problems), and its message is a fixed text built from numbers, weekdays and fixe
 nothing the coach wrote (titles, notes) is repeated. An *error* makes a plan unfit to confirm, a
 *warning* is for the user to weigh.
 
-The limits are the constants below, in one place, so that they can be read and changed there.
+The fixed limits are the constants below, in one place, so that they can be read and changed there.
+The limits that depend on how hard the athlete wants to train (hard days, progression) come with
+the context (``context.limits``, see ``availability.intensity``).
 """
 
 from collections.abc import Callable
@@ -15,7 +17,7 @@ from enum import StrEnum
 from fractions import Fraction
 
 from .context import PlanContext
-from .schema import Goal, Slot, Sport, WeekPlan, Workout, ZoneSystem
+from .schema import Goal, Segment, SegmentKind, Slot, Sport, WeekPlan, Workout, ZoneSystem
 
 # The segments of a workout may differ from its duration by this much before it is an error.
 DURATION_TOLERANCE_SECONDS = 60
@@ -29,21 +31,21 @@ SPORT_ZONE_SYSTEMS: dict[Sport, frozenset[ZoneSystem]] = {
 }
 
 # The rhythm of a week. A workout is hard from this zone on (whatever the zone system) or if its
-# goal is threshold or VO2max; it is easy up to this zone or without any zone.
+# goal is threshold or VO2max; it is easy up to this zone or without any zone. How many hard days
+# a week may have is a limit of the athlete's intensity level.
 HARD_FROM_ZONE = 4
 EASY_UP_TO_ZONE = 2
-MAX_HARD_DAYS = 3
 MAX_WORKOUTS_PER_DAY = 2
-# The planned minutes against the average of the recent weeks, in percent: above the first it is
-# a warning, above the second an error. Without a reference (or with 0 minutes) the rule is
-# skipped.
-PROGRESSION_WARNING_PERCENT = 130
-PROGRESSION_ERROR_PERCENT = 150
 # How much of the athlete's own "typical week" counts as the reference, in percent. The reference
 # is the higher of this and the average of the recent weeks, so that someone coming back from a
 # break is not held to the few weeks since. 100 takes the athlete at their word; a lower number
 # (70, say) makes the first weeks back more careful.
 TYPICAL_VOLUME_PERCENT = 100
+
+# The sports whose minutes make up the share of easy training; strength counts neither way.
+ENDURANCE_SPORTS = frozenset({Sport.RUNNING, Sport.CYCLING, Sport.SWIMMING})
+# Segments of these kinds without a zone are easy whatever the workout is.
+_EASY_KINDS = frozenset({SegmentKind.WARMUP, SegmentKind.RECOVERY, SegmentKind.COOLDOWN})
 
 _WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 _ABSENCES = {"illness": "an illness", "vacation": "a vacation"}
@@ -215,16 +217,18 @@ def intensity_of(workout: Workout) -> Intensity:
 
 
 def check_hard_days(plan: WeekPlan, context: PlanContext) -> list[Finding]:
-    """No more than ``MAX_HARD_DAYS`` days with a hard workout in a week."""
+    """No more days with a hard workout in a week than the athlete's limit allows."""
     _same_week(plan, context)
     hard = _hard_workouts_by_day(plan, context)
-    if len(hard) <= MAX_HARD_DAYS:
+    allowed = context.limits.max_hard_days
+    if len(hard) <= allowed:
         return []
+    days = "1 hard day" if len(hard) == 1 else f"{len(hard)} hard days"
     return [
         Finding(
             Severity.ERROR,
             "too_many_hard_days",
-            f"The week has {len(hard)} hard days; at most {MAX_HARD_DAYS} are sensible.",
+            f"The week has {days}; your intensity settings allow at most {allowed}.",
             "workouts",
         )
     ]
@@ -307,9 +311,9 @@ def check_progression(plan: WeekPlan, context: PlanContext) -> list[Finding]:
     """The planned minutes stay within a plausible step from what the athlete has been doing.
 
     The reference is the higher of the average of ``context.recent_weeks`` and the typical week of
-    the athlete (``TYPICAL_VOLUME_PERCENT`` of it). Above ``PROGRESSION_WARNING_PERCENT`` of it is
-    a warning, above ``PROGRESSION_ERROR_PERCENT`` an error. Without a reference, or with a
-    reference of no minutes, nothing is checked: a number is not made up."""
+    the athlete (``TYPICAL_VOLUME_PERCENT`` of it). Above the warning limit of ``context.limits``
+    (percent of the reference) is a warning, above its error limit an error. Without a reference,
+    or with a reference of no minutes, nothing is checked: a number is not made up."""
     _same_week(plan, context)
     reference = _reference_week(context)
     if reference is None:
@@ -322,9 +326,9 @@ def check_progression(plan: WeekPlan, context: PlanContext) -> list[Finding]:
     )
     # planned / per_week > percent / 100, exactly (no rounding of the reference)
     scaled = Fraction(planned * 100) / per_week
-    if scaled > PROGRESSION_ERROR_PERCENT:
+    if scaled > context.limits.progression_error_percent:
         severity, code = Severity.ERROR, "volume_jump"
-    elif scaled > PROGRESSION_WARNING_PERCENT:
+    elif scaled > context.limits.progression_warning_percent:
         severity, code = Severity.WARNING, "volume_increase"
     else:
         return []
@@ -336,6 +340,67 @@ def check_progression(plan: WeekPlan, context: PlanContext) -> list[Finding]:
             "workouts",
         )
     ]
+
+
+def check_easy_share(plan: WeekPlan, context: PlanContext) -> list[Finding]:
+    """Enough of the endurance minutes of the week are easy (a warning below the athlete's limit).
+
+    Only running, cycling and swimming count. A workout with segments counts segment by segment
+    (``easy_minutes``), one without by its intensity: easy or not at all, moderate is not easy. A
+    week without endurance minutes is not checked, and a week exactly at the limit passes."""
+    _same_week(plan, context)
+    total = 0
+    easy = Fraction(0)
+    for workouts in _workouts_by_day(plan, context).values():
+        for _, workout in workouts:
+            if workout.sport in ENDURANCE_SPORTS:
+                total += workout.duration_minutes
+                easy += easy_minutes(workout)
+    if total == 0:
+        return []
+    share = easy * 100 / total
+    wanted = context.limits.easy_share_percent
+    if share >= wanted:
+        return []
+    # rounded down, so that 79.9 % is told as 79 and not as the 80 % it missed
+    return [
+        Finding(
+            Severity.WARNING,
+            "easy_share_low",
+            f"{int(share)} % of the endurance minutes are easy; your intensity settings ask for "
+            f"at least {wanted} %.",
+            "workouts",
+        )
+    ]
+
+
+def easy_minutes(workout: Workout) -> Fraction:
+    """How many minutes of a workout are easy.
+
+    Without segments it is all of them or none, by ``intensity_of``. With segments each counts by
+    its share of the segments' time: easy if its zone is up to ``EASY_UP_TO_ZONE``; without a zone a
+    warm-up, recovery or cool-down is easy and any other segment is as easy as the workout itself
+    (its goal and its own zone)."""
+    if not workout.segments:
+        return Fraction(workout.duration_minutes if intensity_of(workout) is Intensity.EASY else 0)
+    whole_is_easy = workout.goal not in (Goal.THRESHOLD, Goal.VO2MAX) and (
+        workout.zone is None or workout.zone <= EASY_UP_TO_ZONE
+    )
+    total = sum(segment.seconds * segment.repeat for segment in workout.segments)
+    easy = sum(
+        segment.seconds * segment.repeat
+        for segment in workout.segments
+        if _segment_is_easy(segment, whole_is_easy)
+    )
+    if total == 0:
+        return Fraction(0)
+    return Fraction(easy * workout.duration_minutes, total)
+
+
+def _segment_is_easy(segment: Segment, whole_is_easy: bool) -> bool:
+    if segment.zone is not None:
+        return segment.zone <= EASY_UP_TO_ZONE
+    return segment.kind in _EASY_KINDS or whole_is_easy
 
 
 def _reference_week(context: PlanContext) -> tuple[str, Fraction] | None:
@@ -456,6 +521,7 @@ RHYTHM_CHECKS: tuple[Check, ...] = (
     check_workouts_per_day,
     check_duplicates,
     check_progression,
+    check_easy_share,
     check_times_of_day,
 )
 
