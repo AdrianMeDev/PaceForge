@@ -384,7 +384,7 @@ What it cannot do is get a plan past the parser and the rules.
 | `GOAL_NOTES_MAX` | 300 | Characters of the notes of a goal that are sent. |
 | `LIMITATIONS_TEXT_MAX_TOLD` | 150 | Characters of the free text about limitations that are sent, if the athlete allows it. |
 | `MAX_LIMITATIONS_TOLD` | 10 | Current limitations told to the coach (the newest first); the rest is counted. |
-| `MAX_BYTES` | 20000 | The most the briefing may take (UTF-8), checked in the tests. |
+| `MAX_BYTES` | 24000 | The most the briefing may take (UTF-8), checked in the tests. |
 
 ### Time and the web server
 
