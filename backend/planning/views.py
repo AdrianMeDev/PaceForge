@@ -19,10 +19,19 @@ from integrations.intervals import IntervalsError
 from integrations.intervals import InvalidKeyError as IntervalsKeyError
 
 from . import services
+from .editing import check
 from .generation import NoTimeAvailable, PlanNotUsable, WeekNotPlannable, generate, plannable_weeks
 from .models import WeeklyPlan
 from .push import NotConfirmed, PushResult, export_state, push
-from .serializers import finding_data, plan_data, push_data, push_problem_data, summary_data
+from .schema import PlanFormatError
+from .serializers import (
+    finding_data,
+    plan_data,
+    push_data,
+    push_problem_data,
+    report_data,
+    summary_data,
+)
 from .targets import Targets
 from .throttles import PlanGenerateThrottle, PlanPushThrottle
 from .validation import Report
@@ -36,6 +45,7 @@ NOT_FOUND = "There is no such plan."
 NOT_A_DRAFT = "Only a draft can be confirmed or discarded."
 NOT_CONFIRMABLE = "The plan has errors and cannot be confirmed."
 NOT_USABLE = "The coach did not give a plan that can be used. Please try again."
+INVALID_PLAN = "The plan cannot be read. Please check the problems."
 # Why a plan could not be sent to Intervals.icu, by code. Nothing Intervals.icu said is in them.
 PUSH_PROBLEMS = {
     "not_confirmed": "Only a confirmed plan can be sent to Intervals.icu.",
@@ -54,6 +64,16 @@ def _user(request: Request) -> User:
 
 def _error(http_status: int, code: str, detail: str, **extra: Any) -> Response:
     return Response({"detail": detail, "code": code, **extra}, status=http_status)
+
+
+def _monday(week: str) -> date | None:
+    """The date in ``week`` if it is written ``YYYY-MM-DD`` and is a real day, else ``None``."""
+    if not _WEEK.fullmatch(week):
+        return None
+    try:
+        return date.fromisoformat(week)
+    except ValueError:
+        return None
 
 
 def _detail(
@@ -120,10 +140,7 @@ class GenerateView(APIView):
 
     def post(self, request: Request, week: str) -> Response:
         user = _user(request)
-        try:
-            monday = date.fromisoformat(week) if _WEEK.fullmatch(week) else None
-        except ValueError:
-            monday = None
+        monday = _monday(week)
         if monday is None:
             return _error(status.HTTP_404_NOT_FOUND, "week_not_plannable", NOT_PLANNABLE)
         try:
@@ -146,6 +163,37 @@ class GenerateView(APIView):
         response = _detail(user, generated.plan, generated.report)
         response.status_code = status.HTTP_201_CREATED
         return response
+
+
+class CheckView(APIView):
+    """Runs the rules on a week plan that was changed by hand, and stores nothing: the page asks
+    after every change. The body is a plan in the format of the plan (``docs/weekly-plan.md``), with
+    an optional ``lineage`` per workout. The answer is the report and ``order``: for each workout
+    as the findings number them, its place in the body (the findings follow the stored order, by
+    day and time of day)."""
+
+    http_method_names = ["post", "options"]
+
+    def post(self, request: Request, week: str) -> Response:
+        monday = _monday(week)
+        if monday is None:
+            return _error(status.HTTP_404_NOT_FOUND, "week_not_plannable", NOT_PLANNABLE)
+        try:
+            data = request.data
+        except RecursionError:  # nesting that the JSON reader of the framework gave up on
+            data = None
+        try:
+            checked = check(_user(request), monday, data)
+        except WeekNotPlannable:
+            return _error(status.HTTP_404_NOT_FOUND, "week_not_plannable", NOT_PLANNABLE)
+        except PlanFormatError as error:
+            return _error(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                "invalid_plan",
+                INVALID_PLAN,
+                problems=[{"path": p.path, "message": p.message} for p in error.problems],
+            )
+        return Response({**report_data(checked.report), "order": list(checked.order)})
 
 
 class PlanView(APIView):

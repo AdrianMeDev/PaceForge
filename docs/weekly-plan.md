@@ -351,10 +351,20 @@ plan of another user does not exist (404, the same answer as for an unknown id).
 | -------- | ------ |
 | `GET /api/planning/weeks/` | The weeks that can be planned, each with its versions, newest first. |
 | `POST /api/planning/weeks/<Monday>/generate/` | 201 with the new draft; limited to 5 a minute per user. |
+| `POST /api/planning/weeks/<Monday>/check/` | The checks for a plan that was changed by hand, as `valid`, `findings` and `order`; nothing is stored and no provider is asked. Not limited. |
 | `GET /api/planning/plans/<id>/` | One plan with its workouts; a draft comes with its checks. |
 | `POST /api/planning/plans/<id>/confirm/` | The confirmed plan, or the findings if it has errors. With `{"push": true}` the week is sent to Intervals.icu right after (a problem with that is part of the answer, the plan stays confirmed). |
 | `POST /api/planning/plans/<id>/push/` | Sends a confirmed plan to the Intervals.icu calendar of the user; the plan with the result per workout. Limited to 10 a minute per user. |
 | `POST /api/planning/plans/<id>/discard/` | The discarded plan. |
+
+**Checking a plan that was changed by hand.** `POST /api/planning/weeks/<Monday>/check/` takes a
+plan in the format of [The format](#the-format) for that week, with one addition: a workout may have a
+`lineage` (the lineage of the workout it was made from, or `null` for a new one). It is read by
+the same strict parser and checked against what the user can do and has done *now*. The answer is
+`valid`, the `findings` and `order`: the findings number the workouts as they are stored (by day,
+then by time of day, then as sent), and `order[i]` is the place in the body of the workout that is
+the `i`-th of them. Nothing is stored, no provider is asked and the number of requests is not
+limited: it is how the planning page shows the findings after every change.
 
 Every workout of a plan has a `lineage` (its identity across the versions of the week, see
 [The format](#the-format)). Every workout and every segment of a plan has a `target`: the range of its zone as it is *now*
@@ -378,6 +388,7 @@ without a code is the limit of PaceForge itself.
 | `not_confirmed` | 409 | Only a confirmed plan can be sent to Intervals.icu. |
 | `not_connected` | 409 | The user has not connected Intervals.icu. |
 | `not_usable` | 422 | The coach gave no readable plan, even after the repair; the problems come along. |
+| `invalid_plan` | 422 | The plan that was sent for a check cannot be read (the format, a lineage that is no id or is used twice, a plan for another week); the problems come along. |
 | `not_confirmable` | 422 | The plan has errors; the findings come along. |
 | `rate_limited` | 429 | The provider asked to slow down (`retry_after` in seconds, if it said). |
 | `invalid_key` | 502 | The provider (or Intervals.icu) refused the key. |

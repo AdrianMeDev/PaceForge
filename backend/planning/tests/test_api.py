@@ -144,6 +144,10 @@ def generate_url(week: str = "2027-07-19") -> str:
     return f"/api/planning/weeks/{week}/generate/"
 
 
+def check_url(week: str = "2027-07-19") -> str:
+    return f"/api/planning/weeks/{week}/check/"
+
+
 def plan_url(plan: Any, action: str = "") -> str:
     return f"/api/planning/plans/{plan}/{action}"
 
@@ -151,6 +155,7 @@ def plan_url(plan: Any, action: str = "") -> str:
 ENDPOINTS = [
     ("GET", WEEKS),
     ("POST", generate_url()),
+    ("POST", check_url()),
     ("GET", plan_url(uuid4())),
     ("POST", plan_url(uuid4(), "confirm/")),
     ("POST", plan_url(uuid4(), "push/")),
@@ -183,6 +188,8 @@ class TestAccess:
             ("POST", WEEKS),
             ("PUT", WEEKS),
             ("GET", generate_url()),
+            ("GET", check_url()),
+            ("PUT", check_url()),
             ("DELETE", plan_url(uuid4())),
             ("PATCH", plan_url(uuid4())),
             ("GET", plan_url(uuid4(), "confirm/")),
@@ -479,6 +486,137 @@ class TestGenerating:
         assert scripted.calls
         assert WeeklyPlan.objects.filter(owner=alice).count() == 1
         assert WeeklyPlan.objects.filter(owner=bob).count() == 1
+
+
+def edited(*workouts: Workout, monday: date = MONDAY, **lineages: str | None) -> dict[str, Any]:
+    """A plan as the page sends it for a check; ``w0="…"`` gives the first workout a lineage."""
+    data = to_json(WeekPlan(monday, workouts or (ride(0), ride(2), ride(4, 90)), "By hand"))
+    for name, lineage in lineages.items():
+        data["workouts"][int(name[1:])]["lineage"] = lineage
+    return data
+
+
+class TestChecking:
+    def test_a_good_plan_has_no_findings_and_nothing_is_stored(self, alice: User) -> None:
+        response = signed_in(alice).call("POST", check_url(), edited())
+
+        assert response.status_code == HTTPStatus.OK
+        assert body(response) == {"valid": True, "findings": [], "order": [0, 1, 2]}
+        assert not WeeklyPlan.objects.exists()
+        assert not PlannedWorkout.objects.exists()
+
+    def test_the_findings_come_with_the_text_the_page_shows(self, alice: User) -> None:
+        data = edited(ride(0), ride(1))  # Tuesday offers nothing
+
+        response = signed_in(alice).call("POST", check_url(), data)
+
+        assert response.status_code == HTTPStatus.OK
+        answer = body(response)
+        assert answer["valid"] is False
+        (finding,) = [f for f in answer["findings"] if f["severity"] == "error"]
+        assert set(finding) == {"severity", "code", "message", "path"}
+        assert (finding["code"], finding["path"]) == ("day_over_capacity", "workouts[1]")
+
+    def test_it_says_where_the_workouts_were_in_what_was_sent(self, alice: User) -> None:
+        data = edited(ride(2), ride(0))
+
+        assert body(signed_in(alice).call("POST", check_url(), data))["order"] == [1, 0]
+
+    def test_a_lineage_is_accepted(self, alice: User) -> None:
+        data = edited(w0=str(uuid4()), w1=None)
+
+        assert signed_in(alice).call("POST", check_url(), data).status_code == HTTPStatus.OK
+
+    def test_a_plan_that_cannot_be_read_is_unprocessable_with_fixed_texts(
+        self, alice: User
+    ) -> None:
+        data = edited(w0=MARKER)
+        data["workouts"][1]["duration_minutes"] = 0
+
+        response = signed_in(alice).call("POST", check_url(), data)
+
+        assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+        assert body(response) == {
+            "detail": "The plan cannot be read. Please check the problems.",
+            "code": "invalid_plan",
+            "problems": [
+                {"path": "workouts[0].lineage", "message": "A lineage is an id or null."},
+                {"path": "workouts[1].duration_minutes", "message": "Must be between 1 and 1440."},
+            ],
+        }
+        assert MARKER not in response.content.decode()
+
+    def test_a_plan_for_another_week_is_unprocessable(self, alice: User) -> None:
+        other = date(2027, 7, 26)
+
+        response = signed_in(alice).call("POST", check_url(), edited(monday=other))
+
+        assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+        assert body(response)["problems"] == [
+            {
+                "path": "week_start",
+                "message": "The plan must be for the week that starts on 2027-07-19.",
+            }
+        ]
+
+    @pytest.mark.parametrize("payload", [None, {}, {"workouts": "x"}])
+    def test_a_body_that_is_no_plan_is_unprocessable(self, alice: User, payload: Any) -> None:
+        response = signed_in(alice).call("POST", check_url(), payload)
+
+        assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+        assert body(response)["code"] == "invalid_plan"
+
+    def test_a_body_that_is_not_json_is_refused_as_such(self, alice: User) -> None:
+        api = signed_in(alice)
+
+        response = api.client.generic(
+            "POST",
+            check_url(),
+            data=b"{not json",
+            content_type="application/json",
+            headers={"X-CSRFToken": api._csrf_token()},
+        )
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+
+    @pytest.mark.parametrize(
+        "week", ["2027-07-05", "2027-09-06", "2027-07-20", "2027-02-30", "nonsense", "20270719"]
+    )
+    def test_a_week_that_cannot_be_planned_is_a_404(self, alice: User, week: str) -> None:
+        response = signed_in(alice).call("POST", check_url(week), edited())
+
+        assert response.status_code == HTTPStatus.NOT_FOUND
+        assert body(response) == {
+            "detail": "This week cannot be planned.",
+            "code": "week_not_plannable",
+        }
+
+    def test_nothing_of_the_request_is_repeated_in_an_error(self, alice: User) -> None:
+        response = signed_in(alice).call("POST", check_url(MARKER), edited())
+
+        assert response.status_code == HTTPStatus.NOT_FOUND
+        assert MARKER not in response.content.decode()
+
+    def test_the_time_of_another_user_is_not_used(self, alice: User, bob: User) -> None:
+        assert body(signed_in(alice).call("POST", check_url(), edited()))["valid"] is True
+        assert body(signed_in(bob).call("POST", check_url(), edited()))["valid"] is False
+
+    def test_no_provider_is_asked_and_nothing_is_recorded(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        scripted = provide(good())
+
+        signed_in(alice).call("POST", check_url(), edited())
+
+        assert scripted.calls == []
+        assert not AIUsageRecord.objects.exists()
+
+    def test_it_is_not_limited_like_drafting(self, alice: User) -> None:
+        api = signed_in(alice)
+
+        statuses = [api.call("POST", check_url(), edited()).status_code for _ in range(8)]
+
+        assert set(statuses) == {HTTPStatus.OK}
 
 
 class TestReadingAPlan:
