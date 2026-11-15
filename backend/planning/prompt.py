@@ -126,7 +126,8 @@ any other segment is as easy as the workout). Strength does not count.
 - Plan only the sports listed in "sports" in the data. (error)
 - "training_days" is on how many days of the week the athlete wants to train at most, and \
 "min_weekly_minutes" the least they want to train in the week, as far as the days and the budget \
-allow it (both null: no wish). "long_days" lists, for a sport, the date on which its longest \
+allow it (both null: no wish); more days than "training_days" or fewer minutes than that is a \
+warning. "long_days" lists, for a sport, the date on which its longest \
 session of the week belongs.
 - "limitations" in the data lists the athlete's current injuries and limitations, the newest \
 first: "body_part" from a fixed list and the "sports" it affects (none listed: no particular \

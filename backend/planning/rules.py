@@ -564,6 +564,49 @@ def check_double_day_order(plan: WeekPlan, context: PlanContext) -> list[Finding
     return found
 
 
+def check_training_days(plan: WeekPlan, context: PlanContext) -> list[Finding]:
+    """More days with a workout than the athlete wants to train on (a warning). Fewer are fine,
+    and without a wish nothing is checked."""
+    _same_week(plan, context)
+    wanted = context.training_days
+    days = len(_workouts_by_day(plan, context))
+    if wanted is None or days <= wanted:
+        return []
+    return [
+        Finding(
+            Severity.WARNING,
+            "too_many_training_days",
+            f"The week has workouts on {days} days; you wanted to train on at most {wanted}.",
+            "workouts",
+        )
+    ]
+
+
+def check_minimum_minutes(plan: WeekPlan, context: PlanContext) -> list[Finding]:
+    """Fewer minutes than the athlete wants to train in a week (a warning), as far as the week
+    offers it: the bar is the lower of the minimum and what the days and the budget add up to."""
+    _same_week(plan, context)
+    minimum = context.min_weekly_minutes
+    if minimum is None:
+        return []
+    bar = min(minimum, context.weekly_minutes)
+    planned = sum(
+        workout.duration_minutes
+        for workout in plan.workouts
+        if context.offset(workout.day) is not None
+    )
+    if planned >= bar:
+        return []
+    return [
+        Finding(
+            Severity.WARNING,
+            "below_minimum_minutes",
+            f"The week adds up to {planned} minutes; you wanted to train at least {bar}.",
+            "workouts",
+        )
+    ]
+
+
 def check_limitations(plan: WeekPlan, context: PlanContext) -> list[Finding]:
     """A workout in a sport that a current limitation affects (a warning, once per workout, at
     its sport, naming the newest limitation that affects it). A limitation without sports affects
@@ -655,6 +698,8 @@ RHYTHM_CHECKS: tuple[Check, ...] = (
     check_times_of_day,
     check_double_day_order,
     check_limitations,
+    check_training_days,
+    check_minimum_minutes,
 )
 
 ALL_CHECKS: tuple[Check, ...] = BASIC_CHECKS + RHYTHM_CHECKS

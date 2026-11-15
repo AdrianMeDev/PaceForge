@@ -208,6 +208,8 @@ user to weigh.
 | `two_hard_in_a_day` | error | Two hard workouts on one day. Named once per day, at the second hard one. |
 | `quality_not_first` | warning | On a day with two running, cycling or swimming workouts that both have a time of day, an easy one comes before a moderate or hard one. Strength is left out. Named once per day, at the easy one. |
 | `limited_sport` | warning | A workout in a sport that a current limitation affects (training time page). Named at the sport of the workout, once per workout, with the body part of the newest limitation that affects it. A limitation without sports affects no particular sport and is never named. |
+| `too_many_training_days` | warning | More days with a workout than the athlete wants to train on. Fewer days are fine. |
+| `below_minimum_minutes` | warning | Fewer minutes than the least the athlete wants to train in a week, as far as the week offers it (the bar is the lower of that minimum and what the week offers). |
 | `hard_days_in_a_row` | warning | A hard day directly after a hard day. |
 | `no_free_day` | warning | Every day of the week has a workout. |
 | `many_workouts_in_a_day` | error | More workouts on a day than the limit (two). Named once per day, at the first one too many. |

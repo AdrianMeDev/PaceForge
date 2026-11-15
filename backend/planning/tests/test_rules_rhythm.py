@@ -28,8 +28,10 @@ from planning.rules import (
     check_hard_days,
     check_hard_days_in_a_row,
     check_limitations,
+    check_minimum_minutes,
     check_progression,
     check_times_of_day,
+    check_training_days,
     check_workouts_per_day,
     easy_minutes,
     intensity_of,
@@ -712,6 +714,80 @@ class TestLimitedSports:
         assert all(word.isalpha() or " " in word for word in rules.BODY_PART_WORDS.values())
 
 
+class TestTheWishesForTheWeek:
+    def days(self, wanted: int | None, *offsets: int) -> list[Finding]:
+        plan = week(*(workout(offset, 30) for offset in offsets))
+        return check_training_days(plan, context(training_days=wanted))
+
+    def test_more_days_than_wanted_is_a_warning(self) -> None:
+        assert self.days(3, 0, 1, 2, 4) == [
+            Finding(
+                Severity.WARNING,
+                "too_many_training_days",
+                "The week has workouts on 4 days; you wanted to train on at most 3.",
+                "workouts",
+            )
+        ]
+
+    def test_as_many_or_fewer_days_are_fine(self) -> None:
+        assert self.days(3, 0, 1, 2) == []
+        assert self.days(3, 0) == []
+        assert self.days(3) == []
+
+    def test_a_day_counts_once_however_many_workouts_it_has(self) -> None:
+        assert self.days(2, 0, 0, 0, 1) == []
+
+    def test_workouts_outside_the_week_do_not_count(self) -> None:
+        assert self.days(1, 0, 8, -1) == []
+
+    def test_without_a_wish_nothing_is_checked(self) -> None:
+        assert self.days(None, 0, 1, 2, 3, 4, 5, 6) == []
+
+    def minutes(self, minimum: int | None, planned: int, offered: int = 600) -> list[Finding]:
+        plan = week(workout(1, planned)) if planned else week()
+        return check_minimum_minutes(
+            plan, context(min_weekly_minutes=minimum, weekly_minutes=offered)
+        )
+
+    def test_fewer_minutes_than_the_minimum_is_a_warning(self) -> None:
+        assert self.minutes(300, 200) == [
+            Finding(
+                Severity.WARNING,
+                "below_minimum_minutes",
+                "The week adds up to 200 minutes; you wanted to train at least 300.",
+                "workouts",
+            )
+        ]
+
+    def test_exactly_the_minimum_and_more_are_fine(self) -> None:
+        assert self.minutes(300, 300) == []
+        assert self.minutes(300, 400) == []
+
+    def test_an_empty_week_is_told_too(self) -> None:
+        assert [f.code for f in self.minutes(300, 0)] == ["below_minimum_minutes"]
+
+    def test_the_bar_is_what_the_week_offers_when_that_is_less(self) -> None:
+        # the days offer 200 minutes, so 200 planned is all that can be asked
+        assert self.minutes(300, 200, offered=200) == []
+        found = self.minutes(300, 150, offered=200)
+        assert found[0].message == (
+            "The week adds up to 150 minutes; you wanted to train at least 200."
+        )
+
+    def test_a_week_that_offers_nothing_asks_for_nothing(self) -> None:
+        assert self.minutes(300, 0, offered=0) == []
+
+    def test_without_a_minimum_nothing_is_checked(self) -> None:
+        assert self.minutes(None, 0) == []
+
+    def test_minutes_outside_the_week_do_not_count(self) -> None:
+        plan = week(workout(8, 500))
+
+        found = check_minimum_minutes(plan, context(min_weekly_minutes=300, weekly_minutes=600))
+
+        assert [f.code for f in found] == ["below_minimum_minutes"]
+
+
 class TestTheSameWorkoutTwice:
     def test_the_same_sport_goal_and_duration_on_one_day_is_a_warning_at_the_repeat(self) -> None:
         plan = week(workout(1, 60), workout(1, 60))
@@ -1185,6 +1261,8 @@ class TestTheLists:
             check_times_of_day,
             check_double_day_order,
             check_limitations,
+            check_training_days,
+            check_minimum_minutes,
         )
 
     def test_which_rules_are_errors_and_which_warnings(self) -> None:
