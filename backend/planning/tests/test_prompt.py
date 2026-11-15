@@ -420,6 +420,7 @@ class TestTheSystemPrompt:
         assert '"training_days" is on how many days of the week the athlete wants to train' in flat
         assert '"min_weekly_minutes" the least they want to train in the week' in flat
         assert '"long_days" lists, for a sport, the date on which its longest session' in flat
+        assert "belongs (another day is a warning)" in flat
 
     def test_it_explains_the_current_limitations(self) -> None:
         flat = " ".join(SYSTEM_PROMPT.split())

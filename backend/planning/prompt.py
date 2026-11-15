@@ -128,7 +128,7 @@ any other segment is as easy as the workout). Strength does not count.
 "min_weekly_minutes" the least they want to train in the week, as far as the days and the budget \
 allow it (both null: no wish); more days than "training_days" or fewer minutes than that is a \
 warning. "long_days" lists, for a sport, the date on which its longest \
-session of the week belongs.
+session of the week belongs (another day is a warning).
 - "limitations" in the data lists the athlete's current injuries and limitations, the newest \
 first: "body_part" from a fixed list and the "sports" it affects (none listed: no particular \
 sport, so use your judgement). Do not load the body part: keep an affected sport easy and short, \

@@ -607,6 +607,42 @@ def check_minimum_minutes(plan: WeekPlan, context: PlanContext) -> list[Finding]
     ]
 
 
+def check_long_days(plan: WeekPlan, context: PlanContext) -> list[Finding]:
+    """The longest workout of a sport is on the day the athlete wants the long session of that
+    sport (a warning, at the day of the longest workout). With a tie it is enough that one of the
+    longest is on that day. Nothing is said if the week has no workout of the sport, or if that day
+    is a day of absence or offers no minutes: the wish cannot be met then."""
+    _same_week(plan, context)
+    found = []
+    for sport, wanted in context.long_days:
+        if context.absences[wanted] is not None or context.minutes[wanted] == 0:
+            continue
+        mine = [
+            (index, workout)
+            for index, workout in enumerate(plan.workouts)
+            if workout.sport is sport and context.offset(workout.day) is not None
+        ]
+        if not mine:
+            continue
+        longest = max(workout.duration_minutes for _, workout in mine)
+        top = [(index, workout) for index, workout in mine if workout.duration_minutes == longest]
+        if any(context.offset(workout.day) == wanted for _, workout in top):
+            continue
+        index, workout = top[0]
+        offset = context.offset(workout.day)
+        assert offset is not None
+        found.append(
+            Finding(
+                Severity.WARNING,
+                "long_session_elsewhere",
+                f"The longest {sport.value} workout is on {_WEEKDAYS[offset]}; you wanted the "
+                f"long {sport.value} session on {_WEEKDAYS[wanted]}.",
+                f"workouts[{index}].day",
+            )
+        )
+    return found
+
+
 def check_limitations(plan: WeekPlan, context: PlanContext) -> list[Finding]:
     """A workout in a sport that a current limitation affects (a warning, once per workout, at
     its sport, naming the newest limitation that affects it). A limitation without sports affects
@@ -700,6 +736,7 @@ RHYTHM_CHECKS: tuple[Check, ...] = (
     check_limitations,
     check_training_days,
     check_minimum_minutes,
+    check_long_days,
 )
 
 ALL_CHECKS: tuple[Check, ...] = BASIC_CHECKS + RHYTHM_CHECKS
