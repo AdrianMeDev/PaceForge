@@ -6,7 +6,7 @@ import {
 import { TestBed } from '@angular/core/testing';
 import { provideApiClient } from '../api/api-providers';
 import { AvailabilityApi } from './availability-api';
-import { Availability, Period, PeriodInput } from './availability-models';
+import { Availability, Limitation, Period, PeriodInput } from './availability-models';
 
 const URL = '/api/availability/';
 const PERIODS = '/api/availability/periods/';
@@ -51,6 +51,7 @@ const AVAILABILITY = {
   sports: ['running', 'cycling', 'swimming', 'strength'],
   stretching: false,
   limitations: 'No running <b>x</b>',
+  share_limitations_text: true,
   intensity_level: 'relaxed',
   max_hard_days: 2,
   progression_warning_percent: null,
@@ -75,12 +76,26 @@ const NOTHING_SAVED = {
   sports: ['running', 'cycling', 'swimming', 'strength'],
   stretching: false,
   limitations: '',
+  share_limitations_text: false,
   intensity_level: 'normal',
   max_hard_days: null,
   progression_warning_percent: null,
   progression_error_percent: null,
   easy_share_percent: null,
   level_limits: LEVEL_LIMITS,
+};
+const LIMITATIONS = '/api/availability/limitations/';
+const ACHILLES = {
+  id: '01a1d563-9a11-7c01-8a11-000000000001',
+  body_part: 'achilles',
+  status: 'current',
+  sports: ['running'],
+};
+const BACK = {
+  id: '01a1d563-9a11-7c01-8a11-000000000002',
+  body_part: 'back',
+  status: 'healed',
+  sports: [],
 };
 const UPCOMING = {
   id: ID,
@@ -214,6 +229,10 @@ describe('AvailabilityApi', () => {
     ],
     ['a number as a part', altered(AVAILABILITY, [['time_windows', 2], [1]])],
     ['null as the windows of a day', altered(AVAILABILITY, [['time_windows', 2], null])],
+    ['no sharing flag', altered(AVAILABILITY, [['share_limitations_text'], REMOVE])],
+    ['a text as sharing flag', altered(AVAILABILITY, [['share_limitations_text'], 'true'])],
+    ['a number as sharing flag', altered(AVAILABILITY, [['share_limitations_text'], 1])],
+    ['null as sharing flag', altered(AVAILABILITY, [['share_limitations_text'], null])],
     ['no budget', altered(AVAILABILITY, [['weekly_budget_minutes'], REMOVE])],
     ['a text as budget', altered(AVAILABILITY, [['weekly_budget_minutes'], '300'])],
     ['a fraction as budget', altered(AVAILABILITY, [['weekly_budget_minutes'], 300.5])],
@@ -263,6 +282,25 @@ describe('AvailabilityApi', () => {
       'a text as a limit of a level',
       altered(AVAILABILITY, [['level_limits', 'relaxed', 'progression_error_percent'], '130']),
     ],
+  ];
+
+  const WRONG_LIMITATIONS: [string, unknown][] = [
+    ['no body', null],
+    ['a list as body', []],
+    ['a text as body', 'limitation'],
+    ['no id', altered(ACHILLES, [['id'], REMOVE])],
+    ['a number as id', altered(ACHILLES, [['id'], 5])],
+    ['no body part', altered(ACHILLES, [['body_part'], REMOVE])],
+    ['an unknown body part', altered(ACHILLES, [['body_part'], 'elbow'])],
+    ['a body part in other letters', altered(ACHILLES, [['body_part'], 'Knee'])],
+    ['no status', altered(ACHILLES, [['status'], REMOVE])],
+    ['an unknown status', altered(ACHILLES, [['status'], 'chronic'])],
+    ['no sports', altered(ACHILLES, [['sports'], REMOVE])],
+    ['a text as sports', altered(ACHILLES, [['sports'], 'running'])],
+    ['an unknown sport', altered(ACHILLES, [['sports'], ['golf']])],
+    ['a sport twice', altered(ACHILLES, [['sports'], ['running', 'running']])],
+    ['a number as a sport', altered(ACHILLES, [['sports', 0], 5])],
+    ['null as sports', altered(ACHILLES, [['sports'], null])],
   ];
 
   const WRONG_PERIODS: [string, unknown][] = [
@@ -878,6 +916,333 @@ describe('AvailabilityApi', () => {
 
     it.each([200, 400, 500])('rejects the unexpected status %i', async (status) => {
       await runFailing(api.deletePeriod(ID), 'DELETE', ADDRESS, 'oops', status);
+    });
+  });
+
+  describe('limitations', () => {
+    const ADDRESS = `${LIMITATIONS}${ACHILLES.id}/`;
+
+    describe('listLimitations', () => {
+      it('returns the entries in the order sent', async () => {
+        const { result, request } = await run(
+          api.listLimitations(),
+          'GET',
+          LIMITATIONS,
+          [ACHILLES, BACK],
+          200,
+        );
+
+        expect(request.request.body).toBeNull();
+        expect(result).toEqual({ kind: 'ok', limitations: [ACHILLES, BACK] as Limitation[] });
+      });
+
+      it('returns an empty list', async () => {
+        const { result } = await run(api.listLimitations(), 'GET', LIMITATIONS, [], 200);
+
+        expect(result).toEqual({ kind: 'ok', limitations: [] });
+      });
+
+      it('takes over only the known fields and copies the sports', async () => {
+        const crowded = altered(ACHILLES, [['owner'], 'x'], [['note'], 'secret']) as {
+          sports: string[];
+        };
+
+        const { result } = await run(
+          api.listLimitations(),
+          'GET',
+          LIMITATIONS,
+          [crowded] as object[],
+          200,
+        );
+
+        expect(result).toEqual({ kind: 'ok', limitations: [ACHILLES] });
+        if (result.kind !== 'ok') {
+          throw new Error('expected the list');
+        }
+        expect(result.limitations[0].sports).not.toBe(crowded.sports);
+      });
+
+      it.each([401, 403])('says when the session is gone (%i)', async (status) => {
+        const { result } = await run(api.listLimitations(), 'GET', LIMITATIONS, NO_SESSION, status);
+
+        expect(result).toEqual({ kind: 'forbidden' });
+      });
+
+      it.each(WRONG_LIMITATIONS.slice(3))(
+        'rejects a list holding an entry with %s',
+        async (_name, bad) => {
+          await runFailing(
+            api.listLimitations(),
+            'GET',
+            LIMITATIONS,
+            [ACHILLES, bad] as object[],
+            200,
+          );
+        },
+      );
+
+      it.each([null, 5, 'entry', []])(
+        'rejects a list holding %j instead of an entry',
+        async (item) => {
+          await runFailing(api.listLimitations(), 'GET', LIMITATIONS, [item] as object[], 200);
+        },
+      );
+
+      it.each([
+        ['no body', null],
+        ['a text', 'limitations'],
+        ['an object instead of a list', ACHILLES],
+      ])('rejects an answer with %s', async (_name, bad) => {
+        await runFailing(api.listLimitations(), 'GET', LIMITATIONS, bad, 200);
+      });
+
+      it.each([404, 500])('rejects the unexpected status %i', async (status) => {
+        await runFailing(api.listLimitations(), 'GET', LIMITATIONS, 'oops', status);
+      });
+    });
+
+    describe('createLimitation', () => {
+      it('posts the input as it is and returns the entry', async () => {
+        const input = { body_part: 'achilles' as const, sports: ['running' as const] };
+
+        const { result, request } = await run(
+          api.createLimitation(input),
+          'POST',
+          LIMITATIONS,
+          ACHILLES,
+          201,
+        );
+
+        expect(request.request.body).toEqual(input);
+        expect(result).toEqual({ kind: 'ok', limitation: ACHILLES });
+      });
+
+      it('leaves out what is not given', async () => {
+        const { request } = await run(
+          api.createLimitation({ body_part: 'back' }),
+          'POST',
+          LIMITATIONS,
+          BACK,
+          201,
+        );
+
+        expect(request.request.body).toEqual({ body_part: 'back' });
+      });
+
+      it('returns the messages by field and as one list', async () => {
+        const refusal = {
+          body_part: ['Choose one of: foot, ankle.'],
+          sports: ['Choose any of: running, or none.'],
+        };
+
+        const { result } = await run(
+          api.createLimitation({ body_part: 'back' }),
+          'POST',
+          LIMITATIONS,
+          refusal,
+          400,
+        );
+
+        expect(result).toEqual({
+          kind: 'invalid',
+          errors: [...refusal.body_part, ...refusal.sports],
+          fields: refusal,
+        });
+      });
+
+      it('keeps the message about the limit under non_field_errors', async () => {
+        const refusal = {
+          non_field_errors: ['You can have at most 50 limitations. Delete one first.'],
+        };
+
+        const { result } = await run(
+          api.createLimitation({ body_part: 'back' }),
+          'POST',
+          LIMITATIONS,
+          refusal,
+          400,
+        );
+
+        expect(result).toEqual({
+          kind: 'invalid',
+          errors: refusal.non_field_errors,
+          fields: refusal,
+        });
+      });
+
+      it.each([401, 403])('says when the session is gone (%i)', async (status) => {
+        const { result } = await run(
+          api.createLimitation({ body_part: 'back' }),
+          'POST',
+          LIMITATIONS,
+          NO_SESSION,
+          status,
+        );
+
+        expect(result).toEqual({ kind: 'forbidden' });
+      });
+
+      it.each(WRONG_LIMITATIONS)('rejects an answer with %s', async (_name, bad) => {
+        await runFailing(
+          api.createLimitation({ body_part: 'back' }),
+          'POST',
+          LIMITATIONS,
+          bad as object | null,
+          201,
+        );
+      });
+
+      it.each([200, 404, 500])('rejects the unexpected status %i', async (status) => {
+        await runFailing(
+          api.createLimitation({ body_part: 'back' }),
+          'POST',
+          LIMITATIONS,
+          'oops',
+          status,
+        );
+      });
+    });
+
+    describe('updateLimitation', () => {
+      it('patches only the fields given and returns the entry', async () => {
+        const healed = altered(ACHILLES, [['status'], 'healed']);
+
+        const { result, request } = await run(
+          api.updateLimitation(ACHILLES.id, { status: 'healed' }),
+          'PATCH',
+          ADDRESS,
+          healed as object,
+          200,
+        );
+
+        expect(request.request.body).toEqual({ status: 'healed' });
+        expect(result).toMatchObject({ kind: 'ok', limitation: { status: 'healed' } });
+      });
+
+      it('writes the id safely into the address', async () => {
+        const { request } = await run(
+          api.updateLimitation('a/b', { status: 'healed' }),
+          'PATCH',
+          `${LIMITATIONS}a%2Fb/`,
+          'Not found',
+          404,
+        );
+
+        expect(request.request.url).toBe(`${LIMITATIONS}a%2Fb/`);
+      });
+
+      it('returns the messages when the change is refused', async () => {
+        const refusal = { status: ['Choose one of: current, healed.'] };
+
+        const { result } = await run(
+          api.updateLimitation(ACHILLES.id, { status: 'healed' }),
+          'PATCH',
+          ADDRESS,
+          refusal,
+          400,
+        );
+
+        expect(result).toEqual({ kind: 'invalid', errors: refusal.status, fields: refusal });
+      });
+
+      it('says when the entry does not exist or belongs to someone else', async () => {
+        const { result } = await run(
+          api.updateLimitation(ACHILLES.id, { status: 'healed' }),
+          'PATCH',
+          ADDRESS,
+          'Not found',
+          404,
+        );
+
+        expect(result).toEqual({ kind: 'not_found' });
+      });
+
+      it.each([401, 403])('says when the session is gone (%i)', async (status) => {
+        const { result } = await run(
+          api.updateLimitation(ACHILLES.id, { status: 'healed' }),
+          'PATCH',
+          ADDRESS,
+          NO_SESSION,
+          status,
+        );
+
+        expect(result).toEqual({ kind: 'forbidden' });
+      });
+
+      it.each(WRONG_LIMITATIONS)('rejects an answer with %s', async (_name, bad) => {
+        await runFailing(
+          api.updateLimitation(ACHILLES.id, { status: 'healed' }),
+          'PATCH',
+          ADDRESS,
+          bad as object | null,
+          200,
+        );
+      });
+
+      it.each([201, 500])('rejects the unexpected status %i', async (status) => {
+        await runFailing(
+          api.updateLimitation(ACHILLES.id, { status: 'healed' }),
+          'PATCH',
+          ADDRESS,
+          'oops',
+          status,
+        );
+      });
+    });
+
+    describe('deleteLimitation', () => {
+      it('deletes the entry', async () => {
+        const { result, request } = await run(
+          api.deleteLimitation(ACHILLES.id),
+          'DELETE',
+          ADDRESS,
+          null,
+          204,
+        );
+
+        expect(request.request.body).toBeNull();
+        expect(result).toEqual({ kind: 'deleted' });
+      });
+
+      it('says when the entry does not exist or belongs to someone else', async () => {
+        const { result } = await run(
+          api.deleteLimitation(ACHILLES.id),
+          'DELETE',
+          ADDRESS,
+          'Not found',
+          404,
+        );
+
+        expect(result).toEqual({ kind: 'not_found' });
+      });
+
+      it('writes the id safely into the address', async () => {
+        const { request } = await run(
+          api.deleteLimitation('a/b'),
+          'DELETE',
+          `${LIMITATIONS}a%2Fb/`,
+          null,
+          404,
+        );
+
+        expect(request.request.url).toBe(`${LIMITATIONS}a%2Fb/`);
+      });
+
+      it.each([401, 403])('says when the session is gone (%i)', async (status) => {
+        const { result } = await run(
+          api.deleteLimitation(ACHILLES.id),
+          'DELETE',
+          ADDRESS,
+          NO_SESSION,
+          status,
+        );
+
+        expect(result).toEqual({ kind: 'forbidden' });
+      });
+
+      it.each([200, 400, 500])('rejects the unexpected status %i', async (status) => {
+        await runFailing(api.deleteLimitation(ACHILLES.id), 'DELETE', ADDRESS, 'oops', status);
+      });
     });
   });
 });
