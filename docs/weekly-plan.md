@@ -162,6 +162,9 @@ Each plan is checked against the facts of its user for that week, collected when
 - **Time.** The minutes per weekday that the user offers (an empty weekday is 0, not "free"), a day
   inside a vacation, an illness or another absence offers 0 (where absences overlap, the illness is
   named before the vacation), and the weekly budget caps what the week adds up to.
+- **Double days and parts of the day.** For each weekday whether two workouts are allowed and which
+  parts of the day (morning, afternoon, evening) are open. Without a choice two workouts are allowed
+  and every part is open. A day of absence keeps the choice of its weekday.
 - **Sports and stretching.** The sports the athlete ticked (all four if none was chosen) and whether
   stretching may be added to sessions. Stretching minutes are not a workout and not time: they do
   not use up the minutes of a day or a week and do not count for the progression rule.

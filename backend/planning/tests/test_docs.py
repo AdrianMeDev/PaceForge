@@ -426,9 +426,25 @@ class TestTheReadmeOnSportsAndDoubleDays:
         assert "uses up none of your minutes" in FLAT_README
         assert "+ 10 min stretching" in FLAT_README
 
-    def test_the_time_per_day_limit_is_admitted(self) -> None:
+    def test_the_time_is_given_per_day_and_the_parts_of_the_day_are_known_to_the_coach(
+        self,
+    ) -> None:
         assert "given **per day**" in FLAT_README
-        assert "does not know that you can only train in the evening" in FLAT_README
+        assert "knows from the Training time page in which parts of the day you can train" in (
+            FLAT_README
+        )
+        assert "does not know that you can only train in the evening" not in FLAT_README
+
+    def test_the_words_of_the_day_options_are_those_of_the_page(self) -> None:
+        options = (ROOT / "frontend/src/app/features/availability/day-options.html").read_text()
+        script = (ROOT / "frontend/src/app/features/availability/day-options.ts").read_text()
+
+        assert "<h2>Parts of the day and two sessions</h2>" in self.PAGE
+        assert "**Parts of the day and two sessions.**" in FLAT_README
+        assert "Two sessions" in options and "**Two sessions**" in FLAT_README
+        for label in ("Morning", "Afternoon", "Evening"):
+            assert f"label: '{label}'" in script, label
+            assert f"**{label}**" in FLAT_README, label
 
     def test_the_format_page_says_what_the_fields_mean(self) -> None:
         text = section("The format")
