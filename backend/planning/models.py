@@ -147,12 +147,20 @@ class PlannedWorkout(OwnedModel):
     slot = models.CharField(max_length=20, choices=Slot.choices, blank=True)
     # Stretching added to this workout (0: none): never a workout of its own.
     stretching_minutes = models.PositiveSmallIntegerField(default=0)
+    # Which training this is across the versions of a week: a version made from another (changed by
+    # hand, restored) keeps the lineage of the workouts it copies, a new workout gets a new one.
+    # Sending to Intervals.icu and the corrections of the week review follow the lineage, so that a
+    # change updates the same calendar event and keeps what the user said about the session.
+    lineage = models.UUIDField(default=uuid.uuid7, editable=False)
 
     class Meta:
         ordering = ["day", "position", "id"]
         constraints = [
             models.UniqueConstraint(
                 fields=["plan", "day", "position"], name="planning_one_workout_per_slot"
+            ),
+            models.UniqueConstraint(
+                fields=["plan", "lineage"], name="planning_one_workout_per_lineage"
             ),
             models.CheckConstraint(condition=~Q(title=""), name="planning_workout_has_a_title"),
             models.CheckConstraint(

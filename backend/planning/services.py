@@ -10,6 +10,8 @@ again with the data of that moment. A confirmed plan, a superseded one and a dis
 never changed: a change is a new version of the week, which says which version it replaces and why.
 """
 
+import uuid
+from dataclasses import replace
 from datetime import datetime
 from uuid import UUID
 
@@ -96,17 +98,12 @@ def load(user: User, plan_id: UUID) -> WeekPlan:
 
     The stored data goes through the strict parser again: what is read back is always valid."""
     plan = get(user, plan_id)
-    workouts = [
-        {
-            **workout_row,
-            "day": workout_row["day"].isoformat(),
-            "zone_system": workout_row["zone_system"] or None,
-            "slot": workout_row["slot"] or None,
-        }
-        for workout_row in PlannedWorkout.objects.for_user(user)
+    rows = list(
+        PlannedWorkout.objects.for_user(user)
         .filter(plan=plan)
         .order_by("day", "position", "id")
         .values(
+            "lineage",
             "day",
             "sport",
             "title",
@@ -119,13 +116,32 @@ def load(user: User, plan_id: UUID) -> WeekPlan:
             "slot",
             "stretching_minutes",
         )
-    ]
-    return parse_week_plan(
+    )
+    parsed = parse_week_plan(
         {
             "week_start": plan.week_start.isoformat(),
             "rationale": plan.rationale,
-            "workouts": workouts,
+            "workouts": [
+                {
+                    **{name: value for name, value in row.items() if name != "lineage"},
+                    "day": row["day"].isoformat(),
+                    "zone_system": row["zone_system"] or None,
+                    "slot": row["slot"] or None,
+                }
+                for row in rows
+            ],
         }
+    )
+    # The lineage is not part of the format: it is put back on the workouts, which the parser
+    # returns in the order it was given them.
+    assert len(parsed.workouts) == len(rows)
+    return WeekPlan(
+        parsed.week_start,
+        tuple(
+            replace(workout, lineage=row["lineage"])
+            for workout, row in zip(parsed.workouts, rows, strict=True)
+        ),
+        parsed.rationale,
     )
 
 
@@ -220,6 +236,7 @@ def _store(user: User, week_plan: WeekPlan, reason: str, parent: UUID | None) ->
                 notes=workout.notes,
                 slot=workout.slot.value if workout.slot else "",
                 stretching_minutes=workout.stretching_minutes,
+                lineage=workout.lineage or uuid.uuid7(),
             )
         )
     PlannedWorkout.objects.bulk_create(rows)

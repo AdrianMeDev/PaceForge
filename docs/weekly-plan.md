@@ -105,6 +105,13 @@ characters are refused everywhere (line breaks are allowed in `notes` and `ratio
 are the line and paragraph separators and the characters that reorder text on screen. A text that
 is not text, such as a number, is refused instead of being turned into text.
 
+**Lineage.** A stored workout also has a `lineage`: which training it is across the versions of a
+week. A version made from another one (changed by hand, restored) keeps the lineage of the workouts
+it copies, a new workout gets a new one. It is **not part of the format**: it is never read from an
+answer (an answer that has one is refused as an unknown field) and it does not make two workouts
+different. It is in the answer of the API (see [The API](#the-api)) and decides which event of the
+Intervals.icu calendar a workout is sent to.
+
 **Time of day and stretching.** `slot` says when on the day a workout is: `morning`, `afternoon` or
 `evening`. It is an order and no clock time. Several workouts on one day are welcome (an easy run
 in the morning, a ride in the afternoon), each with a time of its own; the stored order of a day
@@ -349,7 +356,8 @@ plan of another user does not exist (404, the same answer as for an unknown id).
 | `POST /api/planning/plans/<id>/push/` | Sends a confirmed plan to the Intervals.icu calendar of the user; the plan with the result per workout. Limited to 10 a minute per user. |
 | `POST /api/planning/plans/<id>/discard/` | The discarded plan. |
 
-Every workout and every segment of a plan has a `target`: the range of its zone as it is *now*
+Every workout of a plan has a `lineage` (its identity across the versions of the week, see
+[The format](#the-format)). Every workout and every segment of a plan has a `target`: the range of its zone as it is *now*
 (`low`, `high` and a `unit` of `W`, `bpm` or `s/km`; for pace `low` is the faster end), or `null`
 without a zone or without the threshold for it. A confirmed plan has an `export` (how many
 workouts are `synced`, `failed` or `not_sent`, and how many events of an `older` version are still

@@ -103,6 +103,7 @@ def push_problem_data(code: str, message: str) -> dict[str, Any]:
 def workout_data(workout: Workout, targets: Targets) -> dict[str, Any]:
     """The workout in the format of the plan, with ``target`` on it and on each segment."""
     data = workout_to_json(workout)
+    data["lineage"] = None if workout.lineage is None else str(workout.lineage)
     data["target"] = _target(targets, workout.sport, workout.zone_system, workout.zone)
     for segment, shown in zip(workout.segments, data["segments"], strict=True):
         shown["target"] = _target(targets, workout.sport, segment.zone_system, segment.zone)

@@ -79,6 +79,7 @@ WORKOUT_FIELDS = {
     "slot",
     "stretching_minutes",
     "segments",
+    "lineage",
     "target",
     "export",
 }
@@ -293,6 +294,8 @@ class TestGenerating:
         assert [w["day"] for w in data["workouts"]] == ["2027-07-19", "2027-07-21"]
         assert set(data["workouts"][0]) == WORKOUT_FIELDS
         assert PlannedWorkout.objects.filter(plan_id=data["id"]).count() == 2
+        stored = PlannedWorkout.objects.filter(plan_id=data["id"]).order_by("day")
+        assert [w["lineage"] for w in data["workouts"]] == [str(w.lineage) for w in stored]
         (record,) = AIUsageRecord.objects.filter(owner=alice)
         assert (record.purpose, record.outcome) == ("weekly_plan", "success")
 

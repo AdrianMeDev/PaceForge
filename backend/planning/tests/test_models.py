@@ -264,6 +264,46 @@ class TestRevisions:
         assert second.parent is None
 
 
+class TestTheLineageOfAWorkout:
+    def test_every_workout_gets_a_lineage_of_its_own(self, alice: User) -> None:
+        plan = make_plan(alice)
+
+        first = make_workout(plan)
+        second = make_workout(plan, day=MONDAY + timedelta(days=3))
+
+        assert first.lineage is not None and second.lineage is not None
+        assert first.lineage != second.lineage
+        assert first.lineage != first.pk
+
+    def test_it_is_not_something_a_form_edits(self) -> None:
+        assert PlannedWorkout._meta.get_field("lineage").editable is False
+
+    def test_two_workouts_of_a_plan_cannot_share_one(self, alice: User) -> None:
+        plan = make_plan(alice)
+        first = make_workout(plan)
+
+        message = rejected_by_database(
+            PlannedWorkout,
+            owner=alice,
+            plan=plan,
+            lineage=first.lineage,
+            **workout_fields(day=MONDAY + timedelta(days=3)),
+        )
+
+        assert "planning_one_workout_per_lineage" in message
+
+    def test_the_versions_of_a_week_share_it(self, alice: User) -> None:
+        first = make_workout(make_plan(alice))
+        newer = make_plan(alice, version=2)
+
+        copy = PlannedWorkout.objects.create(
+            owner=alice, plan=newer, lineage=first.lineage, **workout_fields()
+        )
+
+        assert copy.lineage == first.lineage
+        assert copy.pk != first.pk
+
+
 class TestAWorkout:
     def test_a_complete_workout_is_valid(self, alice: User) -> None:
         plan = make_plan(alice)
