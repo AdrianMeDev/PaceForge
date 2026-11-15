@@ -13,8 +13,13 @@ from core.views import OwnedModelViewSet
 from goals.services import today_of
 
 from .intensity import LIMIT_NAMES
-from .models import AvailabilitySettings, UnavailablePeriod, WeekdayMinutes
-from .serializers import AvailabilityInput, PeriodSerializer, availability_data
+from .models import AvailabilitySettings, Limitation, UnavailablePeriod, WeekdayMinutes
+from .serializers import (
+    AvailabilityInput,
+    LimitationSerializer,
+    PeriodSerializer,
+    availability_data,
+)
 
 
 def _user(request: Request) -> User:
@@ -129,3 +134,25 @@ class PeriodViewSet(OwnedModelViewSet):
         # One lookup of the time zone per request, not one per period.
         context["today"] = self.today
         return context
+
+
+class LimitationViewSet(OwnedModelViewSet):
+    """The signed-in user's own limitations: list, create, read, change, delete."""
+
+    queryset = Limitation.objects.all()
+    serializer_class = LimitationSerializer
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+    pagination_class = None
+    # An id that is no UUID is a 404 without reaching the database.
+    lookup_value_regex = "[0-9a-fA-F-]{32,36}"
+
+    def get_queryset(self) -> QuerySet[Any]:
+        """Current entries first, then healed ones; the newest first within each (the ids are
+        time-ordered)."""
+        current = When(status="current", then=Value(0))
+        return (
+            super()
+            .get_queryset()
+            .annotate(rank=Case(current, default=Value(1), output_field=IntegerField()))
+            .order_by("rank", "-id")
+        )

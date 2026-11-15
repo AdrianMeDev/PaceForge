@@ -31,6 +31,9 @@ from .models import (
     SPORTS,
     WEEK_MINUTES_MAX,
     AvailabilitySettings,
+    BodyPart,
+    Limitation,
+    LimitationStatus,
     UnavailablePeriod,
     WeekdayMinutes,
     effective_sports,
@@ -49,6 +52,11 @@ TIME_WINDOWS = (
 LEVEL_CHOICE = f"Choose one of: {', '.join(IntensityLevel.values)}."
 MAX_PERIODS = 100
 TOO_MANY_PERIODS = f"You can have at most {MAX_PERIODS} periods. Delete one first."
+MAX_LIMITATIONS = 50
+TOO_MANY_LIMITATIONS = f"You can have at most {MAX_LIMITATIONS} limitations. Delete one first."
+BODY_PART_CHOICE = f"Choose one of: {', '.join(BodyPart.values)}."
+LIMITATION_STATUS_CHOICE = f"Choose one of: {', '.join(LimitationStatus.values)}."
+LIMITATION_SPORTS_CHOICE = f"Choose any of: {', '.join(SPORTS)}, or none."
 
 # What a client may send for a period; everything else (id, owner, the computed fields) is ours.
 PERIOD_WRITABLE = ("kind", "start_date", "end_date", "note")
@@ -304,3 +312,59 @@ class PeriodSerializer(serializers.ModelSerializer[UnavailablePeriod]):
         return UnavailablePeriod(
             **(base | {name: value for name, value in attrs.items() if name in PERIOD_WRITABLE})
         )
+
+
+class LimitationSportsField(serializers.Field[list[str], list[str], list[str], Any]):
+    """The sports an entry affects: any of the known ones, each at most once, none is allowed.
+    Stored in the order of ``SPORTS``, whatever the order sent."""
+
+    def to_internal_value(self, data: Any) -> list[str]:
+        if (
+            not isinstance(data, list)
+            or not all(isinstance(sport, str) and sport in SPORTS for sport in data)
+            or len(set(data)) != len(data)
+        ):
+            raise serializers.ValidationError(LIMITATION_SPORTS_CHOICE)
+        return [sport for sport in SPORTS if sport in data]
+
+    def to_representation(self, value: list[str]) -> list[str]:
+        return value
+
+
+class LimitationSerializer(serializers.ModelSerializer[Limitation]):
+    body_part = serializers.ChoiceField(
+        choices=BodyPart.choices,
+        error_messages={
+            "invalid_choice": BODY_PART_CHOICE,
+            "required": BODY_PART_CHOICE,
+            "null": BODY_PART_CHOICE,
+        },
+    )
+    status = serializers.ChoiceField(
+        choices=LimitationStatus.choices,
+        required=False,
+        error_messages={
+            "invalid_choice": LIMITATION_STATUS_CHOICE,
+            "null": LIMITATION_STATUS_CHOICE,
+        },
+    )
+    sports = LimitationSportsField(
+        required=False, error_messages={"null": LIMITATION_SPORTS_CHOICE}
+    )
+
+    class Meta:
+        model = Limitation
+        fields = ["id", "body_part", "status", "sports"]
+        read_only_fields = ["id"]
+        validators: list[Any] = []
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        user = self.context["request"].user
+        if self.instance is None and Limitation.objects.for_user(user).count() >= MAX_LIMITATIONS:
+            raise serializers.ValidationError({"non_field_errors": [TOO_MANY_LIMITATIONS]})
+        return attrs
+
+    def to_representation(self, instance: Limitation) -> dict[str, Any]:
+        data = dict(super().to_representation(instance))
+        data["sports"] = instance.affected_sports
+        return data
