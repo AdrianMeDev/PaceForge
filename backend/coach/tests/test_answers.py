@@ -1,3 +1,6 @@
+import json
+from typing import Any
+
 import pytest
 
 from coach.answers import AnswerFormatError, read_json_object
@@ -91,12 +94,32 @@ class TestWhatIsRefused:
             "The answer holds a number or a nesting that cannot be read."
         )
 
-    def test_nesting_that_is_too_deep(self) -> None:
-        text = '{"a": ' + "[" * 100_000 + "]" * 100_000 + "}"
+    def test_a_decoder_that_gives_up_on_the_nesting_is_refused_not_crashed_on(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Where the decoder gives up depends on the Python build and its stack, so it is made to.
+        def give_up(*args: Any, **kwargs: Any) -> Any:
+            raise RecursionError
 
-        assert refused(text, limit=1_000_000) == (
+        monkeypatch.setattr(json, "loads", give_up)
+
+        assert refused('{"a": [[1]]}') == (
             "The answer holds a number or a nesting that cannot be read."
         )
+
+    def test_nesting_of_any_depth_is_read_or_refused_never_a_crash(self) -> None:
+        # Whether this much is still read is up to the interpreter; either way it ends cleanly.
+        text = '{"a": ' + "[" * 100_000 + "]" * 100_000 + "}"
+
+        try:
+            read_json_object(text, 1_000_000)
+        except AnswerFormatError as error:
+            assert str(error) == "The answer holds a number or a nesting that cannot be read."
+
+    def test_moderate_nesting_is_read(self) -> None:
+        text = '{"a": ' + "[" * 50 + "]" * 50 + "}"
+
+        assert isinstance(read_json_object(text, LIMIT), dict)
 
     @pytest.mark.parametrize(
         "text",
