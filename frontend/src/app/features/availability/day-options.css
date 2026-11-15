@@ -1,0 +1,38 @@
+.options {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.options th,
+.options td {
+  padding: 0.35rem 0.5rem;
+  text-align: center;
+}
+
+.options th:first-child,
+.options th[scope='row'] {
+  text-align: left;
+  font-weight: normal;
+}
+
+.options thead th {
+  font-weight: 600;
+}
+
+.options input {
+  width: auto;
+}
+
+.options .problem td {
+  padding-top: 0;
+  text-align: left;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

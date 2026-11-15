@@ -1,0 +1,52 @@
+<table class="options">
+  <caption class="visually-hidden">
+    Parts of the day you can train in, and whether two sessions are allowed, for each weekday
+  </caption>
+  <thead>
+    <tr>
+      <th scope="col">Day</th>
+      @for (slot of slots; track slot.value) {
+        <th scope="col">{{ slot.label }}</th>
+      }
+      <th scope="col">Two sessions</th>
+    </tr>
+  </thead>
+  <tbody>
+    @for (name of names; track $index; let day = $index) {
+      <tr>
+        <th scope="row">{{ name }}</th>
+        @for (slot of slots; track slot.value) {
+          <td>
+            <input
+              type="checkbox"
+              [id]="'window-' + day + '-' + slot.value"
+              [checked]="timeWindows()[day].includes(slot.value)"
+              [attr.aria-label]="name + ', ' + slot.label.toLowerCase()"
+              [attr.aria-invalid]="errors()[day] ? true : null"
+              [attr.aria-describedby]="errors()[day] ? 'window-' + day + '-error' : null"
+              (change)="setSlot(day, slot.value, isChecked($event))"
+            />
+          </td>
+        }
+        <td>
+          <input
+            type="checkbox"
+            [id]="'double-' + day"
+            [checked]="doubleDays()[day]"
+            [attr.aria-label]="name + ', two sessions'"
+            (change)="setDouble(day, isChecked($event))"
+          />
+        </td>
+      </tr>
+      @if (errors()[day]; as message) {
+        <tr class="problem">
+          <td colspan="5">
+            <p class="field-error" role="alert" [id]="'window-' + day + '-error'">
+              {{ name }}: {{ message }}
+            </p>
+          </td>
+        </tr>
+      }
+    }
+  </tbody>
+</table>

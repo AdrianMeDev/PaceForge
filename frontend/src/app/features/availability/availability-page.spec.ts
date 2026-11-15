@@ -389,6 +389,119 @@ describe('AvailabilityPage', () => {
     });
   });
 
+  describe('parts of the day and two sessions', () => {
+    const OPTIONS: Availability = {
+      ...SAVED,
+      double_days: [true, false, true, true, true, true, true],
+      time_windows: [
+        ['evening'],
+        ['morning', 'evening'],
+        EVERY_PART,
+        EVERY_PART,
+        EVERY_PART,
+        EVERY_PART,
+        EVERY_PART,
+      ],
+    };
+    const window = (day: number, part: string) =>
+      query<HTMLInputElement>(page, `#window-${day}-${part}`);
+    const double = (day: number) => query<HTMLInputElement>(page, `#double-${day}`);
+
+    it('shows every part of the day and two sessions for a user who chose nothing', async () => {
+      await setup(ok(NOTHING));
+
+      for (const day of [0, 1, 2, 3, 4, 5, 6]) {
+        expect(double(day).checked).toBe(true);
+        for (const part of ['morning', 'afternoon', 'evening']) {
+          expect(window(day, part).checked).toBe(true);
+        }
+      }
+    });
+
+    it('shows the choice as saved', async () => {
+      await setup(ok(OPTIONS));
+
+      expect(double(1).checked).toBe(false);
+      expect(double(0).checked).toBe(true);
+      expect(['morning', 'afternoon', 'evening'].map((part) => window(0, part).checked)).toEqual([
+        false,
+        false,
+        true,
+      ]);
+      expect(window(1, 'afternoon').checked).toBe(false);
+      expect(window(1, 'morning').checked).toBe(true);
+    });
+
+    it('sends the choice with everything else, the parts in the order of the day', async () => {
+      await setup(ok(NOTHING));
+
+      await tick('#double-2');
+      await tick('#window-0-morning');
+      await tick('#window-0-afternoon');
+      await tick('#window-4-afternoon');
+      await tick('#window-4-afternoon');
+      await save();
+
+      const sent = api.save.mock.calls[0][0];
+      expect(sent.double_days).toEqual([true, true, false, true, true, true, true]);
+      expect(sent.time_windows?.[0]).toEqual(['evening']);
+      expect(sent.time_windows?.[4]).toEqual(['morning', 'afternoon', 'evening']);
+      expect(sent.time_windows?.[1]).toEqual(['morning', 'afternoon', 'evening']);
+    });
+
+    it('does not send a weekday without a part of the day and says so at the day', async () => {
+      await setup(ok(NOTHING));
+
+      await tick('#window-3-morning');
+      await tick('#window-3-afternoon');
+      await tick('#window-3-evening');
+      await save();
+
+      expect(api.save).not.toHaveBeenCalled();
+      expect(alerts()).toEqual(['Thursday: Choose at least one part of the day.']);
+      expect(window(3, 'morning').getAttribute('aria-invalid')).toBe('true');
+      expect(window(2, 'morning').getAttribute('aria-invalid')).toBeNull();
+    });
+
+    it('takes the message away once the day has a part again', async () => {
+      await setup(ok(NOTHING));
+      for (const part of ['morning', 'afternoon', 'evening']) {
+        await tick(`#window-3-${part}`);
+      }
+      await save();
+
+      await tick('#window-3-evening');
+      await save();
+
+      expect(alerts()).toEqual([]);
+      expect(api.save).toHaveBeenCalledOnce();
+    });
+
+    it('shows the server’s message about the time windows above the table', async () => {
+      await setup(ok(NOTHING));
+      const message = 'Enter seven lists of parts of the day, Monday first.';
+      api.save.mockResolvedValue({
+        kind: 'invalid',
+        errors: [message],
+        fields: { time_windows: [message] },
+      });
+
+      await save();
+
+      expect(alerts()).toEqual([message]);
+    });
+
+    it('shows what the server saved', async () => {
+      await setup(ok(NOTHING));
+      api.save.mockResolvedValue({ kind: 'ok', availability: OPTIONS });
+
+      await save();
+
+      expect(double(1).checked).toBe(false);
+      expect(window(0, 'morning').checked).toBe(false);
+    });
+  });
+
   describe('intensity', () => {
     const OWN: Availability = {
       ...SAVED,
@@ -587,6 +700,7 @@ describe('AvailabilityPage', () => {
 
       expect(api.save).toHaveBeenCalledExactlyOnceWith({
         weekdays: [90, 0, 90, 0, 0, 0, 180],
+        ...DAY_OPTIONS,
         weekly_budget_minutes: 300,
         typical_weekly_minutes: 510,
         sports: ['running', 'cycling', 'swimming', 'strength'],
@@ -604,6 +718,7 @@ describe('AvailabilityPage', () => {
 
       expect(api.save).toHaveBeenCalledExactlyOnceWith({
         weekdays: [0, 0, 0, 0, 0, 0, 0],
+        ...DAY_OPTIONS,
         weekly_budget_minutes: null,
         typical_weekly_minutes: null,
         sports: ['running', 'cycling', 'swimming', 'strength'],

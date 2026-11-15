@@ -4,6 +4,7 @@ import { AvailabilityApi } from '../../core/availability/availability-api';
 import {
   Availability,
   AvailabilityChanges,
+  AvailabilitySlot,
   AvailabilitySport,
   IntensityLevel,
   Limits,
@@ -17,6 +18,7 @@ import {
   parseMinutes,
 } from './availability-format';
 import { Parsed } from '../goals/goal-format';
+import { DayOptions, EVERY_DAY_DOUBLE, EVERY_DAY_OPEN, windowErrors } from './day-options';
 import {
   INTENSITY_FIELDS,
   IntensityErrors,
@@ -60,7 +62,7 @@ function dayMinutes(text: string): Parsed<number> {
  */
 @Component({
   selector: 'app-availability-page',
-  imports: [RouterLink, PeriodsPanel, IntensitySettings],
+  imports: [RouterLink, PeriodsPanel, IntensitySettings, DayOptions],
   templateUrl: './availability-page.html',
   styleUrls: ['../auth/auth-form.css', './availability-page.css'],
 })
@@ -88,6 +90,12 @@ export class AvailabilityPage implements OnInit {
   protected readonly notice = signal<string | null>(null);
   protected readonly dayErrors = signal<(string | null)[]>(NO_ERRORS);
   protected readonly weekdaysError = signal<string | null>(null);
+  protected readonly doubleDays = signal<boolean[]>(EVERY_DAY_DOUBLE);
+  protected readonly timeWindows = signal<AvailabilitySlot[][]>(EVERY_DAY_OPEN);
+  /** A message for each weekday that has no part of the day, from the form. */
+  protected readonly windowErrors = signal<(string | null)[]>(NO_ERRORS);
+  /** The server's message about the double days or the time windows as a whole. */
+  protected readonly dayOptionsError = signal<string | null>(null);
   protected readonly budgetError = signal<string | null>(null);
   protected readonly typicalError = signal<string | null>(null);
   protected readonly sportsError = signal<string | null>(null);
@@ -215,6 +223,11 @@ export class AvailabilityPage implements OnInit {
     this.dayErrors.set(dayErrors);
     this.weekdaysError.set(null);
 
+    const windows = windowErrors(this.timeWindows());
+    this.windowErrors.set(windows);
+    this.dayOptionsError.set(null);
+    usable &&= windows.every((message) => message === null);
+
     let weeklyBudget: number | null = null;
     const budgetText = this.budget().trim();
     const budget = budgetText === '' ? null : parseMinutes(budgetText, WEEK_MAX_MINUTES);
@@ -275,6 +288,8 @@ export class AvailabilityPage implements OnInit {
     return usable
       ? {
           weekdays,
+          double_days: this.doubleDays(),
+          time_windows: this.timeWindows(),
           weekly_budget_minutes: weeklyBudget,
           typical_weekly_minutes: typicalWeek,
           sports,
@@ -305,6 +320,10 @@ export class AvailabilityPage implements OnInit {
     this.ownLimits.set(ownLimitTexts(availability));
     this.levelLimits.set(availability.level_limits);
     this.intensityErrors.set({});
+    this.doubleDays.set([...availability.double_days]);
+    this.timeWindows.set(availability.time_windows.map((day) => [...day]));
+    this.windowErrors.set(NO_ERRORS);
+    this.dayOptionsError.set(null);
     this.dayErrors.set(NO_ERRORS);
     this.weekdaysError.set(null);
     this.budgetError.set(null);
@@ -317,6 +336,9 @@ export class AvailabilityPage implements OnInit {
   private showServerMessages(fields: Record<string, string[]>, all: string[]): void {
     const join = (name: string): string | null => fields[name]?.join(' ') ?? null;
     this.weekdaysError.set(join('weekdays'));
+    this.dayOptionsError.set(
+      [join('double_days'), join('time_windows')].filter((text) => text !== null).join(' ') || null,
+    );
     this.budgetError.set(join('weekly_budget_minutes'));
     this.typicalError.set(join('typical_weekly_minutes'));
     this.sportsError.set(join('sports'));
@@ -332,6 +354,8 @@ export class AvailabilityPage implements OnInit {
     this.intensityErrors.set(intensity);
     const known = [
       'weekdays',
+      'double_days',
+      'time_windows',
       'weekly_budget_minutes',
       'typical_weekly_minutes',
       'sports',
