@@ -1720,4 +1720,211 @@ describe('PlanningPage', () => {
       });
     });
   });
+
+  describe('restoring a version', () => {
+    const NEW_ID = '01a1d73d-0000-7000-8000-0000000000bb';
+    const REPLACED_ID = '01a1d73d-0000-7000-8000-0000000000cc';
+    const REPLACED = plan({
+      id: REPLACED_ID,
+      version: 1,
+      status: 'superseded',
+      confirmed_at: '2026-11-13T23:28:07.353166Z',
+      report: null,
+    });
+    const REPLACED_VERSION = version({
+      id: REPLACED_ID,
+      version: 1,
+      status: 'superseded',
+      confirmed_at: '2026-11-13T23:28:07.353166Z',
+    });
+
+    /** The draft the server makes of a version: version 4, checked as of today. */
+    function restored(report: WeekPlan['report'] = { valid: true, findings: [] }): WeekPlan {
+      return plan({ id: NEW_ID, version: 4, parent: OLD_ID, report });
+    }
+
+    async function openDiscarded() {
+      await setup();
+      await click('version-1'); // the discarded one
+    }
+
+    describe('offering it', () => {
+      it('is offered on a version that was discarded', async () => {
+        await openDiscarded();
+
+        expect(byId('status')?.textContent).toBe('Discarded');
+        expect(byId('restore')?.textContent?.trim()).toBe('Make this the new draft');
+        expect(byId('restore-hint')?.textContent).toContain('Restoring copies it as a new draft');
+      });
+
+      it('is offered on a version that was replaced', async () => {
+        await setup({
+          weeks: ok(weeks([version(), REPLACED_VERSION])),
+          plans: {
+            [DRAFT_ID]: { kind: 'ok', plan: WITH_ERRORS },
+            [REPLACED_ID]: { kind: 'ok', plan: REPLACED },
+          },
+        });
+
+        await click('version-1');
+
+        expect(byId('status')?.textContent).toBe('Replaced');
+        expect(byId('restore')).toBeTruthy();
+      });
+
+      it('is not offered on a draft', async () => {
+        await setup();
+
+        expect(byId('status')?.textContent).toBe('Draft');
+        expect(byId('restore')).toBeNull();
+        expect(byId('restore-hint')).toBeNull();
+      });
+
+      it('is not offered on a confirmed plan', async () => {
+        await setup({ weeks: ok(weeks([CONFIRMED_VERSION])) });
+
+        expect(byId('status')?.textContent).toBe('Confirmed');
+        expect(byId('restore')).toBeNull();
+      });
+
+      it('is switched off while something else runs', async () => {
+        await openDiscarded();
+        const pending = deferred<GetPlanResult>();
+        stubs.planning.get.mockReturnValue(pending.promise);
+
+        button('version-2').click();
+        await fixture.whenStable();
+
+        expect(button('restore').disabled).toBe(true);
+        pending.resolve({ kind: 'ok', plan: WITH_ERRORS });
+        await settle(fixture);
+      });
+    });
+
+    describe('doing it', () => {
+      it('shows the new draft with its checks and says so', async () => {
+        await openDiscarded();
+        stubs.planning.restore.mockResolvedValue({ kind: 'ok', plan: restored() });
+        stubs.planning.weeks.mockClear();
+
+        await click('restore');
+
+        expect(stubs.planning.restore).toHaveBeenCalledExactlyOnceWith(OLD_ID);
+        expect(page.querySelector('.plan h2')?.textContent).toBe('Version 4');
+        expect(byId('status')?.textContent).toBe('Draft');
+        expect(notice()).toBe(
+          'Version 1 was restored as a new draft (version 4). Read it, then confirm it to make it the plan of the week.',
+        );
+        expect(stubs.planning.weeks).toHaveBeenCalledTimes(1);
+        expect(byId('restore')).toBeNull();
+        expect(byId('change-plan')).toBeTruthy();
+      });
+
+      it('says when it has errors with what the user can do today', async () => {
+        await openDiscarded();
+        stubs.planning.restore.mockResolvedValue({
+          kind: 'ok',
+          plan: restored({ valid: false, findings: [MISMATCH] }),
+        });
+
+        await click('restore');
+
+        expect(notice()).toBe(
+          'Version 1 was restored as a new draft (version 4). With what you can do today it has errors and cannot be confirmed yet.',
+        );
+        expect(button('confirm').disabled).toBe(true);
+      });
+
+      it('says that it works while it works, and allows one thing at a time', async () => {
+        await openDiscarded();
+        const pending = deferred<RestorePlanResult>();
+        stubs.planning.restore.mockReturnValue(pending.promise);
+
+        button('restore').click();
+        await fixture.whenStable();
+
+        expect(byId('restoring')).toBeTruthy();
+        expect(button('restore').disabled).toBe(true);
+        expect(select().disabled).toBe(true);
+        await fixture.componentInstance['restore']();
+        expect(stubs.planning.restore).toHaveBeenCalledTimes(1);
+        pending.resolve({ kind: 'ok', plan: restored() });
+        await settle(fixture);
+        expect(byId('restoring')).toBeNull();
+      });
+    });
+
+    describe('when it does not work', () => {
+      it('says when the week cannot be planned any more, and keeps the version on the screen', async () => {
+        await openDiscarded();
+        stubs.planning.restore.mockResolvedValue({ kind: 'not_plannable' });
+
+        await click('restore');
+
+        expect(alerts()).toEqual([
+          'This week cannot be planned any more, so a version of it cannot be restored.',
+        ]);
+        expect(byId('status')?.textContent).toBe('Discarded');
+        expect(button('restore').disabled).toBe(false);
+      });
+
+      it('shows the version as it is now when it was decided on meanwhile', async () => {
+        await openDiscarded();
+        stubs.planning.restore.mockResolvedValue({ kind: 'not_restorable' });
+        stubs.planning.get.mockClear();
+        stubs.planning.weeks.mockClear();
+
+        await click('restore');
+
+        expect(alerts()).toEqual([
+          'Only a version that was replaced or discarded can be restored.',
+        ]);
+        expect(stubs.planning.get).toHaveBeenCalledWith(OLD_ID);
+        expect(stubs.planning.weeks).toHaveBeenCalledTimes(1);
+      });
+
+      it('says when the version is gone, and fetches the versions again', async () => {
+        await openDiscarded();
+        stubs.planning.restore.mockResolvedValue({ kind: 'not_found' });
+        stubs.planning.weeks.mockClear();
+
+        await click('restore');
+
+        expect(alerts()).toEqual(['That plan does not exist any more.']);
+        expect(byId('status')).toBeNull();
+        expect(stubs.planning.weeks).toHaveBeenCalledTimes(1);
+      });
+
+      it('says when the session has ended', async () => {
+        await openDiscarded();
+        stubs.planning.restore.mockResolvedValue({ kind: 'forbidden' });
+
+        await click('restore');
+
+        expect(alerts()).toEqual(['Your session has ended. Please sign in again.']);
+      });
+
+      it('says so when the request fails, and can be tried again', async () => {
+        await openDiscarded();
+        stubs.planning.restore.mockRejectedValueOnce(new Error('down'));
+
+        await click('restore');
+
+        expect(alerts()).toEqual(['Something went wrong. Please try again.']);
+        expect(button('restore').disabled).toBe(false);
+        stubs.planning.restore.mockResolvedValue({ kind: 'ok', plan: restored() });
+        await click('restore');
+        expect(stubs.planning.restore).toHaveBeenCalledTimes(2);
+      });
+
+      it('lets nothing in while the editor is open', async () => {
+        await setup();
+        await click('change-plan');
+
+        await fixture.componentInstance['restore']();
+
+        expect(stubs.planning.restore).not.toHaveBeenCalled();
+      });
+    });
+  });
 });

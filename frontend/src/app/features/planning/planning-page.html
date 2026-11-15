@@ -76,6 +76,9 @@
       @if (work() === 'sending') {
         <p role="status" data-testid="sending">Sending the week to Intervals.icu…</p>
       }
+      @if (work() === 'restoring') {
+        <p role="status" data-testid="restoring">Restoring the version…</p>
+      }
       @if (work() === 'generating') {
         <p role="status" data-testid="generating">
           Your coach is working on the plan. This can take a minute or two.
@@ -122,6 +125,24 @@
             </div>
             @if (shown.rationale) {
               <p class="rationale" data-testid="rationale">{{ shown.rationale }}</p>
+            }
+
+            @if (canRestore()) {
+              <p class="hint" data-testid="restore-hint">
+                This version is not the plan of the week any more. Restoring copies it as a new
+                draft; nothing is changed or sent before you confirm that draft.
+              </p>
+              <div class="actions">
+                <button
+                  type="button"
+                  class="secondary"
+                  data-testid="restore"
+                  [disabled]="busy()"
+                  (click)="restore()"
+                >
+                  Make this the new draft
+                </button>
+              </div>
             }
 
             @if (canChange()) {

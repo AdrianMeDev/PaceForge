@@ -30,7 +30,7 @@ import { PlanEditor } from './plan-editor';
 
 type View = 'loading' | 'unreachable' | 'ready' | 'signed_out';
 /** What the page is waiting for; one thing at a time. */
-type Work = 'generating' | 'deciding' | 'opening' | 'sending';
+type Work = 'generating' | 'deciding' | 'opening' | 'sending' | 'restoring';
 
 const FALLBACK = 'Something went wrong. Please try again.';
 const GONE = 'That plan does not exist any more.';
@@ -41,6 +41,9 @@ const NOT_USABLE = 'The coach did not give a plan that could be used. Please try
 const TOO_MANY = 'Too many plans were requested. Please wait a minute and try again.';
 const NOT_A_DRAFT = 'That plan is not a draft any more.';
 const HAS_ERRORS = 'The plan has errors and cannot be confirmed.';
+const NOT_RESTORABLE = 'Only a version that was replaced or discarded can be restored.';
+const RESTORE_NOT_PLANNABLE =
+  'This week cannot be planned any more, so a version of it cannot be restored.';
 const TOO_MANY_PUSHES = 'Too many sends in a short time. Please wait a minute and try again.';
 
 /** One day of the plan with its workouts, numbered as the checks number them. */
@@ -99,6 +102,10 @@ export class PlanningPage implements OnInit {
   /** A draft and a confirmed plan can be changed; a version that was replaced is restored first. */
   protected readonly canChange = computed(
     () => this.plan()?.status === 'draft' || this.plan()?.status === 'confirmed',
+  );
+  /** A version that was replaced or discarded can be brought back as a new draft. */
+  protected readonly canRestore = computed(
+    () => this.plan()?.status === 'superseded' || this.plan()?.status === 'discarded',
   );
   protected readonly canConfirm = computed(
     () => this.plan()?.status === 'draft' && this.plan()?.report?.valid === true,
@@ -235,6 +242,52 @@ export class PlanningPage implements OnInit {
           : ' Read it, then confirm it to make it the plan of the week.'),
     );
     await this.refresh();
+  }
+
+  /** Brings the version on the screen back as a new draft; nothing else changes. */
+  protected async restore(): Promise<void> {
+    const current = this.plan();
+    if (this.busy() || current === null || !this.canRestore()) {
+      return;
+    }
+    this.clearMessages();
+    this.work.set('restoring');
+    try {
+      const result = await this.planning.restore(current.id);
+      switch (result.kind) {
+        case 'ok':
+          this.plan.set(result.plan);
+          this.notice.set(
+            `Version ${current.version} was restored as a new draft (version ${result.plan.version}).` +
+              (result.plan.report?.valid === false
+                ? ' With what you can do today it has errors and cannot be confirmed yet.'
+                : ' Read it, then confirm it to make it the plan of the week.'),
+          );
+          await this.refresh();
+          break;
+        case 'not_found':
+          this.plan.set(null);
+          this.errors.set([GONE]);
+          await this.refresh();
+          break;
+        case 'not_plannable':
+          this.errors.set([RESTORE_NOT_PLANNABLE]);
+          break;
+        case 'not_restorable':
+          // It has been decided on meanwhile: show it as it is now.
+          this.errors.set([NOT_RESTORABLE]);
+          await this.show(current.id, false);
+          await this.refresh();
+          break;
+        case 'forbidden':
+          this.view.set('signed_out');
+          break;
+      }
+    } catch {
+      this.errors.set([FALLBACK]);
+    } finally {
+      this.work.set(null);
+    }
   }
 
   protected signOut(): void {
