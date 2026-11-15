@@ -35,6 +35,8 @@ from .schema import Slot, Sport, ZoneSystem
 MAX_GOALS = 5
 # Goal notes are cut here (the model allows more); titles are short enough already.
 GOAL_NOTES_MAX = 300
+# At most this many current limitations are told, the newest first; the rest is only counted.
+MAX_LIMITATIONS_TOLD = 10
 # The most the JSON of a briefing may take, measured in UTF-8 bytes with every free-text
 # character as a six-byte escape (a control character), the worst a character can cost.
 MAX_BYTES = 20_000
@@ -70,6 +72,8 @@ def build_briefing(user: User, monday: date) -> dict[str, Any]:
         "sports": [sport.value for sport in Sport if sport in context.sports],
         "stretching": context.stretching,
         "limits": _limits(context),
+        "limitations": _limitations(context),
+        "limitations_not_shown": max(0, len(context.limitations) - MAX_LIMITATIONS_TOLD),
         "previous_week_plan": _previous_week(user, monday),
         "previous_week_review": _previous_week_review(user, monday),
     }
@@ -85,6 +89,18 @@ def _limits(context: PlanContext) -> dict[str, int]:
         "progression_error_percent": limits.progression_error_percent,
         "easy_share_percent": limits.easy_share_percent,
     }
+
+
+def _limitations(context: PlanContext) -> list[dict[str, Any]]:
+    """The current injuries and limitations, the newest first, as the body part (a fixed word)
+    and the sports it affects in the order of the format. No text of the athlete."""
+    return [
+        {
+            "body_part": entry.body_part,
+            "sports": [sport.value for sport in Sport if sport in entry.sports],
+        }
+        for entry in context.limitations[:MAX_LIMITATIONS_TOLD]
+    ]
 
 
 def to_json(briefing: dict[str, Any]) -> str:

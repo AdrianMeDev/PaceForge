@@ -11,9 +11,15 @@ from accounts.models import User
 from activities.models import Activity
 from athletes.models import AthleteProfile, ThresholdValue
 from availability.intensity import LEVEL_LIMITS, IntensityLevel, Limits
-from availability.models import AvailabilitySettings, UnavailablePeriod, WeekdayMinutes
+from availability.models import (
+    AvailabilitySettings,
+    Limitation,
+    UnavailablePeriod,
+    WeekdayMinutes,
+)
 from planning.context import (
     RECENT_WEEKS,
+    ActiveLimitation,
     PlanContext,
     build_context,
     recent_weekly_minutes,
@@ -340,7 +346,7 @@ class TestTheContextOfAUser:
             MONDAY, (0,) * 7, (None,) * 7, None, 0, frozenset(), ()
         )
 
-    def test_it_takes_six_queries_however_much_data_there_is(self, alice: User) -> None:
+    def test_it_takes_seven_queries_however_much_data_there_is(self, alice: User) -> None:
         with CaptureQueriesContext(connection) as empty:
             build_context(alice, MONDAY)
         for weekday in range(7):
@@ -361,6 +367,8 @@ class TestTheContextOfAUser:
             )
         for metric in ("ftp", "lthr", "max_hr"):
             self.held(alice, "ride", metric)
+        for _ in range(15):
+            Limitation.objects.create(owner=alice, body_part="knee", sports=["running"])
         for n in range(30):
             self.activity(alice, f"2027-07-{(n % 17) + 1:02d}T{8 + n // 17:02d}:00", 600, n=n)
         AthleteProfile.objects.create(owner=alice, timezone="Europe/Berlin")
@@ -368,7 +376,7 @@ class TestTheContextOfAUser:
         with CaptureQueriesContext(connection) as full:
             build_context(alice, MONDAY)
 
-        assert len(empty) == len(full) == 6
+        assert len(empty) == len(full) == 7
 
     def test_the_typical_week_comes_from_the_settings(self, alice: User, bob: User) -> None:
         AvailabilitySettings.objects.create(owner=alice, typical_weekly_minutes=420)
@@ -442,6 +450,22 @@ class TestTheContextOfAUser:
         assert context.double_days == (True, False, True, True, True, True, True)
         assert context.time_windows[1] == frozenset({Slot.MORNING, Slot.EVENING})
         assert context.time_windows[0] == frozenset(Slot)
+
+    def test_without_limitations_there_are_none(self, alice: User) -> None:
+        assert build_context(alice, MONDAY).limitations == ()
+
+    def test_the_current_limitations_come_newest_first_and_healed_ones_are_left_out(
+        self, alice: User, bob: User
+    ) -> None:
+        Limitation.objects.create(owner=alice, body_part="foot", sports=["running", "cycling"])
+        Limitation.objects.create(owner=alice, body_part="knee", status="healed")
+        Limitation.objects.create(owner=alice, body_part="back")
+        Limitation.objects.create(owner=bob, body_part="hip", sports=["swimming"])
+
+        assert build_context(alice, MONDAY).limitations == (
+            ActiveLimitation("back", frozenset()),
+            ActiveLimitation("foot", frozenset({Sport.RUNNING, Sport.CYCLING})),
+        )
 
     def test_the_offset_of_a_day_in_the_week(self, alice: User) -> None:
         context = build_context(alice, MONDAY)

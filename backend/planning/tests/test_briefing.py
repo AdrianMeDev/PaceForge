@@ -12,7 +12,12 @@ from accounts.models import User
 from activities.models import Activity
 from athletes.models import AthleteProfile, ThresholdValue
 from availability.intensity import LEVEL_LIMITS, IntensityLevel, Limits
-from availability.models import AvailabilitySettings, UnavailablePeriod, WeekdayMinutes
+from availability.models import (
+    AvailabilitySettings,
+    Limitation,
+    UnavailablePeriod,
+    WeekdayMinutes,
+)
 from goals import services as goal_services
 from goals.models import Goal
 from planning import briefing as briefing_module
@@ -20,6 +25,7 @@ from planning.briefing import (
     GOAL_NOTES_MAX,
     MAX_BYTES,
     MAX_GOALS,
+    MAX_LIMITATIONS_TOLD,
     build_briefing,
     to_json,
 )
@@ -76,6 +82,9 @@ ALLOWED_KEYS = {
     "sports",
     "stretching",
     "limits",
+    "limitations",
+    "body_part",
+    "limitations_not_shown",
     "max_hard_days",
     "progression_warning_percent",
     "progression_error_percent",
@@ -194,6 +203,8 @@ class TestTheBriefingOfAUserWithNothing:
                 "progression_error_percent": 140,
                 "easy_share_percent": 80,
             },
+            "limitations": [],
+            "limitations_not_shown": 0,
             "previous_week_plan": [],
             "previous_week_review": None,
         }
@@ -480,6 +491,8 @@ class TestTheGoals:
             "sports",
             "stretching",
             "limits",
+            "limitations",
+            "limitations_not_shown",
             "previous_week_plan",
             "previous_week_review",
         ]
@@ -584,6 +597,66 @@ class TestTheLimits:
         assert '"limits":{"easy_share_percent":60,"max_hard_days":4,' in to_json(briefing)
 
 
+class TestTheCurrentLimitations:
+    def told(self, user: User) -> list[dict[str, Any]]:
+        return list(build_briefing(user, MONDAY)["limitations"])
+
+    def test_a_user_with_none_has_none_and_nothing_left_out(self, alice: User) -> None:
+        briefing = build_briefing(alice, MONDAY)
+
+        assert (briefing["limitations"], briefing["limitations_not_shown"]) == ([], 0)
+
+    def test_a_current_entry_is_told_as_a_body_part_and_its_sports(self, alice: User) -> None:
+        Limitation.objects.create(owner=alice, body_part="achilles", sports=["strength", "running"])
+
+        assert self.told(alice) == [{"body_part": "achilles", "sports": ["running", "strength"]}]
+
+    def test_an_entry_for_no_particular_sport_has_no_sports(self, alice: User) -> None:
+        Limitation.objects.create(owner=alice, body_part="back")
+
+        assert self.told(alice) == [{"body_part": "back", "sports": []}]
+
+    def test_a_healed_entry_is_not_told(self, alice: User) -> None:
+        Limitation.objects.create(owner=alice, body_part="knee", status="healed")
+        Limitation.objects.create(owner=alice, body_part="hip")
+
+        assert [entry["body_part"] for entry in self.told(alice)] == ["hip"]
+
+    def test_the_newest_comes_first(self, alice: User) -> None:
+        for part in ("foot", "calf", "shin"):
+            Limitation.objects.create(owner=alice, body_part=part)
+
+        assert [entry["body_part"] for entry in self.told(alice)] == ["shin", "calf", "foot"]
+
+    def test_at_most_ten_are_told_and_the_rest_is_counted(self, alice: User) -> None:
+        for _ in range(MAX_LIMITATIONS_TOLD + 3):
+            Limitation.objects.create(owner=alice, body_part="knee")
+        newest = Limitation.objects.create(owner=alice, body_part="back")
+
+        briefing = build_briefing(alice, MONDAY)
+
+        assert len(briefing["limitations"]) == MAX_LIMITATIONS_TOLD == 10
+        assert briefing["limitations"][0]["body_part"] == newest.body_part
+        assert briefing["limitations_not_shown"] == 4
+
+    def test_another_users_entries_are_not_told(self, alice: User, bob: User) -> None:
+        Limitation.objects.create(owner=bob, body_part="back")
+
+        assert self.told(alice) == []
+
+    def test_only_fixed_words_are_told(self, alice: User) -> None:
+        Limitation.objects.create(owner=alice, body_part="knee", sports=["running"])
+
+        assert set(keys(self.told(alice))) <= {"body_part", "sports"}
+
+    def test_it_is_in_the_text_the_coach_gets(self, alice: User) -> None:
+        Limitation.objects.create(owner=alice, body_part="knee", sports=["running"])
+
+        text = to_json(build_briefing(alice, MONDAY))
+
+        assert '"limitations":[{"body_part":"knee","sports":["running"]}]' in text
+
+
 class TestTheRecentWeeks:
     def test_the_minutes_done_come_from_the_activities(self, alice: User, bob: User) -> None:
         for owner, day, seconds in ((alice, 12, 3600), (alice, 5, 1800), (bob, 13, 9000)):
@@ -685,6 +758,12 @@ class TestWhatIsSent:
             )
         for week in range(1, 3):
             plan_of(alice, MONDAY - timedelta(days=7 * week), "confirmed", [(0, "running")] * 28)
+        for _ in range(MAX_LIMITATIONS_TOLD + 5):
+            Limitation.objects.create(
+                owner=alice,
+                body_part="achilles",
+                sports=["running", "cycling", "swimming", "strength"],
+            )
 
         size = len(to_json(build_briefing(alice, MONDAY)).encode())
 
@@ -696,12 +775,14 @@ class TestWhatIsSent:
         self.full(alice)
         for number in range(MAX_GOALS + 3):
             goal(alice, title=f"Goal {number}")
+        for _ in range(MAX_LIMITATIONS_TOLD + 5):
+            Limitation.objects.create(owner=alice, body_part="knee", sports=["running"])
 
         with CaptureQueriesContext(connection) as full:
             build_briefing(alice, MONDAY)
 
-        # 11 of the briefing and 8 of the review of the week before
-        assert len(empty) == len(full) == 19
+        # 12 of the briefing and 8 of the review of the week before
+        assert len(empty) == len(full) == 20
 
 
 class TestHowTheWeekBeforeWent:

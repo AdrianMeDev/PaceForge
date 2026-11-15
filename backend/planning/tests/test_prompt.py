@@ -414,6 +414,14 @@ class TestTheSystemPrompt:
         assert "Put the harder running, cycling or swimming session of a day first" in flat
         assert "and the easier one after it. (warning)" in flat
 
+    def test_it_explains_the_current_limitations(self) -> None:
+        flat = " ".join(SYSTEM_PROMPT.split())
+
+        assert '"limitations" in the data lists the athlete\'s current injuries' in flat
+        assert '"body_part" from a fixed list and the "sports" it affects' in flat
+        assert "Do not load the body part" in flat
+        assert '"limitations_not_shown" counts further ones that are left out' in flat
+
     def test_it_says_that_a_slot_must_be_open_on_its_day(self) -> None:
         assert (
             'lies in a part of the day that is listed in "slots" of its day in "days". (error)'
