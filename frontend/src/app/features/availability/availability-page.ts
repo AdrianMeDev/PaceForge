@@ -38,6 +38,8 @@ type View = 'loading' | 'unreachable' | 'ready' | 'signed_out';
 
 const FALLBACK = 'Something went wrong. Please try again.';
 const LIMITATIONS_MAX = 1000;
+/** How much of the free text goes to the coach if the user allows it (see the briefing). */
+export const LIMITATIONS_TEXT_TOLD = 150;
 const DAYS = [0, 1, 2, 3, 4, 5, 6];
 /** The sports to tick, in the order the server keeps them. */
 const SPORT_CHOICES: { value: AvailabilitySport; label: string }[] = [
@@ -84,6 +86,7 @@ export class AvailabilityPage implements OnInit {
   );
   protected readonly stretching = signal(false);
   protected readonly limitations = signal('');
+  protected readonly shareText = signal(false);
   protected readonly intensityLevel = signal<IntensityLevel>('normal');
   protected readonly ownLimits = signal<OwnLimitTexts>(NO_OWN_LIMIT_TEXTS);
   /** The limits of every level as the server has them; set with the first answer. */
@@ -107,6 +110,8 @@ export class AvailabilityPage implements OnInit {
   protected readonly sportsError = signal<string | null>(null);
   protected readonly stretchingError = signal<string | null>(null);
   protected readonly limitationsError = signal<string | null>(null);
+  protected readonly shareTextError = signal<string | null>(null);
+  protected readonly textTold = LIMITATIONS_TEXT_TOLD;
 
   protected readonly sportChoices = SPORT_CHOICES;
   protected readonly names = WEEKDAY_NAMES;
@@ -312,6 +317,7 @@ export class AvailabilityPage implements OnInit {
           sports,
           stretching: this.stretching(),
           limitations: this.limitations(),
+          share_limitations_text: this.shareText(),
           ...(own === null ? {} : { intensity_level: this.intensityLevel(), ...own }),
         }
       : null;
@@ -333,6 +339,7 @@ export class AvailabilityPage implements OnInit {
     this.sports.set([...availability.sports]);
     this.stretching.set(availability.stretching);
     this.limitations.set(availability.limitations);
+    this.shareText.set(availability.share_limitations_text);
     this.intensityLevel.set(availability.intensity_level);
     this.ownLimits.set(ownLimitTexts(availability));
     this.levelLimits.set(availability.level_limits);
@@ -348,6 +355,7 @@ export class AvailabilityPage implements OnInit {
     this.sportsError.set(null);
     this.stretchingError.set(null);
     this.limitationsError.set(null);
+    this.shareTextError.set(null);
   }
 
   private showServerMessages(fields: Record<string, string[]>, all: string[]): void {
@@ -361,6 +369,7 @@ export class AvailabilityPage implements OnInit {
     this.sportsError.set(join('sports'));
     this.stretchingError.set(join('stretching'));
     this.limitationsError.set(join('limitations'));
+    this.shareTextError.set(join('share_limitations_text'));
     const intensity: IntensityErrors = {};
     for (const name of ['intensity_level', ...LIMIT_NAMES] as const) {
       const message = join(name);
@@ -378,6 +387,7 @@ export class AvailabilityPage implements OnInit {
       'sports',
       'stretching',
       'limitations',
+      'share_limitations_text',
       ...INTENSITY_FIELDS,
     ];
     const rest = Object.entries(fields)

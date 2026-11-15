@@ -187,6 +187,28 @@
             <p class="field-error" role="alert">{{ message }}</p>
           }
         </div>
+        <div class="field">
+          <div class="check">
+            <input
+              id="share-limitations"
+              type="checkbox"
+              aria-describedby="share-limitations-hint"
+              [checked]="shareText()"
+              [attr.aria-invalid]="shareTextError() ? true : null"
+              (change)="shareText.set(isChecked($event))"
+            />
+            <label for="share-limitations">Send this text to my AI coach</label>
+          </div>
+          @if (shareTextError(); as message) {
+            <p class="field-error" role="alert">{{ message }}</p>
+          }
+          <p class="hint" id="share-limitations-hint">
+            Off unless you switch it on: nothing you write here leaves PaceForge by default. If it
+            is on, the first {{ textTold }} characters go to {{ provider() }} with every plan
+            request. Your coach reads them as information about you, never as instructions. The
+            injuries you list further down are sent as a body part and sports either way.
+          </p>
+        </div>
 
         <div class="actions">
           <button type="submit" class="primary" [disabled]="busy()">

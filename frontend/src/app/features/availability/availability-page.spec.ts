@@ -752,6 +752,7 @@ describe('AvailabilityPage', () => {
         sports: ['running', 'cycling', 'swimming', 'strength'],
         stretching: false,
         limitations: 'Knee',
+        share_limitations_text: false,
         intensity_level: 'normal',
         ...NO_OWN_LIMITS,
       });
@@ -770,6 +771,7 @@ describe('AvailabilityPage', () => {
         sports: ['running', 'cycling', 'swimming', 'strength'],
         stretching: false,
         limitations: '',
+        share_limitations_text: false,
         intensity_level: 'normal',
         ...NO_OWN_LIMITS,
       });
@@ -1094,6 +1096,90 @@ describe('AvailabilityPage', () => {
 
       expect(alerts()).toEqual(['Something went wrong. Please try again.']);
       expect(page.querySelector('form')).not.toBeNull();
+    });
+  });
+
+  describe('sending the free text to the coach', () => {
+    const box = () => query<HTMLInputElement>(page, '#share-limitations');
+
+    it('is off for a user who chose nothing', async () => {
+      await setup(ok(NOTHING));
+
+      expect(box().checked).toBe(false);
+    });
+
+    it('shows the choice as saved', async () => {
+      await setup(ok(SAVED));
+
+      expect(box().checked).toBe(true);
+    });
+
+    it('says what is sent, how much and where, and that it is off unless switched on', async () => {
+      await setup(ok(NOTHING));
+
+      const hint = query(page, '#share-limitations-hint').textContent ?? '';
+      const flat = hint.split(/\s+/).join(' ');
+
+      expect(flat).toContain('Off unless you switch it on');
+      expect(flat).toContain('the first 150 characters go to Anthropic, model claude-sonnet-5-5');
+      expect(flat).toContain('never as instructions');
+      expect(flat).toContain('sent as a body part and sports either way');
+      expect(query(page, 'label[for="share-limitations"]').textContent?.trim()).toBe(
+        'Send this text to my AI coach',
+      );
+    });
+
+    it('sends the choice with everything else', async () => {
+      await setup(ok(NOTHING));
+
+      await tick('#share-limitations');
+      await save();
+
+      expect(api.save.mock.calls[0][0].share_limitations_text).toBe(true);
+    });
+
+    it('sends off when it was ticked and unticked again', async () => {
+      await setup(ok(SAVED));
+
+      await tick('#share-limitations');
+      await save();
+
+      expect(api.save.mock.calls[0][0].share_limitations_text).toBe(false);
+    });
+
+    it('does not switch itself on when the text is written', async () => {
+      await setup(ok(NOTHING));
+
+      await type('#limitations', 'Right knee');
+      await save();
+
+      expect(api.save.mock.calls[0][0].share_limitations_text).toBe(false);
+    });
+
+    it('shows the server’s message next to the box', async () => {
+      await setup(ok(NOTHING));
+      api.save.mockResolvedValue({
+        kind: 'invalid',
+        errors: ['Send true or false.'],
+        fields: { share_limitations_text: ['Send true or false.'] },
+      });
+
+      await save();
+
+      expect(alerts()).toEqual(['Send true or false.']);
+      expect(box().getAttribute('aria-invalid')).toBe('true');
+    });
+
+    it('shows what the server saved', async () => {
+      await setup(ok(NOTHING));
+      api.save.mockResolvedValue({
+        kind: 'ok',
+        availability: { ...NOTHING, share_limitations_text: true },
+      });
+
+      await save();
+
+      expect(box().checked).toBe(true);
     });
   });
 
