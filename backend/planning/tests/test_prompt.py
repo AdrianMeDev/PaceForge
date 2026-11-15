@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-from availability.intensity import DEFAULT_LEVEL, LEVEL_LIMITS
+from availability.intensity import LEVEL_LIMITS
 from planning import briefing as briefing_module
 from planning.prompt import (
     MAX_ANSWER_CHARS,
@@ -335,9 +335,8 @@ class TestTheSystemPrompt:
             assert f"{system} has {count}" in SYSTEM_PROMPT, system
 
     def test_it_explains_the_reference_of_the_progression_rule(self) -> None:
-        limits = LEVEL_LIMITS[DEFAULT_LEVEL]
-        assert f"{limits.progression_warning_percent} percent of the reference" in SYSTEM_PROMPT
-        assert f"reach {limits.progression_error_percent} percent" in SYSTEM_PROMPT
+        assert '"progression_warning_percent" percent of the reference' in SYSTEM_PROMPT
+        assert 'never more than "progression_error_percent" percent' in SYSTEM_PROMPT
         assert '"recent_weeks_minutes"' in SYSTEM_PROMPT
         assert f'{TYPICAL_VOLUME_PERCENT} percent of "typical_weekly_minutes"' in SYSTEM_PROMPT
 
@@ -360,9 +359,19 @@ class TestTheSystemPrompt:
         named = set(re.findall(r'"([a-z_]+)"', SYSTEM_PROMPT))
         keys = {"recent_weeks_minutes", "typical_weekly_minutes", "weekly_minutes_available",
                 "previous_week_plan", "previous_week_review", "zone_systems", "today", "sports",
-                "stretching"}  # fmt: skip
+                "stretching", "limits", "max_hard_days", "progression_warning_percent",
+                "progression_error_percent"}  # fmt: skip
 
         assert keys <= named
+
+    def test_the_limits_of_the_athlete_come_from_the_data_not_from_the_prompt(self) -> None:
+        assert '"limits" in the data holds the limits' in SYSTEM_PROMPT
+        assert 'No more days of the week than "max_hard_days" have a hard workout.' in SYSTEM_PROMPT
+        # no number of any level is written into the prompt, so it is the same for everyone
+        for limits in LEVEL_LIMITS.values():
+            for number in (limits.progression_warning_percent, limits.progression_error_percent):
+                assert f"{number} percent" not in SYSTEM_PROMPT
+            assert f"At most {limits.max_hard_days} days" not in SYSTEM_PROMPT
 
     def test_it_names_the_review_of_the_week_before_and_what_to_do_with_it(self) -> None:
         assert '"previous_week_review" tells how the week before went' in SYSTEM_PROMPT

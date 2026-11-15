@@ -1,9 +1,11 @@
 """What the coach is asked to do, and how its answer is read.
 
 ``SYSTEM_PROMPT`` says what a week plan is (the format of ``planning.schema``, the rules of
-``planning.rules``, quoting their constants so that the two cannot drift apart) and that the
-briefing is data. ``first_message`` hands over the briefing, ``extract_plan`` reads the answer
-back and ``repair_message`` tells the coach what was wrong with it.
+``planning.rules``, quoting their constants so that the two cannot drift apart; the limits that
+depend on the athlete are named by their key in the briefing, so that the prompt is the same for
+everyone) and that the briefing is data. ``first_message`` hands over the briefing,
+``extract_plan`` reads the answer back and ``repair_message`` tells the coach what was wrong with
+it.
 
 Nothing here trusts the answer: ``extract_plan`` accepts one JSON object and nothing else, and it
 ends in the strict parser. Problems found are described in fixed words, paths and numbers; no text
@@ -14,7 +16,6 @@ from collections.abc import Sequence
 from datetime import date
 from typing import Any
 
-from availability.intensity import DEFAULT_LEVEL, LEVEL_LIMITS
 from coach.answers import AnswerFormatError, read_json_object
 from coach.providers.base import Message
 
@@ -51,9 +52,6 @@ from .schema import (
 MAX_ANSWER_CHARS = 200_000
 # How many problems and findings the repair message lists; the rest is counted.
 MAX_LISTED = 20
-
-# Every athlete has the limits of the default level until the level can be chosen.
-_LIMITS = LEVEL_LIMITS[DEFAULT_LEVEL]
 
 
 def _words(enum: Any) -> str:
@@ -110,11 +108,12 @@ The plan is checked by these rules; an answer that breaks one marked (error) can
 - If you give segments, they add up (seconds times repeat) to the duration of the workout, \
 within {DURATION_TOLERANCE_SECONDS} seconds. (error)
 - A workout is hard if its goal is "threshold" or "vo2max" or its zone is {HARD_FROM_ZONE} or \
-higher; it is easy up to zone {EASY_UP_TO_ZONE}. At most {_LIMITS.max_hard_days} days of the \
-week have a hard workout. (error) Do not put hard days back to back, keep at least one day free \
-and at most {MAX_WORKOUTS_PER_DAY} workouts on a day. (warnings)
-- The minutes of the week stay below {_LIMITS.progression_warning_percent} percent of the \
-reference (warning), and never reach {_LIMITS.progression_error_percent} percent. (error) The \
+higher; it is easy up to zone {EASY_UP_TO_ZONE}. "limits" in the data holds the limits that follow \
+from how hard the athlete wants to train; take them as they are. No more days of the week than \
+"max_hard_days" have a hard workout. (error) Do not put hard days back to back, keep at least one \
+day free and at most {MAX_WORKOUTS_PER_DAY} workouts on a day. (warnings)
+- The minutes of the week stay at most "progression_warning_percent" percent of the reference \
+(warning), and never more than "progression_error_percent" percent. (error) The \
 reference is the higher of the average of "recent_weeks_minutes" and {TYPICAL_VOLUME_PERCENT} \
 percent of "typical_weekly_minutes", which is what the athlete calls a normal week (it may be \
 null). That second number is where a return to training is headed, not where it starts: after a \

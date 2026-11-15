@@ -320,6 +320,7 @@ without this page.
 | `typical_weekly_minutes` | What the athlete calls a normal week, in minutes; `null` if not given (or 0). The progression rule's reference is the higher of this and the recent average. |
 | `sports` | The sports the athlete wants in a plan (all four if none was chosen), in the order of the format. |
 | `stretching` | Whether stretching may be added to sessions (`stretching_minutes`), never as a session. |
+| `limits` | The limits of the rules that follow from the athlete's [intensity level](#the-intensity-levels): `max_hard_days`, `progression_warning_percent`, `progression_error_percent`. They are here and not in the system prompt, so that the prompt is the same for every athlete. |
 | `previous_week_plan` | The confirmed plan of the week before: day, sport, goal, minutes. |
 | `previous_week_review` | How the week before went, from the [week review](../README.md#week-review): the number of workouts by status, the minutes planned and done, the sessions that were not planned, how many sessions were rated and their mean RPE, the three scales of the week feedback (`null` if none was given) and `next_week`, the recommendation of a review of that week by the coach (`increase`, `hold`, `reduce`; `null` if none was asked for). Numbers and one fixed word, no text of the user or of the coach. `null` if the week before has not begun or has nothing in it. |
 

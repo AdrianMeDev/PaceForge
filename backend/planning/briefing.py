@@ -3,7 +3,8 @@
 ``build_briefing`` turns the planning context and a few more rows into plain JSON data; the prompt
 (``planning.prompt``) wraps it, nothing else is ever sent. What is in it: the week and today,
 what each day offers, the zone tables of the zone systems the athlete can use, the active goals,
-the minutes done in recent weeks, a summary of last week's confirmed plan and how that week went
+the minutes done in recent weeks, the limits of the rules that follow from the athlete's intensity
+level (``limits``), a summary of last week's confirmed plan and how that week went
 (``previous_week_review``: numbers and one fixed word, no free text; see ``reviews.briefing``).
 
 What is not in it: names, e-mail addresses, activity names or descriptions, ids of any kind, the
@@ -68,8 +69,20 @@ def build_briefing(user: User, monday: date) -> dict[str, Any]:
         # and whether stretching may be added to sessions.
         "sports": [sport.value for sport in Sport if sport in context.sports],
         "stretching": context.stretching,
+        "limits": _limits(context),
         "previous_week_plan": _previous_week(user, monday),
         "previous_week_review": _previous_week_review(user, monday),
+    }
+
+
+def _limits(context: PlanContext) -> dict[str, int]:
+    """The limits of the rules that depend on the athlete: they are in the briefing and not in the
+    system prompt, so that the prompt is the same for every athlete."""
+    limits = context.limits
+    return {
+        "max_hard_days": limits.max_hard_days,
+        "progression_warning_percent": limits.progression_warning_percent,
+        "progression_error_percent": limits.progression_error_percent,
     }
 
 
