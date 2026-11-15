@@ -17,6 +17,9 @@ from availability.models import (
     SPORTS,
     WEEK_MINUTES_MAX,
     AvailabilitySettings,
+    BodyPart,
+    Limitation,
+    LimitationStatus,
     UnavailablePeriod,
     WeekdayMinutes,
     effective_slots,
@@ -408,6 +411,111 @@ class TestWeekdays:
 
         assert text.startswith("Friday")
         assert str(alice.pk) in text
+
+
+class TestLimitations:
+    def test_every_body_part_is_valid(self, alice: User) -> None:
+        for part in BodyPart:
+            check(Limitation, alice, body_part=part.value)
+
+    def test_the_body_parts_are_the_agreed_ones(self) -> None:
+        assert BodyPart.values == [
+            "foot",
+            "ankle",
+            "achilles",
+            "calf",
+            "shin",
+            "knee",
+            "thigh",
+            "hip",
+            "back",
+            "shoulder",
+            "other",
+        ]
+
+    @pytest.mark.parametrize("part", ["", "elbow", "Knee", "KNEE", "knee "])
+    def test_an_unknown_body_part_is_refused(self, alice: User, part: str) -> None:
+        refused(Limitation, alice, "body_part", body_part=part)
+
+    @pytest.mark.parametrize("status", ["current", "healed"])
+    def test_both_statuses_are_valid(self, alice: User, status: str) -> None:
+        check(Limitation, alice, body_part="knee", status=status)
+
+    @pytest.mark.parametrize("status", ["", "chronic", "Current"])
+    def test_an_unknown_status_is_refused(self, alice: User, status: str) -> None:
+        refused(Limitation, alice, "status", body_part="knee", status=status)
+
+    @pytest.mark.parametrize("sports", [[], ["running"], ["strength", "running"], list(SPORTS)])
+    def test_valid_sports(self, alice: User, sports: list[str]) -> None:
+        check(Limitation, alice, body_part="knee", sports=sports)
+
+    @pytest.mark.parametrize(
+        "sports",
+        [
+            ["golf"],
+            ["running", "running"],
+            ["Running"],
+            "running",
+            {"running": True},
+            [1],
+            [None],
+            [["running"]],
+            None,
+            5,
+            True,
+        ],
+    )
+    def test_unusable_sports_are_refused(self, alice: User, sports: Any) -> None:
+        refused(Limitation, alice, "sports", body_part="knee", sports=sports)
+
+    def test_the_defaults_are_current_and_no_particular_sport(self, alice: User) -> None:
+        entry = Limitation.objects.create(owner=alice, body_part="knee")
+
+        assert entry.status == LimitationStatus.CURRENT
+        assert entry.sports == []
+        assert entry.affected_sports == []
+
+    def test_the_affected_sports_come_in_the_order_of_the_sports(self, alice: User) -> None:
+        entry = Limitation.objects.create(
+            owner=alice, body_part="knee", sports=["strength", "running"]
+        )
+
+        assert entry.affected_sports == ["running", "strength"]
+
+    def test_the_id_is_time_ordered_so_that_the_newest_has_the_highest(self, alice: User) -> None:
+        first = Limitation.objects.create(owner=alice, body_part="knee")
+        second = Limitation.objects.create(owner=alice, body_part="back")
+
+        assert first.pk < second.pk
+
+    def test_the_database_refuses_an_unknown_body_part(self, alice: User) -> None:
+        message = rejected_by_database(Limitation, owner=alice, body_part="elbow")
+
+        assert "availability_limitation_body_part_known" in message
+
+    def test_the_database_refuses_an_unknown_status(self, alice: User) -> None:
+        message = rejected_by_database(Limitation, owner=alice, body_part="knee", status="x")
+
+        assert "availability_limitation_status_known" in message
+
+    def test_the_text_names_the_body_part_and_the_user_only(self, alice: User) -> None:
+        text = str(Limitation(owner=alice, body_part="achilles", sports=["running"]))
+
+        assert text == f"achilles limitation of user {alice.pk}"
+
+    def test_an_entry_belongs_to_its_user(self, alice: User, bob: User) -> None:
+        mine = Limitation.objects.create(owner=alice, body_part="knee")
+        Limitation.objects.create(owner=bob, body_part="back")
+
+        assert list(Limitation.objects.for_user(alice)) == [mine]
+        assert not Limitation.objects.for_user(AnonymousUser()).exists()
+
+    def test_deleting_the_user_deletes_the_entries(self, alice: User) -> None:
+        Limitation.objects.create(owner=alice, body_part="knee")
+
+        alice.delete()
+
+        assert Limitation.objects.count() == 0
 
 
 class TestPeriods:
