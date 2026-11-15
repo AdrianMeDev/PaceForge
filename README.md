@@ -566,6 +566,18 @@ plans only those, and the checks refuse a workout in any other sport. **Add stre
 lets the coach add a few minutes of stretching to a session: it is never a session of its own, it
 uses up none of your minutes and it does not count as a training day. Off is the default.
 
+**What each sport is for.** Above the sport boxes, a table with a row per sport: a **Role**
+(**Goal sport**, **Secondary sport** or **Supplementary**, or no role) and how many sessions a week
+you want of it, the **least** and the **most** (whole numbers from 0 to 14; either may stay empty).
+The coach is told and uses the roles to decide what to plan first and what to cut first when time
+is short; nothing checks a role. A week with fewer sessions of a sport than your least, or more
+than your most, gets a **warning** on the [Week plan](#week-plan) page (a sport you said nothing
+about is never looked at). Below the table, **What strength training is for** (**Legs**,
+**Core**, **Upper body**, **Full body**, or not said). With **Legs** or **Full body** every
+strength session counts as leg training, and the checks **warn** about one on the day before your
+longest run of the week or before a hard run. They do not know exercises yet, so with the focus
+**Core** or **Upper body**, or none, nothing is checked.
+
 **Intensity.** How hard your plans may be: **Relaxed**, **Normal** (the default) or **Intensive**.
 The level sets the limits that the checks of every plan use, and the coach is told them:
 

@@ -165,6 +165,11 @@ Each plan is checked against the facts of its user for that week, collected when
 - **Double days and parts of the day.** For each weekday whether two workouts are allowed and which
   parts of the day (morning, afternoon, evening) are open. Without a choice two workouts are allowed
   and every part is open. A day of absence keeps the choice of its weekday.
+- **Sports.** What the athlete said about each sport: a role (goal, secondary, supplementary) and
+  the least and the most sessions a week. Only the sessions are checked (`sessions_out_of_range`,
+  a warning); the role is for the coach. The strength focus (legs, core, upper body, full body)
+  makes every strength workout count as leg training for legs and full body, and a strength
+  workout on the day before a key run is a warning (`legs_before_key_run`).
 - **The wishes for a week.** On how many days the athlete wants to train at most, the least they
   want to train in a week, and the weekday of the long run and of the long ride. Each is optional
   and a missing one is never checked. They only produce warnings (`too_many_training_days`,
