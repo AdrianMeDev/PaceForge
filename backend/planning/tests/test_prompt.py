@@ -409,7 +409,10 @@ class TestTheSystemPrompt:
         # no example may break the rule it stands next to
         assert "run and strength in the evening" not in SYSTEM_PROMPT
         assert 'its own "slot", no two in the same part of the day' in SYSTEM_PROMPT
-        assert "Do not double two hard sessions." in SYSTEM_PROMPT
+        flat = " ".join(SYSTEM_PROMPT.split())
+        assert "Never two hard sessions on a day. (error)" in flat
+        assert "Put the harder running, cycling or swimming session of a day first" in flat
+        assert "and the easier one after it. (warning)" in flat
 
     def test_it_says_that_a_slot_must_be_open_on_its_day(self) -> None:
         assert (

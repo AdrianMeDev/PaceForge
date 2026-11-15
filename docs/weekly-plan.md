@@ -199,6 +199,8 @@ user to weigh.
 | `week_over_capacity` | error | The week adds up to more than the user offers, the weekly budget included. |
 | `too_many_hard_days` | error | More hard days than the limit. A day counts once. |
 | `volume_jump` | error | The planned minutes are above the error limit of the reference (the recent average, or the typical week if that is higher). |
+| `two_hard_in_a_day` | error | Two hard workouts on one day. Named once per day, at the second hard one. |
+| `quality_not_first` | warning | On a day with two running, cycling or swimming workouts that both have a time of day, an easy one comes before a moderate or hard one. Strength is left out. Named once per day, at the easy one. |
 | `hard_days_in_a_row` | warning | A hard day directly after a hard day. |
 | `no_free_day` | warning | Every day of the week has a workout. |
 | `many_workouts_in_a_day` | error | More workouts on a day than the limit (two). Named once per day, at the first one too many. |

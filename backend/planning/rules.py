@@ -498,6 +498,56 @@ def check_time_windows(plan: WeekPlan, context: PlanContext) -> list[Finding]:
     ]
 
 
+def check_double_day_order(plan: WeekPlan, context: PlanContext) -> list[Finding]:
+    """What a day with several workouts asks for: no two hard ones, the harder one first.
+
+    A second hard workout on a day is an error (named once per day, at the second hard one in the
+    order of the plan). The quality session comes first, easy training after it: where two
+    running, cycling or swimming workouts of a day have a time of day each (in the order of the
+    day, not of the plan), an easy one before a moderate or hard one is a warning, named once per
+    day at the easy one. Strength is left out, so a strength session in the morning and a run in
+    the evening stay as they are."""
+    _same_week(plan, context)
+    found: list[Finding] = []
+    order = list(Slot)
+    for offset, workouts in sorted(_workouts_by_day(plan, context).items()):
+        weekday = _WEEKDAYS[offset]
+        hard = [index for index, workout in workouts if intensity_of(workout) is Intensity.HARD]
+        if len(hard) > 1:
+            found.append(
+                Finding(
+                    Severity.ERROR,
+                    "two_hard_in_a_day",
+                    f"{weekday} has {len(hard)} hard workouts; do not double hard sessions.",
+                    f"workouts[{hard[1]}]",
+                )
+            )
+        timed = sorted(
+            (
+                (order.index(workout.slot), index, intensity_of(workout))
+                for index, workout in workouts
+                if workout.slot is not None and workout.sport in ENDURANCE_SPORTS
+            ),
+            key=lambda entry: entry[0],
+        )
+        for position, (slot, index, intensity) in enumerate(timed):
+            if intensity is Intensity.EASY and any(
+                later_slot > slot and later is not Intensity.EASY
+                for later_slot, _, later in timed[position + 1 :]
+            ):
+                found.append(
+                    Finding(
+                        Severity.WARNING,
+                        "quality_not_first",
+                        f"{weekday} has an easy workout before a harder one; put the quality "
+                        "session first.",
+                        f"workouts[{index}].slot",
+                    )
+                )
+                break
+    return found
+
+
 def check_times_of_day(plan: WeekPlan, context: PlanContext) -> list[Finding]:
     """Several workouts on a day need a time of day each, and no two share one.
 
@@ -561,6 +611,7 @@ RHYTHM_CHECKS: tuple[Check, ...] = (
     check_progression,
     check_easy_share,
     check_times_of_day,
+    check_double_day_order,
 )
 
 ALL_CHECKS: tuple[Check, ...] = BASIC_CHECKS + RHYTHM_CHECKS

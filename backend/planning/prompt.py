@@ -129,7 +129,8 @@ and the sports fit, and only if "double_allowed" is true for that day in "days" 
 on any other day is an error): for example an easy run in the morning and a ride in the \
 afternoon, or strength in the morning and a run in the evening. Give every session of such a day \
 its own "slot", no two in the same part of the day (error); a day with one session needs no slot. \
-Do not double two hard sessions.
+Never two hard sessions on a day. (error) Put the harder running, cycling or swimming session of \
+a day first and the easier one after it. (warning)
 - A session with a "slot" lies in a part of the day that is listed in "slots" of its day in \
 "days". (error)
 - Stretching is never a session of its own: no workout has stretching as its sport or its title. \
