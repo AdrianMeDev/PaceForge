@@ -673,6 +673,53 @@ def check_sessions_per_sport(plan: WeekPlan, context: PlanContext) -> list[Findi
     return found
 
 
+# The strength focuses that make every strength workout count as leg training.
+LEG_FOCUSES = frozenset({"legs", "full_body"})
+
+
+def check_legs_before_key_run(plan: WeekPlan, context: PlanContext) -> list[Finding]:
+    """Leg strength the day before a long or a hard run (a warning, at the strength workout).
+
+    With the strength focus legs or full body every strength workout counts as leg training; with
+    another focus, or none, nothing is checked. A key run is a hard run, or the longest run of the
+    week (with a tie each of the longest). Only the days of this week are known, so Sunday and the
+    next Monday are not compared. A strength workout is named once, however many key runs follow."""
+    _same_week(plan, context)
+    if context.strength_focus not in LEG_FOCUSES:
+        return []
+    by_day = _workouts_by_day(plan, context)
+    runs = [
+        (offset, workout)
+        for offset, workouts in by_day.items()
+        for _, workout in workouts
+        if workout.sport is Sport.RUNNING
+    ]
+    if not runs:
+        return []
+    longest = max(workout.duration_minutes for _, workout in runs)
+    key_days = {
+        offset
+        for offset, workout in runs
+        if workout.duration_minutes == longest or intensity_of(workout) is Intensity.HARD
+    }
+    found = []
+    for offset, workouts in sorted(by_day.items()):
+        if offset + 1 not in key_days:
+            continue
+        for index, workout in workouts:
+            if workout.sport is Sport.STRENGTH:
+                found.append(
+                    Finding(
+                        Severity.WARNING,
+                        "legs_before_key_run",
+                        f"{_WEEKDAYS[offset]} has strength training, and {_WEEKDAYS[offset + 1]} "
+                        "has a long or hard run; your legs may not be fresh for it.",
+                        f"workouts[{index}]",
+                    )
+                )
+    return found
+
+
 def check_limitations(plan: WeekPlan, context: PlanContext) -> list[Finding]:
     """A workout in a sport that a current limitation affects (a warning, once per workout, at
     its sport, naming the newest limitation that affects it). A limitation without sports affects
@@ -768,6 +815,7 @@ RHYTHM_CHECKS: tuple[Check, ...] = (
     check_minimum_minutes,
     check_long_days,
     check_sessions_per_sport,
+    check_legs_before_key_run,
 )
 
 ALL_CHECKS: tuple[Check, ...] = BASIC_CHECKS + RHYTHM_CHECKS

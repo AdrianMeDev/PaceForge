@@ -130,6 +130,8 @@ first when time is short; null: no role) and the least and the most sessions a w
 it ("sessions_min" and "sessions_max", null: no wish; a sport that is not listed has no wish at \
 all); fewer or more sessions of a sport than that is a warning. "strength_focus" is what \
 strength training is for ("legs", "core", "upper_body" or "full_body"; null: not said).
+- If "strength_focus" is "legs" or "full_body", strength training counts as training the legs: do \
+not put it on the day before the longest run of the week or before a hard run. (warning)
 - "training_days" is on how many days of the week the athlete wants to train at most, and \
 "min_weekly_minutes" the least they want to train in the week, as far as the days and the budget \
 allow it (both null: no wish); more days than "training_days" or fewer minutes than that is a \
