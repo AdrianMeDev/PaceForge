@@ -32,10 +32,11 @@ This module is pure: no database, no Django. The limits here are the single sour
 
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from enum import StrEnum
 from typing import Any
+from uuid import UUID
 
 TITLE_MAX = 100
 NOTES_MAX = 500
@@ -119,6 +120,10 @@ class Workout:
     # Stretching added to this workout, in minutes (0: none). It is never a workout of its own and
     # does not count as training time.
     stretching_minutes: int = 0
+    # Which training this is across the versions of a week (``PlannedWorkout.lineage``): kept when
+    # a version is copied or changed, new for a workout that is new. Not part of the format: it is
+    # never read from an answer, and it does not make two workouts different (``compare=False``).
+    lineage: UUID | None = field(default=None, compare=False)
 
 
 @dataclass(frozen=True)

@@ -10,6 +10,8 @@ again with the data of that moment. A confirmed plan, a superseded one and a dis
 never changed: a change is a new version of the week, which says which version it replaces and why.
 """
 
+import uuid
+from dataclasses import replace
 from datetime import datetime
 from uuid import UUID
 
@@ -18,6 +20,7 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from accounts.models import User
+from reviews.services import carry_over
 
 from .context import build_context
 from .models import REASON_MAX, PlannedWorkout, WeeklyPlan
@@ -96,17 +99,12 @@ def load(user: User, plan_id: UUID) -> WeekPlan:
 
     The stored data goes through the strict parser again: what is read back is always valid."""
     plan = get(user, plan_id)
-    workouts = [
-        {
-            **workout_row,
-            "day": workout_row["day"].isoformat(),
-            "zone_system": workout_row["zone_system"] or None,
-            "slot": workout_row["slot"] or None,
-        }
-        for workout_row in PlannedWorkout.objects.for_user(user)
+    rows = list(
+        PlannedWorkout.objects.for_user(user)
         .filter(plan=plan)
         .order_by("day", "position", "id")
         .values(
+            "lineage",
             "day",
             "sport",
             "title",
@@ -119,13 +117,32 @@ def load(user: User, plan_id: UUID) -> WeekPlan:
             "slot",
             "stretching_minutes",
         )
-    ]
-    return parse_week_plan(
+    )
+    parsed = parse_week_plan(
         {
             "week_start": plan.week_start.isoformat(),
             "rationale": plan.rationale,
-            "workouts": workouts,
+            "workouts": [
+                {
+                    **{name: value for name, value in row.items() if name != "lineage"},
+                    "day": row["day"].isoformat(),
+                    "zone_system": row["zone_system"] or None,
+                    "slot": row["slot"] or None,
+                }
+                for row in rows
+            ],
         }
+    )
+    # The lineage is not part of the format: it is put back on the workouts, which the parser
+    # returns in the order it was given them.
+    assert len(parsed.workouts) == len(rows)
+    return WeekPlan(
+        parsed.week_start,
+        tuple(
+            replace(workout, lineage=row["lineage"])
+            for workout, row in zip(parsed.workouts, rows, strict=True)
+        ),
+        parsed.rationale,
     )
 
 
@@ -138,7 +155,9 @@ def validate(user: User, plan_id: UUID) -> Report:
 def confirm(user: User, plan_id: UUID) -> WeeklyPlan:
     """Confirm a draft. The plan is validated again; with any error it is refused
     (``PlanNotConfirmable``) and nothing changes. The version of the week that was confirmed
-    before becomes ``superseded``. Only a draft can be confirmed (``PlanStateError``)."""
+    before becomes ``superseded``, and what the user said about its workouts in the week review
+    moves to the workouts of the new version that are the same training (``carry_over``). Only a
+    draft can be confirmed (``PlanStateError``)."""
     with transaction.atomic():
         plan = _lock_the_week(user, plan_id)
         if plan.status != Status.DRAFT:
@@ -146,12 +165,19 @@ def confirm(user: User, plan_id: UUID) -> WeeklyPlan:
         report = validate(user, plan_id)
         if not report.valid:
             raise PlanNotConfirmable(report)
-        WeeklyPlan.objects.for_user(user).filter(
-            week_start=plan.week_start, status=Status.CONFIRMED
-        ).update(status=Status.SUPERSEDED)
+        replaced = list(
+            WeeklyPlan.objects.for_user(user).filter(
+                week_start=plan.week_start, status=Status.CONFIRMED
+            )
+        )
+        WeeklyPlan.objects.for_user(user).filter(pk__in=[found.pk for found in replaced]).update(
+            status=Status.SUPERSEDED
+        )
         plan.status = Status.CONFIRMED
         plan.confirmed_at = _now()
         plan.save(update_fields=["status", "confirmed_at"])
+        for found in replaced:  # at most one: what the user said about its workouts moves along
+            carry_over(user, found, plan)
         return plan
 
 
@@ -220,6 +246,7 @@ def _store(user: User, week_plan: WeekPlan, reason: str, parent: UUID | None) ->
                 notes=workout.notes,
                 slot=workout.slot.value if workout.slot else "",
                 stretching_minutes=workout.stretching_minutes,
+                lineage=workout.lineage or uuid.uuid7(),
             )
         )
     PlannedWorkout.objects.bulk_create(rows)

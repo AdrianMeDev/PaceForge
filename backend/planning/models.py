@@ -147,12 +147,20 @@ class PlannedWorkout(OwnedModel):
     slot = models.CharField(max_length=20, choices=Slot.choices, blank=True)
     # Stretching added to this workout (0: none): never a workout of its own.
     stretching_minutes = models.PositiveSmallIntegerField(default=0)
+    # Which training this is across the versions of a week: a version made from another (changed by
+    # hand, restored) keeps the lineage of the workouts it copies, a new workout gets a new one.
+    # Sending to Intervals.icu and the corrections of the week review follow the lineage, so that a
+    # change updates the same calendar event and keeps what the user said about the session.
+    lineage = models.UUIDField(default=uuid.uuid7, editable=False)
 
     class Meta:
         ordering = ["day", "position", "id"]
         constraints = [
             models.UniqueConstraint(
                 fields=["plan", "day", "position"], name="planning_one_workout_per_slot"
+            ),
+            models.UniqueConstraint(
+                fields=["plan", "lineage"], name="planning_one_workout_per_lineage"
             ),
             models.CheckConstraint(condition=~Q(title=""), name="planning_workout_has_a_title"),
             models.CheckConstraint(
@@ -222,9 +230,10 @@ class WorkoutExport(OwnedModel):
     """What PaceForge knows about one event it put into the user's Intervals.icu calendar.
 
     ``external_id`` is the key at Intervals.icu (the same id again updates the same event) and is
-    made from the id of the workout, so a new version of a week, whose workouts are new, has other
-    ids. The row stays when the workout is gone (the plan was deleted, or a newer version was
-    pushed instead): it is what lets the next push remove the event from the calendar.
+    made from the lineage of the workout, so a version of a week that was made from another keeps
+    the keys of the workouts it copies, and a version the coach drafted anew, whose workouts are
+    new, has other keys. The row stays when the workout is gone (the plan was deleted, or a newer
+    version was pushed instead): it is what lets the next push remove the event from the calendar.
 
     ``error_code`` is one of the fixed codes of ``planning.push``, never what Intervals.icu said or
     anything of the workout.

@@ -16,6 +16,7 @@ from planning import services
 from planning.models import PlannedWorkout, WeeklyPlan
 from planning.schema import (
     Goal,
+    PlanFormatError,
     Segment,
     SegmentKind,
     Slot,
@@ -23,6 +24,7 @@ from planning.schema import (
     WeekPlan,
     Workout,
     ZoneSystem,
+    parse_week_plan,
     to_json,
 )
 from planning.services import (
@@ -496,6 +498,73 @@ class TestLoading:
     def test_an_unknown_id_is_not_found(self, alice: User) -> None:
         with pytest.raises(PlanNotFound):
             load(alice, uuid4())
+
+
+class TestTheLineage:
+    def test_a_workout_that_is_saved_gets_a_new_lineage(self, alice: User) -> None:
+        plan = draft(alice)
+
+        lineages = list(PlannedWorkout.objects.filter(plan=plan).values_list("lineage", flat=True))
+
+        assert len(lineages) == len(set(lineages)) == 4
+        assert all(lineage is not None for lineage in lineages)
+
+    def test_a_given_lineage_is_kept(self, alice: User) -> None:
+        wanted = uuid4()
+        week = WeekPlan(MONDAY, (workout(MONDAY, 0, 60, lineage=wanted), workout(MONDAY, 2, 60)))
+
+        plan = draft(alice, week)
+
+        stored = PlannedWorkout.objects.get(plan=plan, day=MONDAY)
+        assert stored.lineage == wanted
+        assert (
+            PlannedWorkout.objects.get(plan=plan, day=MONDAY + timedelta(days=2)).lineage != wanted
+        )
+
+    def test_it_stays_with_its_workout_when_the_order_is_changed_by_saving(
+        self, alice: User
+    ) -> None:
+        late, early = uuid4(), uuid4()
+        week = WeekPlan(
+            MONDAY, (workout(MONDAY, 2, 60, lineage=late), workout(MONDAY, 0, 60, lineage=early))
+        )
+
+        plan = draft(alice, week)
+
+        assert [w.lineage for w in load(alice, plan.pk).workouts] == [early, late]
+
+    def test_load_gives_the_lineage_of_every_workout(self, alice: User) -> None:
+        plan = draft(alice)
+
+        loaded = load(alice, plan.pk)
+
+        stored = PlannedWorkout.objects.filter(plan=plan).order_by("day", "position", "id")
+        assert [w.lineage for w in loaded.workouts] == [row.lineage for row in stored]
+
+    def test_a_copy_of_a_loaded_plan_keeps_the_lineages(self, alice: User) -> None:
+        first = draft(alice)
+
+        second = save_draft(alice, load(alice, first.pk), parent=first.pk)
+
+        assert [w.lineage for w in load(alice, second.pk).workouts] == [
+            w.lineage for w in load(alice, first.pk).workouts
+        ]
+        assert second.version == 2
+
+    def test_the_lineage_does_not_make_two_workouts_different(self) -> None:
+        assert workout(MONDAY, 0, 60, lineage=uuid4()) == workout(MONDAY, 0, 60)
+
+    def test_the_lineage_is_not_part_of_the_format_and_never_read_from_an_answer(self) -> None:
+        data = to_json(good_week())
+        assert "lineage" not in data["workouts"][0]
+        data["workouts"][0]["lineage"] = str(uuid4())
+
+        with pytest.raises(PlanFormatError) as raised:
+            parse_week_plan(data)
+
+        assert [(p.path, p.message) for p in raised.value.problems] == [
+            ("workouts[0].lineage", "Unknown field.")
+        ]
 
 
 class TestValidating:

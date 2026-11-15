@@ -1,10 +1,13 @@
 """Sending a confirmed week to the user's Intervals.icu calendar.
 
-One event per workout, keyed by an ``external_id`` made from the id of the workout, so pushing the
-same plan again updates the events instead of adding new ones. A newer version of the week has other
-workouts and so other ids: its push removes the events of the version it replaces (and of any
-workout that is gone), which ``WorkoutExport`` remembers. PaceForge wins over Intervals.icu: an
-event that the user changed there is overwritten by the next push.
+One event per workout, keyed by an ``external_id`` made from the **lineage** of the workout, so
+pushing the same plan again updates the events instead of adding new ones. A newer version of the
+week that was made from the one before (changed by hand, restored) keeps the lineage of the
+workouts it copies: its push updates their events, also where the workout was moved to another day,
+and removes the events of the workouts that are gone, which ``WorkoutExport`` remembers. A version
+that the coach drafted anew has new workouts and so new lineages: its push replaces the events of
+the version before. PaceForge wins over Intervals.icu: an event that the user changed there is
+overwritten by the next push.
 
 Every workout is sent on its own, so each has its own result: a workout that Intervals.icu rejects
 does not keep the others from arriving. A key that is refused stops the whole run (it would fail
@@ -76,23 +79,25 @@ class ExportState:
 NOT_SENT = "not_sent"
 
 
-def external_id(workout_id: UUID) -> str:
-    return f"{PREFIX}{workout_id}"
+def external_id(lineage: UUID) -> str:
+    """The key of the event of a workout at Intervals.icu. Workouts that existed before the lineage
+    were their own lineage (the migration gave them their id), so their keys did not change."""
+    return f"{PREFIX}{lineage}"
 
 
 def export_state(user: User, plan: WeeklyPlan) -> ExportState:
     """What is known about the events of ``plan`` (two queries, however many workouts)."""
-    ids = list(
+    lineages = list(
         PlannedWorkout.objects.for_user(user)
         .filter(plan=plan)
         .order_by("day", "position", "id")
-        .values_list("pk", flat=True)
+        .values_list("lineage", flat=True)
     )
     rows = {
         row.external_id: row
         for row in WorkoutExport.objects.for_user(user).filter(week_start=plan.week_start)
     }
-    keys = [external_id(pk) for pk in ids]
+    keys = [external_id(lineage) for lineage in lineages]
     states = tuple(
         WorkoutState(row.status, row.error_code, row.pushed_at) if row else WorkoutState(NOT_SENT)
         for row in (rows.get(key) for key in keys)
@@ -110,16 +115,19 @@ def push(user: User, plan_id: UUID) -> PushResult:
     plan = services.get(user, plan_id)
     if plan.status != WeeklyPlan.Status.CONFIRMED:
         raise NotConfirmed
-    ids = list(
+    rows = list(
         PlannedWorkout.objects.for_user(user)
         .filter(plan=plan)
         .order_by("day", "position", "id")
-        .values_list("pk", flat=True)
+        .values_list("pk", "lineage")
     )
-    workouts = services.load(user, plan_id).workouts  # the same order as ``ids``
-    assert len(ids) == len(workouts)
+    workouts = services.load(user, plan_id).workouts  # the same order as ``rows``
+    assert len(rows) == len(workouts)
     targets = Targets(user)
-    wanted = {external_id(pk): (pk, workout) for pk, workout in zip(ids, workouts, strict=True)}
+    wanted = {
+        external_id(lineage): (pk, workout)
+        for (pk, lineage), workout in zip(rows, workouts, strict=True)
+    }
 
     def send(client: IntervalsClient) -> PushResult:
         synced = failed = 0

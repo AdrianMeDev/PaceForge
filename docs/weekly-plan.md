@@ -105,6 +105,13 @@ characters are refused everywhere (line breaks are allowed in `notes` and `ratio
 are the line and paragraph separators and the characters that reorder text on screen. A text that
 is not text, such as a number, is refused instead of being turned into text.
 
+**Lineage.** A stored workout also has a `lineage`: which training it is across the versions of a
+week. A version made from another one (changed by hand, restored) keeps the lineage of the workouts
+it copies, a new workout gets a new one. It is **not part of the format**: it is never read from an
+answer (an answer that has one is refused as an unknown field) and it does not make two workouts
+different. It is in the answer of the API (see [The API](#the-api)) and decides which event of the
+Intervals.icu calendar a workout is sent to.
+
 **Time of day and stretching.** `slot` says when on the day a workout is: `morning`, `afternoon` or
 `evening`. It is an order and no clock time. Several workouts on one day are welcome (an easy run
 in the morning, a ride in the afternoon), each with a time of its own; the stored order of a day
@@ -344,12 +351,43 @@ plan of another user does not exist (404, the same answer as for an unknown id).
 | -------- | ------ |
 | `GET /api/planning/weeks/` | The weeks that can be planned, each with its versions, newest first. |
 | `POST /api/planning/weeks/<Monday>/generate/` | 201 with the new draft; limited to 5 a minute per user. |
+| `POST /api/planning/weeks/<Monday>/check/` | The checks for a plan that was changed by hand, as `valid`, `findings` and `order`; nothing is stored and no provider is asked. Not limited. |
 | `GET /api/planning/plans/<id>/` | One plan with its workouts; a draft comes with its checks. |
+| `POST /api/planning/plans/<id>/revise/` | 201 with a new draft made from that plan, from the same body as the check: the plan changed by hand (see below). Only a draft or a confirmed plan can be changed. |
+| `POST /api/planning/plans/<id>/restore/` | 201 with a new draft that brings back a version that was replaced or discarded: the same workouts and rationale, `parent` that version, the `reason` "Restored from version N". Its checks are those of today. |
 | `POST /api/planning/plans/<id>/confirm/` | The confirmed plan, or the findings if it has errors. With `{"push": true}` the week is sent to Intervals.icu right after (a problem with that is part of the answer, the plan stays confirmed). |
 | `POST /api/planning/plans/<id>/push/` | Sends a confirmed plan to the Intervals.icu calendar of the user; the plan with the result per workout. Limited to 10 a minute per user. |
 | `POST /api/planning/plans/<id>/discard/` | The discarded plan. |
 
-Every workout and every segment of a plan has a `target`: the range of its zone as it is *now*
+**Checking a plan that was changed by hand.** `POST /api/planning/weeks/<Monday>/check/` takes a
+plan in the format of [The format](#the-format) for that week, with one addition: a workout may have a
+`lineage` (the lineage of the workout it was made from, or `null` for a new one). It is read by
+the same strict parser and checked against what the user can do and has done *now*. The answer is
+`valid`, the `findings` and `order`: the findings number the workouts as they are stored (by day,
+then by time of day, then as sent), and `order[i]` is the place in the body of the workout that is
+the `i`-th of them. Nothing is stored, no provider is asked and the number of requests is not
+limited: it is how the planning page shows the findings after every change.
+
+**Storing a plan that was changed by hand.** `POST /api/planning/plans/<id>/revise/` takes the
+same body as the check and stores it as the next version of the week: a **draft** with `parent` the
+plan in the address and the `reason` "Changed by hand". That plan is not touched: a confirmed plan
+is never changed, a change is a new version, which is confirmed (and sent) as any other. A workout
+with a `lineage` is the workout of that plan with it, changed or moved; a workout without one is
+new; a workout of that plan that is not in the body is taken out. A `lineage` that is not one of
+the workouts of the plan in the address is refused, and so is a week that cannot be planned. The
+rationale of the plan in the address is kept, the one in the body is ignored. The draft is stored
+also if the checks find errors in it, so that the user sees what is wrong; it cannot be confirmed.
+
+**Restoring a version.** `POST /api/planning/plans/<id>/restore/` copies a plan that was replaced
+(`superseded`) or `discarded` into the next version of its week, as a draft: the same workouts with
+their lineages, the same rationale, `parent` that version and the `reason` "Restored from version
+N". A draft is a draft already and a confirmed plan can be changed with `revise`, so only those two
+statuses can be restored. The copy is checked again with what the user can do now, so it may have
+errors that the old version did not; it is confirmed and sent like any other draft, and nothing
+changes before that. Like changing, it is for the weeks that can be planned.
+
+Every workout of a plan has a `lineage` (its identity across the versions of the week, see
+[The format](#the-format)). Every workout and every segment of a plan has a `target`: the range of its zone as it is *now*
 (`low`, `high` and a `unit` of `W`, `bpm` or `s/km`; for pace `low` is the faster end), or `null`
 without a zone or without the threshold for it. A confirmed plan has an `export` (how many
 workouts are `synced`, `failed` or `not_sent`, and how many events of an `older` version are still
@@ -367,9 +405,12 @@ without a code is the limit of PaceForge itself.
 | `not_configured` | 409 | The user has not set up an AI provider. |
 | `no_time` | 409 | The week offers no training time at all; the coach is not asked and nothing is recorded. |
 | `not_a_draft` | 409 | Only a draft can be confirmed or discarded. |
+| `not_restorable` | 409 | Only a version that was replaced or discarded can be restored (`restore`). |
+| `not_revisable` | 409 | Only a draft or a confirmed plan can be changed (`revise`); an older version has to be restored first. |
 | `not_confirmed` | 409 | Only a confirmed plan can be sent to Intervals.icu. |
 | `not_connected` | 409 | The user has not connected Intervals.icu. |
 | `not_usable` | 422 | The coach gave no readable plan, even after the repair; the problems come along. |
+| `invalid_plan` | 422 | The plan that was sent for a check cannot be read (the format, a lineage that is no id or is used twice, a plan for another week); the problems come along. |
 | `not_confirmable` | 422 | The plan has errors; the findings come along. |
 | `rate_limited` | 429 | The provider asked to slow down (`retry_after` in seconds, if it said). |
 | `invalid_key` | 502 | The provider (or Intervals.icu) refused the key. |
@@ -392,7 +433,7 @@ when confirming. It uses the API key the user connected (see the README, section
 | `type` | `Run`, `Ride`, `Swim` or `WeightTraining`, by the sport. |
 | `name` | The title of the workout. |
 | `start_date_local` | The day and a start time: 07:00 for `morning`, 12:00 for `afternoon`, 18:00 for `evening`, 00:00 (all day) without a time of day. |
-| `external_id` | `paceforge-<id of the workout>`: the key at Intervals.icu, so that the same workout is updated and never added twice. |
+| `external_id` | `paceforge-<lineage of the workout>`: the key at Intervals.icu, so that the same workout is updated and never added twice, also when a new version of the week has moved it. |
 | `description` | The workout in the syntax of Intervals.icu (below). |
 | `moving_time` | Strength only: the duration in seconds. |
 
@@ -427,9 +468,13 @@ in `<n>x`, so Intervals.icu cannot read them as a step or a repeat. Titles go in
 is not parsed.
 
 **Sending again, new versions, conflicts.** Sending the same plan again updates the same events.
-A new version of a week has new workouts and so new ids: sending it removes the events of the
-versions it replaces (PaceForge remembers them in `WorkoutExport`) and of every workout that is
-gone. **PaceForge wins:** what the user changed in an event in Intervals.icu is overwritten, and an
+The key of an event is the **lineage** of its workout (see [The format](#the-format)). A version
+of a week that was made from another one (changed by hand, restored) keeps the lineage of the
+workouts it copies: sending it **updates their events**, also where a workout was moved to another
+day, creates the events of workouts that were added and removes those of workouts that were taken
+out (PaceForge remembers the events in `WorkoutExport`). A version that the coach drafted anew has
+new workouts and so new lineages: sending it removes the events of the version it replaces. A
+workout that was sent before there were lineages is its own lineage, so its event is found again. **PaceForge wins:** what the user changed in an event in Intervals.icu is overwritten, and an
 event the user deleted there comes back. An event that is gone at Intervals.icu counts as removed.
 
 **One workout at a time.** Each workout is sent on its own, so each has its own result. One that

@@ -133,6 +133,31 @@ def _build(user: User, monday: date, today: date) -> WeekReview:
     )
 
 
+def carry_over(user: User, old: WeeklyPlan, new: WeeklyPlan) -> int:
+    """Move what the user decided about the workouts of ``old`` (the version of a week that is
+    replaced) to the workouts of ``new`` that are the same training (the same lineage), and return
+    how many decisions moved. A decision about a workout that is not in ``new`` stays with ``old``
+    and is not shown any more: the week review shows the confirmed version only.
+
+    Call it where the new version is confirmed, in the same transaction."""
+    decided = list(
+        WorkoutReview.objects.for_user(user).filter(workout__plan=old).select_related("workout")
+    )
+    if not decided:
+        return 0
+    target = dict(
+        PlannedWorkout.objects.for_user(user).filter(plan=new).values_list("lineage", "pk")
+    )
+    moving = []
+    for row in decided:
+        found = target.get(row.workout.lineage)
+        if found is not None:
+            row.workout_id = found
+            moving.append(row)
+    WorkoutReview.objects.bulk_update(moving, ["workout"])
+    return len(moving)
+
+
 def _weeks(today: date) -> tuple[date, ...]:
     this_week = today - timedelta(days=today.weekday())
     return tuple(this_week - timedelta(weeks=n) for n in range(REVIEW_WEEKS, -1, -1))
