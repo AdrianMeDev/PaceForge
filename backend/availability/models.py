@@ -56,7 +56,7 @@ class AvailabilitySettings(OwnedModel):
     planning after a break, never a limit on what the weekdays offer. The sports are the ones the
     athlete wants in a plan (empty: none chosen, which means all of them) and ``stretching`` says
     whether stretching may be added to sessions. The limitations are free text and are never
-    interpreted here.
+    interpreted here; they go to the coach only if ``share_limitations_text`` is on.
 
     The intensity level sets the limits of the planning rules (``availability.intensity``); each of
     the four own limits replaces the level's value when it is set (empty: the level's value).
@@ -67,6 +67,8 @@ class AvailabilitySettings(OwnedModel):
     sports = models.JSONField(default=list, blank=True)
     stretching = models.BooleanField(default=False)
     limitations = models.CharField(max_length=LIMITATIONS_MAX, blank=True)
+    # Whether the free text above may go to the coach. Off until the user turns it on.
+    share_limitations_text = models.BooleanField(default=False)
     intensity_level = models.CharField(
         max_length=20, choices=IntensityLevel.choices, default=DEFAULT_LEVEL
     )

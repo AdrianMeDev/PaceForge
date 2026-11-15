@@ -52,6 +52,8 @@ DAY_OPTIONS = {
     "double_days": [True] * 7,
     "time_windows": [["morning", "afternoon", "evening"]] * 7,
 }
+# The free text goes to the coach only if the user turns it on.
+SHARING = {"share_limitations_text": False}
 EMPTY = {
     "weekdays": [0] * 7,
     "weekly_budget_minutes": None,
@@ -61,6 +63,7 @@ EMPTY = {
     "limitations": "",
     **INTENSITY,
     **DAY_OPTIONS,
+    **SHARING,
 }
 WEEK = [60, 0, 90, 0, 0, 120, 180]
 
@@ -142,6 +145,7 @@ class TestReading:
             "sports",
             "stretching",
             "limitations",
+            "share_limitations_text",
             "double_days",
             "time_windows",
             "intensity_level",
@@ -257,6 +261,7 @@ class TestSportsAndStretching:
             "limitations": "Knee",
             **INTENSITY,
             **DAY_OPTIONS,
+            **SHARING,
         }
 
     def test_the_other_settings_leave_the_choice_as_it_was(self, alice: User) -> None:
@@ -446,6 +451,57 @@ class TestIntensity:
 
         assert response.status_code == HTTPStatus.OK
         assert read(signed_in(bob))["intensity_level"] == "normal"
+
+
+class TestSharingTheLimitationsText:
+    def test_it_is_off_for_a_user_who_chose_nothing(self, alice: User) -> None:
+        assert read(signed_in(alice))["share_limitations_text"] is False
+
+    @pytest.mark.parametrize("share", [True, False])
+    def test_it_is_switched_on_and_off(self, alice: User, share: bool) -> None:
+        api = signed_in(alice)
+
+        response = save(api, {"share_limitations_text": share})
+
+        assert body(response)["share_limitations_text"] is share
+        assert read(api)["share_limitations_text"] is share
+
+    @pytest.mark.parametrize("share", ["true", "false", 1, 0, None, "yes", [], {}, 1.0])
+    def test_only_true_and_false_are_a_choice(self, alice: User, share: Any) -> None:
+        response = save(signed_in(alice), {"share_limitations_text": share})
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert body(response) == {"share_limitations_text": ["Send true or false."]}
+        assert rows() == (0, 0)
+
+    def test_it_alone_leaves_the_rest_as_it_was(self, alice: User) -> None:
+        api = signed_in(alice)
+        save(api, {"weekdays": WEEK, "limitations": "Knee", "stretching": True})
+        before = read(api)
+
+        save(api, {"share_limitations_text": True})
+
+        assert read(api) == {**before, "share_limitations_text": True}
+
+    def test_the_other_settings_leave_it_as_it_was(self, alice: User) -> None:
+        api = signed_in(alice)
+        save(api, {"share_limitations_text": True})
+
+        save(api, {"limitations": "Knee", "weekly_budget_minutes": 300, "sports": ["running"]})
+
+        assert read(api)["share_limitations_text"] is True
+
+    def test_changing_the_text_does_not_switch_it_on(self, alice: User) -> None:
+        api = signed_in(alice)
+
+        save(api, {"limitations": "Knee"})
+
+        assert read(api)["share_limitations_text"] is False
+
+    def test_the_choice_of_another_user_is_not_seen(self, alice: User, bob: User) -> None:
+        save(signed_in(bob), {"share_limitations_text": True})
+
+        assert read(signed_in(alice))["share_limitations_text"] is False
 
 
 class TestDoubleDaysAndTimeWindows:
@@ -649,6 +705,7 @@ class TestSaving:
             "limitations": "No running",
             **INTENSITY,
             **DAY_OPTIONS,
+            **SHARING,
         }
         assert read(api) == body(response)
         assert rows() == (7, 1)
@@ -668,6 +725,7 @@ class TestSaving:
             "limitations": "Knee",
             **INTENSITY,
             **DAY_OPTIONS,
+            **SHARING,
         }
 
     def test_the_budget_alone_leaves_the_rest_as_it_was(self, alice: User) -> None:
@@ -685,6 +743,7 @@ class TestSaving:
             "limitations": "Knee",
             **INTENSITY,
             **DAY_OPTIONS,
+            **SHARING,
         }
 
     def test_the_limitations_alone_leave_the_rest_as_it_was(self, alice: User) -> None:
@@ -702,6 +761,7 @@ class TestSaving:
             "limitations": "Knee",
             **INTENSITY,
             **DAY_OPTIONS,
+            **SHARING,
         }
 
     def test_the_typical_week_can_be_set_changed_and_removed(self, alice: User) -> None:
@@ -740,6 +800,7 @@ class TestSaving:
             "limitations": "Knee",
             **INTENSITY,
             **DAY_OPTIONS,
+            **SHARING,
         }
 
     def test_the_other_settings_leave_the_typical_week_as_it_was(self, alice: User) -> None:
@@ -806,6 +867,7 @@ class TestSaving:
             "limitations": "",
             **INTENSITY,
             **DAY_OPTIONS,
+            **SHARING,
         }
 
     def test_the_limits_themselves_are_accepted(self, alice: User) -> None:
@@ -855,6 +917,7 @@ class TestSaving:
             "limitations": "Bob",
             **INTENSITY,
             **DAY_OPTIONS,
+            **SHARING,
         }
 
     def test_a_failure_while_saving_leaves_the_weekdays_as_they_were(
@@ -971,6 +1034,7 @@ class TestRefusals:
             "limitations": "Knee",
             **INTENSITY,
             **DAY_OPTIONS,
+            **SHARING,
         }
 
     def test_every_problem_is_named_at_once(self, alice: User) -> None:

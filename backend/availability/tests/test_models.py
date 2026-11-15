@@ -183,6 +183,7 @@ class TestSports:
 
         assert settings.sports == []
         assert settings.stretching is False
+        assert settings.share_limitations_text is False
 
     def test_none_chosen_means_all_of_them(self, alice: User) -> None:
         settings = AvailabilitySettings.objects.create(owner=alice)

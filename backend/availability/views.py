@@ -82,6 +82,7 @@ class AvailabilityView(APIView):
                     "sports",
                     "stretching",
                     "limitations",
+                    "share_limitations_text",
                     "intensity_level",
                     *LIMIT_NAMES,
                 )

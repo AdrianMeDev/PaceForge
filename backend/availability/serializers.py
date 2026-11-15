@@ -49,6 +49,7 @@ TIME_WINDOWS = (
     "Enter seven lists of parts of the day, Monday first, each with at least one of: "
     f"{', '.join(SLOTS)}."
 )
+SHARE_CHOICE = "Send true or false."
 LEVEL_CHOICE = f"Choose one of: {', '.join(IntensityLevel.values)}."
 MAX_PERIODS = 100
 TOO_MANY_PERIODS = f"You can have at most {MAX_PERIODS} periods. Delete one first."
@@ -197,6 +198,9 @@ class AvailabilityInput(serializers.Serializer[Any]):
     sports = SportsField(required=False, error_messages={"null": SPORTS_CHOICE})
     stretching = StrictBooleanField(required=False, error_messages={"null": STRETCHING_CHOICE})
     limitations = TextField(max_length=LIMITATIONS_MAX, allow_blank=True, required=False)
+    share_limitations_text = StrictBooleanField(
+        required=False, error_messages={"null": SHARE_CHOICE}
+    )
     intensity_level = serializers.ChoiceField(
         choices=IntensityLevel.choices,
         required=False,
@@ -224,7 +228,8 @@ def availability_data(
     whether two sessions are allowed and the parts of the day that are open (all of them where
     nothing is saved), the weekly budget
     and the typical week (``null`` for none), the sports of the plan (all of them if none was
-    chosen), whether stretching may be added, the limitations, the intensity level with the own
+    chosen), whether stretching may be added, the limitations and whether they may be sent to the
+    coach (off by default), the intensity level with the own
     limits (``null`` for the level's value) and the limits of every level, so that a client need
     not repeat them. No row ids, no owner."""
     minutes = [0] * 7
@@ -243,6 +248,7 @@ def availability_data(
         "sports": effective_sports(settings.sports if settings else None),
         "stretching": settings.stretching if settings else False,
         "limitations": settings.limitations if settings else "",
+        "share_limitations_text": settings.share_limitations_text if settings else False,
         "intensity_level": settings.intensity_level if settings else DEFAULT_LEVEL.value,
         **{name: getattr(settings, name) if settings else None for name in LIMIT_NAMES},
         "level_limits": {

@@ -616,6 +616,7 @@ business.
 
 The API is `GET` and `PATCH` on `/api/availability/` (`weekdays` Monday first, `double_days` and `time_windows` per weekday,
 `weekly_budget_minutes`, `typical_weekly_minutes`, `sports`, `stretching`, `limitations`,
+`share_limitations_text`,
 `intensity_level`, the own limits `max_hard_days`, `progression_warning_percent`,
 `progression_error_percent` and `easy_share_percent`, and the read-only `level_limits` of every
 level; `null` removes a number) and
