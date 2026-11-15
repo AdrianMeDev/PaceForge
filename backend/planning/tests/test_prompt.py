@@ -411,6 +411,12 @@ class TestTheSystemPrompt:
         assert 'its own "slot", no two in the same part of the day' in SYSTEM_PROMPT
         assert "Do not double two hard sessions." in SYSTEM_PROMPT
 
+    def test_it_says_that_a_slot_must_be_open_on_its_day(self) -> None:
+        assert (
+            'lies in a part of the day that is listed in "slots" of its day in "days". (error)'
+            in " ".join(SYSTEM_PROMPT.split())
+        )
+
     def test_it_says_that_stretching_is_never_a_session(self) -> None:
         assert "Stretching is never a session of its own" in SYSTEM_PROMPT
         assert "no workout has stretching as its sport or its title" in SYSTEM_PROMPT

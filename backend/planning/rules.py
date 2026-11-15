@@ -479,6 +479,25 @@ def check_stretching(plan: WeekPlan, context: PlanContext) -> list[Finding]:
     ]
 
 
+def check_time_windows(plan: WeekPlan, context: PlanContext) -> list[Finding]:
+    """A workout with a time of day lies in a part of the day that is open on its weekday (an
+    error, named at the time of day of the workout). A workout without a time of day is not
+    checked: the rule about several workouts on a day asks for one when it matters."""
+    _same_week(plan, context)
+    return [
+        Finding(
+            Severity.ERROR,
+            "slot_outside_window",
+            f"{_WEEKDAYS[offset]} is not open for training in the {workout.slot.value}; you did "
+            "not allow that part of the day.",
+            f"workouts[{index}].slot",
+        )
+        for offset, workouts in sorted(_workouts_by_day(plan, context).items())
+        for index, workout in workouts
+        if workout.slot is not None and workout.slot not in context.time_windows[offset]
+    ]
+
+
 def check_times_of_day(plan: WeekPlan, context: PlanContext) -> list[Finding]:
     """Several workouts on a day need a time of day each, and no two share one.
 
@@ -527,6 +546,7 @@ BASIC_CHECKS: tuple[Check, ...] = (
     check_week_capacity,
     check_sports,
     check_stretching,
+    check_time_windows,
 )
 
 

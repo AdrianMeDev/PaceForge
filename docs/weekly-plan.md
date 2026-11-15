@@ -192,6 +192,7 @@ user to weigh.
 | `day_over_capacity` | error | The workouts of a day add up to more than the day offers. The workout that tips the day is named. |
 | `sport_not_selected` | error | A workout in a sport the athlete did not tick on the training time page. |
 | `stretching_not_wanted` | error | Stretching minutes on a workout although stretching is switched off. |
+| `slot_outside_window` | error | A workout whose time of day is not an open part of its weekday (training time page). A workout without a time of day is not checked. |
 | `same_slot` | error | Two workouts of one day in the same part of the day. The later one is named. |
 | `slot_missing` | warning | A day with several workouts of which one has no time of day. Named once per day. |
 | `day_in_absence` | error | A workout on a day of vacation, illness or another absence. |

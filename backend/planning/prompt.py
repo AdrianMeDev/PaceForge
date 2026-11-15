@@ -130,6 +130,8 @@ on any other day is an error): for example an easy run in the morning and a ride
 afternoon, or strength in the morning and a run in the evening. Give every session of such a day \
 its own "slot", no two in the same part of the day (error); a day with one session needs no slot. \
 Do not double two hard sessions.
+- A session with a "slot" lies in a part of the day that is listed in "slots" of its day in \
+"days". (error)
 - Stretching is never a session of its own: no workout has stretching as its sport or its title. \
 If "stretching" in the data is true you may add "stretching_minutes" to a session, usually 5 to \
 15, and it is not part of "duration_minutes". If it is false, leave the field out. (error)
