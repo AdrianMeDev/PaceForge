@@ -14,7 +14,7 @@ them, goals (races, threshold targets and general goals, with one main goal), yo
 ([Anthropic or an OpenAI-compatible endpoint](#ai-coach-bring-your-own-key), key stored encrypted,
 with a connection check and a usage overview), the model and the plausibility checks for a
 training week ([format and rules](docs/weekly-plan.md)), a **Week plan** page on which your own
-AI coach drafts a training week that you read, confirm or discard ([Week plan](#week-plan)), a
+AI coach drafts a training week that you read, change by hand, confirm or discard ([Week plan](#week-plan)), a
 **Week review** page that shows how a week went against the confirmed plan, on which you rate your
 sessions, say how the week felt and ask your coach about it ([Week review](#week-review)), and the
 data-isolation foundation the training features will build on.
@@ -605,6 +605,32 @@ should name a time for each (the checks say so). The time you have is still give
 coach splits it over the day, and does not know that you can only train in the evening. Stretching
 comes as "+ 10 min stretching" under a session, only if you switched it on, and never as a session.
 
+**Changing a plan by hand.** **Change this plan** (on a draft and on a confirmed plan) opens an
+editor in place of the plan. Change a workout (day, time of day, sport, goal, title, duration,
+target zone, stretching, notes), **move** it by changing its day and its time of day (there is no
+drag and drop), **remove** it or **add** one. After every change the page asks the server to run
+the checks, which stores nothing, and shows what they say at the workout they name; while it asks,
+no finding is shown. A workout with an interval structure keeps it, and its duration follows it,
+unless you tick *Remove the interval structure*. **Save as a new version** stores the plan as a new
+**draft** (its reason is "Changed by hand") made from the version you started from, which stays as
+it is: a confirmed plan is never changed. A plan with errors can be saved too; it only cannot be
+confirmed. **Discard changes** drops everything: nothing is stored before you save. Nothing else on
+the page can be started while the editor is open. Like drafting, changing is for the weeks that
+can be planned.
+
+**Restoring a version.** A version that was replaced or discarded has **Make this the new draft**.
+It is copied as the next version of the week, a draft (its reason is "Restored from version N"),
+and checked again with what you can do now, so it may have errors that the old version did not.
+Nothing is changed or sent before you confirm it.
+
+**What a change does to the rest.** A workout keeps its identity (its *lineage*) from version to
+version when a version is made from another one by changing or restoring it; a workout that the
+coach drafted anew has a new one. So when you confirm and [send](#sending-to-intervalsicu) a
+changed week, a workout you moved or changed **updates its event** in your calendar, one you
+removed is deleted from it and one you added is created. And what you said about a workout in the
+[Week review](#week-review) (its activity, none, its status) moves with it to the new version when
+that is confirmed.
+
 **After a break.** If the plans look too small, enter **A normal week** on the
 [Training time](#training-time) page: the limit for how far a week may rise then follows what you
 are used to and not only the last four weeks.
@@ -635,8 +661,8 @@ application server need a timeout of at least **150 seconds** for it (see the tr
 entry below).
 
 **Not verified yet.** The drafting is tested with a provider that answers from a script, and the
-page with test doubles for the API; neither has been tried against a real provider or in a browser
-by the developer. Your first real draft is the first real test; please read it critically.
+page (changing and restoring included) with test doubles for the API; none of it has been tried
+against a real provider or in a browser by the developer. Your first real draft is the first real test; please read it critically.
 
 ### Sending to Intervals.icu
 
@@ -650,8 +676,10 @@ confirmed and the page says why.
   the moment of sending), the time of day as start time (**morning** 07:00, **afternoon** 12:00,
   **evening** 18:00, otherwise all day), strength and stretching as text. Intervals.icu passes the
   workouts on to the devices and services you connected there (Zwift, COROS, Garmin …).
-- **Sending again** updates the same workouts and never adds them twice. A **new version** of the
-  week replaces the workouts of the version before in your calendar.
+- **Sending again** updates the same workouts and never adds them twice. A version made from
+  another by [changing or restoring it](#week-plan) updates the events of the workouts it keeps,
+  also a moved one, and deletes those of workouts that were taken out. A version that the coach
+  drafted anew replaces the workouts of the version before in your calendar.
 - **PaceForge wins.** If you change a workout in Intervals.icu, the next sending overwrites it,
   and one you deleted there comes back.
 - **Each workout has a result** on the page: "In Intervals.icu", "Not sent to Intervals.icu yet" or
@@ -707,7 +735,8 @@ set the status by hand. Setting **Done**, **Partial** or **Replaced** needs an a
 frees the workout of its activity, which a later workout of the day can then take. An activity can
 be assigned by hand to one workout only; to move it, free it there first. Saving with everything
 empty goes back to the automatic match. What you set is kept beside the plan, because a confirmed
-plan is never changed; a new version of the week starts without your corrections.
+plan is never changed; when a changed version of the week is confirmed, your corrections move to
+the workouts that are the same training (see [Week plan](#week-plan)).
 
 **Rate a session.** Every activity of the week, planned or not and imported or entered by hand, has
 *Rate this session*: how hard it felt (1 to 10, [RPE](#sessions-entered-by-hand)) and a note of up
