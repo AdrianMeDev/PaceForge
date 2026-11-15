@@ -158,6 +158,7 @@ ENDPOINTS = [
     ("POST", check_url()),
     ("GET", plan_url(uuid4())),
     ("POST", plan_url(uuid4(), "revise/")),
+    ("POST", plan_url(uuid4(), "restore/")),
     ("POST", plan_url(uuid4(), "confirm/")),
     ("POST", plan_url(uuid4(), "push/")),
     ("POST", plan_url(uuid4(), "discard/")),
@@ -195,6 +196,8 @@ class TestAccess:
             ("PATCH", plan_url(uuid4())),
             ("GET", plan_url(uuid4(), "revise/")),
             ("PUT", plan_url(uuid4(), "revise/")),
+            ("GET", plan_url(uuid4(), "restore/")),
+            ("PUT", plan_url(uuid4(), "restore/")),
             ("GET", plan_url(uuid4(), "confirm/")),
             ("GET", plan_url(uuid4(), "discard/")),
         ],
@@ -779,6 +782,90 @@ class TestRevising:
         old = self.confirmed(alice)
 
         signed_in(alice).call("POST", plan_url(old.pk, "revise/"), stored_body(old))
+
+        assert scripted.calls == []
+        assert not AIUsageRecord.objects.exists()
+
+
+class TestRestoring:
+    def old_version(self, user: User, status: str = "superseded") -> WeeklyPlan:
+        plan = draft(user, ride(0), ride(2), ride(4, 90))
+        WeeklyPlan.objects.filter(pk=plan.pk).update(
+            status=status, confirmed_at=NOW if status == "superseded" else None
+        )
+        plan.refresh_from_db()
+        return plan
+
+    @pytest.mark.parametrize("status", ["superseded", "discarded"])
+    def test_an_older_version_comes_back_as_a_draft_with_its_checks(
+        self, alice: User, status: str
+    ) -> None:
+        old = self.old_version(alice, status)
+
+        response = signed_in(alice).call("POST", plan_url(old.pk, "restore/"))
+
+        assert response.status_code == HTTPStatus.CREATED
+        answer = body(response)
+        assert set(answer) == PLAN_FIELDS
+        assert (answer["status"], answer["version"], answer["parent"]) == (
+            "draft",
+            2,
+            str(old.pk),
+        )
+        assert answer["reason"] == "Restored from version 1"
+        assert answer["report"] == {"valid": True, "findings": []}
+        assert [w["lineage"] for w in answer["workouts"]] == [
+            str(w.lineage) for w in PlannedWorkout.objects.filter(plan=old).order_by("day")
+        ]
+        assert WeeklyPlan.objects.get(pk=old.pk).status == status
+
+    def test_the_checks_are_those_of_today(self, alice: User) -> None:
+        old = self.old_version(alice)
+        WeekdayMinutes.objects.filter(owner=alice, weekday=0).update(minutes=0)
+
+        answer = body(signed_in(alice).call("POST", plan_url(old.pk, "restore/")))
+
+        assert answer["report"]["valid"] is False
+
+    @pytest.mark.parametrize("status", ["draft", "confirmed"])
+    def test_a_draft_and_a_confirmed_plan_are_a_conflict(self, alice: User, status: str) -> None:
+        plan = draft(alice)
+        if status == "confirmed":
+            plan = services.confirm(alice, plan.pk)
+
+        response = signed_in(alice).call("POST", plan_url(plan.pk, "restore/"))
+
+        assert response.status_code == HTTPStatus.CONFLICT
+        assert body(response) == {
+            "detail": "Only a version that was replaced or discarded can be restored.",
+            "code": "not_restorable",
+        }
+        assert WeeklyPlan.objects.count() == 1
+
+    def test_a_week_that_can_no_longer_be_planned_is_a_404(self, alice: User) -> None:
+        past = date(2027, 7, 5)
+        plan = draft(alice, ride(0, monday=past), monday=past)
+        WeeklyPlan.objects.filter(pk=plan.pk).update(status="discarded")
+
+        response = signed_in(alice).call("POST", plan_url(plan.pk, "restore/"))
+
+        assert response.status_code == HTTPStatus.NOT_FOUND
+        assert body(response)["code"] == "week_not_plannable"
+
+    def test_the_plan_of_another_user_does_not_exist(self, alice: User, bob: User) -> None:
+        theirs = self.old_version(bob, "discarded")
+
+        response = signed_in(alice).call("POST", plan_url(theirs.pk, "restore/"))
+
+        assert response.status_code == HTTPStatus.NOT_FOUND
+        assert body(response) == {"detail": "There is no such plan.", "code": "not_found"}
+        assert WeeklyPlan.objects.filter(owner=bob).count() == 1
+
+    def test_no_provider_is_asked(self, alice: User, provide: Callable[..., Scripted]) -> None:
+        scripted = provide(good())
+        old = self.old_version(alice)
+
+        signed_in(alice).call("POST", plan_url(old.pk, "restore/"))
 
         assert scripted.calls == []
         assert not AIUsageRecord.objects.exists()

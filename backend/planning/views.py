@@ -19,7 +19,7 @@ from integrations.intervals import IntervalsError
 from integrations.intervals import InvalidKeyError as IntervalsKeyError
 
 from . import services
-from .editing import PlanNotRevisable, check, revise
+from .editing import PlanNotRestorable, PlanNotRevisable, check, restore, revise
 from .generation import NoTimeAvailable, PlanNotUsable, WeekNotPlannable, generate, plannable_weeks
 from .models import WeeklyPlan
 from .push import NotConfirmed, PushResult, export_state, push
@@ -47,6 +47,7 @@ NOT_CONFIRMABLE = "The plan has errors and cannot be confirmed."
 NOT_USABLE = "The coach did not give a plan that can be used. Please try again."
 INVALID_PLAN = "The plan cannot be read. Please check the problems."
 NOT_REVISABLE = "Only a draft or a confirmed plan can be changed. Restore an older version first."
+NOT_RESTORABLE = "Only a version that was replaced or discarded can be restored."
 # Why a plan could not be sent to Intervals.icu, by code. Nothing Intervals.icu said is in them.
 PUSH_PROBLEMS = {
     "not_confirmed": "Only a confirmed plan can be sent to Intervals.icu.",
@@ -225,6 +226,27 @@ class ReviseView(APIView):
                 INVALID_PLAN,
                 problems=[{"path": p.path, "message": p.message} for p in error.problems],
             )
+        response = _detail(user, plan)
+        response.status_code = status.HTTP_201_CREATED
+        return response
+
+
+class RestoreView(APIView):
+    """Brings back a version of a week that was replaced or discarded, as a new draft (the version
+    in the address is not touched). The answer is the new draft with its checks as they are now."""
+
+    http_method_names = ["post", "options"]
+
+    def post(self, request: Request, plan_id: UUID) -> Response:
+        user = _user(request)
+        try:
+            plan = restore(user, plan_id)
+        except services.PlanNotFound:
+            return _error(status.HTTP_404_NOT_FOUND, "not_found", NOT_FOUND)
+        except PlanNotRestorable:
+            return _error(status.HTTP_409_CONFLICT, "not_restorable", NOT_RESTORABLE)
+        except WeekNotPlannable:
+            return _error(status.HTTP_404_NOT_FOUND, "week_not_plannable", NOT_PLANNABLE)
         response = _detail(user, plan)
         response.status_code = status.HTTP_201_CREATED
         return response

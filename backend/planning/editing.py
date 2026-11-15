@@ -20,10 +20,15 @@ from .context import build_context
 from .generation import WeekNotPlannable, plannable_weeks
 from .models import PlannedWorkout, WeeklyPlan
 from .schema import PlanFormatError, Problem, WeekPlan, order_key, parse_week_plan
-from .services import canonical, get, save_draft
+from .services import canonical, get, load, save_draft
 from .validation import Report, validate_week
 
 REASON = "Changed by hand"
+
+
+class PlanNotRestorable(Exception):
+    """Only a version that was replaced or discarded can be restored: a draft is a draft already,
+    and a confirmed plan can be changed directly."""
 
 
 class PlanNotRevisable(Exception):
@@ -143,6 +148,25 @@ def revise(user: User, plan_id: UUID, data: object) -> WeeklyPlan:
         raise PlanFormatError(tuple(sorted(strangers, key=_by_index)))
     plan = replace(edited.plan, rationale=parent.rationale)
     return save_draft(user, plan, reason=REASON, parent=parent.pk)
+
+
+def restore(user: User, plan_id: UUID) -> WeeklyPlan:
+    """Bring back a version of a week that was replaced or discarded, as the next version: a draft
+    with the same workouts (and lineages) and the same rationale, ``parent`` the version it was
+    restored from and a ``reason`` that says so. It is checked again with what the user can do now
+    when it is shown, and it is confirmed (and sent) like any other draft; nothing else changes.
+
+    Raises ``PlanNotFound``, ``PlanNotRestorable`` and ``WeekNotPlannable`` (the week is not one of
+    ``plannable_weeks``); in each case nothing is stored.
+    """
+    old = get(user, plan_id)
+    if old.status not in (WeeklyPlan.Status.SUPERSEDED, WeeklyPlan.Status.DISCARDED):
+        raise PlanNotRestorable
+    if old.week_start not in plannable_weeks(user):
+        raise WeekNotPlannable
+    return save_draft(
+        user, load(user, old.pk), reason=f"Restored from version {old.version}", parent=old.pk
+    )
 
 
 def _by_index(problem: Problem) -> int:

@@ -354,6 +354,7 @@ plan of another user does not exist (404, the same answer as for an unknown id).
 | `POST /api/planning/weeks/<Monday>/check/` | The checks for a plan that was changed by hand, as `valid`, `findings` and `order`; nothing is stored and no provider is asked. Not limited. |
 | `GET /api/planning/plans/<id>/` | One plan with its workouts; a draft comes with its checks. |
 | `POST /api/planning/plans/<id>/revise/` | 201 with a new draft made from that plan, from the same body as the check: the plan changed by hand (see below). Only a draft or a confirmed plan can be changed. |
+| `POST /api/planning/plans/<id>/restore/` | 201 with a new draft that brings back a version that was replaced or discarded: the same workouts and rationale, `parent` that version, the `reason` "Restored from version N". Its checks are those of today. |
 | `POST /api/planning/plans/<id>/confirm/` | The confirmed plan, or the findings if it has errors. With `{"push": true}` the week is sent to Intervals.icu right after (a problem with that is part of the answer, the plan stays confirmed). |
 | `POST /api/planning/plans/<id>/push/` | Sends a confirmed plan to the Intervals.icu calendar of the user; the plan with the result per workout. Limited to 10 a minute per user. |
 | `POST /api/planning/plans/<id>/discard/` | The discarded plan. |
@@ -377,6 +378,14 @@ the workouts of the plan in the address is refused, and so is a week that cannot
 rationale of the plan in the address is kept, the one in the body is ignored. The draft is stored
 also if the checks find errors in it, so that the user sees what is wrong; it cannot be confirmed.
 
+**Restoring a version.** `POST /api/planning/plans/<id>/restore/` copies a plan that was replaced
+(`superseded`) or `discarded` into the next version of its week, as a draft: the same workouts with
+their lineages, the same rationale, `parent` that version and the `reason` "Restored from version
+N". A draft is a draft already and a confirmed plan can be changed with `revise`, so only those two
+statuses can be restored. The copy is checked again with what the user can do now, so it may have
+errors that the old version did not; it is confirmed and sent like any other draft, and nothing
+changes before that. Like changing, it is for the weeks that can be planned.
+
 Every workout of a plan has a `lineage` (its identity across the versions of the week, see
 [The format](#the-format)). Every workout and every segment of a plan has a `target`: the range of its zone as it is *now*
 (`low`, `high` and a `unit` of `W`, `bpm` or `s/km`; for pace `low` is the faster end), or `null`
@@ -396,6 +405,7 @@ without a code is the limit of PaceForge itself.
 | `not_configured` | 409 | The user has not set up an AI provider. |
 | `no_time` | 409 | The week offers no training time at all; the coach is not asked and nothing is recorded. |
 | `not_a_draft` | 409 | Only a draft can be confirmed or discarded. |
+| `not_restorable` | 409 | Only a version that was replaced or discarded can be restored (`restore`). |
 | `not_revisable` | 409 | Only a draft or a confirmed plan can be changed (`revise`); an older version has to be restored first. |
 | `not_confirmed` | 409 | Only a confirmed plan can be sent to Intervals.icu. |
 | `not_connected` | 409 | The user has not connected Intervals.icu. |

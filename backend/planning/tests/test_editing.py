@@ -11,11 +11,20 @@ from accounts.models import User
 from availability.models import WeekdayMinutes
 from goals import services as goal_services
 from planning import services
-from planning.editing import REASON, PlanNotRevisable, check, read_edited_plan, revise
+from planning.editing import (
+    REASON,
+    PlanNotRestorable,
+    PlanNotRevisable,
+    check,
+    read_edited_plan,
+    restore,
+    revise,
+)
 from planning.generation import WeekNotPlannable
 from planning.models import PlannedWorkout, WeeklyPlan
 from planning.schema import PlanFormatError, Slot, WeekPlan, to_json
 from planning.services import PlanNotConfirmable, PlanNotFound
+from reviews.models import WorkoutReview
 
 from .test_services import good_week, prepared, workout
 
@@ -474,3 +483,104 @@ class TestRefusingAChange:
             "workouts[1].lineage",
             "workouts[2].duration_minutes",
         ]
+
+
+class TestRestoring:
+    def two_versions(self, user: User) -> tuple[WeeklyPlan, WeeklyPlan]:
+        old = confirmed(user)
+        newer = services.save_draft(user, good_week(THIS_WEEK, "Second"), parent=old.pk)
+        return old, services.confirm(user, newer.pk)
+
+    def test_a_replaced_version_comes_back_as_the_next_draft(self, alice: User) -> None:
+        old, current = self.two_versions(alice)
+
+        again = restore(alice, old.pk)
+
+        assert (again.status, again.version, again.parent_id) == ("draft", 3, old.pk)
+        assert again.reason == "Restored from version 1"
+        assert again.rationale == "Build the base"
+        assert again.week_start == THIS_WEEK
+
+    def test_it_has_the_same_workouts_with_the_same_lineages(self, alice: User) -> None:
+        old, _ = self.two_versions(alice)
+
+        again = restore(alice, old.pk)
+
+        assert services.load(alice, again.pk) == services.load(alice, old.pk)
+        assert [w.lineage for w in workouts_of(again)] == [w.lineage for w in workouts_of(old)]
+        assert {w.pk for w in workouts_of(again)}.isdisjoint({w.pk for w in workouts_of(old)})
+
+    def test_the_versions_it_was_made_from_and_the_current_one_are_not_touched(
+        self, alice: User
+    ) -> None:
+        old, current = self.two_versions(alice)
+
+        restore(alice, old.pk)
+
+        old.refresh_from_db()
+        current.refresh_from_db()
+        assert (old.status, current.status) == ("superseded", "confirmed")
+
+    def test_a_discarded_version_can_be_restored_too(self, alice: User) -> None:
+        draft = services.save_draft(alice, good_week(THIS_WEEK))
+        services.discard(alice, draft.pk)
+
+        again = restore(alice, draft.pk)
+
+        assert (again.status, again.reason) == ("draft", "Restored from version 1")
+        assert services.load(alice, again.pk) == services.load(alice, draft.pk)
+
+    @pytest.mark.parametrize("which", ["draft", "confirmed"])
+    def test_a_draft_and_a_confirmed_plan_are_not_restored(self, alice: User, which: str) -> None:
+        plan = services.save_draft(alice, good_week(THIS_WEEK))
+        if which == "confirmed":
+            plan = services.confirm(alice, plan.pk)
+        count = WeeklyPlan.objects.count()
+
+        with pytest.raises(PlanNotRestorable):
+            restore(alice, plan.pk)
+
+        assert WeeklyPlan.objects.count() == count
+
+    def test_it_is_checked_again_with_what_the_user_can_do_now(self, alice: User) -> None:
+        old, _ = self.two_versions(alice)
+        WeekdayMinutes.objects.filter(owner=alice, weekday=0).update(minutes=0)
+
+        again = restore(alice, old.pk)
+
+        assert not services.validate(alice, again.pk).valid
+        with pytest.raises(PlanNotConfirmable):
+            services.confirm(alice, again.pk)
+
+    def test_a_week_that_can_no_longer_be_planned(self, alice: User) -> None:
+        past = THIS_WEEK - timedelta(days=7)
+        old = services.save_draft(alice, good_week(past))
+        services.discard(alice, old.pk)
+
+        with pytest.raises(WeekNotPlannable):
+            restore(alice, old.pk)
+
+    def test_the_plan_of_another_user_does_not_exist(self, alice: User) -> None:
+        bob = prepared(User.objects.create_user("bob@example.com"))
+        theirs = services.save_draft(bob, good_week(THIS_WEEK))
+        services.discard(bob, theirs.pk)
+
+        with pytest.raises(PlanNotFound):
+            restore(alice, theirs.pk)
+
+    def test_confirming_it_replaces_the_current_version_and_keeps_what_the_user_said(
+        self, alice: User
+    ) -> None:
+        old = confirmed(alice)
+        # The current version was made from the first one by a change: the same trainings.
+        current = services.confirm(alice, revise(alice, old.pk, sent_as_stored(old, alice)).pk)
+        row = workouts_of(current)[0]
+        WorkoutReview.objects.create(owner=alice, workout=row, status="missed")
+
+        restored = services.confirm(alice, restore(alice, old.pk).pk)
+
+        current.refresh_from_db()
+        assert (current.status, restored.status) == ("superseded", "confirmed")
+        review = WorkoutReview.objects.get()
+        assert review.workout.plan_id == restored.pk
+        assert review.workout.lineage == row.lineage
