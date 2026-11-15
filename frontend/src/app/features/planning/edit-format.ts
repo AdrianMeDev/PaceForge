@@ -183,3 +183,54 @@ export function blankWorkout(day: string): EditedWorkout {
     segments: [],
   };
 }
+
+/** A workout of the plan that is being changed, with its place in the list that is sent. */
+export interface EditorItem {
+  index: number;
+  workout: EditedWorkout;
+}
+
+/** The workouts of one day, in the order the server stores them in. */
+export interface EditorDay {
+  date: string;
+  label: string;
+  items: EditorItem[];
+}
+
+const SLOT_RANK: Record<WorkoutSlot, number> = { morning: 0, afternoon: 1, evening: 2 };
+
+/**
+ * The workouts by day, each day in the order of the times of day (a workout without one last, and
+ * otherwise as they are in the list): the order of the server, so that "Workout 3" in a finding is
+ * the third one shown.
+ */
+export function editorDays(workouts: readonly EditedWorkout[]): EditorDay[] {
+  const items = workouts
+    .map((workout, index) => ({ index, workout }))
+    .sort(
+      (a, b) =>
+        a.workout.day.localeCompare(b.workout.day) ||
+        rank(a.workout.slot) - rank(b.workout.slot) ||
+        a.index - b.index,
+    );
+  const days: EditorDay[] = [];
+  for (const item of items) {
+    let day = days.find((candidate) => candidate.date === item.workout.day);
+    if (day === undefined) {
+      day = { date: item.workout.day, label: dayLabel(item.workout.day), items: [] };
+      days.push(day);
+    }
+    day.items.push(item);
+  }
+  return days;
+}
+
+function rank(slot: WorkoutSlot | null): number {
+  return slot === null ? 3 : SLOT_RANK[slot];
+}
+
+/** How many parts the interval structure of a workout has, in words; empty without one. */
+export function structureText(workout: EditedWorkout): string {
+  const parts = workout.segments.length;
+  return parts === 0 ? '' : `Interval structure with ${parts} ${parts === 1 ? 'part' : 'parts'}`;
+}
