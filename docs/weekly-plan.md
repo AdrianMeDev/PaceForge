@@ -215,6 +215,7 @@ user to weigh.
 | `too_many_training_days` | warning | More days with a workout than the athlete wants to train on. Fewer days are fine. |
 | `below_minimum_minutes` | warning | Fewer minutes than the least the athlete wants to train in a week, as far as the week offers it (the bar is the lower of that minimum and what the week offers). |
 | `long_session_elsewhere` | warning | For running and cycling, if the athlete named a day for the long session: the longest workout of that sport is on another day (with a tie one of the longest on that day is enough). Named at the `day` of the longest workout. Not said if the week has no workout of the sport or if that day is an absence or offers no minutes. |
+| `sessions_out_of_range` | warning | A sport has fewer sessions in the week than the least the athlete wants of it, or more than the most. Only sports with such a wish are looked at. Named once per sport, at the plan as a whole. |
 | `hard_days_in_a_row` | warning | A hard day directly after a hard day. |
 | `no_free_day` | warning | Every day of the week has a workout. |
 | `many_workouts_in_a_day` | error | More workouts on a day than the limit (two). Named once per day, at the first one too many. |

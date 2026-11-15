@@ -643,6 +643,36 @@ def check_long_days(plan: WeekPlan, context: PlanContext) -> list[Finding]:
     return found
 
 
+def check_sessions_per_sport(plan: WeekPlan, context: PlanContext) -> list[Finding]:
+    """A sport has fewer or more sessions in the week than the athlete wants (a warning, once per
+    sport, at the plan as a whole, in the order of the format). Only the sports with a wish are
+    looked at, and a wish may be only a least or only a most."""
+    _same_week(plan, context)
+    counts: dict[Sport, int] = {}
+    for _, workouts in _workouts_by_day(plan, context).items():
+        for _, workout in workouts:
+            counts[workout.sport] = counts.get(workout.sport, 0) + 1
+    found = []
+    for facts in context.sport_preferences:
+        count = counts.get(facts.sport, 0)
+        low, high = facts.sessions_min, facts.sessions_max
+        if (low is not None and count < low) or (high is not None and count > high):
+            wanted = (
+                f"between {low} and {high}"
+                if low is not None and high is not None
+                else (f"at least {low}" if low is not None else f"at most {high}")
+            )
+            found.append(
+                Finding(
+                    Severity.WARNING,
+                    "sessions_out_of_range",
+                    f"The week has {count} {facts.sport.value} session(s); you wanted {wanted}.",
+                    "workouts",
+                )
+            )
+    return found
+
+
 def check_limitations(plan: WeekPlan, context: PlanContext) -> list[Finding]:
     """A workout in a sport that a current limitation affects (a warning, once per workout, at
     its sport, naming the newest limitation that affects it). A limitation without sports affects
@@ -737,6 +767,7 @@ RHYTHM_CHECKS: tuple[Check, ...] = (
     check_training_days,
     check_minimum_minutes,
     check_long_days,
+    check_sessions_per_sport,
 )
 
 ALL_CHECKS: tuple[Check, ...] = BASIC_CHECKS + RHYTHM_CHECKS

@@ -9,7 +9,7 @@ import pytest
 from availability.intensity import LEVEL_LIMITS, IntensityLevel, Limits
 from availability.models import BodyPart
 from planning import rules
-from planning.context import ActiveLimitation, PlanContext
+from planning.context import ActiveLimitation, PlanContext, SportFacts
 from planning.rules import (
     ALL_CHECKS,
     BASIC_CHECKS,
@@ -31,6 +31,7 @@ from planning.rules import (
     check_long_days,
     check_minimum_minutes,
     check_progression,
+    check_sessions_per_sport,
     check_times_of_day,
     check_training_days,
     check_workouts_per_day,
@@ -881,6 +882,81 @@ class TestTheLongDays:
         assert "SECRETMARKER" not in repr(found)
 
 
+class TestSessionsPerSport:
+    RUN = Sport.RUNNING
+
+    def found(self, plan_runs: int, low: int | None, high: int | None, **fields: Any):
+        runs = [workout(offset, 30, sport=self.RUN) for offset in range(plan_runs)]
+        facts = (SportFacts(self.RUN, None, low, high),)
+        return check_sessions_per_sport(week(*runs), context(sport_preferences=facts, **fields))
+
+    def test_fewer_than_the_least_is_a_warning(self) -> None:
+        assert self.found(1, 2, 4) == [
+            Finding(
+                Severity.WARNING,
+                "sessions_out_of_range",
+                "The week has 1 running session(s); you wanted between 2 and 4.",
+                "workouts",
+            )
+        ]
+
+    def test_more_than_the_most_is_a_warning(self) -> None:
+        assert [f.code for f in self.found(5, 2, 4)] == ["sessions_out_of_range"]
+
+    def test_the_ends_are_fine(self) -> None:
+        assert self.found(2, 2, 4) == []
+        assert self.found(4, 2, 4) == []
+        assert self.found(3, 2, 4) == []
+
+    def test_a_week_without_the_sport_is_below_a_least_but_not_a_most(self) -> None:
+        assert [f.code for f in self.found(0, 1, None)] == ["sessions_out_of_range"]
+        assert self.found(0, None, 3) == []
+
+    def test_only_a_least_is_worded_as_at_least(self) -> None:
+        assert self.found(1, 2, None)[0].message.endswith("you wanted at least 2.")
+
+    def test_only_a_most_is_worded_as_at_most(self) -> None:
+        assert self.found(5, None, 3)[0].message.endswith("you wanted at most 3.")
+
+    def test_a_zero_most_forbids_the_sport(self) -> None:
+        assert [f.code for f in self.found(1, None, 0)] == ["sessions_out_of_range"]
+        assert self.found(0, None, 0) == []
+
+    def test_a_sport_without_a_wish_is_not_looked_at(self) -> None:
+        plan = week(workout(1, 30, sport=Sport.SWIMMING))
+
+        found = check_sessions_per_sport(plan, context(sport_preferences=()))
+
+        assert found == []
+
+    def test_a_role_alone_is_no_wish(self) -> None:
+        assert self.found(0, None, None) == []
+
+    def test_every_sport_with_a_wish_is_named_in_the_order_of_the_format(self) -> None:
+        facts = (SportFacts(Sport.RUNNING, None, 1, None), SportFacts(Sport.CYCLING, None, 1, None))
+
+        found = check_sessions_per_sport(week(), context(sport_preferences=facts))
+
+        assert [f.message.split()[4] for f in found] == ["running", "cycling"]
+
+    def test_workouts_outside_the_week_do_not_count(self) -> None:
+        plan = week(workout(8, 30, sport=self.RUN), workout(-1, 30, sport=self.RUN))
+        facts = (SportFacts(self.RUN, None, 1, None),)
+
+        found = check_sessions_per_sport(plan, context(sport_preferences=facts))
+
+        assert [f.code for f in found] == ["sessions_out_of_range"]
+
+    def test_the_title_and_the_notes_are_not_repeated(self) -> None:
+        plan = week(workout(1, 30, sport=self.RUN, title="SECRETMARKER", notes="SECRETMARKER"))
+        facts = (SportFacts(self.RUN, None, 3, None),)
+
+        found = check_sessions_per_sport(plan, context(sport_preferences=facts))
+
+        assert found
+        assert "SECRETMARKER" not in repr(found)
+
+
 class TestTheSameWorkoutTwice:
     def test_the_same_sport_goal_and_duration_on_one_day_is_a_warning_at_the_repeat(self) -> None:
         plan = week(workout(1, 60), workout(1, 60))
@@ -1357,6 +1433,7 @@ class TestTheLists:
             check_training_days,
             check_minimum_minutes,
             check_long_days,
+            check_sessions_per_sport,
         )
 
     def test_which_rules_are_errors_and_which_warnings(self) -> None:
