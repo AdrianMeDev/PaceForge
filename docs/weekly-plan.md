@@ -353,6 +353,7 @@ plan of another user does not exist (404, the same answer as for an unknown id).
 | `POST /api/planning/weeks/<Monday>/generate/` | 201 with the new draft; limited to 5 a minute per user. |
 | `POST /api/planning/weeks/<Monday>/check/` | The checks for a plan that was changed by hand, as `valid`, `findings` and `order`; nothing is stored and no provider is asked. Not limited. |
 | `GET /api/planning/plans/<id>/` | One plan with its workouts; a draft comes with its checks. |
+| `POST /api/planning/plans/<id>/revise/` | 201 with a new draft made from that plan, from the same body as the check: the plan changed by hand (see below). Only a draft or a confirmed plan can be changed. |
 | `POST /api/planning/plans/<id>/confirm/` | The confirmed plan, or the findings if it has errors. With `{"push": true}` the week is sent to Intervals.icu right after (a problem with that is part of the answer, the plan stays confirmed). |
 | `POST /api/planning/plans/<id>/push/` | Sends a confirmed plan to the Intervals.icu calendar of the user; the plan with the result per workout. Limited to 10 a minute per user. |
 | `POST /api/planning/plans/<id>/discard/` | The discarded plan. |
@@ -365,6 +366,16 @@ the same strict parser and checked against what the user can do and has done *no
 then by time of day, then as sent), and `order[i]` is the place in the body of the workout that is
 the `i`-th of them. Nothing is stored, no provider is asked and the number of requests is not
 limited: it is how the planning page shows the findings after every change.
+
+**Storing a plan that was changed by hand.** `POST /api/planning/plans/<id>/revise/` takes the
+same body as the check and stores it as the next version of the week: a **draft** with `parent` the
+plan in the address and the `reason` "Changed by hand". That plan is not touched: a confirmed plan
+is never changed, a change is a new version, which is confirmed (and sent) as any other. A workout
+with a `lineage` is the workout of that plan with it, changed or moved; a workout without one is
+new; a workout of that plan that is not in the body is taken out. A `lineage` that is not one of
+the workouts of the plan in the address is refused, and so is a week that cannot be planned. The
+rationale of the plan in the address is kept, the one in the body is ignored. The draft is stored
+also if the checks find errors in it, so that the user sees what is wrong; it cannot be confirmed.
 
 Every workout of a plan has a `lineage` (its identity across the versions of the week, see
 [The format](#the-format)). Every workout and every segment of a plan has a `target`: the range of its zone as it is *now*
@@ -385,6 +396,7 @@ without a code is the limit of PaceForge itself.
 | `not_configured` | 409 | The user has not set up an AI provider. |
 | `no_time` | 409 | The week offers no training time at all; the coach is not asked and nothing is recorded. |
 | `not_a_draft` | 409 | Only a draft can be confirmed or discarded. |
+| `not_revisable` | 409 | Only a draft or a confirmed plan can be changed (`revise`); an older version has to be restored first. |
 | `not_confirmed` | 409 | Only a confirmed plan can be sent to Intervals.icu. |
 | `not_connected` | 409 | The user has not connected Intervals.icu. |
 | `not_usable` | 422 | The coach gave no readable plan, even after the repair; the problems come along. |

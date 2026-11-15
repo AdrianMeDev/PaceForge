@@ -19,7 +19,7 @@ from integrations.intervals import IntervalsError
 from integrations.intervals import InvalidKeyError as IntervalsKeyError
 
 from . import services
-from .editing import check
+from .editing import PlanNotRevisable, check, revise
 from .generation import NoTimeAvailable, PlanNotUsable, WeekNotPlannable, generate, plannable_weeks
 from .models import WeeklyPlan
 from .push import NotConfirmed, PushResult, export_state, push
@@ -46,6 +46,7 @@ NOT_A_DRAFT = "Only a draft can be confirmed or discarded."
 NOT_CONFIRMABLE = "The plan has errors and cannot be confirmed."
 NOT_USABLE = "The coach did not give a plan that can be used. Please try again."
 INVALID_PLAN = "The plan cannot be read. Please check the problems."
+NOT_REVISABLE = "Only a draft or a confirmed plan can be changed. Restore an older version first."
 # Why a plan could not be sent to Intervals.icu, by code. Nothing Intervals.icu said is in them.
 PUSH_PROBLEMS = {
     "not_confirmed": "Only a confirmed plan can be sent to Intervals.icu.",
@@ -194,6 +195,39 @@ class CheckView(APIView):
                 problems=[{"path": p.path, "message": p.message} for p in error.problems],
             )
         return Response({**report_data(checked.report), "order": list(checked.order)})
+
+
+class ReviseView(APIView):
+    """Stores a plan that was changed by hand as a new draft version of the week (the plan whose id
+    is in the address is the version it was made from, and stays as it is). The body is the same as
+    that of the check. The answer is the new draft with its checks, also if they have errors."""
+
+    http_method_names = ["post", "options"]
+
+    def post(self, request: Request, plan_id: UUID) -> Response:
+        user = _user(request)
+        try:
+            data = request.data
+        except RecursionError:  # nesting that the JSON reader of the framework gave up on
+            data = None
+        try:
+            plan = revise(user, plan_id, data)
+        except services.PlanNotFound:
+            return _error(status.HTTP_404_NOT_FOUND, "not_found", NOT_FOUND)
+        except PlanNotRevisable:
+            return _error(status.HTTP_409_CONFLICT, "not_revisable", NOT_REVISABLE)
+        except WeekNotPlannable:
+            return _error(status.HTTP_404_NOT_FOUND, "week_not_plannable", NOT_PLANNABLE)
+        except PlanFormatError as error:
+            return _error(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                "invalid_plan",
+                INVALID_PLAN,
+                problems=[{"path": p.path, "message": p.message} for p in error.problems],
+            )
+        response = _detail(user, plan)
+        response.status_code = status.HTTP_201_CREATED
+        return response
 
 
 class PlanView(APIView):

@@ -10,10 +10,12 @@ from django.test.utils import CaptureQueriesContext
 from accounts.models import User
 from availability.models import WeekdayMinutes
 from goals import services as goal_services
-from planning.editing import check, read_edited_plan
+from planning import services
+from planning.editing import REASON, PlanNotRevisable, check, read_edited_plan, revise
 from planning.generation import WeekNotPlannable
 from planning.models import PlannedWorkout, WeeklyPlan
 from planning.schema import PlanFormatError, Slot, WeekPlan, to_json
+from planning.services import PlanNotConfirmable, PlanNotFound
 
 from .test_services import good_week, prepared, workout
 
@@ -239,3 +241,236 @@ class TestChecking:
     def test_a_plan_that_is_no_plan_raises_the_format_error(self, alice: User) -> None:
         with pytest.raises(PlanFormatError):
             check(alice, THIS_WEEK, {"workouts": []})
+
+
+def confirmed(user: User, week: WeekPlan | None = None) -> WeeklyPlan:
+    plan = services.save_draft(user, week or good_week(THIS_WEEK), reason="Drafted by the coach")
+    return services.confirm(user, plan.pk)
+
+
+def workouts_of(plan: WeeklyPlan) -> list[PlannedWorkout]:
+    return list(PlannedWorkout.objects.filter(plan=plan).order_by("day", "position", "id"))
+
+
+def sent_as_stored(plan: WeeklyPlan, user: User) -> dict[str, Any]:
+    """The plan as the page would send it back: every workout with its lineage."""
+    data = to_json(services.load(user, plan.pk))
+    for item, row in zip(data["workouts"], workouts_of(plan), strict=True):
+        item["lineage"] = str(row.lineage)
+    return data
+
+
+class TestStoringAChange:
+    def test_a_change_is_a_new_draft_made_from_the_version_it_started_from(
+        self, alice: User
+    ) -> None:
+        old = confirmed(alice)
+
+        newer = revise(alice, old.pk, sent_as_stored(old, alice))
+
+        assert (newer.status, newer.version, newer.parent_id) == ("draft", 2, old.pk)
+        assert (newer.reason, newer.week_start) == (REASON, THIS_WEEK)
+        assert REASON == "Changed by hand"
+
+    def test_the_version_it_was_made_from_is_not_touched(self, alice: User) -> None:
+        old = confirmed(alice)
+        before = services.load(alice, old.pk)
+        data = sent_as_stored(old, alice)
+        data["workouts"][0]["title"] = "Changed"
+
+        revise(alice, old.pk, data)
+
+        old.refresh_from_db()
+        assert old.status == "confirmed"
+        assert services.load(alice, old.pk) == before
+
+    def test_a_workout_that_was_moved_keeps_its_lineage(self, alice: User) -> None:
+        old = confirmed(
+            alice, WeekPlan(THIS_WEEK, (workout(THIS_WEEK, 0, 30), workout(THIS_WEEK, 2, 30)))
+        )
+        first = workouts_of(old)[0]
+        data = sent_as_stored(old, alice)
+        data["workouts"][0]["day"] = (THIS_WEEK + timedelta(days=4)).isoformat()
+        data["workouts"][0]["slot"] = "evening"
+
+        newer = revise(alice, old.pk, data)
+
+        moved = PlannedWorkout.objects.get(plan=newer, lineage=first.lineage)
+        assert moved.day == THIS_WEEK + timedelta(days=4)
+        assert moved.slot == "evening"
+        assert moved.pk != first.pk
+
+    def test_a_workout_that_was_changed_keeps_its_lineage(self, alice: User) -> None:
+        old = confirmed(alice)
+        target = workouts_of(old)[1]
+        data = sent_as_stored(old, alice)
+        data["workouts"][1].update(title="Longer", duration_minutes=75, notes="More", zone=3)
+
+        newer = revise(alice, old.pk, data)
+
+        changed = PlannedWorkout.objects.get(plan=newer, lineage=target.lineage)
+        assert (changed.title, changed.duration_minutes, changed.notes, changed.zone) == (
+            "Longer",
+            75,
+            "More",
+            3,
+        )
+
+    def test_a_workout_that_is_not_sent_back_is_taken_out(self, alice: User) -> None:
+        old = confirmed(alice)
+        gone = workouts_of(old)[3]
+        data = sent_as_stored(old, alice)
+        del data["workouts"][3]
+
+        newer = revise(alice, old.pk, data)
+
+        assert PlannedWorkout.objects.filter(plan=newer).count() == 3
+        assert not PlannedWorkout.objects.filter(plan=newer, lineage=gone.lineage).exists()
+
+    def test_a_workout_without_a_lineage_is_new(self, alice: User) -> None:
+        old = confirmed(alice, WeekPlan(THIS_WEEK, (workout(THIS_WEEK, 0, 30),)))
+        known = {row.lineage for row in workouts_of(old)}
+        data = sent_as_stored(old, alice)
+        data["workouts"].append(
+            to_json(WeekPlan(THIS_WEEK, (workout(THIS_WEEK, 2, 30),)))["workouts"][0]
+        )
+
+        newer = revise(alice, old.pk, data)
+
+        added = PlannedWorkout.objects.get(plan=newer, day=THIS_WEEK + timedelta(days=2))
+        assert added.lineage not in known and added.lineage is not None
+        assert PlannedWorkout.objects.filter(plan=newer).count() == 2
+
+    def test_the_rationale_of_the_version_is_kept_and_the_one_sent_is_ignored(
+        self, alice: User
+    ) -> None:
+        old = confirmed(alice)
+        data = sent_as_stored(old, alice)
+        data["rationale"] = "Something else"
+
+        newer = revise(alice, old.pk, data)
+
+        assert newer.rationale == "Build the base"
+
+    def test_a_draft_can_be_changed_too_and_stays_as_it_is(self, alice: User) -> None:
+        draft = services.save_draft(alice, good_week(THIS_WEEK))
+
+        newer = revise(alice, draft.pk, sent_as_stored(draft, alice))
+
+        draft.refresh_from_db()
+        assert (draft.status, newer.parent_id, newer.version) == ("draft", draft.pk, 2)
+
+    def test_a_plan_with_errors_is_stored_but_cannot_be_confirmed(self, alice: User) -> None:
+        old = confirmed(alice)
+        data = sent_as_stored(old, alice)
+        data["workouts"][0]["day"] = (THIS_WEEK + timedelta(days=1)).isoformat()  # Tuesday: no time
+
+        newer = revise(alice, old.pk, data)
+
+        assert not services.validate(alice, newer.pk).valid
+        with pytest.raises(PlanNotConfirmable):
+            services.confirm(alice, newer.pk)
+
+    def test_confirming_the_change_replaces_the_version_it_started_from(self, alice: User) -> None:
+        old = confirmed(alice)
+
+        newer = services.confirm(alice, revise(alice, old.pk, sent_as_stored(old, alice)).pk)
+
+        old.refresh_from_db()
+        assert (old.status, newer.status) == ("superseded", "confirmed")
+        assert [w.lineage for w in workouts_of(newer)] == [w.lineage for w in workouts_of(old)]
+
+
+class TestRefusingAChange:
+    def stored(self) -> int:
+        return WeeklyPlan.objects.count() + PlannedWorkout.objects.count()
+
+    def test_a_lineage_that_is_not_one_of_the_plan_is_refused_by_its_place_in_the_body(
+        self, alice: User
+    ) -> None:
+        old = confirmed(alice)
+        data = sent_as_stored(old, alice)
+        data["workouts"][0], data["workouts"][2] = data["workouts"][2], data["workouts"][0]
+        data["workouts"][1]["lineage"] = str(uuid4())
+        count = self.stored()
+
+        with pytest.raises(PlanFormatError) as raised:
+            revise(alice, old.pk, data)
+
+        assert [(p.path, p.message) for p in raised.value.problems] == [
+            ("workouts[1].lineage", "This workout is not in the plan that is changed.")
+        ]
+        assert self.stored() == count
+
+    def test_a_lineage_of_another_version_of_the_week_is_refused(self, alice: User) -> None:
+        old = confirmed(alice)
+        newer = services.confirm(
+            alice, services.save_draft(alice, good_week(THIS_WEEK), parent=old.pk).pk
+        )
+        data = sent_as_stored(old, alice)  # the lineages of the version that is superseded now
+
+        with pytest.raises(PlanFormatError):
+            revise(alice, newer.pk, data)
+
+    def test_the_workouts_of_another_user_are_not_reachable(self, alice: User) -> None:
+        bob = prepared(User.objects.create_user("bob@example.com"))
+        theirs = confirmed(bob)
+        data = sent_as_stored(theirs, bob)
+
+        with pytest.raises(PlanFormatError):
+            revise(alice, confirmed(alice).pk, data)
+        with pytest.raises(PlanNotFound):
+            revise(alice, theirs.pk, data)
+
+    @pytest.mark.parametrize("status", ["superseded", "discarded"])
+    def test_an_older_version_is_restored_before_it_is_changed(
+        self, alice: User, status: str
+    ) -> None:
+        old = confirmed(alice)
+        data = sent_as_stored(old, alice)
+        if status == "superseded":
+            services.confirm(
+                alice, services.save_draft(alice, good_week(THIS_WEEK), parent=old.pk).pk
+            )
+        else:
+            gone = services.save_draft(alice, good_week(THIS_WEEK))
+            services.discard(alice, gone.pk)
+            old, data = gone, sent_as_stored(gone, alice)
+        count = self.stored()
+
+        with pytest.raises(PlanNotRevisable):
+            revise(alice, old.pk, data)
+
+        assert self.stored() == count
+
+    def test_a_week_that_can_no_longer_be_planned(self, alice: User) -> None:
+        last_week = THIS_WEEK - timedelta(days=7)
+        old = services.save_draft(alice, good_week(last_week))
+        data = sent_as_stored(old, alice)
+
+        with pytest.raises(WeekNotPlannable):
+            revise(alice, old.pk, data)
+
+    def test_a_plan_for_another_week(self, alice: User) -> None:
+        old = confirmed(alice)
+        data = sent_as_stored(old, alice)
+        data["week_start"] = (THIS_WEEK + timedelta(days=7)).isoformat()
+
+        with pytest.raises(PlanFormatError) as raised:
+            revise(alice, old.pk, data)
+
+        assert [p.path for p in raised.value.problems] == ["week_start"]
+
+    def test_a_doubled_lineage_and_a_broken_field_are_reported_together(self, alice: User) -> None:
+        old = confirmed(alice)
+        data = sent_as_stored(old, alice)
+        data["workouts"][1]["lineage"] = data["workouts"][0]["lineage"]
+        data["workouts"][2]["duration_minutes"] = 0
+
+        with pytest.raises(PlanFormatError) as raised:
+            revise(alice, old.pk, data)
+
+        assert [p.path for p in raised.value.problems] == [
+            "workouts[1].lineage",
+            "workouts[2].duration_minutes",
+        ]

@@ -1,12 +1,13 @@
 from collections.abc import Callable
 from dataclasses import replace
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
 from django.db.models import F
 
 from accounts.models import User
+from goals import services as goal_services
 from integrations import services as integrations
 from integrations.intervals import (
     IntervalsUnavailableError,
@@ -16,6 +17,7 @@ from integrations.intervals import (
 )
 from integrations.models import ProviderConnection
 from planning import services
+from planning.editing import revise
 from planning.models import PlannedWorkout, WeeklyPlan, WorkoutExport
 from planning.push import (
     REJECTED,
@@ -27,7 +29,7 @@ from planning.push import (
     external_id,
     push,
 )
-from planning.schema import WeekPlan, Workout
+from planning.schema import WeekPlan, Workout, to_json
 
 from .fake_calendar import Calendar
 from .test_services import MONDAY, NEXT_MONDAY, good_week, prepared, workout
@@ -261,6 +263,29 @@ class TestAVersionMadeFromAnother:
         assert set(calendar.events) == set(before)  # the same events, not new ones
         assert calendar.count("delete") == 0
         assert WorkoutExport.objects.count() == 4
+
+    def test_a_plan_changed_by_hand_through_revise_updates_the_same_events(
+        self, alice: User, calendar: Calendar, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Changing a week is for the weeks that can be planned: this is the week of the 12th.
+        monkeypatch.setattr(
+            goal_services, "_utc_now", lambda: datetime(2027, 7, 14, 12, tzinfo=UTC)
+        )
+        old = confirmed(alice, light_week())
+        push(alice, old.pk)
+        events = set(calendar.events)
+        data = to_json(services.load(alice, old.pk))
+        rows = PlannedWorkout.objects.filter(plan=old).order_by("day", "position", "id")
+        for item, row in zip(data["workouts"], rows, strict=True):
+            item["lineage"] = str(row.lineage)
+        data["workouts"][0]["day"] = (MONDAY + timedelta(days=2)).isoformat()
+        del data["workouts"][3]
+
+        newer = services.confirm(alice, revise(alice, old.pk, data).pk)
+        result = push(alice, newer.pk)
+
+        assert result == PushResult(synced=3, failed=0, removed=1, left_behind=0)
+        assert set(calendar.events) < events  # the same events (three of them), none new
 
     def test_a_workout_that_was_moved_updates_its_event_to_the_new_day(
         self, alice: User, calendar: Calendar

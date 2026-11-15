@@ -7,6 +7,7 @@ urlpatterns = [
     path("weeks/<str:week>/generate/", views.GenerateView.as_view(), name="planning-generate"),
     path("weeks/<str:week>/check/", views.CheckView.as_view(), name="planning-check"),
     path("plans/<uuid:plan_id>/", views.PlanView.as_view(), name="planning-plan"),
+    path("plans/<uuid:plan_id>/revise/", views.ReviseView.as_view(), name="planning-revise"),
     path("plans/<uuid:plan_id>/confirm/", views.ConfirmView.as_view(), name="planning-confirm"),
     path("plans/<uuid:plan_id>/push/", views.PushView.as_view(), name="planning-push"),
     path("plans/<uuid:plan_id>/discard/", views.DiscardView.as_view(), name="planning-discard"),
