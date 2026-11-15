@@ -32,6 +32,14 @@ import {
 } from './intensity-settings';
 import { LimitationsPanel } from './limitations-panel';
 import {
+  NO_PREFERENCE_FORM,
+  PreferenceErrors,
+  PreferenceForm,
+  SportPreferencesForm,
+  preferenceForm,
+  readPreferences,
+} from './sport-preferences';
+import {
   NO_WISH_TEXTS,
   WISH_FIELDS,
   WeekWishes,
@@ -80,7 +88,15 @@ function dayMinutes(text: string): Parsed<number> {
  */
 @Component({
   selector: 'app-availability-page',
-  imports: [RouterLink, PeriodsPanel, LimitationsPanel, IntensitySettings, DayOptions, WeekWishes],
+  imports: [
+    RouterLink,
+    PeriodsPanel,
+    LimitationsPanel,
+    IntensitySettings,
+    DayOptions,
+    WeekWishes,
+    SportPreferencesForm,
+  ],
   templateUrl: './availability-page.html',
   styleUrls: ['../auth/auth-form.css', './availability-page.css'],
 })
@@ -100,6 +116,10 @@ export class AvailabilityPage implements OnInit {
   protected readonly stretching = signal(false);
   protected readonly limitations = signal('');
   protected readonly shareText = signal(false);
+  protected readonly preferences = signal<PreferenceForm>(NO_PREFERENCE_FORM);
+  protected readonly preferenceErrors = signal<PreferenceErrors>({});
+  /** The server's message about the preferences or the focus as a whole. */
+  protected readonly preferencesError = signal<string | null>(null);
   protected readonly wishes = signal<WishTexts>(NO_WISH_TEXTS);
   protected readonly wishErrors = signal<WishErrors>({});
   protected readonly intensityLevel = signal<IntensityLevel>('normal');
@@ -278,6 +298,20 @@ export class AvailabilityPage implements OnInit {
       usable = false;
     }
 
+    const preference = readPreferences(this.preferences());
+    let preferenceValues: Partial<AvailabilityChanges> = {};
+    if (preference.ok) {
+      preferenceValues = {
+        sport_preferences: preference.preferences,
+        strength_focus: preference.focus,
+      };
+      this.preferenceErrors.set({});
+    } else {
+      this.preferenceErrors.set(preference.errors);
+      usable = false;
+    }
+    this.preferencesError.set(null);
+
     const read = readWishes(this.wishes(), weeklyBudget);
     let wishValues: Partial<AvailabilityChanges> = {};
     if (read.ok) {
@@ -339,6 +373,7 @@ export class AvailabilityPage implements OnInit {
           time_windows: this.timeWindows(),
           weekly_budget_minutes: weeklyBudget,
           ...wishValues,
+          ...preferenceValues,
           typical_weekly_minutes: typicalWeek,
           sports,
           stretching: this.stretching(),
@@ -366,6 +401,11 @@ export class AvailabilityPage implements OnInit {
     this.stretching.set(availability.stretching);
     this.limitations.set(availability.limitations);
     this.shareText.set(availability.share_limitations_text);
+    this.preferences.set(
+      preferenceForm(availability.sport_preferences, availability.strength_focus),
+    );
+    this.preferenceErrors.set({});
+    this.preferencesError.set(null);
     this.wishes.set({
       trainingDays: numberText(availability.training_days),
       minimum:
@@ -406,6 +446,10 @@ export class AvailabilityPage implements OnInit {
     this.stretchingError.set(join('stretching'));
     this.limitationsError.set(join('limitations'));
     this.shareTextError.set(join('share_limitations_text'));
+    this.preferencesError.set(
+      [join('sport_preferences'), join('strength_focus')].filter((t) => t !== null).join(' ') ||
+        null,
+    );
     const wishes: WishErrors = {};
     for (const name of WISH_FIELDS) {
       const message = join(name);
@@ -432,6 +476,8 @@ export class AvailabilityPage implements OnInit {
       'stretching',
       'limitations',
       'share_limitations_text',
+      'sport_preferences',
+      'strength_focus',
       ...WISH_FIELDS,
       ...INTENSITY_FIELDS,
     ];

@@ -1,0 +1,91 @@
+<div class="preferences">
+  @if (message(); as text) {
+    <p class="field-error" role="alert">{{ text }}</p>
+  }
+  <table class="sports-table">
+    <caption class="visually-hidden">
+      What each sport is for you and how many sessions a week you want of it
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Sport</th>
+        <th scope="col">Role</th>
+        <th scope="col">Sessions a week, least</th>
+        <th scope="col">Sessions a week, most</th>
+      </tr>
+    </thead>
+    <tbody>
+      @for (sport of sports; track sport.value) {
+        <tr>
+          <th scope="row">{{ sport.label }}</th>
+          <td>
+            <select
+              [id]="'role-' + sport.value"
+              [attr.aria-label]="sport.label + ', role'"
+              (change)="set(sport.value, 'role', $event)"
+            >
+              <option value="" [selected]="form().sports[sport.value].role === ''">No role</option>
+              @for (role of roles; track role.value) {
+                <option
+                  [value]="role.value"
+                  [selected]="form().sports[sport.value].role === role.value"
+                >
+                  {{ role.label }}
+                </option>
+              }
+            </select>
+          </td>
+          <td>
+            <input
+              type="text"
+              inputmode="numeric"
+              autocomplete="off"
+              [id]="'min-' + sport.value"
+              [attr.aria-label]="sport.label + ', least sessions'"
+              [attr.aria-invalid]="errors()[sport.value] ? true : null"
+              [value]="form().sports[sport.value].min"
+              (input)="set(sport.value, 'min', $event)"
+            />
+          </td>
+          <td>
+            <input
+              type="text"
+              inputmode="numeric"
+              autocomplete="off"
+              [id]="'max-' + sport.value"
+              [attr.aria-label]="sport.label + ', most sessions'"
+              [attr.aria-invalid]="errors()[sport.value] ? true : null"
+              [value]="form().sports[sport.value].max"
+              (input)="set(sport.value, 'max', $event)"
+            />
+          </td>
+        </tr>
+        @if (errors()[sport.value]; as problem) {
+          <tr class="problem">
+            <td colspan="4">
+              <p class="field-error" role="alert" [id]="'preference-' + sport.value + '-error'">
+                {{ sport.label }}: {{ problem }}
+              </p>
+            </td>
+          </tr>
+        }
+      }
+    </tbody>
+  </table>
+
+  <div class="field">
+    <label for="strength-focus">What strength training is for</label>
+    <select id="strength-focus" (change)="setFocus($event)">
+      <option value="" [selected]="form().focus === ''">Not said</option>
+      @for (focus of focuses; track focus.value) {
+        <option [value]="focus.value" [selected]="form().focus === focus.value">
+          {{ focus.label }}
+        </option>
+      }
+    </select>
+    <p class="hint">
+      With legs or full body, strength sessions count as leg training: the checks warn about one on
+      the day before your longest run or a hard run.
+    </p>
+  </div>
+</div>

@@ -123,6 +123,13 @@
         </div>
 
         <h2>Sports and stretching</h2>
+        <h3 class="sub">What each sport is for</h3>
+        <app-sport-preferences
+          [(form)]="preferences"
+          [errors]="preferenceErrors()"
+          [message]="preferencesError()"
+        />
+
         <fieldset class="field sports" [attr.aria-describedby]="'sports-hint'">
           <legend>Sports for your plan</legend>
           @for (choice of sportChoices; track choice.value) {

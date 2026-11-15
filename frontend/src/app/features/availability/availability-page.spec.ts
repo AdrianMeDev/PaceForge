@@ -769,6 +769,7 @@ describe('AvailabilityPage', () => {
         ...DAY_OPTIONS,
         weekly_budget_minutes: 300,
         ...NO_WISHES,
+        ...NO_PREFERENCES,
         typical_weekly_minutes: 510,
         sports: ['running', 'cycling', 'swimming', 'strength'],
         stretching: false,
@@ -789,6 +790,7 @@ describe('AvailabilityPage', () => {
         ...DAY_OPTIONS,
         weekly_budget_minutes: null,
         ...NO_WISHES,
+        ...NO_PREFERENCES,
         typical_weekly_minutes: null,
         sports: ['running', 'cycling', 'swimming', 'strength'],
         stretching: false,
@@ -1118,6 +1120,92 @@ describe('AvailabilityPage', () => {
 
       expect(alerts()).toEqual(['Something went wrong. Please try again.']);
       expect(page.querySelector('form')).not.toBeNull();
+    });
+  });
+
+  describe('sport preferences and the strength focus', () => {
+    const select = (id: string) => query<HTMLSelectElement>(page, `#${id}`);
+
+    async function choose(id: string, value: string): Promise<void> {
+      const box = select(id);
+      box.value = value;
+      box.dispatchEvent(new Event('change'));
+      await settle(fixture);
+    }
+
+    it('show what is saved', async () => {
+      await setup(
+        ok({
+          ...SAVED,
+          sport_preferences: {
+            ...NO_PREFERENCES.sport_preferences,
+            running: { role: 'goal', sessions_min: 3, sessions_max: 5 },
+          },
+          strength_focus: 'legs',
+        }),
+      );
+
+      expect(select('role-running').value).toBe('goal');
+      expect(value('#min-running')).toBe('3');
+      expect(value('#max-running')).toBe('5');
+      expect(select('strength-focus').value).toBe('legs');
+      expect(select('role-cycling').value).toBe('');
+    });
+
+    it('are sent as a whole, nothing said as null', async () => {
+      await setup(ok(NOTHING));
+
+      await choose('role-running', 'goal');
+      await type('#min-running', '3');
+      await choose('strength-focus', 'full_body');
+      await save();
+
+      const sent = api.save.mock.calls[0][0];
+      expect(sent.sport_preferences).toEqual({
+        ...NO_PREFERENCES.sport_preferences,
+        running: { role: 'goal', sessions_min: 3, sessions_max: null },
+      });
+      expect(sent.strength_focus).toBe('full_body');
+    });
+
+    it('do not send counts that cannot be used and say so at the sport', async () => {
+      await setup(ok(NOTHING));
+      await type('#min-cycling', '5');
+      await type('#max-cycling', '2');
+
+      await save();
+
+      expect(api.save).not.toHaveBeenCalled();
+      expect(alerts()).toEqual([
+        'Cycling: Enter whole numbers of sessions between 0 and 14, the least not above the most.',
+      ]);
+      expect(query(page, '#min-cycling').getAttribute('aria-invalid')).toBe('true');
+    });
+
+    it('show the server’s message about them as a whole', async () => {
+      await setup(ok(NOTHING));
+      const message = 'Send an object with running, cycling, swimming, strength.';
+      api.save.mockResolvedValue({
+        kind: 'invalid',
+        errors: [message],
+        fields: { sport_preferences: [message] },
+      });
+
+      await save();
+
+      expect(alerts()).toEqual([message]);
+    });
+
+    it('show what the server saved', async () => {
+      await setup(ok(NOTHING));
+      api.save.mockResolvedValue({
+        kind: 'ok',
+        availability: { ...NOTHING, strength_focus: 'core' },
+      });
+
+      await save();
+
+      expect(select('strength-focus').value).toBe('core');
     });
   });
 
