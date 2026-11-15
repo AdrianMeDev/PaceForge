@@ -531,6 +531,17 @@ a time of day is not held to the parts of the day. Unticking a part or a day doe
 of drafts you already have: they show an error until you change them (see **Changing a plan by
 hand**).
 
+**Your week.** Four optional wishes, each with "No wish" or an empty field as the default:
+**Days a week you want to train on, at most** (1 to 7), **Least you want to train in a week** (in
+the form of the budget, `5:00`; it cannot be above your weekly budget, and the page says so), and
+the **Day of your long run** and the **Day of your long ride**. Your coach is told all four, and
+the checks of every plan **warn** (they never block a plan): more days with a workout than you
+wanted, fewer minutes than your least (as far as your days and budget allow it at all: a week that
+offers 200 minutes is not blamed for not reaching 300), and the longest run or ride of the week on
+another day than the one you chose (when the longest are tied, one on your day is enough; nothing
+is said when the week has no run or ride, or when your long day is a day of absence or has no
+time).
+
 **Weekly budget.** Optional, up to 168:00 (10080 minutes). It caps what the days add up to: with
 7:30 in the fields and a budget of 5:00, a week offers 5:00. A budget below the sum is allowed on
 purpose (it is the most you *want* to train) and the page says what it means. Leave the field empty
@@ -608,8 +619,8 @@ the plan. **Mark as healed** keeps an entry as a record without sending or check
 health data: your own instance, your own provider, your own choice of what to enter.
 
 **Save** sends the weekdays, the parts of the day and two sessions, the budget, the normal week,
-the sports, the stretching choice, the intensity with your own limits, the limitations text and
-whether it may go to the coach together (the list of injuries saves on its own). The page checks
+the sports, the stretching choice, the wishes for a week, the intensity with your own limits, the
+limitations text and whether it may go to the coach together (the list of injuries saves on its own). The page checks
 the limits
 first and names every problem next to its field; if the server still refuses something, its message
 appears in the same place. Nothing is saved until every field is usable.

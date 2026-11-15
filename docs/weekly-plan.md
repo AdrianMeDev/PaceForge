@@ -165,6 +165,10 @@ Each plan is checked against the facts of its user for that week, collected when
 - **Double days and parts of the day.** For each weekday whether two workouts are allowed and which
   parts of the day (morning, afternoon, evening) are open. Without a choice two workouts are allowed
   and every part is open. A day of absence keeps the choice of its weekday.
+- **The wishes for a week.** On how many days the athlete wants to train at most, the least they
+  want to train in a week, and the weekday of the long run and of the long ride. Each is optional
+  and a missing one is never checked. They only produce warnings (`too_many_training_days`,
+  `below_minimum_minutes`, `long_session_elsewhere`), never an error.
 - **Limitations.** The athlete's current injuries and limitations, each a body part from a fixed
   list and the sports it affects. A workout in an affected sport is a warning (`limited_sport`),
   not an error. Healed entries are not in the context.

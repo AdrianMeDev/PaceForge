@@ -426,6 +426,24 @@ class TestTheReadmeOnTheTypicalWeek:
             assert part.label.lower().split()[0] in FLAT_README.lower(), part
 
 
+class TestTheReadmeOnTheWishesForAWeek:
+    HTML = (ROOT / "frontend/src/app/features/availability/week-wishes.html").read_text()
+
+    def test_the_labels_of_the_page_are_the_words_of_the_readme(self) -> None:
+        for label in (
+            "Days a week you want to train on, at most",
+            "Least you want to train in a week",
+            "Day of your long run",
+            "Day of your long ride",
+        ):
+            assert label in self.HTML, label
+            assert f"**{label}**" in FLAT_README, label
+
+    def test_the_three_warnings_are_named_in_the_checks_page(self) -> None:
+        for code in ("too_many_training_days", "below_minimum_minutes", "long_session_elsewhere"):
+            assert f"`{code}`" in DOC, code
+
+
 class TestTheReadmeOnSportsAndDoubleDays:
     PAGE = (ROOT / "frontend/src/app/features/availability/availability-page.html").read_text()
 
