@@ -20,6 +20,7 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from accounts.models import User
+from reviews.services import carry_over
 
 from .context import build_context
 from .models import REASON_MAX, PlannedWorkout, WeeklyPlan
@@ -154,7 +155,9 @@ def validate(user: User, plan_id: UUID) -> Report:
 def confirm(user: User, plan_id: UUID) -> WeeklyPlan:
     """Confirm a draft. The plan is validated again; with any error it is refused
     (``PlanNotConfirmable``) and nothing changes. The version of the week that was confirmed
-    before becomes ``superseded``. Only a draft can be confirmed (``PlanStateError``)."""
+    before becomes ``superseded``, and what the user said about its workouts in the week review
+    moves to the workouts of the new version that are the same training (``carry_over``). Only a
+    draft can be confirmed (``PlanStateError``)."""
     with transaction.atomic():
         plan = _lock_the_week(user, plan_id)
         if plan.status != Status.DRAFT:
@@ -162,12 +165,19 @@ def confirm(user: User, plan_id: UUID) -> WeeklyPlan:
         report = validate(user, plan_id)
         if not report.valid:
             raise PlanNotConfirmable(report)
-        WeeklyPlan.objects.for_user(user).filter(
-            week_start=plan.week_start, status=Status.CONFIRMED
-        ).update(status=Status.SUPERSEDED)
+        replaced = list(
+            WeeklyPlan.objects.for_user(user).filter(
+                week_start=plan.week_start, status=Status.CONFIRMED
+            )
+        )
+        WeeklyPlan.objects.for_user(user).filter(pk__in=[found.pk for found in replaced]).update(
+            status=Status.SUPERSEDED
+        )
         plan.status = Status.CONFIRMED
         plan.confirmed_at = _now()
         plan.save(update_fields=["status", "confirmed_at"])
+        for found in replaced:  # at most one: what the user said about its workouts moves along
+            carry_over(user, found, plan)
         return plan
 
 
