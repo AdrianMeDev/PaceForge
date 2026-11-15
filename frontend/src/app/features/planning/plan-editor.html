@@ -1,0 +1,160 @@
+<section class="editor" aria-labelledby="editor-title">
+  <h2 id="editor-title">Changing version {{ plan().version }}</h2>
+  <p class="hint">
+    Your changes are stored when you save them as a new version. The version you started from stays
+    as it is.
+  </p>
+
+  @if (checking()) {
+    <p role="status" data-testid="editor-checking">Checking the plan…</p>
+  } @else if (findings().length === 0 && message() === null) {
+    <p class="hint" data-testid="editor-all-clear">The checks found nothing to point out.</p>
+  } @else if (findings().length > 0) {
+    <p data-testid="editor-summary">
+      The checks found {{ errors() }} {{ errors() === 1 ? 'error' : 'errors' }} and {{ notes() }}
+      {{ notes() === 1 ? 'note' : 'notes' }}.
+      @if (errors() > 0) {
+        A plan with errors can be saved, but it cannot be confirmed.
+      }
+    </p>
+  }
+
+  @if (!checking() && weekFindings().length > 0) {
+    <ul class="findings" aria-label="What the checks say about the week" data-testid="editor-week">
+      @for (finding of weekFindings(); track $index) {
+        <li [attr.data-severity]="finding.severity">
+          <strong>{{ finding.severity === 'error' ? 'Error' : 'Note' }}</strong>
+          · {{ finding.message }}
+        </li>
+      }
+    </ul>
+  }
+
+  @if (message(); as text) {
+    <p class="alert" role="alert" data-testid="editor-message">{{ text }}</p>
+  }
+  @if (problems().length > 0) {
+    <ul class="problems" aria-label="What was wrong with the plan" data-testid="editor-problems">
+      @for (problem of problems(); track $index) {
+        <li>{{ problem.message }}</li>
+      }
+    </ul>
+  }
+
+  @for (day of days(); track day.date) {
+    <h3>{{ day.label }}</h3>
+    @for (item of day.items; track item.index) {
+      @if (editing() === item.index) {
+        <app-workout-form
+          [week]="plan().week_start"
+          [workout]="item.workout"
+          (saved)="workoutSaved($event)"
+          (cancelled)="closeForm()"
+        />
+      } @else {
+        <div class="workout" [attr.data-testid]="'editor-workout-' + item.index">
+          <div class="head">
+            <h4>{{ item.workout.title }}</h4>
+            @if (item.workout.slot; as when) {
+              <span class="badge slot">{{ slot[when] }}</span>
+            }
+            <span class="badge">{{ sport[item.workout.sport] }}</span>
+            <span class="badge">{{ goal[item.workout.goal] }}</span>
+          </div>
+          <p class="meta">
+            {{ minutes(item.workout.duration_minutes) }}
+            @if (target(item.workout.zone_system, item.workout.zone); as text) {
+              · {{ text }}
+            }
+            @if (stretching(item.workout.stretching_minutes); as text) {
+              · {{ text }}
+            }
+          </p>
+          @if (structure(item.workout); as text) {
+            <p class="hint">{{ text }}</p>
+          }
+          @if (item.workout.notes) {
+            <p class="notes">{{ item.workout.notes }}</p>
+          }
+          @if (!checking() && findingsOf(item.index).length > 0) {
+            <ul class="findings" [attr.data-testid]="'editor-findings-' + item.index">
+              @for (finding of findingsOf(item.index); track $index) {
+                <li [attr.data-severity]="finding.severity">
+                  <strong>{{ finding.severity === 'error' ? 'Error' : 'Note' }}</strong>
+                  · {{ finding.message }}
+                </li>
+              }
+            </ul>
+          }
+          <div class="actions">
+            <button
+              type="button"
+              class="secondary"
+              [attr.data-testid]="'change-' + item.index"
+              [disabled]="editing() !== null || saving()"
+              (click)="change(item.index)"
+            >
+              Change
+            </button>
+            <button
+              type="button"
+              class="secondary"
+              [attr.data-testid]="'remove-' + item.index"
+              [disabled]="editing() !== null || saving()"
+              (click)="remove(item.index)"
+            >
+              Remove
+            </button>
+          </div>
+        </div>
+      }
+    }
+  } @empty {
+    <p class="hint" data-testid="editor-empty">The plan has no workouts.</p>
+  }
+
+  @if (editing() === 'new') {
+    <app-workout-form
+      [week]="plan().week_start"
+      [workout]="null"
+      (saved)="workoutSaved($event)"
+      (cancelled)="closeForm()"
+    />
+  } @else {
+    <p>
+      <button
+        type="button"
+        class="secondary"
+        data-testid="add-workout"
+        [disabled]="editing() !== null || saving()"
+        (click)="add()"
+      >
+        Add a workout
+      </button>
+    </p>
+  }
+
+  <div class="actions">
+    <button
+      type="button"
+      class="primary"
+      data-testid="save-version"
+      [disabled]="!changed() || editing() !== null || saving()"
+      (click)="save()"
+    >
+      Save as a new version
+    </button>
+    <button
+      type="button"
+      class="secondary"
+      data-testid="discard-changes"
+      [disabled]="saving()"
+      (click)="cancelled.emit()"
+    >
+      Discard changes
+    </button>
+  </div>
+  @if (saving()) {
+    <p role="status" data-testid="editor-saving">Saving…</p>
+  }
+</section>

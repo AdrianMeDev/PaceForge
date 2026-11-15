@@ -156,6 +156,17 @@ class TestTheCoachsComment:
         assert "how that week went (see [Week review](#week-review))" in " ".join(README.split())
 
 
+class TestTheCorrectionsOfANewVersion:
+    def test_they_move_with_their_workouts(self) -> None:
+        assert (
+            "when a changed version of the week is confirmed, your corrections move to the "
+            "workouts that are the same training"
+        ) in TEXT
+
+    def test_the_old_sentence_is_gone(self) -> None:
+        assert "starts without your corrections" not in " ".join(README.split())
+
+
 class TestWhatIsNotClaimed:
     def test_the_old_promise_is_gone(self) -> None:
         flat = " ".join(README.split())

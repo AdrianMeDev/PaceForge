@@ -1,0 +1,93 @@
+.editor {
+  margin-top: 1rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.15rem;
+}
+
+h3 {
+  margin: 1.25rem 0 0.4rem;
+  font-size: 1rem;
+  color: var(--muted);
+}
+
+h4 {
+  margin: 0 0.25rem 0 0;
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.85rem;
+}
+
+.badge.slot {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.workout {
+  margin-bottom: 0.75rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.meta {
+  margin: 0.3rem 0 0;
+}
+
+.notes {
+  margin: 0.3rem 0 0;
+  color: var(--muted);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.findings,
+.problems {
+  margin: 0.5rem 0;
+  padding-left: 1.2rem;
+}
+
+.findings li[data-severity='error'] {
+  color: var(--danger);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 0.75rem;
+}
+
+button.secondary {
+  padding: 0.5rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}

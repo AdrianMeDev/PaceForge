@@ -19,7 +19,7 @@ from coach import views as coach_views
 from coach.endpoints import parse_base_urls
 from coach.providers.openai_compatible import JSON_MODE_HOSTS
 from coach.providers.transport import TIMEOUT_SECONDS
-from planning import briefing, generation, models, prompt, rules, schema
+from planning import briefing, editing, generation, models, prompt, rules, schema
 from planning.briefing import build_briefing
 from planning.context import PlanContext
 from planning.rules import SPORT_ZONE_SYSTEMS
@@ -466,3 +466,41 @@ def test_the_page_names_every_public_service_function() -> None:
 @pytest.mark.parametrize("word", ["Monday", "superseded", "tolerance"])
 def test_a_few_words_that_the_page_must_keep(word: str) -> None:
     assert word in DOC
+
+
+class TestTheReadmeOnChangingAPlan:
+    FRONTEND = ROOT / "frontend" / "src" / "app" / "features" / "planning"
+
+    def test_the_reasons_of_a_change_and_of_a_restored_version_are_those_of_the_code(self) -> None:
+        assert editing.REASON == "Changed by hand"
+        assert f'(its reason is "{editing.REASON}")' in FLAT_README
+        assert '(its reason is "Restored from version N")' in FLAT_README
+
+    @pytest.mark.parametrize(
+        ("file", "label"),
+        [
+            ("planning-page.html", "Change this plan"),
+            ("plan-editor.html", "Save as a new version"),
+            ("plan-editor.html", "Discard changes"),
+            ("planning-page.html", "Make this the new draft"),
+            ("workout-form.html", "Remove the interval structure"),
+        ],
+    )
+    def test_every_button_the_readme_names_is_one_of_the_page(self, file: str, label: str) -> None:
+        assert label in (self.FRONTEND / file).read_text(), label
+        assert f"**{label}**" in FLAT_README or f"*{label}*" in FLAT_README, label
+
+    def test_it_says_that_there_is_no_drag_and_drop(self) -> None:
+        assert "(there is no drag and drop)" in FLAT_README
+
+    def test_it_says_that_a_confirmed_plan_is_never_changed_and_errors_can_be_saved(self) -> None:
+        assert "a confirmed plan is never changed" in FLAT_README
+        assert "A plan with errors can be saved too; it only cannot be confirmed" in FLAT_README
+
+    def test_it_says_what_a_change_does_to_the_calendar_and_the_week_review(self) -> None:
+        assert "**updates its event** in your calendar" in FLAT_README
+        assert "moves with it to the new version when that is confirmed" in FLAT_README
+
+    def test_the_page_of_the_api_names_the_three_endpoints(self) -> None:
+        for path in ("/check/", "/revise/", "/restore/"):
+            assert "/api/planning/" in DOC and path in DOC, path

@@ -65,8 +65,12 @@ export interface Segment {
   target: ZoneTarget | null;
 }
 
-/** A planned session. `day` is a calendar date (YYYY-MM-DD); the text is the coach's. */
+/**
+ * A planned session. `day` is a calendar date (YYYY-MM-DD); the text is the coach's. `lineage` says
+ * which training this is across the versions of a week: a version made from another keeps it.
+ */
 export interface Workout {
+  lineage: string;
   day: string;
   sport: Sport;
   title: string;
@@ -200,3 +204,72 @@ export type PushPlanResult =
 
 export type DiscardPlanResult =
   { kind: 'ok'; plan: WeekPlan } | PlanNotFound | NotADraft | Forbidden;
+
+/** A part of a workout as it is sent: no `target`, which the server works out. */
+export interface EditedSegment {
+  kind: SegmentKind;
+  seconds: number;
+  repeat: number;
+  zone_system: ZoneSystem | null;
+  zone: number | null;
+}
+
+/**
+ * A workout as it is sent when a plan is changed by hand. `lineage` is the lineage of the workout
+ * of the plan that is changed this one is made from, `null` for a new one.
+ */
+export interface EditedWorkout {
+  lineage: string | null;
+  day: string;
+  sport: Sport;
+  title: string;
+  goal: WorkoutGoal;
+  duration_minutes: number;
+  zone_system: ZoneSystem | null;
+  zone: number | null;
+  notes: string;
+  slot: WorkoutSlot | null;
+  stretching_minutes: number;
+  segments: EditedSegment[];
+}
+
+/** A plan as it is sent to be checked or stored: the plan format, with the workouts by lineage. */
+export interface EditedPlan {
+  week_start: string;
+  rationale: string;
+  workouts: EditedWorkout[];
+}
+
+/** The week cannot be planned (any more), so it cannot be changed either. */
+export interface NotPlannable {
+  kind: 'not_plannable';
+}
+
+/** What was wrong with the plan that was sent (fixed texts, by path). */
+export interface InvalidPlan {
+  kind: 'invalid';
+  problems: PlanProblem[];
+}
+
+export type CheckPlanResult =
+  /** `order[i]` is the place in what was sent of the workout that the findings call `i`. */
+  { kind: 'ok'; report: Report; order: number[] } | NotPlannable | InvalidPlan | Forbidden;
+
+export type RevisePlanResult =
+  /** The new draft, with its checks (it may have errors). */
+  | { kind: 'ok'; plan: WeekPlan }
+  | PlanNotFound
+  | NotPlannable
+  /** Only a draft or a confirmed plan can be changed. */
+  | { kind: 'not_revisable' }
+  | InvalidPlan
+  | Forbidden;
+
+export type RestorePlanResult =
+  /** The new draft, checked with today's data. */
+  | { kind: 'ok'; plan: WeekPlan }
+  | PlanNotFound
+  | NotPlannable
+  /** Only a version that was replaced or discarded can be restored. */
+  | { kind: 'not_restorable' }
+  | Forbidden;

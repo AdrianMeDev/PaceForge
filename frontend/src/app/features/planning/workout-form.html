@@ -1,0 +1,198 @@
+<form
+  class="panel"
+  novalidate
+  aria-labelledby="workout-form-title"
+  (submit)="$event.preventDefault(); submit()"
+>
+  <h3 id="workout-form-title">{{ isNew() ? 'Add a workout' : 'Change this workout' }}</h3>
+
+  <div class="grid">
+    <div class="field">
+      <label for="workout-day">Day</label>
+      <select id="workout-day" (change)="dayValue.set(value($event))">
+        @for (choice of days(); track choice.value) {
+          <option [value]="choice.value" [selected]="choice.value === dayValue()">
+            {{ choice.label }}
+          </option>
+        }
+      </select>
+    </div>
+
+    <div class="field">
+      <label for="workout-slot">Time of day</label>
+      <select id="workout-slot" (change)="slotValue.set(value($event))">
+        @for (choice of slots; track choice.value) {
+          <option [value]="choice.value" [selected]="choice.value === slotValue()">
+            {{ choice.label }}
+          </option>
+        }
+      </select>
+    </div>
+
+    <div class="field">
+      <label for="workout-sport">Sport</label>
+      <select id="workout-sport" (change)="setSport(value($event))">
+        @for (choice of sports; track choice.value) {
+          <option [value]="choice.value" [selected]="choice.value === sportValue()">
+            {{ choice.label }}
+          </option>
+        }
+      </select>
+    </div>
+
+    <div class="field">
+      <label for="workout-goal">Goal</label>
+      <select id="workout-goal" (change)="goalValue.set($any(value($event)))">
+        @for (choice of goals; track choice.value) {
+          <option [value]="choice.value" [selected]="choice.value === goalValue()">
+            {{ choice.label }}
+          </option>
+        }
+      </select>
+    </div>
+  </div>
+
+  <div class="field">
+    <label for="workout-title">Title</label>
+    <input
+      id="workout-title"
+      type="text"
+      autocomplete="off"
+      [attr.maxlength]="titleMax + 50"
+      [value]="titleValue()"
+      [attr.aria-invalid]="errors().title ? 'true' : null"
+      (input)="titleValue.set(value($event))"
+    />
+    @if (errors().title; as text) {
+      <p class="field-error" data-testid="error-title">{{ text }}</p>
+    }
+  </div>
+
+  <div class="grid">
+    <div class="field">
+      <label for="workout-duration">Duration</label>
+      @if (keepsStructure()) {
+        <input
+          id="workout-duration"
+          type="text"
+          readonly
+          aria-describedby="workout-structure"
+          [value]="minutes(start().duration_minutes)"
+        />
+      } @else {
+        <input
+          id="workout-duration"
+          type="text"
+          inputmode="numeric"
+          autocomplete="off"
+          [value]="durationValue()"
+          [attr.aria-invalid]="errors().duration ? 'true' : null"
+          (input)="durationValue.set(value($event))"
+        />
+        <p class="hint">Minutes (90) or hours and minutes (1:30).</p>
+      }
+      @if (errors().duration; as text) {
+        <p class="field-error" data-testid="error-duration">{{ text }}</p>
+      }
+    </div>
+
+    <div class="field">
+      <label for="workout-stretching">Stretching (minutes, optional)</label>
+      <input
+        id="workout-stretching"
+        type="text"
+        inputmode="numeric"
+        autocomplete="off"
+        [value]="stretchingValue()"
+        [attr.aria-invalid]="errors().stretching ? 'true' : null"
+        (input)="stretchingValue.set(value($event))"
+      />
+      @if (errors().stretching; as text) {
+        <p class="field-error" data-testid="error-stretching">{{ text }}</p>
+      }
+    </div>
+  </div>
+
+  @if (zoneSystems().length > 0) {
+    <div class="grid">
+      <div class="field">
+        <label for="workout-zone-system">Target</label>
+        <select id="workout-zone-system" (change)="setZoneSystem(value($event))">
+          <option value="" [selected]="zoneSystemValue() === ''">None</option>
+          @for (choice of zoneSystems(); track choice.value) {
+            <option [value]="choice.value" [selected]="choice.value === zoneSystemValue()">
+              {{ choice.label }}
+            </option>
+          }
+        </select>
+      </div>
+
+      @if (zoneSystem(); as system) {
+        <div class="field">
+          <label for="workout-zone">Zone</label>
+          <select
+            id="workout-zone"
+            [attr.aria-invalid]="errors().zone ? 'true' : null"
+            (change)="zoneValue.set(value($event))"
+          >
+            <option value="" [selected]="zoneValue() === ''">–</option>
+            @for (choice of zones(system); track choice.value) {
+              <option [value]="choice.value" [selected]="choice.value.toString() === zoneValue()">
+                {{ choice.label }}
+              </option>
+            }
+          </select>
+          @if (errors().zone; as text) {
+            <p class="field-error" data-testid="error-zone">{{ text }}</p>
+          }
+        </div>
+      }
+    </div>
+  }
+
+  @if (hasStructure()) {
+    <div class="field" id="workout-structure">
+      <label class="check">
+        <input
+          id="workout-drop-structure"
+          type="checkbox"
+          [checked]="dropStructure()"
+          (change)="dropStructure.set($any($event.target).checked)"
+        />
+        Remove the interval structure
+      </label>
+      <p class="hint" data-testid="structure-hint">
+        @if (keepsStructure()) {
+          This workout has an interval structure (it is kept as it is) and its duration follows it.
+          Remove the structure to set the duration yourself.
+        } @else {
+          The structure is removed when you save; the duration is the one above.
+        }
+      </p>
+    </div>
+  }
+
+  <div class="field">
+    <label for="workout-notes">Notes (optional)</label>
+    <textarea
+      id="workout-notes"
+      rows="2"
+      [attr.maxlength]="notesMax + 100"
+      [value]="notesValue()"
+      [attr.aria-invalid]="errors().notes ? 'true' : null"
+      (input)="notesValue.set(value($event))"
+    ></textarea>
+    @if (errors().notes; as text) {
+      <p class="field-error" data-testid="error-notes">{{ text }}</p>
+    }
+  </div>
+
+  <div class="actions">
+    <button type="submit" class="primary" data-testid="workout-save">
+      {{ isNew() ? 'Add workout' : 'Save workout' }}
+    </button>
+    <button type="button" class="secondary" data-testid="workout-cancel" (click)="cancelled.emit()">
+      Cancel
+    </button>
+  </div>
+</form>

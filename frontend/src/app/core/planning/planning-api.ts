@@ -3,8 +3,10 @@ import { Injectable, inject } from '@angular/core';
 import { Observable, firstValueFrom } from 'rxjs';
 import { API_BASE } from '../api/api-providers';
 import {
+  CheckPlanResult,
   ConfirmPlanResult,
   DiscardPlanResult,
+  EditedPlan,
   ExportError,
   ExportStatus,
   ExportSummary,
@@ -21,6 +23,8 @@ import {
   PlannableWeek,
   ProviderProblem,
   Report,
+  RestorePlanResult,
+  RevisePlanResult,
   Segment,
   SegmentKind,
   TargetUnit,
@@ -258,6 +262,92 @@ export class PlanningApi {
     }
   }
 
+  /**
+   * Asks for the checks of a plan that was changed by hand, for the week that starts on `week`.
+   * Nothing is stored. `order[i]` says which workout of `plan` the findings call `i` (they number
+   * the workouts as they are stored: by day and time of day). A week that is no date is not sent.
+   */
+  async check(week: string, plan: EditedPlan): Promise<CheckPlanResult> {
+    if (!isDate(week)) {
+      return { kind: 'not_plannable' };
+    }
+    const reply = await this.send(
+      this.http.post(`${BASE}/weeks/${week}/check/`, toBody(plan), { observe: 'response' }),
+    );
+    switch (reply.status) {
+      case 200:
+        return {
+          kind: 'ok',
+          report: toReport(reply.body, reply),
+          order: toOrder(reply.body, plan.workouts.length, reply),
+        };
+      case 404:
+        return { kind: 'not_plannable' };
+      case 422:
+        return { kind: 'invalid', problems: toProblems(reply) };
+      case 401:
+      case 403:
+        return { kind: 'forbidden' };
+      default:
+        throw unexpected(reply);
+    }
+  }
+
+  /**
+   * Stores a plan that was changed by hand as a new draft version of the week of plan `id`, which
+   * stays as it is. A draft with errors is stored too: it cannot be confirmed.
+   */
+  async revise(id: string, plan: EditedPlan): Promise<RevisePlanResult> {
+    if (!UUID.test(id)) {
+      return { kind: 'not_found' };
+    }
+    const reply = await this.send(
+      this.http.post(`${BASE}/plans/${id}/revise/`, toBody(plan), { observe: 'response' }),
+    );
+    switch (reply.status) {
+      case 201:
+        return { kind: 'ok', plan: toPlan(reply.body, reply) };
+      case 404:
+        return codeOf(reply.body) === 'week_not_plannable'
+          ? { kind: 'not_plannable' }
+          : { kind: 'not_found' };
+      case 409:
+        return { kind: 'not_revisable' };
+      case 422:
+        return { kind: 'invalid', problems: toProblems(reply) };
+      case 401:
+      case 403:
+        return { kind: 'forbidden' };
+      default:
+        throw unexpected(reply);
+    }
+  }
+
+  /** Brings back a version that was replaced or discarded, as a new draft. */
+  async restore(id: string): Promise<RestorePlanResult> {
+    if (!UUID.test(id)) {
+      return { kind: 'not_found' };
+    }
+    const reply = await this.send(
+      this.http.post(`${BASE}/plans/${id}/restore/`, {}, { observe: 'response' }),
+    );
+    switch (reply.status) {
+      case 201:
+        return { kind: 'ok', plan: toPlan(reply.body, reply) };
+      case 404:
+        return codeOf(reply.body) === 'week_not_plannable'
+          ? { kind: 'not_plannable' }
+          : { kind: 'not_found' };
+      case 409:
+        return { kind: 'not_restorable' };
+      case 401:
+      case 403:
+        return { kind: 'forbidden' };
+      default:
+        throw unexpected(reply);
+    }
+  }
+
   private async send(request: Observable<HttpResponse<unknown>>): Promise<Reply> {
     try {
       const response = await firstValueFrom(request);
@@ -347,12 +437,14 @@ function toPlan(raw: unknown, reply: Reply): WeekPlan {
 
 function toWorkout(raw: unknown, reply: Reply): Workout {
   const item = asObject(raw, reply);
-  const { day, sport, title, goal, duration_minutes, notes, slot, stretching_minutes } = item;
+  const { lineage, day, sport, title, goal, duration_minutes, notes, slot, stretching_minutes } =
+    item;
   const target = toTarget(item['zone_system'], item['zone']);
   const range = toRange(item['target']);
   const sent = toExport(item['export']);
   const segments = item['segments'];
   if (
+    !isUuid(lineage) ||
     !isDate(day) ||
     !isOneOf<Sport>(sport, SPORTS) ||
     typeof title !== 'string' ||
@@ -373,6 +465,7 @@ function toWorkout(raw: unknown, reply: Reply): Workout {
     throw unexpected(reply);
   }
   return {
+    lineage,
     day,
     sport,
     title,
@@ -386,6 +479,52 @@ function toWorkout(raw: unknown, reply: Reply): Workout {
     stretching_minutes,
     segments: segments.map((segment: unknown) => toSegment(segment, reply)),
   };
+}
+
+/**
+ * What is sent of a plan that was changed by hand: only the fields of the format and the lineage.
+ * Whatever else the objects carry (the `target` of a workout, its `export`) is left out on
+ * purpose: the server refuses a field that is not part of the format.
+ */
+function toBody(plan: EditedPlan): EditedPlan {
+  return {
+    week_start: plan.week_start,
+    rationale: plan.rationale,
+    workouts: plan.workouts.map((workout) => ({
+      lineage: workout.lineage,
+      day: workout.day,
+      sport: workout.sport,
+      title: workout.title,
+      goal: workout.goal,
+      duration_minutes: workout.duration_minutes,
+      zone_system: workout.zone_system,
+      zone: workout.zone,
+      notes: workout.notes,
+      slot: workout.slot,
+      stretching_minutes: workout.stretching_minutes,
+      segments: workout.segments.map((segment) => ({
+        kind: segment.kind,
+        seconds: segment.seconds,
+        repeat: segment.repeat,
+        zone_system: segment.zone_system,
+        zone: segment.zone,
+      })),
+    })),
+  };
+}
+
+/** `order` of a check: each place of the `count` workouts sent, once. */
+function toOrder(body: unknown, count: number, reply: Reply): number[] {
+  const order = asObject(body, reply)['order'];
+  if (
+    !Array.isArray(order) ||
+    order.length !== count ||
+    !order.every((place): place is number => isCount(place) && place < count) ||
+    new Set(order).size !== count
+  ) {
+    throw unexpected(reply);
+  }
+  return order;
 }
 
 function toSegment(raw: unknown, reply: Reply): Segment {
