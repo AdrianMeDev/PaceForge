@@ -3,15 +3,18 @@
 ``build_briefing`` turns the planning context and a few more rows into plain JSON data; the prompt
 (``planning.prompt``) wraps it, nothing else is ever sent. What is in it: the week and today,
 what each day offers, the zone tables of the zone systems the athlete can use, the active goals,
-the minutes done in recent weeks, the limits of the rules that follow from the athlete's intensity
-level (``limits``), a summary of last week's confirmed plan and how that week went
-(``previous_week_review``: numbers and one fixed word, no free text; see ``reviews.briefing``).
+the minutes done in recent weeks, the athlete's injuries (a body part and sports from a fixed
+list), the limits of the rules that follow from the athlete's intensity level (``limits``), a
+summary of last week's confirmed plan and how that week went (``previous_week_review``: numbers
+and one fixed word, no free text; see ``reviews.briefing``).
 
 What is not in it: names, e-mail addresses, activity names or descriptions, ids of any kind, the
 thresholds of sports without zones, the provider settings. The only free text is the title and
-notes of a goal, cut to ``GOAL_NOTES_MAX`` characters; the prompt says that they are data and not
-instructions. Size is bounded by construction (``MAX_GOALS``, the fixed zone tables) and checked in
-the tests against ``MAX_BYTES``.
+notes of a goal, cut to ``GOAL_NOTES_MAX`` characters, and the athlete's text about their
+limitations, cut to ``LIMITATIONS_TEXT_MAX_TOLD`` characters and only if the athlete switched
+that on; the prompt says that they are data and not instructions. Size is bounded by construction
+(``MAX_GOALS``, ``MAX_LIMITATIONS_TOLD``, the fixed zone tables) and checked in the tests against
+``MAX_BYTES``.
 """
 
 import json
@@ -35,6 +38,12 @@ from .schema import Slot, Sport, ZoneSystem
 MAX_GOALS = 5
 # Goal notes are cut here (the model allows more); titles are short enough already.
 GOAL_NOTES_MAX = 300
+# At most this many current limitations are told, the newest first; the rest is only counted.
+MAX_LIMITATIONS_TOLD = 10
+# The free text about limitations is cut here, and only told if the athlete allowed it. More does
+# not fit: with ``MAX_GOALS`` goals and ``MAX_LIMITATIONS_TOLD`` limitations at their limits the
+# briefing needs about 18 900 bytes, which leaves room for about 185 characters of free text.
+LIMITATIONS_TEXT_MAX_TOLD = 150
 # The most the JSON of a briefing may take, measured in UTF-8 bytes with every free-text
 # character as a six-byte escape (a control character), the worst a character can cost.
 MAX_BYTES = 20_000
@@ -70,6 +79,13 @@ def build_briefing(user: User, monday: date) -> dict[str, Any]:
         "sports": [sport.value for sport in Sport if sport in context.sports],
         "stretching": context.stretching,
         "limits": _limits(context),
+        "limitations": _limitations(context),
+        "limitations_not_shown": max(0, len(context.limitations) - MAX_LIMITATIONS_TOLD),
+        "limitations_text": (
+            context.limitations_text[:LIMITATIONS_TEXT_MAX_TOLD]
+            if context.limitations_text
+            else None
+        ),
         "previous_week_plan": _previous_week(user, monday),
         "previous_week_review": _previous_week_review(user, monday),
     }
@@ -85,6 +101,18 @@ def _limits(context: PlanContext) -> dict[str, int]:
         "progression_error_percent": limits.progression_error_percent,
         "easy_share_percent": limits.easy_share_percent,
     }
+
+
+def _limitations(context: PlanContext) -> list[dict[str, Any]]:
+    """The current injuries and limitations, the newest first, as the body part (a fixed word)
+    and the sports it affects in the order of the format. No text of the athlete."""
+    return [
+        {
+            "body_part": entry.body_part,
+            "sports": [sport.value for sport in Sport if sport in entry.sports],
+        }
+        for entry in context.limitations[:MAX_LIMITATIONS_TOLD]
+    ]
 
 
 def to_json(briefing: dict[str, Any]) -> str:

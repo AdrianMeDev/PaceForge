@@ -15,12 +15,22 @@ from activities.models import Activity
 from athletes.thresholds import all_candidates
 from availability.capacity import week_capacity
 from availability.intensity import DEFAULT_LEVEL, LEVEL_LIMITS, Limits
+from availability.limitations import current_limitations
 from goals.services import time_zone_of
 
 from .schema import Slot, Sport, ZoneSystem
 
 # How many weeks before the plan's week make up the reference volume.
 RECENT_WEEKS = 4
+
+
+@dataclass(frozen=True)
+class ActiveLimitation:
+    """A current injury or limitation: where it is (from a fixed list) and the sports it affects,
+    none meaning no particular sport."""
+
+    body_part: str
+    sports: frozenset[Sport]
 
 
 @dataclass(frozen=True)
@@ -51,6 +61,10 @@ class PlanContext:
     # open. Without a choice two are allowed and every part of the day is open.
     double_days: tuple[bool, ...] = (True,) * 7
     time_windows: tuple[frozenset[Slot], ...] = (frozenset(Slot),) * 7
+    # The current limitations, the newest first. Healed ones are not in here.
+    limitations: tuple[ActiveLimitation, ...] = ()
+    # The athlete's free text about their limitations, only if they let it go to the coach.
+    limitations_text: str | None = None
 
     def offset(self, day: date) -> int | None:
         """The place of ``day`` in the week (Monday is 0), ``None`` if it lies outside."""
@@ -78,6 +92,11 @@ def build_context(user: User, monday: date) -> PlanContext:
         double_days=capacity.double_days,
         time_windows=tuple(
             frozenset(Slot(slot) for slot in window) for window in capacity.time_windows
+        ),
+        limitations_text=capacity.shared_limitations_text,
+        limitations=tuple(
+            ActiveLimitation(body_part, frozenset(Sport(sport) for sport in sports))
+            for body_part, sports in current_limitations(user)
         ),
     )
 

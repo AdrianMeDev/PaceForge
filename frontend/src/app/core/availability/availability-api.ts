@@ -7,13 +7,21 @@ import {
   AvailabilityChanges,
   AvailabilitySlot,
   AvailabilitySport,
+  BodyPart,
+  CreateLimitationResult,
   CreatePeriodResult,
+  DeleteLimitationResult,
   DeletePeriodResult,
   GetAvailabilityResult,
   IntensityLevel,
   Invalid,
   LimitName,
+  Limitation,
+  LimitationChanges,
+  LimitationInput,
+  LimitationStatus,
   Limits,
+  ListLimitationsResult,
   ListPeriodsResult,
   Period,
   PeriodChanges,
@@ -21,14 +29,30 @@ import {
   PeriodKind,
   PeriodStatus,
   SaveAvailabilityResult,
+  UpdateLimitationResult,
   UpdatePeriodResult,
 } from './availability-models';
 
 const URL = `${API_BASE}/availability/`;
 const PERIODS_URL = `${URL}periods/`;
+const LIMITATIONS_URL = `${URL}limitations/`;
 const INVALID_FALLBACK = 'The input was not accepted.';
 const HANDLED_ERRORS = [400, 401, 403, 404];
 const KINDS: readonly string[] = ['vacation', 'illness', 'other'];
+const BODY_PARTS: readonly string[] = [
+  'foot',
+  'ankle',
+  'achilles',
+  'calf',
+  'shin',
+  'knee',
+  'thigh',
+  'hip',
+  'back',
+  'shoulder',
+  'other',
+];
+const LIMITATION_STATUSES: readonly string[] = ['current', 'healed'];
 const SPORTS: readonly string[] = ['running', 'cycling', 'swimming', 'strength'];
 const SLOTS: readonly string[] = ['morning', 'afternoon', 'evening'];
 const STATUSES: readonly string[] = ['current', 'upcoming', 'past'];
@@ -146,6 +170,70 @@ export class AvailabilityApi {
     }
   }
 
+  /** The user's limitations, in the order the server sends them. */
+  async listLimitations(): Promise<ListLimitationsResult> {
+    const reply = await this.send(this.http.get(LIMITATIONS_URL, { observe: 'response' }));
+    switch (reply.status) {
+      case 200:
+        return { kind: 'ok', limitations: toLimitations(reply) };
+      case 401:
+      case 403:
+        return { kind: 'forbidden' };
+      default:
+        throw unexpected(reply);
+    }
+  }
+
+  async createLimitation(input: LimitationInput): Promise<CreateLimitationResult> {
+    const reply = await this.send(this.http.post(LIMITATIONS_URL, input, { observe: 'response' }));
+    switch (reply.status) {
+      case 201:
+        return { kind: 'ok', limitation: toLimitation(reply.body, reply) };
+      case 400:
+        return invalid(reply);
+      case 401:
+      case 403:
+        return { kind: 'forbidden' };
+      default:
+        throw unexpected(reply);
+    }
+  }
+
+  /** Changes only the fields given. */
+  async updateLimitation(id: string, changes: LimitationChanges): Promise<UpdateLimitationResult> {
+    const reply = await this.send(
+      this.http.patch(limitationUrl(id), changes, { observe: 'response' }),
+    );
+    switch (reply.status) {
+      case 200:
+        return { kind: 'ok', limitation: toLimitation(reply.body, reply) };
+      case 400:
+        return invalid(reply);
+      case 404:
+        return { kind: 'not_found' };
+      case 401:
+      case 403:
+        return { kind: 'forbidden' };
+      default:
+        throw unexpected(reply);
+    }
+  }
+
+  async deleteLimitation(id: string): Promise<DeleteLimitationResult> {
+    const reply = await this.send(this.http.delete(limitationUrl(id), { observe: 'response' }));
+    switch (reply.status) {
+      case 204:
+        return { kind: 'deleted' };
+      case 404:
+        return { kind: 'not_found' };
+      case 401:
+      case 403:
+        return { kind: 'forbidden' };
+      default:
+        throw unexpected(reply);
+    }
+  }
+
   private async send(request: Observable<HttpResponse<unknown>>): Promise<Reply> {
     try {
       const response = await firstValueFrom(request);
@@ -161,6 +249,10 @@ export class AvailabilityApi {
 
 function periodUrl(id: string): string {
   return `${PERIODS_URL}${encodeURIComponent(id)}/`;
+}
+
+function limitationUrl(id: string): string {
+  return `${LIMITATIONS_URL}${encodeURIComponent(id)}/`;
 }
 
 /** Only the known fields are taken over, whatever else an answer might carry. */
@@ -191,6 +283,7 @@ function toAvailability(raw: unknown, reply: Reply): Availability {
     new Set(sports).size !== sports.length ||
     typeof item['stretching'] !== 'boolean' ||
     typeof item['limitations'] !== 'string' ||
+    typeof item['share_limitations_text'] !== 'boolean' ||
     !isOneOf<IntensityLevel>(item['intensity_level'], LEVELS) ||
     !LIMIT_NAMES.every((name) => item[name] === null || isWholeNumber(item[name]))
   ) {
@@ -206,6 +299,7 @@ function toAvailability(raw: unknown, reply: Reply): Availability {
     sports: [...(sports as AvailabilitySport[])],
     stretching: item['stretching'],
     limitations: item['limitations'],
+    share_limitations_text: item['share_limitations_text'],
     intensity_level: item['intensity_level'],
     max_hard_days: item['max_hard_days'] as number | null,
     progression_warning_percent: item['progression_warning_percent'] as number | null,
@@ -230,6 +324,35 @@ function toLimits(raw: unknown, reply: Reply): Limits {
     progression_warning_percent: item['progression_warning_percent'] as number,
     progression_error_percent: item['progression_error_percent'] as number,
     easy_share_percent: item['easy_share_percent'] as number,
+  };
+}
+
+function toLimitations(reply: Reply): Limitation[] {
+  if (!Array.isArray(reply.body)) {
+    throw unexpected(reply);
+  }
+  return reply.body.map((item) => toLimitation(item, reply));
+}
+
+/** Only the known fields are taken over; the sports are each of the known ones at most once. */
+function toLimitation(raw: unknown, reply: Reply): Limitation {
+  const item = asObject(raw, reply);
+  const sports = item['sports'];
+  if (
+    typeof item['id'] !== 'string' ||
+    !isOneOf<BodyPart>(item['body_part'], BODY_PARTS) ||
+    !isOneOf<LimitationStatus>(item['status'], LIMITATION_STATUSES) ||
+    !Array.isArray(sports) ||
+    !sports.every((sport) => isOneOf<AvailabilitySport>(sport, SPORTS)) ||
+    new Set(sports).size !== sports.length
+  ) {
+    throw unexpected(reply);
+  }
+  return {
+    id: item['id'],
+    body_part: item['body_part'],
+    status: item['status'],
+    sports: [...(sports as AvailabilitySport[])],
   };
 }
 

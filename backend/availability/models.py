@@ -56,7 +56,7 @@ class AvailabilitySettings(OwnedModel):
     planning after a break, never a limit on what the weekdays offer. The sports are the ones the
     athlete wants in a plan (empty: none chosen, which means all of them) and ``stretching`` says
     whether stretching may be added to sessions. The limitations are free text and are never
-    interpreted here.
+    interpreted here; they go to the coach only if ``share_limitations_text`` is on.
 
     The intensity level sets the limits of the planning rules (``availability.intensity``); each of
     the four own limits replaces the level's value when it is set (empty: the level's value).
@@ -67,6 +67,8 @@ class AvailabilitySettings(OwnedModel):
     sports = models.JSONField(default=list, blank=True)
     stretching = models.BooleanField(default=False)
     limitations = models.CharField(max_length=LIMITATIONS_MAX, blank=True)
+    # Whether the free text above may go to the coach. Off until the user turns it on.
+    share_limitations_text = models.BooleanField(default=False)
     intensity_level = models.CharField(
         max_length=20, choices=IntensityLevel.choices, default=DEFAULT_LEVEL
     )
@@ -258,3 +260,77 @@ class UnavailablePeriod(OwnedModel):
             raise ValidationError(
                 {"end_date": f"A period can last at most {PERIOD_MAX_DAYS} days."}
             )
+
+
+class BodyPart(models.TextChoices):
+    """Where a limitation is: a fixed list, never free text."""
+
+    FOOT = "foot", "Foot"
+    ANKLE = "ankle", "Ankle"
+    ACHILLES = "achilles", "Achilles tendon"
+    CALF = "calf", "Calf"
+    SHIN = "shin", "Shin"
+    KNEE = "knee", "Knee"
+    THIGH = "thigh", "Thigh"
+    HIP = "hip", "Hip"
+    BACK = "back", "Back"
+    SHOULDER = "shoulder", "Shoulder"
+    OTHER = "other", "Other"
+
+
+class LimitationStatus(models.TextChoices):
+    CURRENT = "current", "Current"
+    HEALED = "healed", "Healed"
+
+
+class Limitation(OwnedModel):
+    """An injury or other limitation: where it is, whether it is current or healed, and which of
+    the sports it affects (none listed: no particular sport).
+
+    Only the body part from a fixed list is stored, never free text, so that what reaches the coach
+    cannot carry words of the user. Entries that are healed stay as a record; they are not told
+    and not checked. The id is time-ordered, so the newest entry has the highest id."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid7, editable=False)
+    body_part = models.CharField(max_length=20, choices=BodyPart.choices)
+    status = models.CharField(
+        max_length=20, choices=LimitationStatus.choices, default=LimitationStatus.CURRENT
+    )
+    sports = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(body_part__in=BodyPart.values),
+                name="availability_limitation_body_part_known",
+            ),
+            models.CheckConstraint(
+                condition=Q(status__in=LimitationStatus.values),
+                name="availability_limitation_status_known",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        # The body part is from a fixed list; there is no free text on an entry.
+        return f"{self.body_part} limitation of user {self.owner_id}"
+
+    def clean(self) -> None:
+        super().clean()
+        sports = self.sports
+        if not (
+            isinstance(sports, list)
+            and all(isinstance(sport, str) and sport in SPORTS for sport in sports)
+            and len(set(sports)) == len(sports)
+        ):
+            raise ValidationError(
+                {"sports": "Use each of running, cycling, swimming and strength at most once."}
+            )
+
+    @property
+    def affected_sports(self) -> list[str]:
+        """The sports this entry affects, in the order of ``SPORTS``; none means no particular
+        sport."""
+        sports = self.sports
+        if isinstance(sports, list):
+            return [sport for sport in SPORTS if sport in sports]
+        return []

@@ -47,6 +47,22 @@ ENDURANCE_SPORTS = frozenset({Sport.RUNNING, Sport.CYCLING, Sport.SWIMMING})
 # Segments of these kinds without a zone are easy whatever the workout is.
 _EASY_KINDS = frozenset({SegmentKind.WARMUP, SegmentKind.RECOVERY, SegmentKind.COOLDOWN})
 
+# The words for the body parts of a limitation in a finding (fixed text, never the user's). A test
+# keeps the keys in step with ``availability.models.BodyPart``.
+BODY_PART_WORDS = {
+    "foot": "foot",
+    "ankle": "ankle",
+    "achilles": "Achilles tendon",
+    "calf": "calf",
+    "shin": "shin",
+    "knee": "knee",
+    "thigh": "thigh",
+    "hip": "hip",
+    "back": "back",
+    "shoulder": "shoulder",
+    "other": "other",
+}
+
 _WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 _ABSENCES = {"illness": "an illness", "vacation": "a vacation"}
 
@@ -548,6 +564,32 @@ def check_double_day_order(plan: WeekPlan, context: PlanContext) -> list[Finding
     return found
 
 
+def check_limitations(plan: WeekPlan, context: PlanContext) -> list[Finding]:
+    """A workout in a sport that a current limitation affects (a warning, once per workout, at
+    its sport, naming the newest limitation that affects it). A limitation without sports affects
+    no particular sport and is never named here; the coach has been told about it."""
+    _same_week(plan, context)
+    found = []
+    for offset, workouts in sorted(_workouts_by_day(plan, context).items()):
+        for index, workout in workouts:
+            hit = next(
+                (entry for entry in context.limitations if workout.sport in entry.sports), None
+            )
+            if hit is None:
+                continue
+            found.append(
+                Finding(
+                    Severity.WARNING,
+                    "limited_sport",
+                    f"{_WEEKDAYS[offset]} has a {workout.sport.value} workout, but your "
+                    f"{BODY_PART_WORDS.get(hit.body_part, 'current')} limitation affects "
+                    f"{workout.sport.value}.",
+                    f"workouts[{index}].sport",
+                )
+            )
+    return found
+
+
 def check_times_of_day(plan: WeekPlan, context: PlanContext) -> list[Finding]:
     """Several workouts on a day need a time of day each, and no two share one.
 
@@ -612,6 +654,7 @@ RHYTHM_CHECKS: tuple[Check, ...] = (
     check_easy_share,
     check_times_of_day,
     check_double_day_order,
+    check_limitations,
 )
 
 ALL_CHECKS: tuple[Check, ...] = BASIC_CHECKS + RHYTHM_CHECKS

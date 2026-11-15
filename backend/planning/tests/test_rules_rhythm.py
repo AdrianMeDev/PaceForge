@@ -7,8 +7,9 @@ from typing import Any
 import pytest
 
 from availability.intensity import LEVEL_LIMITS, IntensityLevel, Limits
+from availability.models import BodyPart
 from planning import rules
-from planning.context import PlanContext
+from planning.context import ActiveLimitation, PlanContext
 from planning.rules import (
     ALL_CHECKS,
     BASIC_CHECKS,
@@ -26,6 +27,7 @@ from planning.rules import (
     check_easy_share,
     check_hard_days,
     check_hard_days_in_a_row,
+    check_limitations,
     check_progression,
     check_times_of_day,
     check_workouts_per_day,
@@ -610,6 +612,106 @@ class TestTheOrderOfADoubleDay:
         assert "SECRETMARKER" not in repr(found)
 
 
+class TestLimitedSports:
+    def found(self, *workouts: Workout, limitations: tuple[ActiveLimitation, ...]) -> list[Finding]:
+        return check_limitations(week(*workouts), context(limitations=limitations))
+
+    def achilles(self, *sports: Sport) -> ActiveLimitation:
+        return ActiveLimitation("achilles", frozenset(sports))
+
+    def test_a_workout_in_an_affected_sport_is_a_warning_at_its_sport(self) -> None:
+        found = self.found(
+            workout(1, 40, sport=Sport.RUNNING), limitations=(self.achilles(Sport.RUNNING),)
+        )
+
+        assert found == [
+            Finding(
+                Severity.WARNING,
+                "limited_sport",
+                "Tuesday has a running workout, but your Achilles tendon limitation affects "
+                "running.",
+                "workouts[0].sport",
+            )
+        ]
+
+    def test_another_sport_is_fine(self) -> None:
+        found = self.found(workout(1, 40), limitations=(self.achilles(Sport.RUNNING),))
+
+        assert found == []
+
+    def test_a_limitation_without_sports_names_no_workout(self) -> None:
+        found = self.found(
+            workout(1, 40, sport=Sport.RUNNING), workout(2, 40), limitations=(self.achilles(),)
+        )
+
+        assert found == []
+
+    def test_without_limitations_nothing_is_found(self) -> None:
+        assert self.found(workout(1, 40), limitations=()) == []
+
+    def test_a_workout_is_named_once_with_the_newest_limitation_that_affects_it(self) -> None:
+        newest = ActiveLimitation("knee", frozenset({Sport.RUNNING, Sport.CYCLING}))
+        found = self.found(
+            workout(1, 40, sport=Sport.RUNNING),
+            limitations=(newest, self.achilles(Sport.RUNNING)),
+        )
+
+        assert len(found) == 1
+        assert "knee limitation" in found[0].message
+
+    def test_every_affected_workout_is_named_in_the_order_of_the_week(self) -> None:
+        found = self.found(
+            workout(4, 40, sport=Sport.RUNNING),
+            workout(1, 40),
+            workout(1, 40, sport=Sport.RUNNING),
+            limitations=(self.achilles(Sport.RUNNING),),
+        )
+
+        assert [f.path for f in found] == ["workouts[2].sport", "workouts[0].sport"]
+        assert [f.message[:6] for f in found] == ["Tuesda", "Friday"]
+
+    def test_several_sports_of_one_limitation_are_each_named(self) -> None:
+        found = self.found(
+            workout(1, 40, sport=Sport.RUNNING),
+            workout(2, 40, sport=Sport.STRENGTH),
+            workout(3, 40),
+            limitations=(ActiveLimitation("back", frozenset({Sport.RUNNING, Sport.STRENGTH})),),
+        )
+
+        assert [f.path for f in found] == ["workouts[0].sport", "workouts[1].sport"]
+
+    def test_workouts_outside_the_week_are_left_alone(self) -> None:
+        found = self.found(
+            workout(8, 40, sport=Sport.RUNNING), limitations=(self.achilles(Sport.RUNNING),)
+        )
+
+        assert found == []
+
+    def test_a_body_part_that_has_no_word_is_still_named_in_fixed_words(self) -> None:
+        found = self.found(
+            workout(1, 40, sport=Sport.RUNNING),
+            limitations=(ActiveLimitation("SECRETMARKER", frozenset({Sport.RUNNING})),),
+        )
+
+        assert "SECRETMARKER" not in repr(found)
+        assert "your current limitation affects running" in found[0].message
+
+    def test_the_title_and_the_notes_are_not_repeated(self) -> None:
+        found = self.found(
+            workout(1, 40, sport=Sport.RUNNING, title="SECRETMARKER", notes="SECRETMARKER"),
+            limitations=(self.achilles(Sport.RUNNING),),
+        )
+
+        assert found
+        assert "SECRETMARKER" not in repr(found)
+
+    def test_the_words_cover_every_body_part_of_the_model(self) -> None:
+        assert set(rules.BODY_PART_WORDS) == set(BodyPart.values)
+
+    def test_the_words_are_fixed_text_without_digits(self) -> None:
+        assert all(word.isalpha() or " " in word for word in rules.BODY_PART_WORDS.values())
+
+
 class TestTheSameWorkoutTwice:
     def test_the_same_sport_goal_and_duration_on_one_day_is_a_warning_at_the_repeat(self) -> None:
         plan = week(workout(1, 60), workout(1, 60))
@@ -1082,6 +1184,7 @@ class TestTheLists:
             check_easy_share,
             check_times_of_day,
             check_double_day_order,
+            check_limitations,
         )
 
     def test_which_rules_are_errors_and_which_warnings(self) -> None:

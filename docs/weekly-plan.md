@@ -165,6 +165,9 @@ Each plan is checked against the facts of its user for that week, collected when
 - **Double days and parts of the day.** For each weekday whether two workouts are allowed and which
   parts of the day (morning, afternoon, evening) are open. Without a choice two workouts are allowed
   and every part is open. A day of absence keeps the choice of its weekday.
+- **Limitations.** The athlete's current injuries and limitations, each a body part from a fixed
+  list and the sports it affects. A workout in an affected sport is a warning (`limited_sport`),
+  not an error. Healed entries are not in the context.
 - **Sports and stretching.** The sports the athlete ticked (all four if none was chosen) and whether
   stretching may be added to sessions. Stretching minutes are not a workout and not time: they do
   not use up the minutes of a day or a week and do not count for the progression rule.
@@ -204,6 +207,7 @@ user to weigh.
 | `volume_jump` | error | The planned minutes are above the error limit of the reference (the recent average, or the typical week if that is higher). |
 | `two_hard_in_a_day` | error | Two hard workouts on one day. Named once per day, at the second hard one. |
 | `quality_not_first` | warning | On a day with two running, cycling or swimming workouts that both have a time of day, an easy one comes before a moderate or hard one. Strength is left out. Named once per day, at the easy one. |
+| `limited_sport` | warning | A workout in a sport that a current limitation affects (training time page). Named at the sport of the workout, once per workout, with the body part of the newest limitation that affects it. A limitation without sports affects no particular sport and is never named. |
 | `hard_days_in_a_row` | warning | A hard day directly after a hard day. |
 | `no_free_day` | warning | Every day of the week has a workout. |
 | `many_workouts_in_a_day` | error | More workouts on a day than the limit (two). Named once per day, at the first one too many. |
@@ -340,13 +344,20 @@ without this page.
 | `sports` | The sports the athlete wants in a plan (all four if none was chosen), in the order of the format. |
 | `stretching` | Whether stretching may be added to sessions (`stretching_minutes`), never as a session. |
 | `limits` | The limits of the rules that follow from the athlete's [intensity level](#the-intensity-levels): `max_hard_days`, `progression_warning_percent`, `progression_error_percent`, `easy_share_percent`. They are here and not in the system prompt, so that the prompt is the same for every athlete. |
+| `limitations` | The current injuries and limitations, the newest first, at most 10: `body_part` (a fixed word: foot, ankle, achilles, calf, shin, knee, thigh, hip, back, shoulder, other) and the `sports` it affects (none listed: no particular sport). Healed ones are not told. No text of the athlete. |
+| `limitations_text` | What the athlete wrote in the free text about their limitations, cut to `LIMITATIONS_TEXT_MAX_TOLD` characters, **only if they switched on "Send this text to my AI coach"**; otherwise `null`. Free text: the system prompt says that it is data and never instructions. |
+| `limitations_not_shown` | How many current limitations were left out because of the limit. |
 | `previous_week_plan` | The confirmed plan of the week before: day, sport, goal, minutes. |
 | `previous_week_review` | How the week before went, from the [week review](../README.md#week-review): the number of workouts by status, the minutes planned and done, the sessions that were not planned, how many sessions were rated and their mean RPE, the three scales of the week feedback (`null` if none was given) and `next_week`, the recommendation of a review of that week by the coach (`increase`, `hold`, `reduce`; `null` if none was asked for). Numbers and one fixed word, no text of the user or of the coach. `null` if the week before has not begun or has nothing in it. |
 
 What is **never** sent: names, e-mail addresses, ids, the title or notes of past plans, the names
-or descriptions of activities, the limitations of the training time page and the provider setup.
-The title and notes of a goal are free text. They are sent as JSON strings, the notes cut to
-`GOAL_NOTES_MAX` characters, and the system prompt says that they are data and never instructions.
+or descriptions of activities and the provider setup. The limitations of the training time page are
+told as a body part and sports from a fixed list; the free text next to them is **only** sent if the
+athlete switches that on, and then as `limitations_text`.
+
+The title and notes of a goal (and `limitations_text`, if allowed) are free text. They are sent as
+JSON strings, the notes cut to `GOAL_NOTES_MAX` characters and the limitations text to
+`LIMITATIONS_TEXT_MAX_TOLD`, and the system prompt says that they are data and never instructions.
 That is a request to the model, not a guarantee: a model may still be swayed by what is in them.
 What it cannot do is get a plan past the parser and the rules.
 
@@ -361,6 +372,8 @@ What it cannot do is get a plan past the parser and the rules.
 | `MAX_LISTED` | 20 | Problems listed in a repair message; the rest is only counted. |
 | `MAX_GOALS` | 5 | Active goals told to the coach. |
 | `GOAL_NOTES_MAX` | 300 | Characters of the notes of a goal that are sent. |
+| `LIMITATIONS_TEXT_MAX_TOLD` | 150 | Characters of the free text about limitations that are sent, if the athlete allows it. |
+| `MAX_LIMITATIONS_TOLD` | 10 | Current limitations told to the coach (the newest first); the rest is counted. |
 | `MAX_BYTES` | 20000 | The most the briefing may take (UTF-8), checked in the tests. |
 
 ### Time and the web server
@@ -518,13 +531,14 @@ what Intervals.icu said. Nothing holds a lock while the calls are made (sending 
 
 ## What is deliberately not checked
 
-- The **limitations** the user wrote on the training time page are free text. A machine cannot
-  check them, and they are **not sent to the coach** either: they are free text about the body of
-  the user. The only free text the coach sees is the title and notes of the goals.
+- The **free text** about limitations on the training time page cannot be checked by a machine.
+  It is **not sent to the coach** unless the athlete switches that on (then its first
+  `LIMITATIONS_TEXT_MAX_TOLD` characters, as data and never as instructions). What the rules use are
+  the structured entries (body part and sports), not the text.
 - The **time of day** is only an order (morning, afternoon, evening), not a clock time: two
-  workouts on one day add up, and PaceForge does not know that you can only train in the evening,
-  because the time you have is given per day. A plan can put the morning on a day when you are not
-  free then.
+  workouts on one day add up. The athlete can say which parts of the day are open on each weekday
+  (`slot_outside_window`), but a workout without a time of day is not held to them, and the time
+  you have is still given per day.
 - Whether a plan is *good* training: the rules only keep out what is impossible or plainly unwise.
 - Anything about the weeks before or after the plan beyond the recent average and the typical week.
 

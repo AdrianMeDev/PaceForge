@@ -1,6 +1,7 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { AvailabilityApi } from '../../core/availability/availability-api';
+import { CoachApi } from '../../core/coach/coach-api';
 import {
   Availability,
   AvailabilityChanges,
@@ -29,12 +30,16 @@ import {
   ownLimitTexts,
   readOwnLimits,
 } from './intensity-settings';
+import { LimitationsPanel } from './limitations-panel';
 import { PeriodsPanel } from './periods-panel';
+import { UNKNOWN_PROVIDER, providerLine } from './provider-line';
 
 type View = 'loading' | 'unreachable' | 'ready' | 'signed_out';
 
 const FALLBACK = 'Something went wrong. Please try again.';
 const LIMITATIONS_MAX = 1000;
+/** How much of the free text goes to the coach if the user allows it (see the briefing). */
+export const LIMITATIONS_TEXT_TOLD = 150;
 const DAYS = [0, 1, 2, 3, 4, 5, 6];
 /** The sports to tick, in the order the server keeps them. */
 const SPORT_CHOICES: { value: AvailabilitySport; label: string }[] = [
@@ -62,12 +67,13 @@ function dayMinutes(text: string): Parsed<number> {
  */
 @Component({
   selector: 'app-availability-page',
-  imports: [RouterLink, PeriodsPanel, IntensitySettings, DayOptions],
+  imports: [RouterLink, PeriodsPanel, LimitationsPanel, IntensitySettings, DayOptions],
   templateUrl: './availability-page.html',
   styleUrls: ['../auth/auth-form.css', './availability-page.css'],
 })
 export class AvailabilityPage implements OnInit {
   private readonly api = inject(AvailabilityApi);
+  private readonly coach = inject(CoachApi);
 
   protected readonly view = signal<View>('loading');
   /** What is in the seven day fields, Monday first. */
@@ -80,11 +86,14 @@ export class AvailabilityPage implements OnInit {
   );
   protected readonly stretching = signal(false);
   protected readonly limitations = signal('');
+  protected readonly shareText = signal(false);
   protected readonly intensityLevel = signal<IntensityLevel>('normal');
   protected readonly ownLimits = signal<OwnLimitTexts>(NO_OWN_LIMIT_TEXTS);
   /** The limits of every level as the server has them; set with the first answer. */
   protected readonly levelLimits = signal<Record<IntensityLevel, Limits> | null>(null);
   protected readonly intensityErrors = signal<IntensityErrors>({});
+  /** Where what the user lets go to the AI coach goes, in a few words. */
+  protected readonly provider = signal(UNKNOWN_PROVIDER);
   protected readonly busy = signal(false);
   protected readonly errors = signal<string[]>([]);
   protected readonly notice = signal<string | null>(null);
@@ -101,6 +110,8 @@ export class AvailabilityPage implements OnInit {
   protected readonly sportsError = signal<string | null>(null);
   protected readonly stretchingError = signal<string | null>(null);
   protected readonly limitationsError = signal<string | null>(null);
+  protected readonly shareTextError = signal<string | null>(null);
+  protected readonly textTold = LIMITATIONS_TEXT_TOLD;
 
   protected readonly sportChoices = SPORT_CHOICES;
   protected readonly names = WEEKDAY_NAMES;
@@ -147,8 +158,19 @@ export class AvailabilityPage implements OnInit {
       }
       this.show(result.availability);
       this.view.set('ready');
+      void this.loadProvider();
     } catch {
       this.view.set('unreachable');
+    }
+  }
+
+  /** The provider is only named in hints: if it cannot be read, the hints say so in general. */
+  private async loadProvider(): Promise<void> {
+    try {
+      const result = await this.coach.get();
+      this.provider.set(providerLine(result.kind === 'ok' ? result.state : null));
+    } catch {
+      this.provider.set(UNKNOWN_PROVIDER);
     }
   }
 
@@ -295,6 +317,7 @@ export class AvailabilityPage implements OnInit {
           sports,
           stretching: this.stretching(),
           limitations: this.limitations(),
+          share_limitations_text: this.shareText(),
           ...(own === null ? {} : { intensity_level: this.intensityLevel(), ...own }),
         }
       : null;
@@ -316,6 +339,7 @@ export class AvailabilityPage implements OnInit {
     this.sports.set([...availability.sports]);
     this.stretching.set(availability.stretching);
     this.limitations.set(availability.limitations);
+    this.shareText.set(availability.share_limitations_text);
     this.intensityLevel.set(availability.intensity_level);
     this.ownLimits.set(ownLimitTexts(availability));
     this.levelLimits.set(availability.level_limits);
@@ -331,6 +355,7 @@ export class AvailabilityPage implements OnInit {
     this.sportsError.set(null);
     this.stretchingError.set(null);
     this.limitationsError.set(null);
+    this.shareTextError.set(null);
   }
 
   private showServerMessages(fields: Record<string, string[]>, all: string[]): void {
@@ -344,6 +369,7 @@ export class AvailabilityPage implements OnInit {
     this.sportsError.set(join('sports'));
     this.stretchingError.set(join('stretching'));
     this.limitationsError.set(join('limitations'));
+    this.shareTextError.set(join('share_limitations_text'));
     const intensity: IntensityErrors = {};
     for (const name of ['intensity_level', ...LIMIT_NAMES] as const) {
       const message = join(name);
@@ -361,6 +387,7 @@ export class AvailabilityPage implements OnInit {
       'sports',
       'stretching',
       'limitations',
+      'share_limitations_text',
       ...INTENSITY_FIELDS,
     ];
     const rest = Object.entries(fields)
