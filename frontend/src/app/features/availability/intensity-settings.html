@@ -1,0 +1,53 @@
+<fieldset class="field levels" aria-describedby="intensity-hint">
+  <legend>How hard your plans may be</legend>
+  @for (choice of levels; track choice.value) {
+    <div class="check level">
+      <input
+        type="radio"
+        name="intensity-level"
+        [id]="'level-' + choice.value"
+        [checked]="level() === choice.value"
+        [attr.aria-invalid]="errors().intensity_level ? true : null"
+        [attr.aria-describedby]="'level-' + choice.value + '-limits'"
+        (change)="level.set(choice.value)"
+      />
+      <label [for]="'level-' + choice.value">{{ choice.label }}</label>
+      <p class="hint" [id]="'level-' + choice.value + '-limits'">
+        {{ describe(levelLimits()[choice.value]) }}
+      </p>
+    </div>
+  }
+  @if (errors().intensity_level; as message) {
+    <p class="field-error" role="alert">{{ message }}</p>
+  }
+  <p class="hint" id="intensity-hint">
+    The checks of every plan use these limits, from the next check on. Your usual week is the
+    average of your last weeks, or your normal week if that is more.
+  </p>
+</fieldset>
+
+<details class="own" [open]="hasOwn()">
+  <summary>Your own limits (optional)</summary>
+  <p class="hint">Leave a field empty to use the value of the level.</p>
+  <div class="limits">
+    @for (name of names; track name) {
+      <div class="field">
+        <label [for]="'limit-' + name">{{ labels[name] }}</label>
+        <input
+          type="text"
+          inputmode="numeric"
+          autocomplete="off"
+          [id]="'limit-' + name"
+          [value]="own()[name]"
+          [placeholder]="chosen()[name]"
+          [attr.aria-invalid]="errors()[name] ? true : null"
+          [attr.aria-describedby]="errors()[name] ? 'limit-' + name + '-error' : null"
+          (input)="setOwn(name, $event)"
+        />
+        @if (errors()[name]; as message) {
+          <p class="field-error" role="alert" [id]="'limit-' + name + '-error'">{{ message }}</p>
+        }
+      </div>
+    }
+  </div>
+</details>

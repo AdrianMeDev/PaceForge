@@ -149,6 +149,16 @@
           </p>
         </div>
 
+        @if (levelLimits(); as levels) {
+          <h2>Intensity</h2>
+          <app-intensity-settings
+            [(level)]="intensityLevel"
+            [(own)]="ownLimits"
+            [levelLimits]="levels"
+            [errors]="intensityErrors()"
+          />
+        }
+
         <h2>Limitations</h2>
         <div class="field">
           <label for="limitations">Anything the plan should respect (optional)</label>
