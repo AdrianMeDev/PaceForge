@@ -165,6 +165,9 @@ Each plan is checked against the facts of its user for that week, collected when
 - **Double days and parts of the day.** For each weekday whether two workouts are allowed and which
   parts of the day (morning, afternoon, evening) are open. Without a choice two workouts are allowed
   and every part is open. A day of absence keeps the choice of its weekday.
+- **Limitations.** The athlete's current injuries and limitations, each a body part from a fixed
+  list and the sports it affects. A workout in an affected sport is a warning (`limited_sport`),
+  not an error. Healed entries are not in the context.
 - **Sports and stretching.** The sports the athlete ticked (all four if none was chosen) and whether
   stretching may be added to sessions. Stretching minutes are not a workout and not time: they do
   not use up the minutes of a day or a week and do not count for the progression rule.
@@ -528,13 +531,14 @@ what Intervals.icu said. Nothing holds a lock while the calls are made (sending 
 
 ## What is deliberately not checked
 
-- The **limitations** the user wrote on the training time page are free text. A machine cannot
-  check them, and they are **not sent to the coach** either: they are free text about the body of
-  the user. The only free text the coach sees is the title and notes of the goals.
+- The **free text** about limitations on the training time page cannot be checked by a machine.
+  It is **not sent to the coach** unless the athlete switches that on (then its first
+  `LIMITATIONS_TEXT_MAX_TOLD` characters, as data and never as instructions). What the rules use are
+  the structured entries (body part and sports), not the text.
 - The **time of day** is only an order (morning, afternoon, evening), not a clock time: two
-  workouts on one day add up, and PaceForge does not know that you can only train in the evening,
-  because the time you have is given per day. A plan can put the morning on a day when you are not
-  free then.
+  workouts on one day add up. The athlete can say which parts of the day are open on each weekday
+  (`slot_outside_window`), but a workout without a time of day is not held to them, and the time
+  you have is still given per day.
 - Whether a plan is *good* training: the rules only keep out what is impossible or plainly unwise.
 - Anything about the weeks before or after the plan beyond the recent average and the typical week.
 

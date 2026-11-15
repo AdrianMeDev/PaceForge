@@ -14,8 +14,8 @@ from django.urls import get_resolver
 
 from accounts.models import User
 from availability.intensity import LEVEL_LIMITS
-from availability.models import SPORTS
-from availability.serializers import availability_data
+from availability.models import SPORTS, BodyPart
+from availability.serializers import MAX_LIMITATIONS, availability_data
 from coach import views as coach_views
 from coach.endpoints import parse_base_urls
 from coach.providers.openai_compatible import JSON_MODE_HOSTS
@@ -398,9 +398,32 @@ class TestTheReadmeOnTheTypicalWeek:
         assert "**A normal week.**" in FLAT_README
         assert "enter **A normal week**" in FLAT_README
 
-    def test_the_limitations_are_not_said_to_go_to_the_coach(self) -> None:
+    def test_the_free_text_is_said_to_stay_home_unless_the_switch_is_on(self) -> None:
         assert "it is there for the coach" not in FLAT_README
-        assert "it is not sent to the coach either" in FLAT_README
+        assert "it is not sent to the coach either" not in FLAT_README
+        assert "By default it is not sent to the coach" in FLAT_README
+        assert "Tick **Send this text to my AI coach**" in FLAT_README
+
+    def test_the_switch_has_the_words_of_the_page(self) -> None:
+        page = (ROOT / "frontend/src/app/features/availability/availability-page.html").read_text()
+
+        assert "Send this text to my AI coach" in page
+        assert "**Send this text to my AI coach**" in FLAT_README
+
+    def test_the_number_of_characters_is_the_one_of_the_briefing_and_of_the_page(self) -> None:
+        script = (ROOT / "frontend/src/app/features/availability/availability-page.ts").read_text()
+        match = re.search(r"LIMITATIONS_TEXT_TOLD = (\d+);", script)
+
+        assert match
+        assert int(match.group(1)) == briefing.LIMITATIONS_TEXT_MAX_TOLD
+        assert f"**first {briefing.LIMITATIONS_TEXT_MAX_TOLD} characters**" in FLAT_README
+        assert f"(then its first {briefing.LIMITATIONS_TEXT_MAX_TOLD} characters)" in FLAT_README
+
+    def test_the_list_of_injuries_is_described_as_the_code_has_it(self) -> None:
+        assert f"at most {MAX_LIMITATIONS} entries" in FLAT_README
+        assert f"the newest {briefing.MAX_LIMITATIONS_TOLD}" in FLAT_README
+        for part in BodyPart:
+            assert part.label.lower().split()[0] in FLAT_README.lower(), part
 
 
 class TestTheReadmeOnSportsAndDoubleDays:

@@ -10,7 +10,7 @@ administrators), a personal Intervals.icu connection with an API key (stored enc
 activities from FIT and TCX files, an athlete profile with your time zone, your thresholds (typed in,
 read from Intervals.icu or estimated from your activities) and the training zones that follow from
 them, goals (races, threshold targets and general goals, with one main goal), your training time
-(minutes per weekday, a weekly budget, limitations, vacation and illness), your own AI provider
+(minutes per weekday, a weekly budget, injuries and limitations, vacation and illness), your own AI provider
 ([Anthropic or an OpenAI-compatible endpoint](#ai-coach-bring-your-own-key), key stored encrypted,
 with a connection check and a usage overview), the model and the plausibility checks for a
 training week ([format and rules](docs/weekly-plan.md)), a **Week plan** page on which your own
@@ -589,12 +589,28 @@ with three hard days shows an error until you pick **Intensive** or give your ow
 days.
 
 **Limitations.** Free text of up to 1000 characters ("no running on consecutive days"). It is kept
-and shown as plain text, never as markup. Nothing interprets it, and it is not sent to the coach
-either: it is free text about you, and the only free text the coach sees is the title and notes of
-your goals.
+and shown as plain text, never as markup, and nothing interprets it. **By default it is not sent
+to the coach:** it is free text about your body. Tick **Send this text to my AI coach** to change
+that. The page then says where it goes (your provider and model), and only the **first 150
+characters** are sent with every plan request; the coach reads them as information about you and
+never as instructions. Writing the text does not switch the box on.
+
+**Injuries and limitations (the list).** Below the form, a list for what the plan should take care
+of: choose **where** (foot, ankle, Achilles tendon, calf, shin, knee, thigh, hip, back, shoulder or
+other) and tick the **sports it affects** (none ticked: no particular sport), then **Add**. There
+is no text field on an entry. A **current** entry goes to your AI coach with every plan request,
+as the body part and the sports, nothing else (the newest 10; the coach is told if there are
+more), and the page names the provider it goes to. A session in an affected sport gets the
+warning "…your … limitation affects …" on the [Week plan](#week-plan) page: you can still confirm
+the plan. **Mark as healed** keeps an entry as a record without sending or checking it any more,
+**Current again** brings it back, and **Delete** removes it after a question. You can have at most
+50 entries. These entries are sent to your provider as soon as they are current, as decided for
+health data: your own instance, your own provider, your own choice of what to enter.
 
 **Save** sends the weekdays, the parts of the day and two sessions, the budget, the normal week,
-the sports, the stretching choice, the intensity with your own limits and the limitations together. The page checks the limits
+the sports, the stretching choice, the intensity with your own limits, the limitations text and
+whether it may go to the coach together (the list of injuries saves on its own). The page checks
+the limits
 first and names every problem next to its field; if the server still refuses something, its message
 appears in the same place. Nothing is saved until every field is usable.
 
@@ -695,11 +711,12 @@ the Training time page. Nothing is sent to your provider then, so it costs nothi
 The coach is told only a fixed set of facts: the week and today, the minutes you can train on each
 day and your absences, your weekly budget, your zone tables, the sports you ticked and whether
 stretching is allowed, your active goals (title and notes), the minutes you trained in the last
-four weeks, your normal week if you gave one, a summary of last week's confirmed plan and how that
-week went (see [Week review](#week-review)). **Not**
-your name, e-mail address, activities' names, the limitations you wrote on the training time page
-or anything of other users. A goal's title and notes are free text, and a model can be influenced by
-text; whatever it answers still has to pass the strict reading and the checks before it is a draft,
+four weeks, your normal week if you gave one, your current injuries (a body part and the sports it
+affects, no text), a summary of last week's confirmed plan and how that week went (see [Week
+review](#week-review)). **Not** your name, e-mail address, activities' names or anything of other
+users, and the free text about your limitations only if you switched on **Send this text to my AI
+coach** (then its first 150 characters). A goal's title and notes (and the limitations text, if you allow it) are free text, and a model can
+be influenced by text; whatever it answers still has to pass the strict reading and the checks before it is a draft,
 and nothing is confirmed without you. Every request goes to your provider with your key and is
 **billed to you**: a draft costs one request, or two if the coach had to correct its answer. They
 are counted in the usage overview of the AI coach (calls and tokens of the last 30 days; the
