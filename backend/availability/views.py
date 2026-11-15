@@ -44,15 +44,30 @@ class AvailabilityView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         with transaction.atomic():
-            if "weekdays" in data:
+            # What was sent decides what is written; a row that is created for the first time has
+            # the defaults for the rest (no time, two sessions, every part of the day).
+            day_fields = {
+                field: sent
+                for field, sent in (
+                    ("minutes", data.get("weekdays")),
+                    ("double_allowed", data.get("double_days")),
+                    ("slots", data.get("time_windows")),
+                )
+                if sent is not None
+            }
+            if day_fields:
                 WeekdayMinutes.objects.bulk_create(
                     [
-                        WeekdayMinutes(owner=user, weekday=weekday, minutes=minutes)
-                        for weekday, minutes in enumerate(data["weekdays"])
+                        WeekdayMinutes(
+                            owner=user,
+                            weekday=weekday,
+                            **{field: sent[weekday] for field, sent in day_fields.items()},
+                        )
+                        for weekday in range(7)
                     ],
                     update_conflicts=True,
                     unique_fields=["owner", "weekday"],
-                    update_fields=["minutes"],
+                    update_fields=list(day_fields),
                 )
             settings_fields = [
                 name
