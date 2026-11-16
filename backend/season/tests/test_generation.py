@@ -1,9 +1,11 @@
 import json
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import pytest
+from django.core.exceptions import ValidationError
 
 from accounts.models import User
 from availability.models import AvailabilitySettings, UnavailablePeriod, WeekdayMinutes
@@ -21,12 +23,15 @@ from season.generation import (
     ATTEMPTS,
     REASON,
     NothingToPlan,
+    PlanNotChangeable,
     PlanNotUsable,
+    PlanUnchanged,
+    change,
     generate,
 )
 from season.inputs import skeleton_for
 from season.models import SeasonPlanVersion
-from season.prompt import SEASON_MAX_TOKENS, SYSTEM_PROMPT, first_message
+from season.prompt import SEASON_MAX_TOKENS, SYSTEM_PROMPT, change_message, first_message
 from season.rules import SeasonContext, validate_season
 from season.schema import Focus, KeySession, PlanWeek, SeasonPlan, SessionKind, to_json
 from season.skeleton import Skeleton
@@ -496,3 +501,223 @@ class TestASeasonWithoutTime:
         generate(alice)
 
         assert len(scripted.calls) == 1
+
+
+def tempo(user: User) -> str:
+    """The season as it is, but with the focus of the first week changed."""
+    plan = following(skeleton_for(user))
+    weeks = (replace(plan.weeks[0], focus=Focus.TEMPO, reason="Harder."), *plan.weeks[1:])
+    return json.dumps(to_json(SeasonPlan(weeks, plan.rationale)))
+
+
+def confirmed(user: User) -> SeasonPlanVersion:
+    skeleton = skeleton_for(user)
+    stored = services.save_draft(user, following(skeleton), SeasonContext(skeleton))
+    return services.confirm(user, stored.pk)
+
+
+WISH = "Less cycling in January"
+
+
+class TestChangingASeason:
+    def test_a_changed_answer_is_stored_as_the_next_draft_made_from_the_old_version(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        base = confirmed(alice)
+        provide(tempo(alice))
+
+        result = change(alice, base.pk, WISH)
+
+        stored = result.plan
+        assert (stored.version, stored.status, stored.parent_id) == (2, "draft", base.pk)
+        assert stored.reason == "Changed on request from version 1"
+        assert stored.request == WISH
+        assert stored.weeks[0]["focus"] == "tempo"
+        assert result.report.valid is True
+
+    def test_the_old_version_stays_as_it_is_and_confirmed(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        base = confirmed(alice)
+        before = SeasonPlanVersion.objects.values().get(pk=base.pk)
+        provide(tempo(alice))
+
+        change(alice, base.pk, WISH)
+
+        assert SeasonPlanVersion.objects.values().get(pk=base.pk) == before
+        assert base.status == "confirmed"
+
+    def test_the_new_version_keeps_the_skeleton_and_the_sports_of_the_old_one(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        base = confirmed(alice)
+        answer = tempo(alice)  # worked out before the goals and the sports move on
+        AvailabilitySettings.objects.create(owner=alice, sports=["swimming"])
+        Goal.objects.create(
+            owner=alice,
+            kind="race",
+            title="Later",
+            priority="secondary",
+            target_date=MONDAY + timedelta(weeks=30),
+            discipline="running",
+        )
+        provide(answer)
+
+        stored = change(alice, base.pk, WISH).plan
+
+        assert stored.skeleton == base.skeleton
+        assert stored.sports == base.sports
+
+    def test_the_coach_gets_the_plan_the_wish_and_the_sports_of_the_old_version(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        base = confirmed(alice)
+        AvailabilitySettings.objects.create(owner=alice, sports=["swimming"])
+        scripted = provide(tempo(alice))
+
+        change(alice, base.pk, WISH)
+
+        ((system, messages, limit),) = scripted.calls
+        loaded = services.read(base)
+        briefing = build_briefing(alice, NOW.date(), loaded.context.skeleton, loaded.context.sports)
+        assert system == SYSTEM_PROMPT
+        assert limit == SEASON_MAX_TOKENS
+        assert messages == [change_message(briefing, loaded.plan, WISH)]
+        assert scripted.json_outputs == [True]
+        assert '"sports":["running","cycling","swimming","strength"]' in messages[0].content
+
+    def test_a_draft_can_be_changed_too(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        skeleton = skeleton_for(alice)
+        draft = services.save_draft(alice, following(skeleton), SeasonContext(skeleton))
+        provide(tempo(alice))
+
+        stored = change(alice, draft.pk, WISH).plan
+
+        assert (stored.version, stored.parent_id) == (2, draft.pk)
+
+    def test_one_call_is_recorded_with_the_season_model(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        AIProviderConfiguration.objects.filter(owner=alice).update(season_model="claude-opus-5-5")
+        base = confirmed(alice)
+        provide(tempo(alice))
+
+        change(alice, base.pk, WISH)
+
+        (record,) = records(alice)
+        assert (record.purpose, record.model) == ("season_plan", "claude-opus-5-5")
+
+    def test_a_bad_answer_is_repaired_as_when_drafting(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        base = confirmed(alice)
+        scripted = provide("nonsense", broken(alice), tempo(alice))
+
+        result = change(alice, base.pk, WISH)
+
+        assert len(scripted.calls) == 3
+        assert [m.role for m in scripted.calls[1][1]] == ["user", "assistant", "user"]
+        assert scripted.calls[1][1][0] == scripted.calls[0][1][0]  # the change request stays
+        assert result.report.valid is True
+
+    def test_a_plan_with_errors_is_stored_and_cannot_be_confirmed(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        base = confirmed(alice)
+        provide(*[broken(alice)] * 3)
+
+        result = change(alice, base.pk, WISH)
+
+        assert result.report.valid is False
+        assert result.plan.request == WISH
+        with pytest.raises(services.PlanNotConfirmable):
+            services.confirm(alice, result.plan.pk)
+
+    def test_nothing_is_stored_if_no_answer_was_readable(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        base = confirmed(alice)
+        provide("a", "b", "c")
+
+        with pytest.raises(PlanNotUsable):
+            change(alice, base.pk, WISH)
+
+        assert [v.version for v in versions(alice)] == [1]
+
+    def test_an_answer_that_is_the_season_as_it_was_is_not_stored(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        base = confirmed(alice)
+        provide(good(alice))
+
+        with pytest.raises(PlanUnchanged):
+            change(alice, base.pk, WISH)
+
+        assert [v.version for v in versions(alice)] == [1]
+        assert len(records(alice)) == 1
+
+    def test_a_provider_that_fails_stores_nothing(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        base = confirmed(alice)
+        provide(ProviderUnavailableError("down"))
+
+        with pytest.raises(ProviderUnavailableError):
+            change(alice, base.pk, WISH)
+
+        assert [v.version for v in versions(alice)] == [1]
+
+    @pytest.mark.parametrize("status", ["superseded", "discarded"])
+    def test_a_replaced_or_discarded_version_is_refused_before_anything_is_sent(
+        self, alice: User, provide: Callable[..., Scripted], status: str
+    ) -> None:
+        skeleton = skeleton_for(alice)
+        old = services.save_draft(alice, following(skeleton), SeasonContext(skeleton))
+        if status == "discarded":
+            services.discard(alice, old.pk)
+        else:
+            services.confirm(alice, old.pk)
+            services.confirm(
+                alice, services.save_draft(alice, following(skeleton), SeasonContext(skeleton)).pk
+            )
+        scripted = provide("never asked")
+
+        with pytest.raises(PlanNotChangeable):
+            change(alice, old.pk, WISH)
+
+        assert scripted.calls == []
+
+    def test_a_version_of_another_user_is_not_found_before_anything_is_sent(
+        self, alice: User, bob: User, provide: Callable[..., Scripted]
+    ) -> None:
+        theirs = confirmed(bob)
+        scripted = provide("never asked")
+
+        with pytest.raises(services.PlanNotFound):
+            change(alice, theirs.pk, WISH)
+
+        assert scripted.calls == []
+
+    @pytest.mark.parametrize("wish", ["", "   \n ", "x" * 501, "bell\x07"])
+    def test_a_wish_that_is_empty_too_long_or_not_plain_is_refused_before_anything_is_sent(
+        self, alice: User, provide: Callable[..., Scripted], wish: str
+    ) -> None:
+        base = confirmed(alice)
+        scripted = provide("never asked")
+
+        with pytest.raises(ValidationError) as raised:
+            change(alice, base.pk, wish)
+
+        assert "request" in raised.value.message_dict
+        assert scripted.calls == []
+
+    def test_without_a_provider_nothing_happens(self, alice: User) -> None:
+        base = confirmed(alice)
+        AIProviderConfiguration.objects.filter(owner=alice).delete()
+
+        with pytest.raises(NotConfiguredError):
+            change(alice, base.pk, WISH)
+
+        assert [v.version for v in versions(alice)] == [1]
