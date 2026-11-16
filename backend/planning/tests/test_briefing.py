@@ -1303,8 +1303,8 @@ class TestWhatIsSent:
         with CaptureQueriesContext(connection) as full:
             build_briefing(alice, MONDAY)
 
-        # 13 of the briefing and 8 of the review of the week before
-        assert len(empty) == len(full) == 24
+        # 14 of the briefing (one of them the season week) and 8 of the review of the week before
+        assert len(empty) == len(full) == 25
 
 
 class TestHowTheWeekBeforeWent:

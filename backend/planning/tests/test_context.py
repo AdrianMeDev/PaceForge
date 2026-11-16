@@ -351,7 +351,7 @@ class TestTheContextOfAUser:
             MONDAY, (0,) * 7, (None,) * 7, None, 0, frozenset(), ()
         )
 
-    def test_it_takes_eleven_queries_however_much_data_there_is(self, alice: User) -> None:
+    def test_it_takes_twelve_queries_however_much_data_there_is(self, alice: User) -> None:
         with CaptureQueriesContext(connection) as empty:
             build_context(alice, MONDAY)
         for weekday in range(7):
@@ -384,7 +384,7 @@ class TestTheContextOfAUser:
         with CaptureQueriesContext(connection) as full:
             build_context(alice, MONDAY)
 
-        assert len(empty) == len(full) == 11
+        assert len(empty) == len(full) == 12
 
     def test_the_typical_week_comes_from_the_settings(self, alice: User, bob: User) -> None:
         AvailabilitySettings.objects.create(owner=alice, typical_weekly_minutes=420)
@@ -612,3 +612,46 @@ class TestTheContextOfAUser:
         field = "weekly_minutes"
         with pytest.raises(FrozenInstanceError):
             setattr(context, field, 5)
+
+
+class TestTheSeasonWeek:
+    @staticmethod
+    def confirm_season(user: User) -> None:
+        from season import services
+        from season.rules import SeasonContext
+        from season.schema import Focus, PlanWeek, SeasonPlan
+        from season.skeleton import Race, SkeletonInputs, build_skeleton
+
+        races = (Race(MONDAY + timedelta(weeks=2, days=6), "main", "running", 10_000, "Race"),)
+        skeleton = build_skeleton(SkeletonInputs(MONDAY, (600,) * 52, races, 300, "normal"))
+        plan = SeasonPlan(
+            tuple(
+                PlanWeek(
+                    week.week_start, ((Sport.RUNNING, week.target_minutes),), Focus.TEMPO, "R."
+                )
+                for week in skeleton.weeks
+            )
+        )
+        stored = services.save_draft(user, plan, SeasonContext(skeleton))
+        services.confirm(user, stored.pk)
+
+    def test_without_a_confirmed_season_there_is_none(self, alice: User) -> None:
+        assert build_context(alice, MONDAY).season_week is None
+
+    def test_a_confirmed_season_gives_its_week(self, alice: User) -> None:
+        self.confirm_season(alice)
+
+        week = build_context(alice, MONDAY).season_week
+
+        assert week is not None
+        assert (week.week_start, week.focus.value) == (MONDAY, "tempo")
+
+    def test_a_week_outside_the_season_has_none(self, alice: User) -> None:
+        self.confirm_season(alice)
+
+        assert build_context(alice, MONDAY + timedelta(weeks=10)).season_week is None
+
+    def test_the_season_of_another_user_does_not_show(self, alice: User, bob: User) -> None:
+        self.confirm_season(bob)
+
+        assert build_context(alice, MONDAY).season_week is None

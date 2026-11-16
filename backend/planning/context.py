@@ -21,6 +21,7 @@ from availability.intensity import DEFAULT_LEVEL, LEVEL_LIMITS, Limits
 from availability.limitations import current_limitations
 from availability.preferences import sport_preferences
 from goals.services import time_zone_of
+from season.weeks import SeasonWeekFacts, confirmed_week
 
 from .schema import Slot, Sport, ZoneSystem
 
@@ -123,6 +124,9 @@ class PlanContext:
     # The athlete's best times, in the order of the distances, with their VDOT. The one that counts
     # for the threshold pace is found with ``best_times.counting``.
     best_times: tuple[best_times.Entry, ...] = ()
+    # What the confirmed season plan says about this week; ``None``: there is no confirmed plan,
+    # or the week is not in it.
+    season_week: SeasonWeekFacts | None = None
 
     def offset(self, day: date) -> int | None:
         """The place of ``day`` in the week (Monday is 0), ``None`` if it lies outside."""
@@ -188,6 +192,7 @@ def build_context(user: User, monday: date) -> PlanContext:
             ActiveLimitation(body_part, frozenset(Sport(sport) for sport in sports))
             for body_part, sports in current_limitations(user)
         ),
+        season_week=confirmed_week(user, monday),
     )
 
 
