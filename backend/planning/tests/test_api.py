@@ -217,6 +217,37 @@ class TestAccess:
         assert response.status_code == HTTPStatus.METHOD_NOT_ALLOWED
 
 
+def confirm_season(user: User, *, weeks: int, status: str = "confirmed") -> None:
+    """A season plan whose first ``weeks`` weeks start on the first week that can be planned."""
+    from season import services as season_services
+    from season.rules import SeasonContext
+    from season.schema import Focus, KeySession, PlanWeek, SeasonPlan, SessionKind
+    from season.skeleton import Race, SkeletonInputs, build_skeleton
+
+    monday = date(2027, 7, 12)
+    race = Race(
+        monday + timedelta(weeks=weeks - 1, days=6), "main", "running", 10_000, "Secret title"
+    )
+    skeleton = build_skeleton(SkeletonInputs(monday, (600,) * 52, (race,), 300, "normal"))
+    plan = SeasonPlan(
+        tuple(
+            PlanWeek(
+                week.week_start,
+                ((Sport.RUNNING, week.target_minutes),),
+                Focus.THRESHOLD,
+                "Build the base.",
+                (KeySession(Sport.RUNNING, SessionKind.LONG, 60, "easy"),) if index == 0 else (),
+            )
+            for index, week in enumerate(skeleton.weeks)
+        )
+    )
+    stored = season_services.save_draft(user, plan, SeasonContext(skeleton))
+    if status == "confirmed":
+        season_services.confirm(user, stored.pk)
+    elif status == "discarded":
+        season_services.discard(user, stored.pk)
+
+
 class TestTheWeeks:
     def test_five_weeks_with_nothing_in_them(self, alice: User) -> None:
         response = signed_in(alice).call("GET", WEEKS)
@@ -224,10 +255,67 @@ class TestTheWeeks:
         assert response.status_code == HTTPStatus.OK
         assert body(response) == {
             "weeks": [
-                {"week_start": f"2027-{month:02d}-{day:02d}", "plans": []}
+                {"week_start": f"2027-{month:02d}-{day:02d}", "season": None, "plans": []}
                 for month, day in [(7, 12), (7, 19), (7, 26), (8, 2), (8, 9)]
             ]
         }
+
+    def test_a_week_of_the_confirmed_season_plan_comes_with_it(self, alice: User) -> None:
+        confirm_season(alice, weeks=2)
+
+        weeks = body(signed_in(alice).call("GET", WEEKS))["weeks"]
+
+        season = weeks[0]["season"]
+        assert set(season) == {
+            "phase",
+            "recovery",
+            "target_minutes",
+            "minutes",
+            "total_minutes",
+            "focus",
+            "key_sessions",
+            "reason",
+            "races",
+        }
+        assert season["focus"] == "threshold"
+        assert season["reason"] == "Build the base."
+        assert season["key_sessions"] == [
+            {"sport": "running", "kind": "long", "minutes": 60, "detail": "easy"}
+        ]
+        assert [w["season"] is not None for w in weeks] == [True, True, False, False, False]
+
+    def test_the_title_of_a_race_is_not_in_it(self, alice: User) -> None:
+        confirm_season(alice, weeks=2)
+
+        text = signed_in(alice).call("GET", WEEKS).content.decode()
+
+        assert "Secret title" not in text
+
+    @pytest.mark.parametrize("status", ["draft", "discarded"])
+    def test_only_a_confirmed_season_plan_is_shown(self, alice: User, status: str) -> None:
+        confirm_season(alice, weeks=2, status=status)
+
+        weeks = body(signed_in(alice).call("GET", WEEKS))["weeks"]
+
+        assert [w["season"] for w in weeks] == [None] * 5
+
+    def test_the_season_plan_of_another_user_is_not_shown(self, alice: User) -> None:
+        confirm_season(make_user("bob@example.com"), weeks=2)
+
+        weeks = body(signed_in(alice).call("GET", WEEKS))["weeks"]
+
+        assert [w["season"] for w in weeks] == [None] * 5
+
+    def test_the_number_of_queries_does_not_depend_on_the_season(self, alice: User) -> None:
+        api = signed_in(alice)
+        with CaptureQueriesContext(connection) as without:
+            api.call("GET", WEEKS)
+        confirm_season(alice, weeks=5)
+
+        with CaptureQueriesContext(connection) as with_season:
+            api.call("GET", WEEKS)
+
+        assert len(with_season) == len(without)
 
     def test_the_versions_of_a_week_come_newest_first_with_their_facts(self, alice: User) -> None:
         first = draft(alice)

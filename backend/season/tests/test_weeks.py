@@ -12,7 +12,7 @@ from season.models import SeasonPlanVersion
 from season.rules import SeasonContext
 from season.schema import Focus, KeySession, PlanWeek, SeasonPlan, SessionKind
 from season.skeleton import Phase, Race, Skeleton, SkeletonInputs, build_skeleton
-from season.weeks import SeasonWeekFacts, confirmed_week
+from season.weeks import SeasonWeekFacts, confirmed_week, confirmed_weeks
 
 pytestmark = pytest.mark.django_db
 
@@ -166,4 +166,27 @@ class TestTheConfirmedWeek:
         with CaptureQueriesContext(connection) as queries:
             confirmed_week(alice, MONDAY + timedelta(weeks=20))
 
+        assert len(queries) == 1
+
+
+class TestSeveralWeeks:
+    def test_the_weeks_that_are_in_the_plan_are_given_by_their_monday(self, alice: User) -> None:
+        confirmed(alice)
+        mondays = [MONDAY + timedelta(weeks=n) for n in (-1, 0, 1, 9)]
+
+        found = confirmed_weeks(alice, mondays)
+
+        assert sorted(found) == [MONDAY, MONDAY + timedelta(weeks=1)]
+        assert found[MONDAY] == confirmed_week(alice, MONDAY)
+
+    def test_without_a_confirmed_plan_there_are_none(self, alice: User) -> None:
+        assert confirmed_weeks(alice, [MONDAY]) == {}
+
+    def test_it_is_one_query_however_many_weeks_are_asked_for(self, alice: User) -> None:
+        confirmed(alice, skeleton(30))
+
+        with CaptureQueriesContext(connection) as queries:
+            found = confirmed_weeks(alice, [MONDAY + timedelta(weeks=n) for n in range(30)])
+
+        assert len(found) == 30
         assert len(queries) == 1

@@ -100,13 +100,13 @@ def build_briefing(user: User, monday: date) -> dict[str, Any]:
             if context.limitations_text
             else None
         ),
-        "season_week": _season_week(context.season_week),
+        "season_week": season_week_data(context.season_week),
         "previous_week_plan": _previous_week(user, monday),
         "previous_week_review": _previous_week_review(user, monday),
     }
 
 
-def _season_week(facts: SeasonWeekFacts | None) -> dict[str, Any] | None:
+def season_week_data(facts: SeasonWeekFacts | None) -> dict[str, Any] | None:
     """What the confirmed season plan says about the week: the phase and the minutes of the
     skeleton, and what the coach filled in then. ``null`` if there is no confirmed plan or the
     week is not in it. The reason and the detail of a key session are the coach's own words from

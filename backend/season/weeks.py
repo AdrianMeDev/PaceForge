@@ -9,6 +9,7 @@ This module imports neither ``season.services`` nor ``season.rules`` (they reach
 ``planning.validation``, and the week plan reads this module while it is built).
 """
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
 
@@ -44,30 +45,41 @@ class SeasonWeekFacts:
         return sum(amount for _, amount in self.minutes)
 
 
-def confirmed_week(user: User, monday: date) -> SeasonWeekFacts | None:
-    """The week that starts on ``monday`` in the confirmed season plan of ``user``, or ``None``: no
-    confirmed plan, the week is not in it, or the plan cannot be read."""
+def confirmed_weeks(user: User, mondays: Iterable[date]) -> dict[date, SeasonWeekFacts]:
+    """The weeks that start on ``mondays`` that are in the confirmed season plan of ``user``. A
+    Monday that is not in it is not in the answer, and neither is any if there is no confirmed
+    plan or it cannot be read. One query, however many weeks are asked for."""
     stored = SeasonPlanVersion.objects.for_user(user).filter(status="confirmed").first()
     if stored is None:
-        return None
+        return {}
     try:
         plan = parse_season_plan({"rationale": stored.rationale, "weeks": stored.weeks})
         skeleton = skeleton_from_data(stored.skeleton)
     except PlanFormatError, ValueError, KeyError, TypeError:
-        return None
-    frame = next((week for week in skeleton.weeks if week.week_start == monday), None)
-    filled = next((week for week in plan.weeks if week.week_start == monday), None)
-    if frame is None or filled is None:
-        return None
-    return SeasonWeekFacts(
-        week_start=monday,
-        phase=frame.phase,
-        recovery=frame.recovery,
-        target_minutes=frame.target_minutes,
-        capacity_minutes=frame.capacity_minutes,
-        races=frame.races,
-        minutes=filled.minutes,
-        focus=filled.focus,
-        key_sessions=filled.key_sessions,
-        reason=filled.reason,
-    )
+        return {}
+    frames = {week.week_start: week for week in skeleton.weeks}
+    filled = {week.week_start: week for week in plan.weeks}
+    found: dict[date, SeasonWeekFacts] = {}
+    for monday in mondays:
+        frame, fill = frames.get(monday), filled.get(monday)
+        if frame is None or fill is None:
+            continue
+        found[monday] = SeasonWeekFacts(
+            week_start=monday,
+            phase=frame.phase,
+            recovery=frame.recovery,
+            target_minutes=frame.target_minutes,
+            capacity_minutes=frame.capacity_minutes,
+            races=frame.races,
+            minutes=fill.minutes,
+            focus=fill.focus,
+            key_sessions=fill.key_sessions,
+            reason=fill.reason,
+        )
+    return found
+
+
+def confirmed_week(user: User, monday: date) -> SeasonWeekFacts | None:
+    """The week that starts on ``monday`` in the confirmed season plan of ``user``, or ``None``: no
+    confirmed plan, the week is not in it, or the plan cannot be read."""
+    return confirmed_weeks(user, [monday]).get(monday)
