@@ -101,6 +101,7 @@ function plan(changes: Partial<SeasonPlan> = {}): SeasonPlan {
           ? [{ sport: 'running', kind: 'race', minutes: 60, detail: '' }]
           : [{ sport: 'running', kind: 'long', minutes: 90, detail: '3 x 10 min at tempo' }],
       reason: `Reason of week ${index + 1}.`,
+      done: null,
     })),
     report: null,
     ...changes,
