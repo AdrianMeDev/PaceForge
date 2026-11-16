@@ -22,6 +22,9 @@ import {
   minutesText,
   pushText,
   segmentText,
+  exerciseDetail,
+  REGION_LABELS,
+  EQUIPMENT_LABELS,
   stretchingText,
   targetText,
   weekRange,
@@ -120,6 +123,9 @@ export class PlanningPage implements OnInit {
   protected readonly minutes = minutesText;
   protected readonly target = targetText;
   protected readonly segment = segmentText;
+  protected readonly exerciseNumbers = exerciseDetail;
+  protected readonly region = REGION_LABELS;
+  protected readonly equipment = EQUIPMENT_LABELS;
   protected readonly place = findingPlace;
   protected readonly sent = exportText;
   protected readonly sentSummary = exportSummaryText;

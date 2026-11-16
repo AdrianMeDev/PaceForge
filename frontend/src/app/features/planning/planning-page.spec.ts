@@ -520,6 +520,51 @@ describe('PlanningPage', () => {
       expect(byId('workout-1')?.querySelector('.segments')).toBeNull();
     });
 
+    it('lists the exercises of a strength workout in order, with the numbers and what they train', async () => {
+      const lifting = {
+        ...plan().workouts[1],
+        exercises: [
+          {
+            name: 'Goblet squat',
+            region: 'legs' as const,
+            equipment: 'dumbbells' as const,
+            sets: 3,
+            reps: 10,
+            seconds: null,
+            rpe: 7,
+            rest_seconds: 90,
+          },
+          {
+            name: 'Plank',
+            region: 'core' as const,
+            equipment: 'bodyweight' as const,
+            sets: 3,
+            reps: null,
+            seconds: 45,
+            rpe: null,
+            rest_seconds: null,
+          },
+        ],
+      };
+      const withExercises = plan({ workouts: [plan().workouts[0], lifting, plan().workouts[2]] });
+      await setup({ plans: { [DRAFT_ID]: { kind: 'ok', plan: withExercises } } });
+
+      const items = Array.from(byId('workout-2')?.querySelectorAll('.exercises li') ?? []).map(
+        (li) => li.textContent?.replace(/\s+/g, ' ').trim(),
+      );
+      expect(items).toEqual([
+        'Goblet squat 3 × 10 · RPE 7 · rest 1:30 Legs · Dumbbells',
+        'Plank 3 × 45 s Core · Body weight',
+      ]);
+      expect(byId('workout-2')?.querySelector('ol.exercises')).not.toBeNull();
+    });
+
+    it('shows no list for a workout without exercises', async () => {
+      await setup();
+
+      expect(page.querySelector('.exercises')).toBeNull();
+    });
+
     it('shows the rationale of the coach', async () => {
       await setup();
 

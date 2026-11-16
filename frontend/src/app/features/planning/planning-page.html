@@ -219,6 +219,22 @@
                       }
                     </ul>
                   }
+                  @if (entry.workout.exercises.length > 0) {
+                    <ol class="exercises" data-testid="exercises">
+                      @for (exercise of entry.workout.exercises; track $index) {
+                        <li>
+                          <span class="exercise-name">{{ exercise.name }}</span>
+                          &ngsp;
+                          <span class="exercise-numbers">{{ exerciseNumbers(exercise) }}</span>
+                          &ngsp;
+                          <span class="exercise-what"
+                            >{{ region[exercise.region] }} ·
+                            {{ equipment[exercise.equipment] }}</span
+                          >
+                        </li>
+                      }
+                    </ol>
+                  }
                   @if (stretching(entry.workout.stretching_minutes); as extra) {
                     <p class="stretching" data-testid="stretching">{{ extra }}</p>
                   }
