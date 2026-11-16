@@ -2,6 +2,7 @@ import { HttpClient, HttpErrorResponse, HttpResponse } from '@angular/common/htt
 import { Injectable, inject } from '@angular/core';
 import { Observable, firstValueFrom } from 'rxjs';
 import { API_BASE } from '../api/api-providers';
+import { toInvalid } from '../api/coach-replies';
 import {
   AiProviderInput,
   AiProviderKind,
@@ -12,14 +13,12 @@ import {
   CheckProblem,
   CheckProviderResult,
   GetProviderResult,
-  Invalid,
   RemoveProviderResult,
   SaveProviderResult,
 } from './coach-models';
 
 const URL = `${API_BASE}/coach/provider/`;
 const CHECK_URL = `${URL}check/`;
-const INVALID_FALLBACK = 'The input was not accepted.';
 const HANDLED_ERRORS = [400, 401, 403, 404, 429];
 const PROVIDERS: readonly string[] = ['anthropic', 'openai_compatible'];
 const STATUSES: readonly string[] = ['untested', 'connected', 'invalid', 'unavailable'];
@@ -66,7 +65,7 @@ export class CoachApi {
       case 200:
         return { kind: 'ok', state: toState(reply.body, reply) };
       case 400:
-        return invalid(reply);
+        return toInvalid(reply);
       case 401:
       case 403:
         return { kind: 'forbidden' };
@@ -218,24 +217,6 @@ function isTimestampOrNull(value: unknown): value is string | null {
 
 function isOneOf<T extends string>(value: unknown, allowed: readonly string[]): value is T {
   return typeof value === 'string' && allowed.includes(value);
-}
-
-/**
- * DRF reports field errors as `{"api_key": ["…"]}` and other problems as `{"detail": "…"}` or
- * `{"non_field_errors": ["…"]}`. All messages are kept, by field and as one list.
- */
-function invalid(reply: Reply): Invalid {
-  const fields: Record<string, string[]> = {};
-  if (typeof reply.body === 'object' && reply.body !== null && !Array.isArray(reply.body)) {
-    for (const [name, value] of Object.entries(reply.body)) {
-      const messages = [value].flat().filter((text): text is string => typeof text === 'string');
-      if (messages.length) {
-        fields[name] = messages;
-      }
-    }
-  }
-  const errors = Object.values(fields).flat();
-  return { kind: 'invalid', errors: errors.length ? errors : [INVALID_FALLBACK], fields };
 }
 
 function unexpected(reply: Reply): Error {

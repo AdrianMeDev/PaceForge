@@ -89,6 +89,7 @@ function version(changes: Partial<SeasonPlanVersion> = {}): SeasonPlanVersion {
 function plan(changes: Partial<SeasonPlan> = {}): SeasonPlan {
   return {
     ...version(),
+    request: '',
     rationale: 'Base first, then the race.',
     parent: null,
     skeleton: SEASON,

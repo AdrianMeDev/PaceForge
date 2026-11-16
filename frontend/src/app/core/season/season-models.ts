@@ -1,4 +1,4 @@
-import { Forbidden } from '../goals/goals-models';
+import { Forbidden, Invalid } from '../goals/goals-models';
 import { ProviderProblemResult } from '../api/coach-replies';
 import {
   Finding,
@@ -9,7 +9,7 @@ import {
   Sport,
 } from '../planning/planning-models';
 
-export type { Forbidden, PlanProblem, PlanStatus, RateLimited, Report, Sport };
+export type { Forbidden, Invalid, PlanProblem, PlanStatus, RateLimited, Report, Sport };
 
 /** What a week of the season is for. `transition` is the rest after the main race. */
 export type SeasonPhase = 'base' | 'build' | 'specific' | 'taper' | 'transition';
@@ -119,6 +119,8 @@ export interface SeasonPlan {
   version: number;
   status: PlanStatus;
   reason: string;
+  /** What the athlete asked for if the coach made this version of another one; their own text. */
+  request: string;
   rationale: string;
   parent: string | null;
   created_at: string;
@@ -163,6 +165,24 @@ export type ConfirmSeasonResult =
   | SeasonPlanNotADraft
   /** The plan has errors; `findings` has all checks, the errors among them. */
   | { kind: 'not_confirmable'; findings: Finding[] }
+  | Forbidden;
+
+export type ChangeSeasonResult =
+  /** The new draft, with its checks; the version it was made from is not touched. */
+  | { kind: 'ok'; plan: SeasonPlan }
+  /** The request is missing, empty, too long or not plain text; `fields.request` says what. */
+  | Invalid
+  | SeasonPlanNotFound
+  /** Only the confirmed version and a draft can be changed. */
+  | { kind: 'not_changeable' }
+  /** No AI provider is set up. */
+  | { kind: 'not_configured' }
+  /** The coach gave the season back as it was; nothing was stored. */
+  | { kind: 'unchanged' }
+  /** The coach gave no readable plan, even after being told what was wrong. */
+  | { kind: 'not_usable'; problems: PlanProblem[] }
+  | ProviderProblemResult
+  | RateLimited
   | Forbidden;
 
 export type RestoreSeasonResult =
