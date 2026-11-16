@@ -106,6 +106,45 @@ Swimming, a race without a distance and a discipline that is not known have one 
 | `START_SHARE_PERCENT` | 50 | Without a reference week: the share of the first week on offer. |
 | `START_MINUTES_MIN` | 60 | Without a reference week: the least the first week aims for. |
 
+## The format of a filled season
+
+The coach fills the skeleton by answering with one object (`season/schema.py`, read by one strict
+parser that reports every problem by its path and never repeats a value of the answer). Only the
+fields below exist; an unknown field is refused. A whole number is a JSON integer.
+
+| Field | Required | Meaning |
+| ----- | -------- | ------- |
+| `weeks` | yes | A list of at most `MAX_WEEKS` weeks. |
+| `rationale` | no | Why the season looks like this: up to `RATIONALE_MAX` characters, line breaks allowed. |
+
+A **week**:
+
+| Field | Required | Meaning |
+| ----- | -------- | ------- |
+| `week_start` | yes | The Monday of the week. Whether the weeks are those of the skeleton is a matter of the checks. |
+| `minutes` | yes | An object: for any of `running`, `cycling`, `swimming` and `strength` the minutes of the week, 0 to `WEEK_MINUTES_MAX`. A sport that is left out has none. |
+| `focus` | yes | What the week is about: `recovery`, `endurance`, `tempo`, `threshold`, `vo2max` or `race_specific`. |
+| `reason` | yes | One line of 1 to `REASON_MAX` characters. |
+| `key_sessions` | no | The sessions the week stands on: a list of at most `MAX_KEY_SESSIONS`. |
+
+A **key session**:
+
+| Field | Required | Meaning |
+| ----- | -------- | ------- |
+| `sport` | yes | `running`, `cycling`, `swimming` or `strength`. |
+| `kind` | yes | `long`, `tempo`, `threshold`, `vo2max`, `race_pace`, `strength` or `race`. |
+| `minutes` | yes | 1 to `KEY_SESSION_MINUTES_MAX`. |
+| `detail` | no | A few words of the coach ("3 x 10 min"): one line of up to `DETAIL_MAX` characters. Only ever shown as text. |
+
+| Constant | Value | Meaning |
+| -------- | ----- | ------- |
+| `RATIONALE_MAX` | 1000 | Characters of the rationale of the season. |
+| `REASON_MAX` | 300 | Characters of the reason of a week. |
+| `DETAIL_MAX` | 60 | Characters of the detail of a key session. |
+| `MAX_KEY_SESSIONS` | 3 | Key sessions of a week. |
+| `WEEK_MINUTES_MAX` | 10080 | Minutes of one sport in a week: all of them. |
+| `KEY_SESSION_MINUTES_MAX` | 1440 | Minutes of a key session: a day. |
+
 ## The API
 
 `GET /api/season/` answers the skeleton of the signed-in user and writes nothing. The answer has

@@ -3,7 +3,7 @@
 import re
 from pathlib import Path
 
-from season import skeleton
+from season import schema, skeleton
 from season.skeleton import Phase
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -113,3 +113,39 @@ class TestTheWords:
 
         for name in (*data, *data["weeks"][0], *data["main_race"]):
             assert f"`{name}`" in text, name
+
+
+class TestTheFormat:
+    def test_the_limits_of_the_format_are_those_of_the_code(self) -> None:
+        text = section("The format of a filled season")
+        documented = {row[0]: int(row[1]) for row in table_after(text, "Constant")}
+        defined = {
+            name: value
+            for name, value in vars(schema).items()
+            if name.isupper()
+            and isinstance(value, int)
+            and not isinstance(value, bool)
+            # the most weeks is the one of the skeleton and listed with its limits
+            and name != "MAX_WEEKS"
+        }
+
+        assert documented == defined
+
+    def test_every_field_of_a_week_a_session_and_the_plan_is_named(self) -> None:
+        import dataclasses
+
+        text = section("The format of a filled season")
+
+        for dataclass in (schema.SeasonPlan, schema.PlanWeek, schema.KeySession):
+            for field in dataclasses.fields(dataclass):
+                assert f"`{field.name}`" in text, field.name
+
+    def test_every_word_of_the_choices_is_named(self) -> None:
+        text = section("The format of a filled season")
+
+        for enum in (schema.Focus, schema.SessionKind):
+            for member in enum:
+                assert f"`{member.value}`" in text, member
+
+    def test_the_most_weeks_is_that_of_the_skeleton(self) -> None:
+        assert "`MAX_WEEKS`" in section("The format of a filled season")
