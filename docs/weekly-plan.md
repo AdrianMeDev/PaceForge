@@ -559,6 +559,10 @@ what Intervals.icu said. Nothing holds a lock while the calls are made (sending 
   It is **not sent to the coach** unless the athlete switches that on (then its first
   `LIMITATIONS_TEXT_MAX_TOLD` characters, as data and never as instructions). What the rules use are
   the structured entries (body part and sports), not the text.
+- The **fixed appointments** are checked for their sport, their weekday and their part of the day,
+  not for their minutes, and a workout without a time of day fits any of their parts of the day.
+  They have no name or other text, so nothing of the athlete is repeated in a finding. Only
+  weekly appointments exist; a session on one date has no place in the rules.
 - The **time of day** is only an order (morning, afternoon, evening), not a clock time: two
   workouts on one day add up. The athlete can say which parts of the day are open on each weekday
   (`slot_outside_window`), but a workout without a time of day is not held to them, and the time

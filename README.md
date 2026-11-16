@@ -618,6 +618,18 @@ that. The page then says where it goes (your provider and model), and only the *
 characters** are sent with every plan request; the coach reads them as information about you and
 never as instructions. Writing the text does not switch the box on.
 
+**Fixed appointments (the list).** Below the form, a list for sessions that happen every week at a
+fixed time, such as a running club on Tuesday: choose the **day**, the **sport**, the **minutes**
+(5 to 600) and, if you want, the **part of the day**, then **Add**. There is no text field, so
+there is no name to give. Your AI coach is told every week to plan each one on its day, as the
+date, the sport, the minutes and the part of the day, nothing else. A plan without one of them
+(no workout of that sport on that day, in that part of the day if you named one) gets the warning
+"…has no … workout…" on the [Week plan](#week-plan) page; you can still confirm it. Nothing is said
+for a day of vacation or illness or a day without time. The minutes are not checked against the
+workout. **Delete** removes an entry after a question; to change one, delete it and add it again
+(the API can change it). You can have at most 14 entries. They repeat every week: a session on one
+date only belongs to "Not available" (below) or to the wishes for a week.
+
 **Injuries and limitations (the list).** Below the form, a list for what the plan should take care
 of: choose **where** (foot, ankle, Achilles tendon, calf, shin, knee, thigh, hip, back, shoulder or
 other) and tick the **sports it affects** (none ticked: no particular sport), then **Add**. There
@@ -632,7 +644,7 @@ health data: your own instance, your own provider, your own choice of what to en
 
 **Save** sends the weekdays, the parts of the day and two sessions, the budget, the normal week,
 the sports, the stretching choice, the wishes for a week, the intensity with your own limits, the
-limitations text and whether it may go to the coach together (the list of injuries saves on its own). The page checks
+limitations text and whether it may go to the coach together (the lists of fixed appointments and of injuries save on their own). The page checks
 the limits
 first and names every problem next to its field; if the server still refuses something, its message
 appears in the same place. Nothing is saved until every field is usable.
@@ -661,8 +673,9 @@ The API is `GET` and `PATCH` on `/api/availability/` (`weekdays` Monday first, `
 `intensity_level`, the own limits `max_hard_days`, `progression_warning_percent`,
 `progression_error_percent` and `easy_share_percent`, and the read-only `level_limits` of every
 level; `null` removes a number) and
-`/api/availability/periods/` and `/api/availability/limitations/`, each with list, create, read,
-change and delete.
+`/api/availability/periods/`, `/api/availability/limitations/` and
+`/api/availability/fixed-sessions/` (`weekday` 0 for Monday to 6, `sport`, `minutes`, `slot` or
+`null`), each with list, create, read, change and delete.
 
 Not there yet: time windows within a day, and different time per sport.
 
