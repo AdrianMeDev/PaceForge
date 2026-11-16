@@ -32,6 +32,7 @@ function workout(changes: Partial<Workout>): Workout {
     notes: '',
     slot: 'morning',
     stretching_minutes: 0,
+    exercises: [],
     segments: [],
     ...changes,
   };

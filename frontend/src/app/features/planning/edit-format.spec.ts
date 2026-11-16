@@ -203,6 +203,7 @@ describe('edit-format', () => {
       notes: 'Hard',
       slot: 'morning',
       stretching_minutes: 10,
+      exercises: [],
       segments: [
         {
           kind: 'work',
@@ -228,6 +229,7 @@ describe('edit-format', () => {
         notes: 'Hard',
         slot: 'morning',
         stretching_minutes: 10,
+        exercises: [],
         segments: [{ kind: 'work', seconds: 600, repeat: 3, zone_system: 'pace', zone: 4 }],
       });
     });
@@ -260,6 +262,7 @@ describe('edit-format', () => {
         notes: '',
         slot: null,
         stretching_minutes: 0,
+        exercises: [],
         segments: [],
       });
     });

@@ -55,6 +55,28 @@ export type PushOutcome =
   | { ok: true; synced: number; failed: number; removed: number; left_behind: number }
   | { ok: false; problem: PushProblem; message: string };
 
+/** What an exercise trains. */
+export type ExerciseRegion = 'legs' | 'core' | 'upper_body' | 'full_body';
+/** What an exercise needs. */
+export type ExerciseEquipment = 'gym' | 'dumbbells' | 'bodyweight';
+
+/**
+ * One exercise of a strength workout: `sets` of `reps` repetitions, or of a hold of `seconds`
+ * (exactly one of the two is set). The name is the coach's text.
+ */
+export interface Exercise {
+  name: string;
+  region: ExerciseRegion;
+  equipment: ExerciseEquipment;
+  sets: number;
+  reps: number | null;
+  seconds: number | null;
+  /** How hard it is, 1 to 10; `null`: not said. */
+  rpe: number | null;
+  /** The rest between sets in seconds; `null`: not said. */
+  rest_seconds: number | null;
+}
+
 /** One part of a workout, done `repeat` times in a row; zone system and zone come together. */
 export interface Segment {
   kind: SegmentKind;
@@ -88,6 +110,8 @@ export interface Workout {
   /** Stretching added to this workout in minutes (0: none): never a workout of its own. */
   stretching_minutes: number;
   segments: Segment[];
+  /** The exercises of a strength workout, in the order they are done; empty for any other. */
+  exercises: Exercise[];
 }
 
 /** What a check says about a plan. `path` points into the plan (`workouts[2].segments`). */
@@ -231,6 +255,7 @@ export interface EditedWorkout {
   slot: WorkoutSlot | null;
   stretching_minutes: number;
   segments: EditedSegment[];
+  exercises: Exercise[];
 }
 
 /** A plan as it is sent to be checked or stored: the plan format, with the workouts by lineage. */

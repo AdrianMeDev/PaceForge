@@ -17,6 +17,7 @@ const RIDE: EditedWorkout = {
   notes: 'Keep it easy',
   slot: 'morning',
   stretching_minutes: 10,
+  exercises: [],
   segments: [],
 };
 
@@ -32,9 +33,47 @@ const INTERVALS: EditedWorkout = {
   notes: '',
   slot: null,
   stretching_minutes: 0,
+  exercises: [],
   segments: [
     { kind: 'warmup', seconds: 900, repeat: 1, zone_system: 'pace', zone: 2 },
     { kind: 'work', seconds: 600, repeat: 3, zone_system: 'pace', zone: 4 },
+  ],
+};
+
+const LIFTING: EditedWorkout = {
+  lineage: '01a1d73d-aaaa-7000-8000-000000000003',
+  day: '2026-11-17',
+  sport: 'strength',
+  title: 'Strength',
+  goal: 'strength',
+  duration_minutes: 45,
+  zone_system: null,
+  zone: null,
+  notes: '',
+  slot: null,
+  stretching_minutes: 0,
+  segments: [],
+  exercises: [
+    {
+      name: 'Goblet squat',
+      region: 'legs',
+      equipment: 'dumbbells',
+      sets: 3,
+      reps: 10,
+      seconds: null,
+      rpe: 7,
+      rest_seconds: 90,
+    },
+    {
+      name: 'Plank',
+      region: 'core',
+      equipment: 'bodyweight',
+      sets: 3,
+      reps: null,
+      seconds: 45,
+      rpe: null,
+      rest_seconds: null,
+    },
   ],
 };
 
@@ -144,6 +183,7 @@ describe('WorkoutForm', () => {
         notes: '',
         slot: 'evening',
         stretching_minutes: 0,
+        exercises: [],
         segments: [],
       });
     });
@@ -220,6 +260,7 @@ describe('WorkoutForm', () => {
         goal: 'vo2max',
         duration_minutes: 75,
         stretching_minutes: 15,
+        exercises: [],
         notes: 'Short and sharp',
         zone: 5,
       });
@@ -494,6 +535,44 @@ describe('WorkoutForm', () => {
 
       expect(event.defaultPrevented).toBe(true);
       expect(saved).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('the exercises of a strength workout', () => {
+    it('stay when the workout is changed', () => {
+      setup(LIFTING);
+      type('workout-duration', '50');
+
+      submit();
+
+      expect(lastSaved().exercises).toEqual(LIFTING.exercises);
+      expect(lastSaved().duration_minutes).toBe(50);
+    });
+
+    it('go when the sport is no longer strength', () => {
+      setup(LIFTING);
+      choose('workout-sport', 'running');
+
+      submit();
+
+      expect(lastSaved()).toMatchObject({ sport: 'running', exercises: [] });
+    });
+
+    it('are none for a workout that never had any', () => {
+      setup(RIDE);
+
+      submit();
+
+      expect(lastSaved().exercises).toEqual([]);
+    });
+
+    it('are not added to a workout that becomes strength', () => {
+      setup(RIDE);
+      choose('workout-sport', 'strength');
+
+      submit();
+
+      expect(lastSaved()).toMatchObject({ sport: 'strength', exercises: [] });
     });
   });
 });

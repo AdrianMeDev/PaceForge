@@ -154,6 +154,8 @@ export class WorkoutForm {
       slot: this.slotValue() === '' ? null : (this.slotValue() as WorkoutSlot),
       stretching_minutes: stretching.value,
       segments: this.keepsStructure() ? this.start().segments : [],
+      // The exercises belong to a strength workout: they stay with it and go with another sport.
+      exercises: this.sportValue() === 'strength' ? this.start().exercises : [],
     });
   }
 }
