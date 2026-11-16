@@ -42,9 +42,13 @@ h2 {
   font-size: 0.85rem;
 }
 
-.badge.main {
+.badge[data-priority='main'] {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+.badge[data-priority='preparation'] {
+  color: var(--info);
 }
 
 .badge[data-status='achieved'] {

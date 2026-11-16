@@ -50,9 +50,9 @@
               <div class="head">
                 <h2>{{ goal.title }}</h2>
                 <span class="badge kind">{{ kindLabel[goal.kind] }}</span>
-                @if (goal.priority === 'main') {
-                  <span class="badge main">{{ priorityLabel.main }}</span>
-                }
+                <span class="badge" [attr.data-priority]="goal.priority" data-testid="priority">{{
+                  priorityLabel[goal.priority]
+                }}</span>
                 @if (goal.status !== 'active') {
                   <span class="badge" [attr.data-status]="goal.status">{{
                     statusLabel[goal.status]
@@ -109,7 +109,7 @@
                     >
                       Drop
                     </button>
-                    @if (goal.priority === 'secondary') {
+                    @if (goal.priority !== 'main') {
                       <button
                         type="button"
                         class="secondary"
