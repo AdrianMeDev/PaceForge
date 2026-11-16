@@ -1,5 +1,6 @@
 import json
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from http import HTTPStatus
 from typing import Any
@@ -128,6 +129,7 @@ class TestWhoMayCome:
             ("POST", url(UNKNOWN_ID, "confirm/")),
             ("POST", url(UNKNOWN_ID, "discard/")),
             ("POST", url(UNKNOWN_ID, "restore/")),
+            ("POST", url(UNKNOWN_ID, "change/")),
         ],
     )
     def test_a_visitor_who_is_not_signed_in_is_refused(self, method: str, path: str) -> None:
@@ -147,6 +149,8 @@ class TestWhoMayCome:
             ("GET", url(UNKNOWN_ID, "discard/")),
             ("GET", url(UNKNOWN_ID, "restore/")),
             ("PUT", url(UNKNOWN_ID, "restore/")),
+            ("GET", url(UNKNOWN_ID, "change/")),
+            ("PUT", url(UNKNOWN_ID, "change/")),
         ],
     )
     def test_other_methods_are_not_allowed(self, alice: User, method: str, path: str) -> None:
@@ -600,9 +604,202 @@ class TestRestoring:
         assert response.status_code == HTTPStatus.NOT_FOUND
 
 
+def tempo(user: User) -> str:
+    """The season as it is, but with the focus of the first week changed."""
+    plan = following(skeleton_for(user))
+    weeks = (replace(plan.weeks[0], focus=Focus.TEMPO, reason="Harder."), *plan.weeks[1:])
+    return json.dumps(to_json(SeasonPlan(weeks, plan.rationale)))
+
+
+class TestChanging:
+    WISH = {"request": "Less cycling in January"}
+
+    def confirmed(self, user: User) -> SeasonPlanVersion:
+        return services.confirm(user, draft(user).pk)
+
+    def test_a_good_answer_gives_the_new_draft_with_its_checks(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        base = self.confirmed(alice)
+        provide(tempo(alice))
+
+        response = signed_in(alice).call("POST", url(base.pk, "change/"), self.WISH)
+
+        assert response.status_code == HTTPStatus.CREATED
+        data = body(response)
+        assert set(data) == DETAIL_FIELDS
+        assert (data["status"], data["version"], data["parent"]) == ("draft", 2, str(base.pk))
+        assert data["reason"] == "Changed on request from version 1"
+        assert data["request"] == "Less cycling in January"
+        assert data["report"] == {"valid": True, "findings": []}
+        assert data["weeks"][0]["focus"] == "tempo"
+
+    def test_the_old_version_stays_confirmed(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        base = self.confirmed(alice)
+        provide(tempo(alice))
+
+        signed_in(alice).call("POST", url(base.pk, "change/"), self.WISH)
+
+        base.refresh_from_db()
+        assert base.status == "confirmed"
+
+    def test_the_call_is_recorded_for_the_season(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        base = self.confirmed(alice)
+        provide(tempo(alice))
+
+        signed_in(alice).call("POST", url(base.pk, "change/"), self.WISH)
+
+        assert [r.purpose for r in AIUsageRecord.objects.for_user(alice)] == ["season_plan"]
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {},
+            {"request": ""},
+            {"request": "  \n "},
+            {"request": "x" * 501},
+            {"request": "bell\x07"},
+        ],
+    )
+    def test_a_request_that_is_missing_empty_too_long_or_not_plain_is_a_400_on_its_field(
+        self, alice: User, provide: Callable[..., Scripted], payload: dict[str, Any]
+    ) -> None:
+        base = self.confirmed(alice)
+        scripted = provide("never asked")
+
+        response = signed_in(alice).call("POST", url(base.pk, "change/"), payload)
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert set(body(response)) == {"request"}
+        assert scripted.calls == []
+
+    @pytest.mark.parametrize("value", [5, None, ["x"], {"a": 1}])
+    def test_a_request_that_is_no_text_is_a_400(self, alice: User, value: Any) -> None:
+        base = self.confirmed(alice)
+
+        response = signed_in(alice).call("POST", url(base.pk, "change/"), {"request": value})
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+
+    def test_what_was_asked_is_not_repeated_in_an_error(self, alice: User) -> None:
+        base = self.confirmed(alice)
+
+        response = signed_in(alice).call(
+            "POST", url(base.pk, "change/"), {"request": "SECRET-WISH\x07"}
+        )
+
+        assert "SECRET-WISH" not in response.content.decode()
+
+    @pytest.mark.parametrize("status", ["superseded", "discarded"])
+    def test_a_replaced_or_discarded_version_is_a_409(
+        self, alice: User, provide: Callable[..., Scripted], status: str
+    ) -> None:
+        old = draft(alice)
+        if status == "discarded":
+            services.discard(alice, old.pk)
+        else:
+            services.confirm(alice, old.pk)
+            services.confirm(alice, draft(alice).pk)
+        scripted = provide("never asked")
+
+        response = signed_in(alice).call("POST", url(old.pk, "change/"), self.WISH)
+
+        assert response.status_code == HTTPStatus.CONFLICT
+        assert body(response)["code"] == "not_changeable"
+        assert scripted.calls == []
+
+    def test_the_version_of_another_user_is_not_found(
+        self, alice: User, bob: User, provide: Callable[..., Scripted]
+    ) -> None:
+        theirs = self.confirmed(bob)
+        scripted = provide("never asked")
+
+        response = signed_in(alice).call("POST", url(theirs.pk, "change/"), self.WISH)
+
+        assert response.status_code == HTTPStatus.NOT_FOUND
+        assert body(response)["code"] == "not_found"
+        assert scripted.calls == []
+
+    def test_no_provider_is_a_409(self, alice: User) -> None:
+        base = self.confirmed(alice)
+        AIProviderConfiguration.objects.filter(owner=alice).delete()
+
+        response = signed_in(alice).call("POST", url(base.pk, "change/"), self.WISH)
+
+        assert response.status_code == HTTPStatus.CONFLICT
+        assert body(response)["code"] == "not_configured"
+
+    def test_an_answer_that_is_the_season_as_it_was_is_a_422_unchanged(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        base = self.confirmed(alice)
+        provide(good(alice))
+
+        response = signed_in(alice).call("POST", url(base.pk, "change/"), self.WISH)
+
+        assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+        assert body(response)["code"] == "unchanged"
+        assert SeasonPlanVersion.objects.count() == 1
+
+    def test_an_answer_that_cannot_be_read_is_a_422_with_fixed_problems(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        base = self.confirmed(alice)
+        provide("SECRET-1", "SECRET-2", "SECRET-3")
+
+        response = signed_in(alice).call("POST", url(base.pk, "change/"), self.WISH)
+
+        assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+        assert body(response)["code"] == "not_usable"
+        assert "SECRET" not in response.content.decode()
+        assert SeasonPlanVersion.objects.count() == 1
+
+    @pytest.mark.parametrize(
+        ("error", "status", "code"),
+        [
+            (InvalidKeyError("x"), HTTPStatus.BAD_GATEWAY, "invalid_key"),
+            (RateLimitedError("x", 30), HTTPStatus.TOO_MANY_REQUESTS, "rate_limited"),
+            (ProviderUnavailableError("x"), HTTPStatus.SERVICE_UNAVAILABLE, "unavailable"),
+        ],
+    )
+    def test_a_provider_that_fails_is_a_fixed_text_and_a_code(
+        self,
+        alice: User,
+        provide: Callable[..., Scripted],
+        error: Exception,
+        status: int,
+        code: str,
+    ) -> None:
+        base = self.confirmed(alice)
+        provide(error)
+
+        response = signed_in(alice).call("POST", url(base.pk, "change/"), self.WISH)
+
+        assert response.status_code == status
+        assert body(response)["code"] == code
+
+    def test_it_is_throttled_with_drafting_before_the_provider(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        base = self.confirmed(alice)
+        scripted = provide(tempo(alice), tempo(alice), tempo(alice), tempo(alice))
+        api = signed_in(alice)
+
+        statuses = [
+            api.call("POST", url(base.pk, "change/"), self.WISH).status_code for _ in range(4)
+        ]
+
+        assert statuses == [201, 201, 201, HTTPStatus.TOO_MANY_REQUESTS]
+        assert len(scripted.calls) == 3
+
+
 class TestWithoutCsrf:
     @pytest.mark.parametrize(
-        "action", ["generate/", "{id}/confirm/", "{id}/discard/", "{id}/restore/"]
+        "action", ["generate/", "{id}/confirm/", "{id}/discard/", "{id}/restore/", "{id}/change/"]
     )
     def test_a_post_without_the_token_is_refused(self, alice: User, action: str) -> None:
         stored = draft(alice)
