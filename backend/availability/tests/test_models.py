@@ -10,6 +10,8 @@ from accounts.models import User
 from availability.intensity import LEVEL_LIMITS, LIMIT_NAMES, IntensityLevel, Limits
 from availability.models import (
     DAY_MINUTES_MAX,
+    FIXED_MINUTES_MAX,
+    FIXED_MINUTES_MIN,
     LIMITATIONS_MAX,
     NOTE_MAX,
     PERIOD_MAX_DAYS,
@@ -19,6 +21,7 @@ from availability.models import (
     WEEK_MINUTES_MAX,
     AvailabilitySettings,
     BodyPart,
+    FixedSession,
     Limitation,
     LimitationStatus,
     SportPreference,
@@ -826,3 +829,99 @@ class TestOwnership:
         assert UnavailablePeriod.objects.count() == 1
         assert WeekdayMinutes.objects.count() == 0
         assert AvailabilitySettings.objects.count() == 0
+
+
+class TestFixedSessions:
+    def fixed(self, **fields: Any) -> dict[str, Any]:
+        return {"weekday": 1, "sport": "running", "minutes": 60, **fields}
+
+    @pytest.mark.parametrize("weekday", range(7))
+    def test_every_weekday_is_valid(self, alice: User, weekday: int) -> None:
+        check(FixedSession, alice, **self.fixed(weekday=weekday))
+
+    @pytest.mark.parametrize("weekday", [-1, 7, 30])
+    def test_an_unknown_weekday_is_refused(self, alice: User, weekday: int) -> None:
+        refused(FixedSession, alice, "weekday", **self.fixed(weekday=weekday))
+
+    @pytest.mark.parametrize("sport", SPORTS)
+    def test_every_sport_is_valid(self, alice: User, sport: str) -> None:
+        check(FixedSession, alice, **self.fixed(sport=sport))
+
+    @pytest.mark.parametrize("sport", ["", "golf", "Running", "running "])
+    def test_an_unknown_sport_is_refused(self, alice: User, sport: str) -> None:
+        refused(FixedSession, alice, "sport", **self.fixed(sport=sport))
+
+    @pytest.mark.parametrize("minutes", [FIXED_MINUTES_MIN, 60, FIXED_MINUTES_MAX])
+    def test_the_minutes_inside_the_range_are_valid(self, alice: User, minutes: int) -> None:
+        check(FixedSession, alice, **self.fixed(minutes=minutes))
+
+    @pytest.mark.parametrize("minutes", [0, FIXED_MINUTES_MIN - 1, FIXED_MINUTES_MAX + 1, 1440])
+    def test_the_minutes_outside_the_range_are_refused(self, alice: User, minutes: int) -> None:
+        refused(FixedSession, alice, "minutes", **self.fixed(minutes=minutes))
+
+    @pytest.mark.parametrize("slot", ["", *SLOTS])
+    def test_no_slot_and_every_slot_are_valid(self, alice: User, slot: str) -> None:
+        check(FixedSession, alice, **self.fixed(slot=slot))
+
+    @pytest.mark.parametrize("slot", ["night", "Morning", "morning "])
+    def test_an_unknown_slot_is_refused(self, alice: User, slot: str) -> None:
+        refused(FixedSession, alice, "slot", **self.fixed(slot=slot))
+
+    def test_a_session_has_no_slot_unless_one_is_named(self, alice: User) -> None:
+        entry = FixedSession.objects.create(owner=alice, **self.fixed())
+
+        assert entry.slot == ""
+
+    def test_the_id_is_time_ordered(self, alice: User) -> None:
+        first = FixedSession.objects.create(owner=alice, **self.fixed())
+        second = FixedSession.objects.create(owner=alice, **self.fixed(weekday=3))
+
+        assert first.pk < second.pk
+
+    def test_the_database_refuses_an_unknown_weekday(self, alice: User) -> None:
+        message = rejected_by_database(FixedSession, owner=alice, **self.fixed(weekday=7))
+
+        assert "availability_fixed_weekday_known" in message
+
+    def test_the_database_refuses_an_unknown_sport(self, alice: User) -> None:
+        message = rejected_by_database(FixedSession, owner=alice, **self.fixed(sport="golf"))
+
+        assert "availability_fixed_sport_known" in message
+
+    @pytest.mark.parametrize("minutes", [FIXED_MINUTES_MIN - 1, FIXED_MINUTES_MAX + 1])
+    def test_the_database_refuses_minutes_outside_the_range(
+        self, alice: User, minutes: int
+    ) -> None:
+        message = rejected_by_database(FixedSession, owner=alice, **self.fixed(minutes=minutes))
+
+        assert "availability_fixed_minutes_in_range" in message
+
+    def test_the_database_refuses_an_unknown_slot(self, alice: User) -> None:
+        message = rejected_by_database(FixedSession, owner=alice, **self.fixed(slot="night"))
+
+        assert "availability_fixed_slot_known" in message
+
+    def test_two_sessions_on_one_day_are_allowed(self, alice: User) -> None:
+        FixedSession.objects.create(owner=alice, **self.fixed(slot="morning"))
+        FixedSession.objects.create(owner=alice, **self.fixed(slot="evening"))
+
+        assert FixedSession.objects.for_user(alice).count() == 2
+
+    def test_the_text_names_the_sport_and_the_user_only(self, alice: User) -> None:
+        text = str(FixedSession(owner=alice, **self.fixed()))
+
+        assert text == f"fixed running session of user {alice.pk}"
+
+    def test_a_session_belongs_to_its_user(self, alice: User, bob: User) -> None:
+        mine = FixedSession.objects.create(owner=alice, **self.fixed())
+        FixedSession.objects.create(owner=bob, **self.fixed())
+
+        assert list(FixedSession.objects.for_user(alice)) == [mine]
+        assert not FixedSession.objects.for_user(AnonymousUser()).exists()
+
+    def test_deleting_the_user_deletes_the_sessions(self, alice: User) -> None:
+        FixedSession.objects.create(owner=alice, **self.fixed())
+
+        alice.delete()
+
+        assert not FixedSession.objects.exists()
