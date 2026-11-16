@@ -33,7 +33,7 @@ const FALLBACK = 'Something went wrong. Please try again.';
 const REFRESH_FAILED = 'The list could not be refreshed. Please try again.';
 
 /**
- * Where users bring FIT and TCX files in and see what was imported. The server decides by the
+ * Where users bring FIT, TCX and GPX files (also gzip-compressed) in and see what was imported. The server decides by the
  * content of a file, never by its name; files are sent one after the other so that each gets its
  * own result and one failure does not stop the others.
  */
