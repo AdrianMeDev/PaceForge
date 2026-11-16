@@ -720,6 +720,56 @@ def check_legs_before_key_run(plan: WeekPlan, context: PlanContext) -> list[Find
     return found
 
 
+def check_fixed_sessions(plan: WeekPlan, context: PlanContext) -> list[Finding]:
+    """A session that happens every week is missing from the plan (a warning, once per session, at
+    the plan as a whole, in the order of the context).
+
+    A session is there if the day has a workout of its sport, in its part of the day if one was
+    named; a workout without a time of day fits any part of the day, since a day with one workout
+    needs none. A workout covers one session only, so two sessions of a sport on a day need two
+    workouts. Nothing is said for a day of absence or a day that offers no minutes: the session
+    cannot take place then."""
+    _same_week(plan, context)
+    by_day = _workouts_by_day(plan, context)
+    free: dict[int, list[Workout]] = {
+        offset: [workout for _, workout in workouts] for offset, workouts in by_day.items()
+    }
+    missing: set[int] = set()
+    # The sessions with a part of the day first, so that they take the workouts that fit them.
+    for number, fixed in sorted(
+        enumerate(context.fixed_sessions), key=lambda item: item[1].slot is None
+    ):
+        candidates = [
+            workout
+            for workout in free.get(fixed.weekday, [])
+            if workout.sport is fixed.sport
+            and (fixed.slot is None or workout.slot in (fixed.slot, None))
+        ]
+        if candidates:
+            # the exact part of the day before one without a time of day
+            best = min(candidates, key=lambda workout: workout.slot is None)
+            free[fixed.weekday].remove(best)
+        else:
+            missing.add(number)
+    found = []
+    for number, fixed in enumerate(context.fixed_sessions):
+        if number not in missing:
+            continue
+        if context.absences[fixed.weekday] is not None or context.minutes[fixed.weekday] == 0:
+            continue
+        where = f" in the {fixed.slot.value}" if fixed.slot else ""
+        found.append(
+            Finding(
+                Severity.WARNING,
+                "fixed_session_missing",
+                f"{_WEEKDAYS[fixed.weekday]} has no {fixed.sport.value} workout{where}; you "
+                f"have a fixed appointment of {fixed.minutes} minutes then.",
+                "workouts",
+            )
+        )
+    return found
+
+
 def check_limitations(plan: WeekPlan, context: PlanContext) -> list[Finding]:
     """A workout in a sport that a current limitation affects (a warning, once per workout, at
     its sport, naming the newest limitation that affects it). A limitation without sports affects
@@ -816,6 +866,7 @@ RHYTHM_CHECKS: tuple[Check, ...] = (
     check_long_days,
     check_sessions_per_sport,
     check_legs_before_key_run,
+    check_fixed_sessions,
 )
 
 ALL_CHECKS: tuple[Check, ...] = BASIC_CHECKS + RHYTHM_CHECKS

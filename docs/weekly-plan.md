@@ -174,6 +174,9 @@ Each plan is checked against the facts of its user for that week, collected when
   want to train in a week, and the weekday of the long run and of the long ride. Each is optional
   and a missing one is never checked. They only produce warnings (`too_many_training_days`,
   `below_minimum_minutes`, `long_session_elsewhere`), never an error.
+- **Fixed appointments.** Sessions that happen every week: weekday, sport, minutes and optionally
+  a part of the day. The coach is told to plan them; a plan without one is a warning
+  (`fixed_session_missing`), not an error.
 - **Limitations.** The athlete's current injuries and limitations, each a body part from a fixed
   list and the sports it affects. A workout in an affected sport is a warning (`limited_sport`),
   not an error. Healed entries are not in the context.
@@ -222,6 +225,7 @@ user to weigh.
 | `long_session_elsewhere` | warning | For running and cycling, if the athlete named a day for the long session: the longest workout of that sport is on another day (with a tie one of the longest on that day is enough). Named at the `day` of the longest workout. Not said if the week has no workout of the sport or if that day is an absence or offers no minutes. |
 | `sessions_out_of_range` | warning | A sport has fewer sessions in the week than the least the athlete wants of it, or more than the most. Only sports with such a wish are looked at. Named once per sport, at the plan as a whole. |
 | `legs_before_key_run` | warning | With the strength focus legs or full body: a strength workout on the day before a key run, that is a hard run or the longest run of the week (with a tie, each of the longest). Named at the strength workout, once. Only days of the week are compared. |
+| `fixed_session_missing` | warning | A session that happens every week (training time page) is not in the plan: the day has no workout of its sport, in its part of the day if one was named (a workout without a time of day fits any part of the day). A workout covers one session only. The minutes are not checked. Named once per session, at the plan as a whole. Not said for a day of absence or a day that offers no minutes. |
 | `hard_days_in_a_row` | warning | A hard day directly after a hard day. |
 | `no_free_day` | warning | Every day of the week has a workout. |
 | `many_workouts_in_a_day` | error | More workouts on a day than the limit (two). Named once per day, at the first one too many. |
