@@ -1,6 +1,6 @@
 import math
 import time
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 import pytest
@@ -11,6 +11,7 @@ from django.db import IntegrityError, transaction
 from accounts.models import User
 from athletes import models
 from athletes.models import (
+    BEST_TIME_FROM,
     BIRTH_YEAR_MIN,
     MIN_AGE,
     RESTING_HR_MAX,
@@ -21,6 +22,7 @@ from athletes.models import (
     WEIGHT_MIN,
     YEARS_SPORTS,
     AthleteProfile,
+    BestTime,
     Equipment,
     ThresholdValue,
 )
@@ -498,3 +500,99 @@ class TestValues:
 
         assert "263" not in str(stored)
         assert str(alice.pk) in str(stored)
+
+
+class TestBestTimes:
+    RACE_DAY = date.today() - timedelta(days=30)
+
+    def best(self, **fields: Any) -> dict[str, Any]:
+        return {"distance": "5k", "seconds": 20 * 60, "date": self.RACE_DAY, **fields}
+
+    def check(self, owner: User, **fields: Any) -> None:
+        BestTime(owner=owner, **self.best(**fields)).full_clean(exclude=["owner"])
+
+    def refused(self, owner: User, field: str, **fields: Any) -> None:
+        with pytest.raises(ValidationError) as raised:
+            self.check(owner, **fields)
+        assert field in raised.value.message_dict, raised.value.message_dict
+
+    @pytest.mark.parametrize(
+        ("distance", "seconds"),
+        [("5k", 1200), ("10k", 2500), ("half_marathon", 5700), ("marathon", 12000)],
+    )
+    def test_a_plausible_time_over_every_distance_is_valid(
+        self, alice: User, distance: str, seconds: int
+    ) -> None:
+        self.check(alice, distance=distance, seconds=seconds)
+
+    @pytest.mark.parametrize("distance", ["", "3k", "5K", "ultra", "5k "])
+    def test_an_unknown_distance_is_refused(self, alice: User, distance: str) -> None:
+        self.refused(alice, "distance", distance=distance)
+
+    @pytest.mark.parametrize("seconds", [1, 300, 5 * 3600, 100000])
+    def test_a_time_that_no_runner_has_is_refused(self, alice: User, seconds: int) -> None:
+        # 5 km in 5 minutes is a typo, and so is 5 km in more than five hours
+        self.refused(alice, "seconds", seconds=seconds)
+
+    def test_the_message_asks_to_check_the_time(self, alice: User) -> None:
+        with pytest.raises(ValidationError) as raised:
+            self.check(alice, seconds=300)
+
+        assert raised.value.message_dict["seconds"] == [
+            "That time is not plausible for this distance. Check it."
+        ]
+
+    def test_today_is_valid_and_tomorrow_is_not(self, alice: User) -> None:
+        self.check(alice, date=date.today())
+        self.refused(alice, "date", date=date.today() + timedelta(days=1))
+
+    def test_the_first_day_is_valid_and_the_day_before_is_not(self, alice: User) -> None:
+        self.check(alice, date=BEST_TIME_FROM)
+        self.refused(alice, "date", date=BEST_TIME_FROM - timedelta(days=1))
+
+    def test_one_time_per_distance_and_user(self, alice: User, bob: User) -> None:
+        BestTime.objects.create(owner=alice, **self.best())
+        BestTime.objects.create(owner=alice, **self.best(distance="10k", seconds=2500))
+        BestTime.objects.create(owner=bob, **self.best())
+
+        with pytest.raises(IntegrityError), transaction.atomic():
+            BestTime.objects.create(owner=alice, **self.best(seconds=1100))
+
+        assert BestTime.objects.count() == 3
+
+    @pytest.mark.parametrize(
+        ("fields", "name"),
+        [
+            ({"distance": "3k"}, "athletes_best_time_distance_known"),
+            ({"date": date(1899, 12, 31)}, "athletes_best_time_date_plausible"),
+        ],
+    )
+    def test_the_database_refuses_what_is_out_of_range(
+        self, alice: User, fields: dict[str, Any], name: str
+    ) -> None:
+        with pytest.raises(IntegrityError) as raised, transaction.atomic():
+            BestTime.objects.create(owner=alice, **self.best(**fields))
+
+        assert name in str(raised.value)
+
+    def test_the_database_refuses_no_time(self, alice: User) -> None:
+        with pytest.raises(IntegrityError) as raised, transaction.atomic():
+            BestTime.objects.create(owner=alice, **self.best(seconds=0))
+
+        assert "athletes_best_time_seconds_positive" in str(raised.value)
+
+    def test_the_text_names_the_distance_and_the_user_only(self, alice: User) -> None:
+        assert str(BestTime(owner=alice, **self.best())) == f"5k best time of user {alice.pk}"
+
+    def test_a_time_belongs_to_its_user(self, alice: User, bob: User) -> None:
+        mine = BestTime.objects.create(owner=alice, **self.best())
+        BestTime.objects.create(owner=bob, **self.best())
+
+        assert list(BestTime.objects.for_user(alice)) == [mine]
+
+    def test_deleting_the_user_deletes_the_times(self, alice: User) -> None:
+        BestTime.objects.create(owner=alice, **self.best())
+
+        alice.delete()
+
+        assert not BestTime.objects.exists()
