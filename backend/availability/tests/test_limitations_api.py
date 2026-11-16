@@ -1,7 +1,7 @@
 import json
 from http import HTTPStatus
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from django.db import connection
@@ -19,6 +19,10 @@ from availability.serializers import (
 )
 
 from .conftest import make_user, signed_in
+
+# A fixed id for the tests that are parametrized: the id is part of the name of a test, and
+# every worker of a parallel run has to collect the same names.
+UNKNOWN_ID = UUID("0195f3a0-0000-7000-8000-000000000001")
 
 pytestmark = pytest.mark.django_db
 
@@ -64,9 +68,9 @@ class TestAccess:
         [
             ("GET", URL),
             ("POST", URL),
-            ("GET", detail(uuid4())),
-            ("PATCH", detail(uuid4())),
-            ("DELETE", detail(uuid4())),
+            ("GET", detail(UNKNOWN_ID)),
+            ("PATCH", detail(UNKNOWN_ID)),
+            ("DELETE", detail(UNKNOWN_ID)),
         ],
     )
     def test_anonymous_visitors_are_refused(self, method: str, url: str) -> None:

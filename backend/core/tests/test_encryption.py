@@ -157,7 +157,7 @@ class TestSystemCheck:
 
     @pytest.mark.parametrize(
         "bad",
-        ["short", "not base64 !!!", "A" * 44, Fernet.generate_key().decode()[:-4]],
+        ["short", "not base64 !!!", "A" * 44, "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY"],
     )
     def test_a_malformed_key_is_reported_without_showing_it(self, settings: Any, bad: str) -> None:
         settings.ENCRYPTION_KEYS = [bad]

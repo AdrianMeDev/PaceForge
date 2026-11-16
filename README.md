@@ -943,7 +943,7 @@ cd backend
 uv run ruff format --check . && uv run ruff check .
 uv run mypy .
 uv run python manage.py makemigrations --check --dry-run
-uv run pytest
+uv run pytest -n auto   # in parallel, one test database per core; plain `uv run pytest` is serial
 
 # frontend
 cd frontend
@@ -952,7 +952,9 @@ npx ng test --no-watch
 npx ng build
 ```
 
-The backend tests create and drop their own `test_*` database next to the development one.
+The backend tests create and drop their own `test_*` database next to the development one (with
+`-n auto` one per worker, `test_*_gw0`, `test_*_gw1`, …). They hash passwords quickly, not with
+Argon2; the tests that check the production hashers set them themselves.
 
 ## Configuration
 

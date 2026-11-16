@@ -4,7 +4,7 @@ from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from http import HTTPStatus
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from django.db import connection
@@ -44,6 +44,10 @@ from planning.schema import (
 from .conftest import make_user, signed_in
 from .fake_calendar import Calendar
 from .scripted import Scripted
+
+# A fixed id for the tests that are parametrized: the id is part of the name of a test, and
+# every worker of a parallel run has to collect the same names.
+UNKNOWN_ID = UUID("0195f3a0-0000-7000-8000-000000000001")
 
 pytestmark = pytest.mark.django_db
 
@@ -157,12 +161,12 @@ ENDPOINTS = [
     ("GET", WEEKS),
     ("POST", generate_url()),
     ("POST", check_url()),
-    ("GET", plan_url(uuid4())),
-    ("POST", plan_url(uuid4(), "revise/")),
-    ("POST", plan_url(uuid4(), "restore/")),
-    ("POST", plan_url(uuid4(), "confirm/")),
-    ("POST", plan_url(uuid4(), "push/")),
-    ("POST", plan_url(uuid4(), "discard/")),
+    ("GET", plan_url(UNKNOWN_ID)),
+    ("POST", plan_url(UNKNOWN_ID, "revise/")),
+    ("POST", plan_url(UNKNOWN_ID, "restore/")),
+    ("POST", plan_url(UNKNOWN_ID, "confirm/")),
+    ("POST", plan_url(UNKNOWN_ID, "push/")),
+    ("POST", plan_url(UNKNOWN_ID, "discard/")),
 ]
 
 
@@ -193,14 +197,14 @@ class TestAccess:
             ("GET", generate_url()),
             ("GET", check_url()),
             ("PUT", check_url()),
-            ("DELETE", plan_url(uuid4())),
-            ("PATCH", plan_url(uuid4())),
-            ("GET", plan_url(uuid4(), "revise/")),
-            ("PUT", plan_url(uuid4(), "revise/")),
-            ("GET", plan_url(uuid4(), "restore/")),
-            ("PUT", plan_url(uuid4(), "restore/")),
-            ("GET", plan_url(uuid4(), "confirm/")),
-            ("GET", plan_url(uuid4(), "discard/")),
+            ("DELETE", plan_url(UNKNOWN_ID)),
+            ("PATCH", plan_url(UNKNOWN_ID)),
+            ("GET", plan_url(UNKNOWN_ID, "revise/")),
+            ("PUT", plan_url(UNKNOWN_ID, "revise/")),
+            ("GET", plan_url(UNKNOWN_ID, "restore/")),
+            ("PUT", plan_url(UNKNOWN_ID, "restore/")),
+            ("GET", plan_url(UNKNOWN_ID, "confirm/")),
+            ("GET", plan_url(UNKNOWN_ID, "discard/")),
         ],
     )
     def test_other_methods_are_not_allowed(self, alice: User, method: str, url: str) -> None:
