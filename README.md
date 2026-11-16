@@ -9,7 +9,7 @@ password reset, two-factor authentication (authenticator app plus recovery codes
 administrators), a personal Intervals.icu connection with an API key (stored encrypted), importing
 activities from FIT and TCX files, an athlete profile with your time zone, your thresholds (typed in,
 read from Intervals.icu or estimated from your activities) and the training zones that follow from
-them, goals (races, threshold targets and general goals, with one main goal), your training time
+them, goals (races, threshold targets and general goals, with priorities A, B and C), your training time
 (minutes per weekday, a weekly budget, injuries and limitations, vacation and illness), your own AI provider
 ([Anthropic or an OpenAI-compatible endpoint](#ai-coach-bring-your-own-key), key stored encrypted,
 with a connection check and a usage overview), the model and the plausibility checks for a
@@ -484,10 +484,16 @@ and a status. The kind is chosen when the goal is added and cannot be changed af
   is not compared with your profile yet.
 - **General:** a title and notes, optionally a date ("Build endurance"). Nothing else.
 
-**Main goal.** At most one **active** goal is the main goal; the others are secondary. Making
-another goal the main goal is refused with "You already have a main goal. Change it first.":
-press **Make secondary** on the current one first. A goal that is achieved or dropped no longer
-counts as the main goal for this rule.
+**Priority.** Every goal is **A** (main goal), **B** (secondary goal, the default) or **C**
+(preparation race). A card shows its priority as a badge. At most one **active** goal is the main
+goal (A); any number are B or C. Making another goal the main goal is refused with "You already
+have a main goal. Change it first.": press **Make secondary** on the current one first. A goal
+that is achieved or dropped no longer counts as the main goal for this rule. **C is for races
+only**: the form offers it only for a race, and the server refuses it for a threshold or general
+goal ("Only a race can be a preparation race."). A preparation race is a race on the way to the
+main goal. The coach is told which goals are C, and is asked to plan the race day as a hard
+session without a taper and to keep the day before easy; no rule checks that. **Make main goal**
+also works on a C race. In the API the priorities are `main`, `secondary` and `preparation`.
 
 **Status.** A goal is **active**, **achieved** or **dropped**. **Mark achieved**, **Drop** and
 **Reactivate** change it; nothing is deleted by that. **Delete** removes the goal for good, after a
@@ -495,8 +501,8 @@ question. An active race cannot lie in the past: adding one, changing its date o
 with a past date is refused, while a past race that stays as it is (its title changes, say) is left
 alone. Mark it achieved or dropped instead.
 
-**Order and days to go.** Active goals come first, then achieved, then dropped; within each, the
-main goal first, then by date (goals without a date last), then by when they were added. Next to
+**Order and days to go.** Active goals come first, then achieved, then dropped; within each, A
+first, then B, then C, then by date (goals without a date last), then by when they were added. Next to
 a date the page says how far away it is ("in 12 days", "tomorrow", "today", "3 days ago"). Which
 day it is **today** depends on the time zone in your [profile](#athlete-profile); without one (or
 with one this server does not know) the page uses UTC, so around midnight the count can be a day
