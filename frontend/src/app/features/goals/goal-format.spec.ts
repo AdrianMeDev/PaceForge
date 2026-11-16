@@ -25,6 +25,7 @@ const goal = (changes: Partial<Goal>): Goal => ({
   metric: null,
   target_value: null,
   days_to_go: null,
+  assessment: null,
   created_at: '2026-11-13T00:00:00Z',
   updated_at: '2026-11-13T00:00:00Z',
   ...changes,

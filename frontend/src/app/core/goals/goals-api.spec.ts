@@ -26,6 +26,7 @@ const RACE = {
   metric: null,
   target_value: null,
   days_to_go: 317,
+  assessment: null,
   created_at: '2026-11-13T13:23:19.864351Z',
   updated_at: '2026-11-13T13:23:19.864357Z',
 };
@@ -52,6 +53,17 @@ const GENERAL = {
   metric: null,
   target_value: null,
   days_to_go: null,
+};
+
+const ASSESSED = {
+  rating: 'ambitious',
+  reason: null,
+  current: 50.0,
+  needed: 52.4,
+  suggested: 2450.0,
+  weeks: 10,
+  prep_short: false,
+  prep_weeks: 6,
 };
 
 const NO_SESSION = { detail: 'Authentication credentials were not provided.' };
@@ -140,6 +152,34 @@ describe('GoalsApi', () => {
     ['a text as target value', altered(THRESHOLD, [['target_value'], '280'])],
     ['a fraction as days to go', altered(RACE, [['days_to_go'], 1.5])],
     ['a text as days to go', altered(RACE, [['days_to_go'], 'many'])],
+    ['an unknown rating', altered(RACE, [['assessment'], { ...ASSESSED, rating: 'great' }])],
+    ['an unknown reason', altered(RACE, [['assessment'], { ...ASSESSED, reason: 'weird' }])],
+    [
+      'a reason for a goal that was judged',
+      altered(RACE, [['assessment'], { ...ASSESSED, reason: 'no_form' }]),
+    ],
+    [
+      'no reason for a goal that was not judged',
+      altered(RACE, [['assessment'], { ...ASSESSED, rating: 'unknown' }]),
+    ],
+    ['a text as assessment', altered(RACE, [['assessment'], 'realistic'])],
+    ['a list as assessment', altered(RACE, [['assessment'], []])],
+    ['no rating', altered(RACE, [['assessment'], { ...ASSESSED, rating: undefined }])],
+    ['a text as the form', altered(RACE, [['assessment'], { ...ASSESSED, current: '50' }])],
+    [
+      'a text as the suggestion',
+      altered(RACE, [['assessment'], { ...ASSESSED, suggested: '2450' }]),
+    ],
+    ['a fraction of weeks', altered(RACE, [['assessment'], { ...ASSESSED, weeks: 1.5 }])],
+    ['negative weeks', altered(RACE, [['assessment'], { ...ASSESSED, weeks: -1 }])],
+    [
+      'a text as the short preparation',
+      altered(RACE, [['assessment'], { ...ASSESSED, prep_short: 'yes' }]),
+    ],
+    [
+      'a fraction of preparation weeks',
+      altered(RACE, [['assessment'], { ...ASSESSED, prep_weeks: 0.5 }]),
+    ],
     ['no creation time', altered(RACE, [['created_at'], REMOVE])],
     ['a number as change time', altered(RACE, [['updated_at'], 5])],
   ];
@@ -184,6 +224,56 @@ describe('GoalsApi', () => {
       expect(result).toMatchObject({
         goals: [{ discipline: null, distance_m: null, metric: null, target_date: null }],
       });
+    });
+
+    it.each(['realistic', 'ambitious', 'unrealistic'])('reads the judgement %s', async (rating) => {
+      const judged = altered(RACE, [['assessment'], { ...ASSESSED, rating }]);
+
+      const { result } = await run(api.list(), 'GET', URL, [judged], 200);
+
+      expect(result).toMatchObject({ goals: [{ assessment: { ...ASSESSED, rating } }] });
+    });
+
+    it.each(['no_model', 'no_target', 'out_of_range', 'no_date', 'no_form'])(
+      'reads a goal that cannot be judged because of %s',
+      async (reason) => {
+        const unknown = {
+          rating: 'unknown',
+          reason,
+          current: null,
+          needed: null,
+          suggested: null,
+          weeks: null,
+          prep_short: false,
+          prep_weeks: null,
+        };
+
+        const { result } = await run(
+          api.list(),
+          'GET',
+          URL,
+          [altered(RACE, [['assessment'], unknown])],
+          200,
+        );
+
+        expect(result).toMatchObject({ goals: [{ assessment: unknown }] });
+      },
+    );
+
+    it('reads a goal without the field as one that has nothing to judge', async () => {
+      const old = altered(RACE, [['assessment'], REMOVE]);
+
+      const { result } = await run(api.list(), 'GET', URL, [old], 200);
+
+      expect(result).toMatchObject({ goals: [{ assessment: null }] });
+    });
+
+    it('takes over only the known fields of the judgement', async () => {
+      const crowded = altered(RACE, [['assessment'], { ...ASSESSED, owner: 'x' }]);
+
+      const { result } = await run(api.list(), 'GET', URL, [crowded], 200);
+
+      expect(result).toMatchObject({ goals: [{ assessment: ASSESSED }] });
     });
 
     it('takes over only the known fields', async () => {

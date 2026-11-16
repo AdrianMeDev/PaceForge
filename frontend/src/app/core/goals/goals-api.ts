@@ -3,6 +3,8 @@ import { Injectable, inject } from '@angular/core';
 import { Observable, firstValueFrom } from 'rxjs';
 import { API_BASE } from '../api/api-providers';
 import {
+  Assessment,
+  AssessmentReason,
   CreateGoalResult,
   DeleteGoalResult,
   Discipline,
@@ -15,6 +17,7 @@ import {
   GoalStatus,
   Invalid,
   ListGoalsResult,
+  Rating,
   UpdateGoalResult,
 } from './goals-models';
 
@@ -135,6 +138,7 @@ function toGoal(raw: unknown, reply: Reply): Goal {
   const item = raw as Record<string, unknown>;
   const date = item['target_date'] ?? null;
   const days = item['days_to_go'] ?? null;
+  const assessment = toAssessment(item['assessment'] ?? null, reply);
   if (
     typeof item['id'] !== 'string' ||
     !isOneOf<GoalKind>(item['kind'], KINDS) ||
@@ -163,9 +167,51 @@ function toGoal(raw: unknown, reply: Reply): Goal {
     metric: optionalChoice<GoalMetric>(item['metric'], METRICS, reply),
     target_value: numberOrNull(item['target_value'], reply),
     days_to_go: days,
+    assessment,
     created_at: item['created_at'],
     updated_at: item['updated_at'],
   };
+}
+
+const RATINGS: readonly string[] = ['realistic', 'ambitious', 'unrealistic', 'unknown'];
+const REASONS: readonly string[] = ['no_model', 'no_target', 'out_of_range', 'no_date', 'no_form'];
+
+/** The judgement of a goal, or `null`. A reason belongs to `unknown` and to nothing else. */
+function toAssessment(raw: unknown, reply: Reply): Assessment | null {
+  if (raw === null) {
+    return null;
+  }
+  if (typeof raw !== 'object' || Array.isArray(raw)) {
+    throw unexpected(reply);
+  }
+  const item = raw as Record<string, unknown>;
+  const { rating, prep_short } = item;
+  const reason = optionalChoice<AssessmentReason>(item['reason'], REASONS, reply);
+  if (
+    !isOneOf<Rating>(rating, RATINGS) ||
+    typeof prep_short !== 'boolean' ||
+    (rating === 'unknown') !== (reason !== null)
+  ) {
+    throw unexpected(reply);
+  }
+  return {
+    rating,
+    reason,
+    current: numberOrNull(item['current'], reply),
+    needed: numberOrNull(item['needed'], reply),
+    suggested: numberOrNull(item['suggested'], reply),
+    weeks: countOrNull(item['weeks'], reply),
+    prep_short,
+    prep_weeks: countOrNull(item['prep_weeks'], reply),
+  };
+}
+
+function countOrNull(value: unknown, reply: Reply): number | null {
+  const found = numberOrNull(value, reply);
+  if (found !== null && (!Number.isInteger(found) || found < 0)) {
+    throw unexpected(reply);
+  }
+  return found;
 }
 
 function isOneOf<T extends string>(value: unknown, allowed: readonly string[]): value is T {

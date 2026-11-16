@@ -27,6 +27,7 @@ function goal(changes: Partial<Goal> = {}): Goal {
     metric: null,
     target_value: null,
     days_to_go: 317,
+    assessment: null,
     created_at: '2026-11-13T13:23:19Z',
     updated_at: '2026-11-13T13:23:19Z',
     ...changes,
@@ -40,6 +41,7 @@ const FTP = goal({
   title: 'Raise FTP',
   target_date: '2027-03-01',
   days_to_go: 108,
+  assessment: null,
   discipline: null,
   distance_m: null,
   target_time_seconds: null,
@@ -60,6 +62,7 @@ const GENERAL = goal({
   notes: 'Strength as a supplement',
   target_date: null,
   days_to_go: null,
+  assessment: null,
   discipline: null,
   distance_m: null,
   target_time_seconds: null,
@@ -69,6 +72,7 @@ const ACHIEVED = goal({
   title: 'First 10k',
   status: 'achieved',
   days_to_go: -30,
+  assessment: null,
   target_date: '2026-10-14',
 });
 const DROPPED = goal({ id: 'dropped', title: 'Ultra', status: 'dropped' });

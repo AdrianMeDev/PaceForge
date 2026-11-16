@@ -13,6 +13,30 @@ export type GoalMetric = 'ftp' | 'threshold_pace';
  * (`2027-09-26`); `days_to_go` counts from today in the user's time zone and is negative after
  * the date.
  */
+/** How realistic the target of a goal is, worked out by the server (never stored). */
+export type Rating = 'realistic' | 'ambitious' | 'unrealistic' | 'unknown';
+
+/** Why a goal could not be judged. */
+export type AssessmentReason = 'no_model' | 'no_target' | 'out_of_range' | 'no_date' | 'no_form';
+
+/**
+ * The judgement of a goal. `current` and `needed` are in the unit of its measure (VDOT for a race,
+ * watts for FTP, seconds per kilometre for the threshold pace); `suggested` is the target that the
+ * form can reach by the date (seconds for a race, else that unit). `weeks` are the whole weeks left,
+ * `prep_weeks` the weeks a race of that distance should have and `prep_short` says fewer are left.
+ * `reason` is set exactly when the rating is `unknown`.
+ */
+export interface Assessment {
+  rating: Rating;
+  reason: AssessmentReason | null;
+  current: number | null;
+  needed: number | null;
+  suggested: number | null;
+  weeks: number | null;
+  prep_short: boolean;
+  prep_weeks: number | null;
+}
+
 export interface Goal {
   id: string;
   kind: GoalKind;
@@ -29,6 +53,8 @@ export interface Goal {
   metric: GoalMetric | null;
   target_value: number | null;
   days_to_go: number | null;
+  /** `null`: nothing to judge (a general goal, or one that is not active). */
+  assessment: Assessment | null;
   /** ISO 8601 timestamps in UTC. */
   created_at: string;
   updated_at: string;

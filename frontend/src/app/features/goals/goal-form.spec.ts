@@ -24,6 +24,7 @@ const SAVED: Goal = {
   metric: null,
   target_value: null,
   days_to_go: null,
+  assessment: null,
   created_at: '2026-11-13T13:23:19Z',
   updated_at: '2026-11-13T13:23:19Z',
 };
@@ -40,6 +41,7 @@ const RACE: Goal = {
   distance_m: 42195,
   target_time_seconds: 13500,
   days_to_go: 317,
+  assessment: null,
 };
 
 const THRESHOLD: Goal = {
