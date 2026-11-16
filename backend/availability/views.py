@@ -15,6 +15,7 @@ from goals.services import today_of
 from .intensity import LIMIT_NAMES
 from .models import (
     AvailabilitySettings,
+    FixedSession,
     Limitation,
     SportPreference,
     UnavailablePeriod,
@@ -22,6 +23,7 @@ from .models import (
 )
 from .serializers import (
     AvailabilityInput,
+    FixedSessionSerializer,
     LimitationSerializer,
     PeriodSerializer,
     availability_data,
@@ -180,3 +182,25 @@ class LimitationViewSet(OwnedModelViewSet):
             .annotate(rank=Case(current, default=Value(1), output_field=IntegerField()))
             .order_by("rank", "-id")
         )
+
+
+class FixedSessionViewSet(OwnedModelViewSet):
+    """The signed-in user's own fixed appointments: list, create, read, change, delete."""
+
+    queryset = FixedSession.objects.all()
+    serializer_class = FixedSessionSerializer
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+    pagination_class = None
+    # An id that is no UUID is a 404 without reaching the database.
+    lookup_value_regex = "[0-9a-fA-F-]{32,36}"
+
+    def get_queryset(self) -> QuerySet[Any]:
+        """By weekday, then by part of the day (no part first), then by id."""
+        part = Case(
+            When(slot="morning", then=Value(1)),
+            When(slot="afternoon", then=Value(2)),
+            When(slot="evening", then=Value(3)),
+            default=Value(0),
+            output_field=IntegerField(),
+        )
+        return super().get_queryset().annotate(part=part).order_by("weekday", "part", "id")
