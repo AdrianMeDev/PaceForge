@@ -5,6 +5,7 @@ import {
   PHASE_HINTS,
   PHASE_LABELS,
   PRIORITY_LETTERS,
+  doneText,
   keySessionText,
   localToday,
   minutesBySport,
@@ -131,5 +132,20 @@ describe('localToday', () => {
 
   it('is today by default', () => {
     expect(localToday()).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+});
+
+describe('doneText', () => {
+  it('names the sports with their minutes and the total', () => {
+    expect(
+      doneText([
+        { sport: 'running', minutes: 60 },
+        { sport: 'other', minutes: 30 },
+      ]),
+    ).toBe('Running 1 h · Other 30 min · 1 h 30 min in all');
+  });
+
+  it('says 0 min for a week without training', () => {
+    expect(doneText([])).toBe('0 min');
   });
 });

@@ -80,3 +80,13 @@ rect {
   border-radius: 2px;
   vertical-align: -0.05rem;
 }
+
+rect.done {
+  stroke: var(--text);
+}
+
+.swatch.done {
+  width: 0.45rem;
+  border: 1px solid var(--text);
+  background: var(--muted);
+}

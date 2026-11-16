@@ -428,6 +428,33 @@ describe('SeasonPage', () => {
       expect(page.querySelectorAll('svg [data-series="cycling"]')).toHaveLength(3);
     });
 
+    it('adds a Done column and the narrow bars when the version has minutes done', async () => {
+      const shown = plan({ id: CONFIRMED.id, version: 2 });
+      shown.weeks[0] = {
+        ...shown.weeks[0],
+        done: [
+          { sport: 'running', minutes: 60 },
+          { sport: 'other', minutes: 30 },
+        ],
+      };
+      shown.weeks[1] = { ...shown.weeks[1], done: [] };
+      await load([CONFIRMED], shown);
+
+      expect(Array.from(page.querySelectorAll('thead th')).pop()?.textContent?.trim()).toBe('Done');
+      const done = Array.from(page.querySelectorAll('[data-testid="plan-done"]')).map((cell) =>
+        cell.textContent?.replace(/\s+/g, ' ').trim(),
+      );
+      expect(done).toEqual(['Running 1 h · Other 30 min · 1 h 30 min in all', '0 min', '', '']);
+      expect(page.querySelectorAll('svg rect.done')).toHaveLength(2);
+    });
+
+    it('has no Done column when no week has minutes done', async () => {
+      await load([CONFIRMED]);
+
+      expect(page.querySelector('[data-testid="plan-done"]')).toBeNull();
+      expect(page.querySelector('svg rect.done')).toBeNull();
+    });
+
     it('shows the reason of the week under it, and the rationale and status above', async () => {
       await load([CONFIRMED]);
 

@@ -18,6 +18,7 @@ import {
   PHASE_HINTS,
   PHASE_LABELS,
   PRIORITY_LETTERS,
+  doneText,
   keySessionText,
   localToday,
   minutesBySport,
@@ -86,6 +87,10 @@ export class SeasonPage implements OnInit {
   /** The skeleton in the table: the one of the shown version, else today's. */
   protected readonly shown = computed(() => this.plan()?.skeleton ?? this.season());
 
+  /** The version has the minutes done for some of its weeks. */
+  protected readonly hasDone = computed(
+    () => this.plan()?.weeks.some((week) => week.done !== null) ?? false,
+  );
   protected readonly findings = computed(() => this.plan()?.report?.findings ?? []);
   protected readonly canConfirm = computed(
     () => this.plan()?.status === 'draft' && this.plan()?.report?.valid === true,
@@ -121,6 +126,7 @@ export class SeasonPage implements OnInit {
   protected readonly focusLabel = FOCUS_LABELS;
   protected readonly status = STATUS_LABELS;
   protected readonly bySport = minutesBySport;
+  protected readonly done = doneText;
   protected readonly session = keySessionText;
   protected readonly letter = PRIORITY_LETTERS;
   protected readonly race = raceText;

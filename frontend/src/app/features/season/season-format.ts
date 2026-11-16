@@ -104,3 +104,16 @@ export function seasonFindingPlace(path: string, weekStarts: string[]): string {
   const start = match === null ? undefined : weekStarts[Number(match[1])];
   return start === undefined ? 'Season' : weekRange(start);
 }
+
+/** "Running 1 h · Other 30 min" for the minutes done in a week; "0 min" if there were none. */
+export function doneText(done: { sport: string; minutes: number }[]): string {
+  if (done.length === 0) {
+    return '0 min';
+  }
+  const total = done.reduce((sum, entry) => sum + entry.minutes, 0);
+  const parts = done.map(
+    (entry) =>
+      `${entry.sport === 'other' ? 'Other' : SPORT_LABELS[entry.sport as Sport]} ${minutesText(entry.minutes)}`,
+  );
+  return `${parts.join(' · ')} · ${minutesText(total)} in all`;
+}

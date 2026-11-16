@@ -3,6 +3,8 @@ import { Season, SeasonPlan, SeasonWeek } from '../../core/season/season-models'
 import {
   BAR_GAP,
   BAR_WIDTH,
+  DONE_GAP,
+  DONE_WIDTH,
   LEFT,
   PLOT_HEIGHT,
   SeasonChart,
@@ -139,7 +141,7 @@ describe('chartLayout', () => {
 
   it('writes the numbers of a bar as text', () => {
     expect(layout.bars[0].label).toBe(
-      '16 Nov – 22 Nov · Running 1 h 40 min · Cycling 2 h 20 min · 4 h in all',
+      '16 Nov – 22 Nov · Running 1 h 40 min · Cycling 2 h 20 min · 4 h planned',
     );
     expect(layout.bars[0].segments[1].label).toBe('Cycling 2 h 20 min');
   });
@@ -172,6 +174,73 @@ describe('chartLayout', () => {
 
     expect(empty.maxMinutes).toBe(60);
     expect(empty.bars[0].segments).toEqual([]);
+  });
+
+  describe('with the minutes done', () => {
+    const weeks = chartWeeks(
+      SEASON,
+      (() => {
+        const plan = planOf([{ running: 100 }, { running: 60 }, {}]);
+        plan.weeks[0].done = [
+          { sport: 'running', minutes: 80 },
+          { sport: 'other', minutes: 30 },
+        ];
+        plan.weeks[1].done = [];
+        return plan;
+      })(),
+    );
+    const done = chartLayout(weeks);
+
+    it('has a second, narrower bar right beside the plan for the weeks that have them', () => {
+      const [first, second, third] = done.bars;
+
+      expect(first.done?.width).toBe(DONE_WIDTH);
+      expect(first.done?.x).toBe(first.x + BAR_WIDTH + DONE_GAP);
+      expect(second.done?.segments).toEqual([]);
+      expect(third.done).toBeNull();
+      expect(done.withDone).toBe(true);
+    });
+
+    it('stacks the sports done like the plan, with other on top', () => {
+      expect(done.bars[0].done?.segments.map((s) => s.series)).toEqual(['running', 'other']);
+      expect(done.bars[0].done?.total).toBe(110);
+    });
+
+    it('takes the minutes done into account for the axis', () => {
+      const more = chartLayout([
+        { week_start: '2026-11-16', planned: { running: 60 }, done: { running: 400 } },
+      ]);
+
+      expect(more.maxMinutes).toBe(480);
+      expect(more.bars[0].done?.segments[0].height).toBeLessThanOrEqual(PLOT_HEIGHT);
+    });
+
+    it('gives every week the room for the second bar so that the bars line up', () => {
+      expect(done.bars[1].x - done.bars[0].x).toBe(BAR_WIDTH + DONE_GAP + DONE_WIDTH + BAR_GAP);
+    });
+
+    it('says in the label what was done, and when nothing was', () => {
+      expect(done.bars[0].label).toBe(
+        '16 Nov – 22 Nov · Running 1 h 40 min · 1 h 40 min planned · 1 h 50 min done',
+      );
+      expect(done.bars[1].label).toContain('nothing done');
+      expect(done.bars[2].label).not.toContain('done');
+    });
+
+    it('marks the segments of the bar done as done', () => {
+      expect(done.bars[0].done?.segments[1].label).toBe('Done: Other 30 min');
+    });
+
+    it('lists the series done in the legend as well', () => {
+      expect(done.series).toEqual(['running', 'other']);
+    });
+
+    it('has no second bar anywhere without minutes done', () => {
+      const plain = chartLayout(chartWeeks(SEASON, null));
+
+      expect(plain.withDone).toBe(false);
+      expect(plain.bars.every((bar) => bar.done === null)).toBe(true);
+    });
   });
 
   it('is the same picture for the same weeks', () => {
@@ -220,9 +289,26 @@ describe('SeasonChart', () => {
     await render(SEASON, planOf([{ running: 100 }, {}, {}]));
 
     expect(host.querySelector('[data-testid="bar-2026-11-16"] > title')?.textContent).toContain(
-      '1 h 40 min in all',
+      '1 h 40 min planned',
     );
     expect(host.querySelector('rect > title')?.textContent).toBe('Running 1 h 40 min');
+  });
+
+  it('draws the minutes done as narrow bars and explains them in the legend', async () => {
+    const plan = planOf([{ running: 100 }, { running: 60 }, {}]);
+    plan.weeks[0].done = [{ sport: 'running', minutes: 80 }];
+    await render(SEASON, plan);
+
+    expect(host.querySelectorAll('rect.done')).toHaveLength(1);
+    expect(host.querySelector('rect.done > title')?.textContent).toBe('Done: Running 1 h 20 min');
+    expect(host.querySelector('[data-testid="legend-done"]')?.textContent).toContain('narrow bar');
+  });
+
+  it('has no legend for the minutes done when there are none', async () => {
+    await render(SEASON, planOf([{ running: 100 }, {}, {}]));
+
+    expect(host.querySelector('[data-testid="legend-done"]')).toBeNull();
+    expect(host.querySelector('rect.done')).toBeNull();
   });
 
   it('draws nothing for a season without weeks', async () => {
