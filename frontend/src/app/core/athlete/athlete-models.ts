@@ -6,8 +6,11 @@ export type MetricOf<S extends SportGroup> = S extends 'ride'
   ? 'ftp' | 'lthr' | 'max_hr'
   : 'threshold_pace' | 'lthr' | 'max_hr';
 
-/** Where a value comes from. When several exist, `manual` counts first, then `intervals`. */
-export type ThresholdSource = 'manual' | 'intervals' | 'estimated';
+/**
+ * Where a value comes from. When several exist, `manual` counts first, then `best_time` (the
+ * threshold pace that follows from a recent best time), then `intervals`, then `estimated`.
+ */
+export type ThresholdSource = 'manual' | 'best_time' | 'intervals' | 'estimated';
 
 /**
  * One value of a threshold. Units: watts for `ftp`, beats per minute for `lthr` and `max_hr`,

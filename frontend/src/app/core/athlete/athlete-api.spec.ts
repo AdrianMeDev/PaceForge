@@ -271,6 +271,31 @@ describe('AthleteApi', () => {
       ]);
     });
 
+    it('reads a value that comes from a best time', async () => {
+      const effective = RAW.sports.run.thresholds.threshold_pace.effective;
+      const reply = altered([
+        ['sports', 'run', 'thresholds', 'threshold_pace', 'candidates'],
+        [{ value: 255, source: 'best_time', basis: 'VDOT 50.0', updated_at: stamp(1) }, effective],
+      ]);
+
+      const { result } = await run(api.get(), 'GET', URL, reply as object, 200);
+
+      const profile = (result as { profile: AthleteProfile }).profile;
+      expect(profile.sports.run.thresholds.threshold_pace.candidates.map((c) => c.source)).toEqual([
+        'best_time',
+        'manual',
+      ]);
+    });
+
+    it('rejects a source it does not know', async () => {
+      const bad = altered([
+        ['sports', 'run', 'thresholds', 'threshold_pace', 'candidates', 0, 'source'],
+        'guess',
+      ]);
+
+      await runFailing(api.get(), 'GET', URL, bad as object, 200);
+    });
+
     it('treats a missing zone set or limit as null', async () => {
       const reply = altered(
         [POWER_PATH, REMOVE],

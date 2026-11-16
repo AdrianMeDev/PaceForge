@@ -37,7 +37,7 @@ const KEY_REFUSED_FALLBACK =
   'Intervals.icu did not accept the stored API key. Enter it again on the Connections page.';
 const UNAVAILABLE_FALLBACK = 'Intervals.icu cannot be reached right now. Please try again later.';
 const HANDLED_ERRORS = [400, 401, 403, 404, 409, 429, 502, 503];
-const SOURCES: readonly string[] = ['manual', 'intervals', 'estimated'];
+const SOURCES: readonly string[] = ['manual', 'best_time', 'intervals', 'estimated'];
 const METRICS: readonly string[] = ['ftp', 'lthr', 'max_hr', 'threshold_pace'];
 const UNITS: readonly string[] = ['W', 'bpm', 's/km'];
 const SEXES: readonly string[] = ['female', 'male', 'other'];

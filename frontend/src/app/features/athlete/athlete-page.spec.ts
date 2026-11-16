@@ -360,6 +360,25 @@ describe('AthletePage', () => {
       expect(others('ride-ftp')).toBeUndefined();
     });
 
+    it('shows the value of a best time before Intervals.icu and the estimate', async () => {
+      await setup(
+        ok({
+          run: {
+            threshold_pace: threshold(
+              value(255, 'best_time', 'VDOT 50.0 from your 5 km on 2026-10-03'),
+              value(300, 'intervals', 'x'),
+              value(310, 'estimated', 'y'),
+            ),
+          },
+        }),
+      );
+
+      expect(shown('run-threshold_pace')).toBe('4:15 /km');
+      expect(source('run-threshold_pace')).toBe('Best time');
+      expect(text()).toContain('VDOT 50.0 from your 5 km on 2026-10-03');
+      expect(others('run-threshold_pace')).toContain('Also known: Intervals.icu 5:00 /km');
+    });
+
     it('shows the Intervals.icu value when nothing was typed in', async () => {
       await setup(
         ok({
