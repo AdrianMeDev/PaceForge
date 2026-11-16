@@ -15,7 +15,8 @@ them, goals (races, threshold targets and general goals, with priorities A, B an
 with a connection check and a usage overview), the model and the plausibility checks for a
 training week ([format and rules](docs/weekly-plan.md)), a **Week plan** page on which your own
 AI coach drafts a training week that you read, change by hand, confirm or discard ([Week plan](#week-plan)), a
-**Week review** page that shows how a week went against the confirmed plan, on which you rate your
+**Season** page with the phases and the volume of every week up to your race
+([Season](#season)), a **Week review** page that shows how a week went against the confirmed plan, on which you rate your
 sessions, say how the week felt and ask your coach about it ([Week review](#week-review)), and the
 data-isolation foundation the training features will build on.
 **Not there yet:** reading activities from Intervals.icu over that connection (it can only ever
@@ -726,6 +727,35 @@ level; `null` removes a number) and
 `null`), each with list, create, read, change and delete.
 
 Not there yet: time windows within a day, and different time per sport.
+
+## Season
+
+The **Season** page (`/season`, also in the navigation) shows the skeleton of your season: one row
+for every week from this week to the week of your last **A or B race**, with the **phase** of the
+week (base, build, specific, taper), the minutes to aim for, the minutes the week offers and the
+races. It is the frame that the main plan will be filled into; the week plan does not read it yet.
+
+It is **worked out by the code, not by a coach**, every time you open the page, from your goals,
+your last four weeks of training (or your normal week, if that is more), your training time and
+your intensity level. Nothing is saved, so a change of a goal, of your time or of a vacation shows
+the next time you look. The numbers are a starting point, not coaching science.
+
+- **Phases** are counted back from the main race (your A race, else your latest B race): first the
+  taper, then the specific phase, the build and the base. A short preparation loses its base first,
+  never its taper. The taper takes one, two or three weeks by the distance of the race.
+- **Recovery weeks** come every third week with the level **Relaxed** and every fourth with
+  **Normal** and **Intensive**, at about two thirds of the week before; never in the taper.
+- **Volume** starts at your reference week and adds 5, 8 or 10 percent a week by the level in the
+  base and the build; the specific phase holds it. No week aims for more than it offers: a week of
+  vacation aims for nothing.
+- **More than one race:** a B race before the main race gets a short taper of its own, a B race
+  after it gets a rest week and a build of its own, a C race is only marked.
+- **Without a race** (or without a date) the page shows a rolling skeleton of twelve weeks of base
+  and build, and says what to add. A race more than a year away cuts the skeleton off after 52
+  weeks.
+
+Every number and the rules are in [`docs/season.md`](docs/season.md). The API is `GET /api/season/`
+(read only).
 
 ## Week plan
 

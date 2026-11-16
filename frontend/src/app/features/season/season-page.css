@@ -1,0 +1,76 @@
+.season {
+  max-width: 56rem;
+}
+
+.summary {
+  margin: 0.75rem 0;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+tr[data-phase='taper'] {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+tr[data-phase='transition'] {
+  color: var(--muted);
+}
+
+.badge {
+  display: inline-block;
+  margin-right: 0.25rem;
+  padding: 0.1rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.85rem;
+}
+
+.badge[data-priority='main'] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.badge[data-priority='preparation'] {
+  color: var(--info);
+}
+
+.badge.recovery {
+  color: var(--info);
+}
+
+.phases dt {
+  margin-top: 0.5rem;
+  font-weight: 600;
+}
+
+.phases dd {
+  margin: 0;
+  color: var(--muted);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

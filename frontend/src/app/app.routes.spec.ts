@@ -10,6 +10,7 @@ import { CoachApi } from './core/coach/coach-api';
 import { AvailabilityApi } from './core/availability/availability-api';
 import { GoalsApi } from './core/goals/goals-api';
 import { ReviewApi } from './core/review/review-api';
+import { SeasonApi } from './core/season/season-api';
 import { IntervalsConnectionApi } from './core/integrations/intervals-api';
 import { ADA, createAuthStoreStub } from './core/auth/testing/auth-store-stub';
 import { required } from './testing/dom';
@@ -39,6 +40,7 @@ describe('app routes', () => {
         { provide: AthleteApi, useValue: { get: () => new Promise<never>(() => undefined) } },
         { provide: ActivitiesApi, useValue: { list: () => new Promise<never>(() => undefined) } },
         { provide: ReviewApi, useValue: { weeks: () => new Promise<never>(() => undefined) } },
+        { provide: SeasonApi, useValue: { get: () => new Promise<never>(() => undefined) } },
         {
           provide: IntervalsConnectionApi,
           useValue: { get: () => new Promise<never>(() => undefined) },
@@ -223,6 +225,23 @@ describe('app routes', () => {
     expect(router.url).toBe('/review');
     const page = required(harness.routeNativeElement, 'the routed element');
     expect(page.textContent).toContain('Week review');
+    expect(page.querySelector('[data-testid="user-label"]')?.textContent).toBe('Ada');
+  });
+
+  it('sends visitors from the season to the login and remembers where they wanted to go', async () => {
+    await harness.navigateByUrl('/season');
+
+    expect(router.url).toBe('/login?returnUrl=%2Fseason');
+  });
+
+  it('shows the season inside the shell to a member', async () => {
+    store.signIn(ADA);
+
+    await harness.navigateByUrl('/season');
+
+    expect(router.url).toBe('/season');
+    const page = required(harness.routeNativeElement, 'the routed element');
+    expect(page.textContent).toContain('Season');
     expect(page.querySelector('[data-testid="user-label"]')?.textContent).toBe('Ada');
   });
 

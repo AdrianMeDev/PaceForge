@@ -5,7 +5,13 @@ from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
 from accounts.models import User
-from availability.capacity import WeekCapacity, minutes_in_week, minutes_on, week_capacity
+from availability.capacity import (
+    WeekCapacity,
+    minutes_in_week,
+    minutes_on,
+    week_capacity,
+    weekly_capacities,
+)
 from availability.intensity import LEVEL_LIMITS, IntensityLevel, Limits
 from availability.models import AvailabilitySettings, UnavailablePeriod, WeekdayMinutes
 
@@ -648,3 +654,69 @@ class TestTheWholeWeek:
         budget(alice, 250)
 
         assert minutes_in_week(alice, MONDAY) == week_capacity(alice, MONDAY).total == 250
+
+
+class TestSeveralWeeks:
+    def test_every_week_is_the_sum_of_its_days(self, alice: User) -> None:
+        declare(alice, 60, 0, 60, 0, 90, 120, 0)
+
+        assert weekly_capacities(alice, MONDAY, 3) == (330, 330, 330)
+
+    def test_the_weeks_follow_their_own_dates(self, alice: User) -> None:
+        declare(alice, 60, 60, 60, 60, 60, 60, 60)
+        away(alice, NEXT_MONDAY, NEXT_MONDAY + timedelta(days=6))
+
+        assert weekly_capacities(alice, MONDAY, 3) == (420, 0, 420)
+
+    def test_a_period_across_two_weeks_takes_the_days_of_both(self, alice: User) -> None:
+        declare(alice, 60, 60, 60, 60, 60, 60, 60)
+        away(alice, SUNDAY, NEXT_MONDAY)
+
+        assert weekly_capacities(alice, MONDAY, 2) == (360, 360)
+
+    def test_the_budget_caps_every_week(self, alice: User) -> None:
+        declare(alice, 60, 60, 60, 60, 60, 60, 60)
+        away(alice, WEDNESDAY, WEDNESDAY + timedelta(days=4))
+        AvailabilitySettings.objects.create(owner=alice, weekly_budget_minutes=300)
+
+        assert weekly_capacities(alice, MONDAY, 2) == (120, 300)
+
+    def test_it_agrees_with_the_week_that_is_asked_for_alone(self, alice: User) -> None:
+        declare(alice, 45, 0, 60, 30, 0, 120, 90)
+        away(alice, NEXT_MONDAY + timedelta(days=1), NEXT_MONDAY + timedelta(days=2))
+        AvailabilitySettings.objects.create(owner=alice, weekly_budget_minutes=250)
+
+        found = weekly_capacities(alice, MONDAY, 3)
+
+        for offset, value in enumerate(found):
+            assert value == minutes_in_week(alice, MONDAY + timedelta(weeks=offset))
+
+    def test_nothing_declared_offers_no_time(self, alice: User) -> None:
+        assert weekly_capacities(alice, MONDAY, 4) == (0, 0, 0, 0)
+
+    @pytest.mark.parametrize("weeks", [0, -1])
+    def test_no_weeks_are_no_capacities(self, alice: User, weeks: int) -> None:
+        assert weekly_capacities(alice, MONDAY, weeks) == ()
+
+    def test_a_day_that_is_not_a_monday_is_refused(self, alice: User) -> None:
+        with pytest.raises(ValueError, match="not a Monday"):
+            weekly_capacities(alice, WEDNESDAY, 2)
+
+    def test_it_takes_three_queries_however_many_weeks(self, alice: User) -> None:
+        declare(alice, 60, 60, 60, 60, 60, 60, 60)
+        away(alice, MONDAY, NEXT_MONDAY)
+        with CaptureQueriesContext(connection) as few:
+            weekly_capacities(alice, MONDAY, 2)
+
+        with CaptureQueriesContext(connection) as many:
+            weekly_capacities(alice, MONDAY, 52)
+
+        assert len(few) == len(many) == 3
+
+    def test_other_users_rows_are_ignored(self, alice: User, bob: User) -> None:
+        declare(bob, 100, 100, 100, 100, 100, 100, 100)
+        away(bob, MONDAY, MONDAY + timedelta(days=30))
+        AvailabilitySettings.objects.create(owner=bob, weekly_budget_minutes=10)
+        declare(alice, 60, 60, 60, 60, 60, 60, 60)
+
+        assert weekly_capacities(alice, MONDAY, 2) == (420, 420)

@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     "coach",
     "planning",
     "reviews",
+    "season",
 ]
 
 MIDDLEWARE = [
