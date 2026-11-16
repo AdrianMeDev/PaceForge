@@ -1,9 +1,11 @@
 import csv
 import io
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
+from activities.management.commands import import_strava
 from activities.strava import (
     MAX_ROWS,
     SPORTS,
@@ -281,3 +283,45 @@ class TestTheSports:
         from activities.models import Activity
 
         assert set(SPORTS.values()) <= set(Activity.Sport.values)
+
+
+class TestTheReadme:
+    """The README says what the import takes and how: it must say what the code does."""
+
+    ROOT = Path(__file__).resolve().parents[3]
+    TEXT = " ".join((ROOT / "README.md").read_text().split())
+
+    def test_it_names_the_command_and_its_options(self) -> None:
+        assert "manage.py import_strava" in self.TEXT
+        assert "--user you@example.com" in self.TEXT
+        assert Path(import_strava.__file__).name == "import_strava.py"
+
+    def test_it_names_the_columns_the_code_reads(self) -> None:
+        for column in ("Activity ID", "Activity Date", "Activity Type", "Elapsed Time", "Distance"):
+            assert f"*{column}*" in self.TEXT, column
+        assert "Filename" in self.TEXT
+
+    def test_the_types_it_lists_are_mapped_as_it_says(self) -> None:
+        claimed = {
+            "running": ["Run", "Trail Run", "Virtual Run"],
+            "cycling": ["Ride", "Virtual Ride", "E-Bike Ride", "Mountain Bike Ride", "Gravel Ride"],
+            "swimming": ["Swim"],
+            "strength": ["Weight Training"],
+        }
+        for sport, types in claimed.items():
+            for strava_type in types:
+                assert sport_of(strava_type) == sport, strava_type
+                assert strava_type in self.TEXT, strava_type
+        for strava_type in ("Walk", "Hike", "Yoga"):
+            assert sport_of(strava_type) == "other"
+
+    def test_it_gives_the_date_as_strava_writes_it(self) -> None:
+        assert "`Nov 14, 2026, 7:30:12 AM`" in self.TEXT
+        (row,) = read_activity_list(export(line(date="Nov 14, 2026, 7:30:12 AM"))).rows
+        assert row.start == datetime(2026, 11, 14, 7, 30, 12, tzinfo=UTC)
+
+    def test_the_limit_of_the_page_is_the_one_in_the_settings(self) -> None:
+        from rest_framework.settings import api_settings
+
+        assert api_settings.DEFAULT_THROTTLE_RATES["activity_import"] == "30/min"
+        assert "(30 a minute)" in self.TEXT
