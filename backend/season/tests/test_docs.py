@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from accounts.models import User
-from season import briefing, generation, prompt, rules, schema, skeleton
+from season import briefing, generation, models, prompt, rules, schema, skeleton
 from season.briefing import build_briefing
 from season.inputs import skeleton_for
 from season.skeleton import Phase
@@ -215,7 +215,7 @@ class TestTheFilledPlans:
             row[0]: int(row[1]) for row in table_after(section("The filled plans"), "Constant")
         }
 
-        assert documented == {"ATTEMPTS": generation.ATTEMPTS}
+        assert documented == {"ATTEMPTS": generation.ATTEMPTS, "REQUEST_MAX": models.REQUEST_MAX}
 
     def test_the_statuses_are_named(self) -> None:
         from season.models import SeasonPlanVersion
@@ -228,7 +228,14 @@ class TestTheFilledPlans:
     def test_the_api_names_the_endpoints_and_the_fields_of_a_summary(self) -> None:
         text = section("The API")
 
-        for name in ("/api/season/plans/", "generate/", "confirm/", "discard/", "restore/"):
+        for name in (
+            "/api/season/plans/",
+            "generate/",
+            "confirm/",
+            "discard/",
+            "restore/",
+            "change/",
+        ):
             assert name in text, name
         for field in (
             "id",

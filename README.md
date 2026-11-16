@@ -791,6 +791,18 @@ sessions (a long run, a threshold session, the race …) and a reason. The model
   and the confirmed one stays confirmed until you confirm the copy. It is checked like any draft
   and may have errors if it has any. A draft and the confirmed version cannot be restored. It
   costs nothing: no coach is asked.
+- **Changing a version on request:** under a confirmed version or a draft the page has **Ask for a
+  change**: you write what should be different ("less cycling in January", at most 500
+  characters, plain text) and your coach turns that version into a **new draft**. It keeps the
+  weeks, the skeleton and the sports of the version it comes from, is asked like a draft (up to
+  three answers, the same checks, the same cost, 3 requests a minute together with drafting) and
+  is told your wish as data, never as an instruction about the rules or its task. Your wish is
+  stored with the new version and shown with it. Under the draft the page shows **what changed**
+  since the version it was made from, week by week: the minutes of each sport, the focus, key
+  sessions added or dropped and a rewritten reason, and how many weeks are the same. That is the
+  safeguard when the coach changes more than you asked; the old version stays as it is and the
+  confirmed one stays confirmed until you confirm the new draft. If the coach gives the season
+  back as it was, nothing is stored. A version that was replaced or discarded is restored first.
 - **On the page:** under the skeleton note the page shows your versions (the confirmed one, else
   the newest draft, opens on its own) and, for the one that is open, three more columns: the
   **plan** (minutes of each sport and the total), the **focus** and the **key sessions**, with the
@@ -818,7 +830,7 @@ sessions (a long run, a threshold session, the race …) and a reason. The model
   (never a draft) is told to the coach with its phase, minutes of each sport, focus, key sessions
   and reason, and the Week plan page shows the same above the versions. See
   [Week plan](#week-plan) for what is checked.
-- **Not there yet:** no change request with a preview. Whether a model fills a whole year well within
+- **Not there yet:** Whether a model fills a whole year well within
   `SEASON_MAX_TOKENS` has not been tried against a real provider.
 
 Every number and the rules are in [`docs/season.md`](docs/season.md). The API is `GET /api/season/`
