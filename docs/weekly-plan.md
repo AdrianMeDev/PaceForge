@@ -545,7 +545,10 @@ when confirming. It uses the API key the user connected (see the README, section
 come from the thresholds of the user at the time of sending (the same numbers as on the plan page):
 watts as `138-188w`, heart rate as `145-152bpm`, pace as `5:12-5:41/km Pace`. A zone for which the
 user has no threshold stays in the text (`Power zone 3`) and has no target. A workout without
-segments is one step. Strength is a line of text and no steps. Stretching is a line after the
+segments is one step. Strength is a line of text and no steps: after it come the exercises, one
+numbered comment line each (`1. Goblet squat: 3 sets of 10, RPE 7, rest 1:30`; a hold is
+`3 sets of 45 s`). A line starts with its number and never with `-`, and the name is one line, so
+Intervals.icu reads none of them as a step or a repeat block. Stretching is a line after the
 workout, and the notes of the coach come first as one comment line.
 
 ```
@@ -597,6 +600,12 @@ what Intervals.icu said. Nothing holds a lock while the calls are made (sending 
   not for their minutes, and a workout without a time of day fits any of their parts of the day.
   They have no name or other text, so nothing of the athlete is repeated in a finding. Only
   weekly appointments exist; a session on one date has no place in the rules.
+- The **exercises** are checked for their numbers (the format), for the sport of their workout and for
+  the equipment they need. The **name** is free text of the coach and is never read by a rule, so
+  the `region` and the `equipment` are taken as the coach says them: "Barbell squat" with
+  `bodyweight` is not caught. The sets, the repetitions and the RPE are not judged either. Nothing
+  asks for exercises: an older or hand-changed workout may have none, and the legs rule then falls
+  back to the strength focus. In the export the name is a comment line, never a step.
 - The **time of day** is only an order (morning, afternoon, evening), not a clock time: two
   workouts on one day add up. The athlete can say which parts of the day are open on each weekday
   (`slot_outside_window`), but a workout without a time of day is not held to them, and the time
