@@ -1,5 +1,6 @@
 export type GoalKind = 'race' | 'threshold' | 'general';
-export type GoalPriority = 'main' | 'secondary';
+/** A (main goal), B (secondary goal) or C (preparation race, only for a race). */
+export type GoalPriority = 'main' | 'secondary' | 'preparation';
 export type GoalStatus = 'active' | 'achieved' | 'dropped';
 export type Discipline = 'running' | 'cycling' | 'swimming' | 'triathlon';
 /** What a threshold goal raises: the FTP in watts or the running pace in seconds per kilometre. */

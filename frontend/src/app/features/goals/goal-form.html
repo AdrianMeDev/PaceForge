@@ -13,7 +13,7 @@
       </p>
     } @else {
       <label for="goal-kind">Kind</label>
-      <select id="goal-kind" [value]="kind()" (change)="kind.set($any(read($event)))">
+      <select id="goal-kind" [value]="kind()" (change)="setKind($any(read($event)))">
         @for (entry of kinds; track entry[0]) {
           <option [value]="entry[0]" [selected]="kind() === entry[0]">{{ entry[1] }}</option>
         }
@@ -170,7 +170,7 @@
   <div class="field">
     <label for="goal-priority">Priority</label>
     <select id="goal-priority" (change)="priority.set($any(read($event)))">
-      @for (entry of priorities; track entry[0]) {
+      @for (entry of priorities(); track entry[0]) {
         <option [value]="entry[0]" [selected]="priority() === entry[0]">{{ entry[1] }}</option>
       }
     </select>

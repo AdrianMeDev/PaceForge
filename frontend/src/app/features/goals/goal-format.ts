@@ -22,8 +22,9 @@ export const DISCIPLINE_LABELS: Record<Discipline, string> = {
 };
 
 export const PRIORITY_LABELS: Record<GoalPriority, string> = {
-  main: 'Main goal',
-  secondary: 'Secondary goal',
+  main: 'A · Main goal',
+  secondary: 'B · Secondary goal',
+  preparation: 'C · Preparation race',
 };
 
 export const STATUS_LABELS: Record<GoalStatus, string> = {
