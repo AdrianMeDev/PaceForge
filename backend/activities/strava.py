@@ -1,9 +1,9 @@
-"""The activity list (``activities.csv``) of a Strava bulk export.
+"""A Strava bulk export: its activity list (``activities.csv``) and the import of all of it.
 
 Strava's export is a ZIP with an ``activities`` folder (the recorded files, most of them
 gzip-compressed) and ``activities.csv``, one line per activity with its type, its start and, where
-there is a recording, the name of the file. This module reads that list. It is pure: no database,
-no files.
+there is a recording, the name of the file. ``read_activity_list`` reads that list (pure: no
+database, no files); ``import_export`` imports the whole export.
 
 The list is read by the names of its columns, not by their places. Strava writes some names twice
 (``Elapsed Time`` and ``Distance`` are in the list a second time, in seconds and metres). The first
@@ -19,11 +19,23 @@ refused as a whole with a fixed text.
 
 import csv
 import io
+import os
+import zipfile
+import zlib
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import IO
 
-from .parsing import values
+from django.conf import settings
+
+from accounts.models import User
+from athletes.estimates import refresh_estimates_safely
+
+from .parsing import ActivityFileError, values
 from .parsing.types import CYCLING, OTHER, RUNNING, STRENGTH, SWIMMING
+from .serializers import DISTANCE_MAX_KM, DURATION_MAX_MINUTES, EARLIEST
+from .services import DuplicateActivityError, FileTooLargeError, enter_activity, import_activity
 
 MAX_ROWS = 100_000
 _MAX_FIELD = 1_000
@@ -197,3 +209,162 @@ def _start(text: str) -> datetime | None:
         return datetime(int(year), _MONTHS[month_name], int(day), hour, minute, second, tzinfo=UTC)
     except ValueError, KeyError:
         return None
+
+
+# ---- the import of a whole export -----------------------------------------------------------
+
+LIST_NAME = "activities.csv"
+MAX_MEMBERS = 200_000
+MAX_LIST_BYTES = 64 * 1024 * 1024
+
+
+class ExportError(Exception):
+    """The export as a whole cannot be read (not a ZIP, no list, …). The message is a fixed text."""
+
+
+@dataclass
+class ImportCounts:
+    """What an import did, as numbers only (nothing of a file or of the list is in a report)."""
+
+    imported: int = 0  # with a recording
+    entered: int = 0  # without one: the line of the list alone
+    duplicates: int = 0
+    unreadable: int = 0  # a recording that cannot be read, or one that is too large
+    missing: int = 0  # the list names a recording the export does not hold
+    lines_unreadable: int = 0  # a line of the list that cannot be read
+
+    @property
+    def total(self) -> int:
+        return (
+            self.imported
+            + self.entered
+            + self.duplicates
+            + self.unreadable
+            + self.missing
+            + self.lines_unreadable
+        )
+
+
+def import_export(
+    user: User,
+    source: str | os.PathLike[str] | IO[bytes],
+    *,
+    progress: Callable[[int, int], None] | None = None,
+) -> ImportCounts:
+    """Import the activities of a Strava bulk export (the ZIP) for ``user``.
+
+    The ZIP is read in memory, one member at a time, never extracted and never trusted: only the
+    members the list names are read, each at most ``ACTIVITY_UPLOAD_MAX_BYTES`` after unpacking.
+    A recording goes through ``import_activity``, so a duplicate (also one from another source,
+    also by hand) is skipped and counted and an import run twice adds nothing; the sport of the
+    list is used where the file does not know it. A line without a recording is entered like a
+    session by hand. Estimated thresholds are refreshed once at the end.
+
+    ``progress(done, total)`` is called after each line. Raises ``ExportError`` if the ZIP or the
+    list is unusable.
+    """
+    try:
+        archive = zipfile.ZipFile(source)
+    except zipfile.BadZipFile, OSError:
+        raise ExportError("The file is not a ZIP archive.") from None
+    with archive:
+        if len(archive.infolist()) > MAX_MEMBERS:
+            raise ExportError("The ZIP archive holds too many files.")
+        listing = _read_list(archive)
+        counts = ImportCounts(lines_unreadable=listing.unreadable)
+        rows = sorted(listing.rows, key=lambda row: (row.start, row.activity_id))
+        for done, row in enumerate(rows, 1):
+            _import_row(user, archive, row, counts)
+            if progress is not None:
+                progress(done, len(rows))
+    if counts.imported or counts.entered:
+        refresh_estimates_safely(user)
+    return counts
+
+
+def _read_list(archive: zipfile.ZipFile) -> StravaList:
+    try:
+        data = _read_member(archive, LIST_NAME, MAX_LIST_BYTES)
+    except KeyError:
+        raise ExportError(f"The ZIP archive has no {LIST_NAME}.") from None
+    except _MemberError:
+        raise ExportError(f"{LIST_NAME} cannot be read.") from None
+    try:
+        return read_activity_list(data)
+    except StravaListError as error:
+        raise ExportError(str(error)) from None
+
+
+class _MemberError(Exception):
+    """A member that cannot be read: damaged, encrypted or larger than the limit."""
+
+
+def _read_member(archive: zipfile.ZipFile, name: str, limit: int) -> bytes:
+    """The content of the member ``name``, at most ``limit`` bytes of it ever held. ``KeyError`` if
+    the archive has no such member. The size the archive declares is not believed."""
+    info = archive.getinfo(name)
+    if info.is_dir() or info.file_size > limit:
+        raise _MemberError
+    try:
+        with archive.open(info) as member:
+            data = member.read(limit + 1)
+    except zipfile.BadZipFile, zlib.error, RuntimeError, NotImplementedError, EOFError, OSError:
+        # RuntimeError: encrypted; NotImplementedError: a compression method that is not known
+        raise _MemberError from None
+    if len(data) > limit:
+        raise _MemberError
+    return data
+
+
+def _import_row(user: User, archive: zipfile.ZipFile, row: StravaRow, counts: ImportCounts) -> None:
+    try:
+        if row.filename is None:
+            _enter(user, row)
+            counts.entered += 1
+        else:
+            _import_file(user, archive, row)
+            counts.imported += 1
+    except DuplicateActivityError:
+        counts.duplicates += 1
+    except _Missing:
+        counts.missing += 1
+    except ActivityFileError, FileTooLargeError, _MemberError, _Unusable:
+        counts.unreadable += 1
+
+
+class _Missing(Exception):
+    pass
+
+
+class _Unusable(Exception):
+    """A line without a recording that is too little to enter."""
+
+
+def _import_file(user: User, archive: zipfile.ZipFile, row: StravaRow) -> None:
+    assert row.filename is not None
+    try:
+        data = _read_member(archive, row.filename, settings.ACTIVITY_UPLOAD_MAX_BYTES)
+    except KeyError:
+        raise _Missing from None
+    sport = None if row.sport == OTHER else row.sport
+    import_activity(user, data, sport=sport)
+
+
+def _enter(user: User, row: StravaRow) -> None:
+    """A session that exists only as a line of the list, entered like one by hand. Its duration
+    is in whole minutes, as every entry by hand is."""
+    if row.elapsed_seconds is None:
+        raise _Unusable
+    minutes = round(row.elapsed_seconds / 60)
+    if not 1 <= minutes <= DURATION_MAX_MINUTES or row.start.date() < EARLIEST:
+        raise _Unusable
+    kilometres = None if row.distance_m is None else row.distance_m / 1000
+    if kilometres is not None and kilometres > DISTANCE_MAX_KM:
+        kilometres = None
+    enter_activity(
+        user,
+        sport=row.sport,
+        start=row.start,
+        duration_minutes=minutes,
+        distance_km=kilometres,
+    )

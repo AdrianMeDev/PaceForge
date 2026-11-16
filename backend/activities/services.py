@@ -2,6 +2,7 @@
 
 import hashlib
 import logging
+from dataclasses import replace
 from datetime import datetime
 from typing import Any
 
@@ -21,6 +22,7 @@ from .parsing import (
     parse_series,
     unpack,
 )
+from .parsing.types import OTHER
 
 logger = logging.getLogger(__name__)
 
@@ -37,12 +39,15 @@ class DuplicateActivityError(Exception):
         self.existing_id = existing_id
 
 
-def import_activity(user: User, data: bytes) -> Activity:
+def import_activity(user: User, data: bytes, *, sport: str | None = None) -> Activity:
     """Store the activity of ``data`` for ``user``, together with the original file.
 
     A gzip-compressed file (``.fit.gz``, ``.tcx.gz``) is unpacked first, and what is stored (and
     hashed) is the unpacked file: the same activity as ``.fit`` and as ``.fit.gz`` is one. Both the
     file and what it unpacks to are limited to ``ACTIVITY_UPLOAD_MAX_BYTES``.
+
+    ``sport`` is what the caller knows of the sport (the list of a Strava export does): it is used
+    where the file itself says ``other`` (a GPX file never knows) and never against the file.
 
     Raises ``FileTooLargeError``, ``ActivityFileError`` (from the parsers) or
     ``DuplicateActivityError``; in each case nothing is stored.
@@ -56,6 +61,8 @@ def import_activity(user: User, data: bytes) -> Activity:
         raise FileTooLargeError("The file is too large.") from None
 
     parsed = parse_activity_file(data)
+    if sport is not None and parsed.sport == OTHER:
+        parsed = replace(parsed, sport=sport)
     source_hash = hashlib.sha256(data).hexdigest()
 
     existing = _find_duplicate(user, source_hash, parsed)
