@@ -17,7 +17,18 @@ from enum import StrEnum
 from fractions import Fraction
 
 from .context import PlanContext
-from .schema import Goal, Segment, SegmentKind, Slot, Sport, WeekPlan, Workout, ZoneSystem
+from .schema import (
+    ExerciseEquipment,
+    ExerciseRegion,
+    Goal,
+    Segment,
+    SegmentKind,
+    Slot,
+    Sport,
+    WeekPlan,
+    Workout,
+    ZoneSystem,
+)
 
 # The segments of a workout may differ from its duration by this much before it is an error.
 DURATION_TOLERANCE_SECONDS = 60
@@ -675,18 +686,27 @@ def check_sessions_per_sport(plan: WeekPlan, context: PlanContext) -> list[Findi
 
 # The strength focuses that make every strength workout count as leg training.
 LEG_FOCUSES = frozenset({"legs", "full_body"})
+# The regions of an exercise that train the legs.
+LEG_REGIONS = frozenset({ExerciseRegion.LEGS, ExerciseRegion.FULL_BODY})
+
+
+def _trains_legs(workout: Workout, context: PlanContext) -> bool:
+    """A strength workout trains the legs if one of its exercises does; without exercises the
+    strength focus of the athlete decides (legs or full body: every workout does)."""
+    if workout.exercises:
+        return any(exercise.region in LEG_REGIONS for exercise in workout.exercises)
+    return context.strength_focus in LEG_FOCUSES
 
 
 def check_legs_before_key_run(plan: WeekPlan, context: PlanContext) -> list[Finding]:
     """Leg strength the day before a long or a hard run (a warning, at the strength workout).
 
-    With the strength focus legs or full body every strength workout counts as leg training; with
-    another focus, or none, nothing is checked. A key run is a hard run, or the longest run of the
-    week (with a tie each of the longest). Only the days of this week are known, so Sunday and the
-    next Monday are not compared. A strength workout is named once, however many key runs follow."""
+    A strength workout trains the legs if one of its exercises is for the legs or the whole body,
+    whatever the strength focus; without exercises it does if the focus is legs or full body. A key
+    run is a hard run, or the longest run of the week (with a tie each of the longest). Only the
+    days of this week are known, so Sunday and the next Monday are not compared. A strength workout
+    is named once, however many key runs follow."""
     _same_week(plan, context)
-    if context.strength_focus not in LEG_FOCUSES:
-        return []
     by_day = _workouts_by_day(plan, context)
     runs = [
         (offset, workout)
@@ -707,7 +727,7 @@ def check_legs_before_key_run(plan: WeekPlan, context: PlanContext) -> list[Find
         if offset + 1 not in key_days:
             continue
         for index, workout in workouts:
-            if workout.sport is Sport.STRENGTH:
+            if workout.sport is Sport.STRENGTH and _trains_legs(workout, context):
                 found.append(
                     Finding(
                         Severity.WARNING,
@@ -715,6 +735,59 @@ def check_legs_before_key_run(plan: WeekPlan, context: PlanContext) -> list[Find
                         f"{_WEEKDAYS[offset]} has strength training, and {_WEEKDAYS[offset + 1]} "
                         "has a long or hard run; your legs may not be fresh for it.",
                         f"workouts[{index}]",
+                    )
+                )
+    return found
+
+
+# What an exercise needs, and which equipment of the athlete provides it. Body weight needs
+# nothing; the gym has everything, so dumbbells are there too.
+_PROVIDED_BY = {
+    ExerciseEquipment.GYM: frozenset({"gym"}),
+    ExerciseEquipment.DUMBBELLS: frozenset({"dumbbells", "gym"}),
+}
+_EQUIPMENT_WORDS = {ExerciseEquipment.GYM: "a gym", ExerciseEquipment.DUMBBELLS: "dumbbells"}
+
+
+def check_exercises(plan: WeekPlan, context: PlanContext) -> list[Finding]:
+    """The exercises of a workout.
+
+    Exercises on a workout that is not strength are an error (once per workout, at its exercises).
+    An exercise that needs a gym or dumbbells which the athlete did not list is a warning (once per
+    exercise, at its equipment); body weight always fits, and nothing is said if the athlete listed
+    no equipment at all."""
+    _same_week(plan, context)
+    found = []
+    have = set(context.athlete.strength_equipment)
+    for offset, workouts in sorted(_workouts_by_day(plan, context).items()):
+        for index, workout in workouts:
+            if not workout.exercises:
+                continue
+            if workout.sport is not Sport.STRENGTH:
+                found.append(
+                    Finding(
+                        Severity.ERROR,
+                        "exercises_not_strength",
+                        f"{_WEEKDAYS[offset]} has exercises on a {workout.sport.value} workout; "
+                        "only a strength workout has exercises.",
+                        f"workouts[{index}].exercises",
+                    )
+                )
+                continue
+            if not have:
+                continue
+            for number, exercise in enumerate(workout.exercises):
+                provided = _PROVIDED_BY.get(exercise.equipment)
+                if provided is None or have & provided:
+                    continue
+                found.append(
+                    Finding(
+                        Severity.WARNING,
+                        "exercise_needs_equipment",
+                        f"{_WEEKDAYS[offset]} has an exercise that needs "
+                        f"{_EQUIPMENT_WORDS[exercise.equipment]}, which you did not list as your "
+                        "equipment.",
+                        f"workouts[{index}].exercises[{number}].equipment",
                     )
                 )
     return found
@@ -867,6 +940,7 @@ RHYTHM_CHECKS: tuple[Check, ...] = (
     check_sessions_per_sport,
     check_legs_before_key_run,
     check_fixed_sessions,
+    check_exercises,
 )
 
 ALL_CHECKS: tuple[Check, ...] = BASIC_CHECKS + RHYTHM_CHECKS
