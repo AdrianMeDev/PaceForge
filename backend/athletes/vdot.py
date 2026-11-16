@@ -48,6 +48,29 @@ def vdot(distance_m: float, seconds: float) -> float | None:
     return _cost(distance_m / minutes) / _sustainable_share(minutes)
 
 
+def race_seconds(distance_m: float, value: float) -> int | None:
+    """The time in whole seconds of a race over ``distance_m`` metres that is worth ``value`` VDOT
+    (the inverse of ``vdot``, rounded to the second); ``None`` for a distance or a VDOT that is no
+    positive finite number, or one that no time between a second and a hundred hours can reach."""
+    if not _usable(distance_m) or not _usable(value):
+        return None
+    # ``vdot`` falls as the time grows, so the time is found by halving the interval.
+    low, high = 1.0, 360_000.0
+    at_low, at_high = vdot(distance_m, low), vdot(distance_m, high)
+    if at_low is None or at_high is None or not at_high <= value <= at_low:
+        return None
+    for _ in range(80):
+        middle = (low + high) / 2
+        found = vdot(distance_m, middle)
+        if found is None:
+            return None
+        if found > value:
+            low = middle
+        else:
+            high = middle
+    return round((low + high) / 2)
+
+
 def threshold_pace(value: float) -> float | None:
     """The threshold pace in seconds per kilometre for a VDOT; ``None`` if it is no positive finite
     number."""

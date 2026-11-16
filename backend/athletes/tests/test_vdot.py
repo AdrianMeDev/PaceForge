@@ -3,7 +3,7 @@ from typing import Any
 
 import pytest
 
-from athletes.vdot import DISTANCES, VDOT_MAX, VDOT_MIN, threshold_pace, vdot
+from athletes.vdot import DISTANCES, VDOT_MAX, VDOT_MIN, race_seconds, threshold_pace, vdot
 
 
 def seconds(text: str) -> int:
@@ -96,3 +96,59 @@ class TestThresholdPace:
         pace = threshold_pace(found)
 
         assert pace == pytest.approx(255, abs=2)
+
+
+class TestRaceSeconds:
+    @pytest.mark.parametrize("distance", DISTANCES.values())
+    @pytest.mark.parametrize("value", [30, 40, 50.5, 60, 70, 80])
+    def test_it_is_the_inverse_of_vdot(self, distance: float, value: float) -> None:
+        time = race_seconds(distance, value)
+
+        assert time is not None
+        found = vdot(distance, time)
+        assert found is not None
+        # a second is worth less than 0.1 VDOT even over the 5 km of a very fast runner
+        assert found == pytest.approx(value, abs=0.15)
+
+    @pytest.mark.parametrize(
+        ("distance", "time"),
+        [("5k", "19:57"), ("10k", "41:21"), ("marathon", "3:10:49")],
+    )
+    def test_the_races_of_vdot_50_in_the_published_tables(self, distance: str, time: str) -> None:
+        assert race_seconds(DISTANCES[distance], 50) == pytest.approx(seconds(time), abs=15)
+
+    def test_a_higher_vdot_is_a_shorter_time(self) -> None:
+        times = [race_seconds(10_000, value) for value in (35, 45, 55, 65)]
+
+        assert None not in times
+        assert times == sorted(times, reverse=True)  # type: ignore[type-var]
+
+    def test_it_gives_whole_seconds(self) -> None:
+        assert isinstance(race_seconds(5000, 50), int)
+
+    @pytest.mark.parametrize(
+        ("distance", "value"),
+        [
+            (0, 50),
+            (-5000, 50),
+            (5000, 0),
+            (5000, -1),
+            (math.nan, 50),
+            (5000, math.nan),
+            (math.inf, 50),
+            (5000, math.inf),
+            (True, 50),
+            (5000, True),
+            ("5000", 50),
+            (5000, None),
+            (5000, 1e9),
+            (1e12, 50),
+        ],
+    )
+    def test_input_that_is_no_race_gives_none(self, distance: Any, value: Any) -> None:
+        assert race_seconds(distance, value) is None
+
+    def test_the_whole_range_of_vdot_can_be_reached_over_the_four_distances(self) -> None:
+        for distance in DISTANCES.values():
+            for value in (VDOT_MIN, VDOT_MAX):
+                assert race_seconds(distance, value) is not None
