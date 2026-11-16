@@ -11,6 +11,11 @@
   --danger-bg: #fdeceb;
   --info: #0b4a99;
   --info-bg: #e6f0fd;
+  --phase-base: #cfe3fa;
+  --phase-build: #9fc4f2;
+  --phase-specific: #f6d28b;
+  --phase-taper: #b9e3c4;
+  --phase-transition: #e3e6ea;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -26,6 +31,11 @@
     --danger-bg: #3a1c1a;
     --info: #9cc4ff;
     --info-bg: #16263d;
+    --phase-base: #24405f;
+    --phase-build: #2f5f99;
+    --phase-specific: #7a5a1c;
+    --phase-taper: #25543a;
+    --phase-transition: #2b323a;
   }
 }
 

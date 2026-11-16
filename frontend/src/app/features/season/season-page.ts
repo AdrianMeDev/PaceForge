@@ -11,12 +11,14 @@ import {
   SeasonPlanVersion,
 } from '../../core/season/season-models';
 import { STATUS_LABELS, dayLabel, minutesText, weekRange } from '../planning/plan-format';
+import { SeasonTimeline } from './season-timeline';
 import {
   FOCUS_LABELS,
   PHASE_HINTS,
   PHASE_LABELS,
   PRIORITY_LETTERS,
   keySessionText,
+  localToday,
   minutesBySport,
   seasonFindingPlace,
   raceText,
@@ -55,7 +57,7 @@ const REFRESH_FAILED = 'The list of plans could not be refreshed. Please try aga
  */
 @Component({
   selector: 'app-season-page',
-  imports: [DatePipe, RouterLink],
+  imports: [DatePipe, RouterLink, SeasonTimeline],
   templateUrl: './season-page.html',
   styleUrl: './season-page.css',
 })
@@ -125,6 +127,7 @@ export class SeasonPage implements OnInit {
   protected readonly range = weekRange;
   protected readonly day = dayLabel;
   protected readonly share = usedShare;
+  protected readonly today = localToday();
   protected readonly place = (path: string): string =>
     seasonFindingPlace(
       path,

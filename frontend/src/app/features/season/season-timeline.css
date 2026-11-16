@@ -1,0 +1,72 @@
+:host {
+  display: block;
+  overflow-x: auto;
+}
+
+.timeline {
+  display: flex;
+  gap: 2px;
+  margin: 0.75rem 0;
+  padding: 0 0 0.25rem;
+  list-style: none;
+}
+
+li {
+  display: flex;
+  flex: 0 0 2.25rem;
+  flex-direction: column;
+  align-items: center;
+  min-height: 3.75rem;
+  padding: 0.2rem 0;
+  border: 2px solid transparent;
+  border-radius: 4px;
+  background: var(--phase-base);
+  color: var(--text);
+  font-size: 0.8rem;
+  line-height: 1.2;
+}
+
+li[data-phase='build'] {
+  background: var(--phase-build);
+}
+
+li[data-phase='specific'] {
+  background: var(--phase-specific);
+}
+
+li[data-phase='taper'] {
+  background: var(--phase-taper);
+}
+
+li[data-phase='transition'] {
+  background: var(--phase-transition);
+}
+
+li[data-current='true'] {
+  border-color: var(--accent);
+}
+
+.phase {
+  font-weight: 600;
+}
+
+.mark {
+  min-height: 1.1em;
+  color: var(--info);
+  font-weight: 600;
+}
+
+.races {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1px;
+}
+
+.race {
+  padding: 0 0.25rem;
+  border-radius: 999px;
+  background: var(--text);
+  color: var(--surface);
+  font-weight: 700;
+}

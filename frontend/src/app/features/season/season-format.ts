@@ -43,6 +43,12 @@ export function raceText(race: SeasonRace): string {
   return parts.join(' · ');
 }
 
+/** The calendar day of `now` on this device, `YYYY-MM-DD` (the week that is marked as this one). */
+export function localToday(now: Date = new Date()): string {
+  const pad = (value: number): string => String(value).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
 /** "70 %": the share of what the week offers that the skeleton plans; empty if it offers nothing. */
 export function usedShare(target: number, capacity: number): string {
   return capacity > 0 ? `${Math.round((target / capacity) * 100)} %` : '';

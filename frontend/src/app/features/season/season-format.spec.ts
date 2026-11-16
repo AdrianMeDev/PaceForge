@@ -6,6 +6,7 @@ import {
   PHASE_LABELS,
   PRIORITY_LETTERS,
   keySessionText,
+  localToday,
   minutesBySport,
   seasonFindingPlace,
   raceText,
@@ -120,4 +121,15 @@ describe('seasonFindingPlace', () => {
       expect(seasonFindingPlace(path, STARTS)).toBe('Season');
     },
   );
+});
+
+describe('localToday', () => {
+  it('writes the calendar day of the device as YYYY-MM-DD', () => {
+    expect(localToday(new Date(2027, 0, 5, 23, 59))).toBe('2027-01-05');
+    expect(localToday(new Date(2026, 11, 31, 0, 0))).toBe('2026-12-31');
+  });
+
+  it('is today by default', () => {
+    expect(localToday()).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
 });

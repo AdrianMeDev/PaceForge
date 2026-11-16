@@ -238,6 +238,18 @@ describe('SeasonPage', () => {
       ]);
     });
 
+    it('draws the timeline of the same weeks above the table', () => {
+      const cells = Array.from(page.querySelectorAll('[data-testid="timeline-cell"]'));
+
+      expect(cells).toHaveLength(4);
+      expect(cells.map((cell) => cell.getAttribute('data-phase'))).toEqual([
+        'base',
+        'base',
+        'specific',
+        'taper',
+      ]);
+    });
+
     it('marks a recovery week', () => {
       expect(cells(1)[1]).toBe('Base Recovery');
       expect(rows()[1].getAttribute('data-recovery')).toBe('true');
