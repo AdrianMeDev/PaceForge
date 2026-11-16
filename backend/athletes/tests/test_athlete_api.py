@@ -1,7 +1,7 @@
 import base64
 import json
 from collections.abc import Iterator
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from http import HTTPStatus
 from typing import Any
 
@@ -11,7 +11,8 @@ from django.utils import timezone
 
 from accounts.models import User
 from accounts.tests.conftest import AuthApi
-from athletes.models import MIN_AGE, TRAINING_YEARS_MAX, AthleteProfile, ThresholdValue
+from athletes import best_times
+from athletes.models import MIN_AGE, TRAINING_YEARS_MAX, AthleteProfile, BestTime, ThresholdValue
 from athletes.serializers import EQUIPMENT_CHOICE, NOTHING_TO_CHANGE, TRAINING_YEARS
 from integrations.models import ProviderConnection
 from integrations.tests.fake_intervals import FakeIntervals
@@ -660,6 +661,203 @@ class TestBodyAndTrainingData:
         shown = body(signed_in(alice).call("GET", URL))
         assert (shown["birth_year"], shown["weight_kg"], shown["resting_hr"]) == (None, None, 45)
         assert AthleteProfile.objects.get(owner=bob).resting_hr == 61
+
+
+class TestBestTimes:
+    DAY = date(2026, 11, 16)
+
+    @pytest.fixture(autouse=True)
+    def _fixed_day(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(best_times, "_today", lambda: self.DAY)
+
+    def url(self, distance: str) -> str:
+        return f"{URL}best-times/{distance}/"
+
+    def day(self, ago: int) -> str:
+        return (self.DAY - timedelta(days=ago)).isoformat()
+
+    def test_a_new_user_has_none(self, alice: User) -> None:
+        data = body(signed_in(alice).call("GET", URL))
+
+        assert data["best_times"] == {
+            "5k": None,
+            "10k": None,
+            "half_marathon": None,
+            "marathon": None,
+        }
+        assert data["vdot"] is None
+
+    def test_a_time_is_saved_and_shown_with_its_vdot(self, alice: User) -> None:
+        api = signed_in(alice)
+
+        response = put(api, self.url("5k"), {"seconds": 1197, "date": self.day(10)})
+
+        assert response.status_code == HTTPStatus.OK
+        data = body(response)
+        assert data["best_times"]["5k"] == {
+            "seconds": 1197,
+            "date": self.day(10),
+            "vdot": 50.0,
+            "recent": True,
+            "counts": True,
+        }
+        assert data["best_times"]["10k"] is None
+        assert data["vdot"] == {"value": 50.0, "distance": "5k", "date": self.day(10)}
+        assert BestTime.objects.get().owner == alice
+
+    def test_the_threshold_pace_and_the_zones_follow_from_it(self, alice: User) -> None:
+        api = signed_in(alice)
+
+        data = body(put(api, self.url("5k"), {"seconds": 1197, "date": self.day(10)}))
+
+        pace = data["sports"]["run"]["thresholds"]["threshold_pace"]
+        assert pace["effective"]["source"] == "best_time"
+        assert divmod(round(pace["effective"]["value"]), 60) == (4, 15)
+        assert pace["effective"]["basis"] == f"VDOT 50.0 from your 5 km on {self.day(10)}"
+        assert data["sports"]["run"]["zones"]["pace"]["basis"] == "threshold_pace"
+
+    def test_a_typed_pace_counts_before_it_and_the_time_is_still_listed(self, alice: User) -> None:
+        api = signed_in(alice)
+        put(api, f"{URL}thresholds/run/threshold_pace/", {"value": 300})
+
+        data = body(put(api, self.url("5k"), {"seconds": 1197, "date": self.day(10)}))
+
+        pace = data["sports"]["run"]["thresholds"]["threshold_pace"]
+        assert pace["effective"]["source"] == "manual"
+        assert [c["source"] for c in pace["candidates"]] == ["manual", "best_time"]
+
+    def test_a_second_time_for_the_distance_replaces_the_first(self, alice: User) -> None:
+        api = signed_in(alice)
+        put(api, self.url("5k"), {"seconds": 1300, "date": self.day(100)})
+
+        data = body(put(api, self.url("5k"), {"seconds": 1197, "date": self.day(10)}))
+
+        assert BestTime.objects.count() == 1
+        assert data["best_times"]["5k"]["seconds"] == 1197
+
+    def test_the_newest_race_counts_and_an_old_one_says_so(self, alice: User) -> None:
+        api = signed_in(alice)
+        put(api, self.url("10k"), {"seconds": 2481, "date": self.day(400)})
+        data = body(put(api, self.url("5k"), {"seconds": 1500, "date": self.day(30)}))
+
+        assert data["best_times"]["10k"]["recent"] is False
+        assert data["best_times"]["10k"]["counts"] is False
+        assert data["best_times"]["5k"]["counts"] is True
+        assert data["vdot"]["distance"] == "5k"
+
+    def test_with_only_an_old_time_nothing_counts(self, alice: User) -> None:
+        data = body(put(signed_in(alice), self.url("5k"), {"seconds": 1197, "date": self.day(400)}))
+
+        assert data["vdot"] is None
+        assert data["sports"]["run"]["thresholds"]["threshold_pace"]["effective"] is None
+
+    def test_a_time_is_removed_and_removing_it_again_is_fine(self, alice: User) -> None:
+        api = signed_in(alice)
+        put(api, self.url("5k"), {"seconds": 1197, "date": self.day(10)})
+
+        first = api.call("DELETE", self.url("5k"))
+        second = api.call("DELETE", self.url("5k"))
+
+        assert (first.status_code, second.status_code) == (HTTPStatus.OK, HTTPStatus.OK)
+        assert body(second)["best_times"]["5k"] is None
+        assert not BestTime.objects.exists()
+
+    def test_removing_a_time_removes_only_that_one(self, alice: User) -> None:
+        api = signed_in(alice)
+        put(api, self.url("5k"), {"seconds": 1197, "date": self.day(10)})
+        put(api, self.url("10k"), {"seconds": 2481, "date": self.day(20)})
+
+        api.call("DELETE", self.url("5k"))
+
+        assert list(BestTime.objects.values_list("distance", flat=True)) == ["10k"]
+
+    @pytest.mark.parametrize("distance", ["3k", "5K", "ultra", "marathon "])
+    @pytest.mark.parametrize("method", ["PUT", "DELETE"])
+    def test_an_unknown_distance_is_a_404(self, alice: User, distance: str, method: str) -> None:
+        response = signed_in(alice).call(
+            method, self.url(distance), {"seconds": 1197, "date": self.day(10)}
+        )
+
+        assert response.status_code == HTTPStatus.NOT_FOUND
+
+    @pytest.mark.parametrize(
+        ("payload", "field"),
+        [
+            ({"seconds": 1197}, "date"),
+            ({"date": "2026-10-01"}, "seconds"),
+            ({"seconds": "1197", "date": "2026-10-01"}, "seconds"),
+            ({"seconds": 1197.5, "date": "2026-10-01"}, "seconds"),
+            ({"seconds": True, "date": "2026-10-01"}, "seconds"),
+            ({"seconds": 0, "date": "2026-10-01"}, "seconds"),
+            ({"seconds": -5, "date": "2026-10-01"}, "seconds"),
+            ({"seconds": None, "date": "2026-10-01"}, "seconds"),
+            ({"seconds": 1197, "date": "01.10.2026"}, "date"),
+            ({"seconds": 1197, "date": "2026-13-45"}, "date"),
+            ({"seconds": 1197, "date": 20261001}, "date"),
+            ({"seconds": 1197, "date": None}, "date"),
+            ({"seconds": 300, "date": "2026-10-01"}, "seconds"),
+            ({"seconds": 100000, "date": "2026-10-01"}, "seconds"),
+            ({"seconds": 1197, "date": "2026-11-17"}, "date"),
+            ({"seconds": 1197, "date": "1899-12-31"}, "date"),
+        ],
+    )
+    def test_a_time_that_is_not_usable_is_refused_and_saves_nothing(
+        self, alice: User, payload: Any, field: str
+    ) -> None:
+        response = put(signed_in(alice), self.url("5k"), payload)
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert field in body(response)
+        assert not BestTime.objects.exists()
+
+    @pytest.mark.parametrize("payload", [[1197], "1197", 1197, None, [], ""])
+    def test_a_body_of_the_wrong_type_is_a_400_and_never_a_500(
+        self, alice: User, payload: Any
+    ) -> None:
+        assert put(signed_in(alice), self.url("5k"), payload).status_code == HTTPStatus.BAD_REQUEST
+
+    def test_a_refusal_keeps_the_earlier_time(self, alice: User) -> None:
+        api = signed_in(alice)
+        put(api, self.url("5k"), {"seconds": 1197, "date": self.day(10)})
+
+        put(api, self.url("5k"), {"seconds": 300, "date": self.day(10)})
+
+        assert BestTime.objects.get().seconds == 1197
+
+    def test_the_messages_say_what_is_wrong(self, alice: User) -> None:
+        assert body(
+            put(signed_in(alice), self.url("5k"), {"seconds": 300, "date": "2026-10-01"})
+        ) == {"seconds": ["That time is not plausible for this distance. Check it."]}
+
+    def test_only_the_own_times_are_seen_changed_or_removed(self, alice: User, bob: User) -> None:
+        put(signed_in(bob), self.url("5k"), {"seconds": 1197, "date": self.day(10)})
+
+        mine = body(put(signed_in(alice), self.url("5k"), {"seconds": 1500, "date": self.day(5)}))
+        signed_in(alice).call("DELETE", self.url("10k"))
+
+        assert mine["best_times"]["5k"]["seconds"] == 1500
+        assert BestTime.objects.get(owner=bob).seconds == 1197
+        assert body(signed_in(alice).call("GET", URL))["best_times"]["10k"] is None
+
+    @pytest.mark.parametrize("method", ["PUT", "DELETE"])
+    def test_anonymous_visitors_are_refused(self, method: str) -> None:
+        response = AuthApi().call(method, self.url("5k"), {"seconds": 1197, "date": "2026-10-01"})
+
+        assert response.status_code == HTTPStatus.FORBIDDEN
+
+    @pytest.mark.parametrize("method", ["GET", "PATCH", "POST"])
+    def test_other_methods_are_not_allowed(self, alice: User, method: str) -> None:
+        response = signed_in(alice).call(method, self.url("5k"), {})
+
+        assert response.status_code == HTTPStatus.METHOD_NOT_ALLOWED
+
+    def test_the_vdot_of_another_user_is_not_in_the_answer(self, alice: User, bob: User) -> None:
+        put(signed_in(bob), self.url("5k"), {"seconds": 1197, "date": self.day(10)})
+
+        data = body(signed_in(alice).call("GET", URL))
+
+        assert data["vdot"] is None
+        assert data["sports"]["run"]["thresholds"]["threshold_pace"]["candidates"] == []
 
 
 class TestIntervals:

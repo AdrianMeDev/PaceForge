@@ -13,6 +13,7 @@ from accounts.models import User
 from integrations import services as integrations
 from integrations.models import ProviderConnection
 
+from . import best_times
 from .models import (
     RULES,
     TRAINING_YEARS_MAX,
@@ -24,6 +25,7 @@ from .models import (
     validate_time_zone,
 )
 from .thresholds import Value, all_candidates
+from .vdot import DISTANCES
 from .zones import ZoneSet, heart_rate_zones, pace_zones, power_zones
 
 _TIMESTAMP = serializers.DateTimeField()
@@ -92,6 +94,15 @@ class EquipmentField(serializers.Field[list[str], Any, Any, Any]):
         return value
 
 
+class BestTimeInput(serializers.Serializer):
+    """The best time over one distance: whole seconds and the day of the race (``2026-10-03``).
+    The ranges are checked by the model."""
+
+    seconds = WholeNumberField(min_value=1)
+    # Strict: only the ISO form, and only text.
+    date = serializers.DateField(input_formats=["iso-8601"])
+
+
 class AthleteInput(serializers.Serializer):
     """What may be changed on the profile. Every field is optional, a missing one is left as it
     is and ``null`` clears one; at least one has to be there."""
@@ -126,7 +137,8 @@ class ThresholdInput(serializers.Serializer):
 
 def athlete_data(user: User, profile: AthleteProfile | None) -> dict[str, Any]:
     """The whole profile of ``user``: time zone, thresholds with their sources, and the zones."""
-    found = all_candidates(user)
+    races = best_times.entries(user)
+    found = all_candidates(user, races)
     connection = integrations.get_connection(user)
     sports: dict[str, Any] = {}
     for sport in ("ride", "run"):
@@ -140,12 +152,48 @@ def athlete_data(user: User, profile: AthleteProfile | None) -> dict[str, Any]:
     return {
         "timezone": profile.timezone if profile else "",
         **_body_and_training(profile),
+        **_best_times(races),
         "intervals": {
             "connected": connection is not None
             and connection.status == ProviderConnection.Status.CONNECTED,
             "synced_at": _time(profile.intervals_synced_at) if profile else None,
         },
         "sports": sports,
+    }
+
+
+def _best_times(found: list[best_times.Entry]) -> dict[str, Any]:
+    """The stored best times of every distance (``null`` where there is none) and the VDOT that
+    counts. ``recent`` says the race is inside the window, ``counts`` that this is the one that the
+    threshold pace comes from."""
+    counted = best_times.counting(found)
+    by_distance = {entry.distance: entry for entry in found}
+    return {
+        "best_times": {
+            distance: _best_time(by_distance[distance], counted)
+            if distance in by_distance
+            else None
+            for distance in DISTANCES
+        },
+        "vdot": (
+            None
+            if counted is None
+            else {
+                "value": round(counted.vdot, 1),
+                "distance": counted.distance,
+                "date": counted.date.isoformat(),
+            }
+        ),
+    }
+
+
+def _best_time(entry: best_times.Entry, counted: best_times.Entry | None) -> dict[str, Any]:
+    return {
+        "seconds": entry.seconds,
+        "date": entry.date.isoformat(),
+        "vdot": round(entry.vdot, 1),
+        "recent": entry.recent,
+        "counts": entry == counted,
     }
 
 

@@ -42,9 +42,10 @@ def _sorted(values: Iterable[Value]) -> list[Value]:
     return sorted(values, key=lambda candidate: PRIORITY.index(candidate.source))
 
 
-def _best_time_value(user: User) -> Value | None:
-    """The threshold pace of the best time that counts, if there is one."""
-    entry = best_times.counting(best_times.entries(user))
+def _best_time_value(user: User, found: list[best_times.Entry] | None = None) -> Value | None:
+    """The threshold pace of the best time that counts, if there is one. ``found`` are the best
+    times if the caller has read them already."""
+    entry = best_times.counting(best_times.entries(user) if found is None else found)
     if entry is None:
         return None
     pace = best_times.pace_of(entry)
@@ -64,14 +65,17 @@ def candidates(user: User, sport: str, metric: str) -> list[Value]:
     return _sorted(values)
 
 
-def all_candidates(user: User) -> dict[tuple[str, str], list[Value]]:
-    """The candidates of every threshold the user has a value for, with two queries."""
+def all_candidates(
+    user: User, best: list[best_times.Entry] | None = None
+) -> dict[tuple[str, str], list[Value]]:
+    """The candidates of every threshold the user has a value for, with two queries (one if the
+    caller passes the best times it has read already as ``best``)."""
     grouped: dict[tuple[str, str], list[Value]] = {}
     for row in ThresholdValue.objects.for_user(user):
         grouped.setdefault((row.sport, row.metric), []).append(
             Value(row.value, row.source, row.basis, row.updated_at)
         )
-    if (from_race := _best_time_value(user)) is not None:
+    if (from_race := _best_time_value(user, best)) is not None:
         grouped.setdefault(PACE, []).append(from_race)
     return {key: _sorted(values) for key, values in grouped.items()}
 
