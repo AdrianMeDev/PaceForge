@@ -6,9 +6,12 @@ from typing import Any
 from uuid import UUID
 
 import pytest
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 
 from accounts.models import User
 from accounts.tests.conftest import AuthApi
+from activities.models import Activity
 from availability.models import WeekdayMinutes
 from coach.models import AIProviderConfiguration, AIUsageRecord
 from coach.providers.base import InvalidKeyError, ProviderUnavailableError, RateLimitedError
@@ -180,6 +183,7 @@ class TestGenerating:
             "key_sessions",
             "reason",
             "total_minutes",
+            "done",
         }
         assert first["minutes"] == {"running": data["skeleton"]["weeks"][0]["target_minutes"]}
         assert first["total_minutes"] == first["minutes"]["running"]
@@ -337,6 +341,93 @@ class TestReading:
     @pytest.mark.parametrize("path", ["not-an-id", "1234", "x" * 40])
     def test_an_id_that_is_no_uuid_does_not_exist(self, alice: User, path: str) -> None:
         assert signed_in(alice).call("GET", f"{PLANS}{path}/").status_code == HTTPStatus.NOT_FOUND
+
+
+def trained(user: User, start: str, seconds: float, sport: str = "running", n: int = 0) -> None:
+    Activity.objects.create(
+        owner=user,
+        source="fit_file",
+        source_hash=f"{user.pk}-{start}-{n}".ljust(64, "0")[:64],
+        sport=sport,
+        start_time=datetime.fromisoformat(start).replace(tzinfo=UTC),
+        timer_seconds=seconds,
+    )
+
+
+class TestTheMinutesDone:
+    def weeks(self, user: User, plan_id: object) -> list[dict[str, Any]]:
+        return body(signed_in(user).call("GET", url(plan_id)))["weeks"]
+
+    def test_the_confirmed_plan_has_them_for_the_weeks_that_have_begun(self, alice: User) -> None:
+        stored = services.confirm(alice, draft(alice).pk)
+        trained(alice, "2026-11-17T08:00", 3600, "running", 1)
+        trained(alice, "2026-11-18T08:00", 1800, "cycling", 2)
+        trained(alice, "2026-11-25T08:00", 3600, "running", 3)  # next week: not begun yet
+
+        weeks = self.weeks(alice, stored.pk)
+
+        assert weeks[0]["done"] == [
+            {"sport": "running", "minutes": 60},
+            {"sport": "cycling", "minutes": 30},
+        ]
+        assert [week["done"] for week in weeks[1:]] == [None] * 5
+
+    def test_a_week_that_has_begun_without_activities_is_empty_not_missing(
+        self, alice: User
+    ) -> None:
+        stored = services.confirm(alice, draft(alice).pk)
+
+        assert self.weeks(alice, stored.pk)[0]["done"] == []
+
+    def test_a_week_before_the_season_has_no_effect(self, alice: User) -> None:
+        stored = services.confirm(alice, draft(alice).pk)
+        trained(alice, "2026-11-10T08:00", 3600)
+
+        assert self.weeks(alice, stored.pk)[0]["done"] == []
+
+    @pytest.mark.parametrize("status", ["draft", "superseded", "discarded"])
+    def test_no_other_version_has_them(self, alice: User, status: str) -> None:
+        stored = draft(alice)
+        if status == "discarded":
+            stored = services.discard(alice, stored.pk)
+        elif status == "superseded":
+            services.confirm(alice, stored.pk)
+            newer = draft(alice)
+            services.confirm(alice, newer.pk)
+            stored.refresh_from_db()
+        trained(alice, "2026-11-17T08:00", 3600)
+
+        weeks = self.weeks(alice, stored.pk)
+
+        assert stored.status == status
+        assert [week["done"] for week in weeks] == [None] * 6
+
+    def test_the_activities_of_another_user_do_not_show(self, alice: User, bob: User) -> None:
+        stored = services.confirm(alice, draft(alice).pk)
+        trained(bob, "2026-11-17T08:00", 3600)
+
+        assert self.weeks(alice, stored.pk)[0]["done"] == []
+
+    def test_the_answer_of_confirming_has_them_too(self, alice: User) -> None:
+        trained(alice, "2026-11-17T08:00", 3600)
+        stored = draft(alice)
+
+        data = body(signed_in(alice).call("POST", url(stored.pk, "confirm/")))
+
+        assert data["weeks"][0]["done"] == [{"sport": "running", "minutes": 60}]
+
+    def test_the_number_of_queries_does_not_depend_on_the_weeks(self, alice: User) -> None:
+        stored = services.confirm(alice, draft(alice).pk)
+        api = signed_in(alice)
+        with CaptureQueriesContext(connection) as before:
+            api.call("GET", url(stored.pk))
+        for n in range(20):
+            trained(alice, f"2026-11-{(n % 3) + 16}T{8 + n // 3:02d}:00", 600, n=n)
+
+        with CaptureQueriesContext(connection) as after:
+            api.call("GET", url(stored.pk))
+
+        assert len(after) == len(before)
 
 
 class TestConfirming:
