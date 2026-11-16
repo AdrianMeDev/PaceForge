@@ -29,6 +29,7 @@ import {
   kilometresText,
   parseDistanceKm,
   parseTargetTime,
+  suggestedTarget,
 } from './goal-format';
 
 const TITLE_MAX = 100;
@@ -107,6 +108,11 @@ export class GoalForm implements OnInit, AfterViewInit {
     return discipline ? DISTANCE_PRESETS[discipline] : [];
   });
   protected readonly other = OTHER;
+  /** The target that the form of the athlete can reach, for the goal as it is saved. */
+  protected readonly suggested = computed(() => {
+    const goal = this.goal();
+    return goal === null ? null : suggestedTarget(goal);
+  });
 
   /** Another kind than a race cannot be a preparation race, so that choice is taken back. */
   protected setKind(kind: GoalKind): void {
@@ -166,6 +172,22 @@ export class GoalForm implements OnInit, AfterViewInit {
   protected chooseDistance(event: Event): void {
     this.distanceChoice.set(this.read(event));
     this.distanceKm.set('');
+  }
+
+  /**
+   * Puts the suggested target into the field. Nothing is saved: the athlete can change it, ignore
+   * it, or keep their own.
+   */
+  protected useSuggestion(): void {
+    const target = this.suggested();
+    if (target === null) {
+      return;
+    }
+    if (this.kind() === 'race') {
+      this.time.set(target.field);
+    } else {
+      this.value.set(target.field);
+    }
   }
 
   protected cancel(): void {

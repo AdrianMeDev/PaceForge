@@ -1,11 +1,14 @@
 import {
+  Assessment,
+  AssessmentReason,
   Discipline,
   Goal,
   GoalKind,
   GoalPriority,
   GoalStatus,
+  Rating,
 } from '../../core/goals/goals-models';
-import { formatValue } from '../athlete/athlete-format';
+import { formatValue, inputText } from '../athlete/athlete-format';
 import { formatDuration } from '../activities/activity-format';
 
 export const KIND_LABELS: Record<GoalKind, string> = {
@@ -78,6 +81,103 @@ export function describeTarget(goal: Goal): string {
     return `${label} ${formatValue(goal.metric, goal.target_value)}`;
   }
   return '';
+}
+
+// --- how realistic a goal is
+
+export const RATING_LABELS: Record<Rating, string> = {
+  realistic: 'Realistic',
+  ambitious: 'Ambitious',
+  unrealistic: 'Unrealistic',
+  unknown: 'Cannot be judged yet',
+};
+
+/** What to do about a goal that could not be judged, by the reason the server gives. */
+export const REASON_TEXTS: Record<AssessmentReason, string> = {
+  no_model: 'There is no way to judge this kind of goal yet.',
+  no_target: 'Give a distance and a target time (or a target value) to see how realistic it is.',
+  out_of_range: 'Only running races from 1.5 km to the marathon can be judged.',
+  no_date: 'Give a date that has not passed to see how realistic it is.',
+  no_form:
+    'Enter a recent best time (for a race) or your current value (for FTP or threshold pace) to see how realistic it is.',
+};
+
+const JUDGEMENTS: Record<Exclude<Rating, 'unknown'>, string> = {
+  realistic: 'Within reach: your form can get there by the date.',
+  ambitious: 'A stretch: this asks for a little more than your form is likely to reach by then.',
+  unrealistic: 'Out of reach: this asks for much more than your form is likely to reach by then.',
+};
+
+function oneDecimal(value: number): string {
+  return value.toFixed(1);
+}
+
+/**
+ * What the judgement says in a sentence, or why there is none. It is a hint: the target stays the
+ * athlete's own.
+ */
+export function judgementText(assessment: Assessment): string {
+  if (assessment.rating === 'unknown') {
+    return assessment.reason === null ? '' : REASON_TEXTS[assessment.reason];
+  }
+  return JUDGEMENTS[assessment.rating];
+}
+
+/** The numbers behind the judgement: the form now and what the target asks for. */
+export function figuresText(goal: Goal): string {
+  const { assessment } = goal;
+  if (assessment === null || assessment.current === null || assessment.needed === null) {
+    return '';
+  }
+  if (goal.kind === 'race') {
+    return `Your running form: VDOT ${oneDecimal(assessment.current)}. The target needs VDOT ${oneDecimal(assessment.needed)}.`;
+  }
+  if (goal.metric === null) {
+    return '';
+  }
+  const label = goal.metric === 'ftp' ? 'FTP' : 'threshold pace';
+  return `Your ${label}: ${formatValue(goal.metric, assessment.current)}. The target: ${formatValue(goal.metric, assessment.needed)}.`;
+}
+
+/**
+ * The target that can be reached by the date, as text, when it is not the athlete's own (a target
+ * that is realistic needs no suggestion); empty otherwise.
+ */
+export function suggestionText(goal: Goal): string {
+  const target = suggestedTarget(goal);
+  return target === null ? '' : `A target that can be reached by then: ${target.text}.`;
+}
+
+/** The suggested target as text and as it is typed into the field of the form, or `null`. */
+export function suggestedTarget(goal: Goal): { text: string; field: string } | null {
+  const { assessment } = goal;
+  if (
+    assessment === null ||
+    assessment.suggested === null ||
+    (assessment.rating !== 'ambitious' && assessment.rating !== 'unrealistic')
+  ) {
+    return null;
+  }
+  if (goal.kind === 'race') {
+    const text = formatDuration(assessment.suggested);
+    return { text, field: text };
+  }
+  if (goal.kind === 'threshold' && goal.metric !== null) {
+    return {
+      text: formatValue(goal.metric, assessment.suggested),
+      field: inputText(goal.metric, assessment.suggested),
+    };
+  }
+  return null;
+}
+
+/** The warning for a short preparation; empty if there is none. */
+export function preparationText(assessment: Assessment): string {
+  if (!assessment.prep_short || assessment.weeks === null || assessment.prep_weeks === null) {
+    return '';
+  }
+  const left = assessment.weeks === 1 ? '1 week is' : `${assessment.weeks} weeks are`;
+  return `Only ${left} left; a race of this distance should have about ${assessment.prep_weeks} weeks of preparation.`;
 }
 
 // --- reading what the user types in the form

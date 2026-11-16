@@ -7,9 +7,14 @@ import { GoalForm } from './goal-form';
 import {
   KIND_LABELS,
   PRIORITY_LABELS,
+  RATING_LABELS,
   STATUS_LABELS,
   daysToGoText,
   describeTarget,
+  figuresText,
+  judgementText,
+  preparationText,
+  suggestionText,
 } from './goal-format';
 
 type View = 'loading' | 'unreachable' | 'ready' | 'signed_out';
@@ -59,6 +64,11 @@ export class GoalsPage implements OnInit {
   protected readonly statusLabel = STATUS_LABELS;
   protected readonly daysText = daysToGoText;
   protected readonly target = describeTarget;
+  protected readonly ratingLabel = RATING_LABELS;
+  protected readonly judgement = judgementText;
+  protected readonly figures = figuresText;
+  protected readonly suggestion = suggestionText;
+  protected readonly preparation = preparationText;
 
   ngOnInit(): Promise<void> {
     return this.load();
