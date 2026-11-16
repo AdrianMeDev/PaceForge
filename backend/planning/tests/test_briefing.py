@@ -131,6 +131,15 @@ ALLOWED_KEYS = {
     "detail",
     "reason",
     "races",
+    # the assessment of a goal: judged by code (goals.realism), numbers and fixed words
+    "assessment",
+    "rating",
+    "current",
+    "needed",
+    "suggested",
+    "weeks",
+    "prep_short",
+    "prep_weeks",
     "previous_week_plan",
     "day",
     "goal",
@@ -488,6 +497,89 @@ class TestTheZoneSystems:
         assert build_briefing(alice, MONDAY)["zone_systems"] == []
 
 
+class TestTheAssessmentOfAGoal:
+    BEST = 2481  # a 10 km in 41:21 is worth about VDOT 50
+
+    def run_goal(self, alice: User, seconds: int, **fields: Any) -> dict[str, Any]:
+        data: dict[str, Any] = {
+            "kind": "race",
+            "title": "Race",
+            "target_date": date(2027, 9, 26),  # ten weeks from the day it is for the user
+            "discipline": "running",
+            "distance_m": 10_000,
+            "target_time_seconds": seconds,
+            **fields,
+        }
+        goal(alice, **data)
+        (item,) = build_briefing(alice, MONDAY)["goals"]
+        return item["assessment"]
+
+    def test_a_goal_the_form_can_reach_is_told_as_realistic(self, alice: User) -> None:
+        BestTime.objects.create(
+            owner=alice, distance="10k", seconds=self.BEST, date=date(2027, 7, 1)
+        )
+
+        assessment = self.run_goal(alice, 2600)
+
+        assert (assessment["rating"], assessment["reason"]) == ("realistic", None)
+        assert assessment["suggested"] == 2600
+        assert (assessment["weeks"], assessment["prep_weeks"], assessment["prep_short"]) == (
+            10,
+            6,
+            False,
+        )
+
+    def test_a_goal_far_above_the_form_is_told_as_unrealistic_with_a_time_to_aim_for(
+        self, alice: User
+    ) -> None:
+        BestTime.objects.create(
+            owner=alice, distance="10k", seconds=self.BEST, date=date(2027, 7, 1)
+        )
+
+        assessment = self.run_goal(alice, 1800)
+
+        assert assessment["rating"] == "unrealistic"
+        assert assessment["suggested"] > 1800
+
+    def test_without_a_best_time_it_is_told_why_it_cannot_be_judged(self, alice: User) -> None:
+        assessment = self.run_goal(alice, 2600)
+
+        assert (assessment["rating"], assessment["reason"]) == ("unknown", "no_form")
+
+    def test_a_threshold_goal_is_judged_against_the_ftp_the_athlete_has(self, alice: User) -> None:
+        hold(alice, "ride", "ftp", 240)
+        goal(
+            alice,
+            kind="threshold",
+            title="FTP",
+            metric="ftp",
+            target_value=400,
+            target_date=date(2027, 9, 26),
+        )
+
+        (item,) = build_briefing(alice, MONDAY)["goals"]
+
+        assert item["assessment"]["rating"] == "unrealistic"
+        assert item["assessment"]["suggested"] == 252
+
+    def test_a_general_goal_has_none(self, alice: User) -> None:
+        goal(alice, title="Build endurance")
+
+        (item,) = build_briefing(alice, MONDAY)["goals"]
+
+        assert item["assessment"] is None
+
+    def test_the_form_of_another_user_does_not_count(self, alice: User, bob: User) -> None:
+        BestTime.objects.create(owner=bob, distance="10k", seconds=self.BEST, date=date(2027, 7, 1))
+
+        assert self.run_goal(alice, 2600)["reason"] == "no_form"
+
+    def test_it_holds_nothing_of_the_text_of_the_athlete(self, alice: User) -> None:
+        text = str(self.run_goal(alice, 2600, notes="SECRET-NOTES", title="SECRET-TITLE"))
+
+        assert "SECRET" not in text
+
+
 class TestTheGoals:
     def test_only_active_goals_of_the_user_are_told(self, alice: User, bob: User) -> None:
         goal(alice, title="Active")
@@ -514,6 +606,14 @@ class TestTheGoals:
 
         (item,) = build_briefing(alice, MONDAY)["goals"]
 
+        assessment = item.pop("assessment")
+        # no best time yet: the target cannot be judged, but the time left is short for a marathon
+        assert (assessment["rating"], assessment["reason"]) == ("unknown", "no_form")
+        assert (assessment["weeks"], assessment["prep_weeks"], assessment["prep_short"]) == (
+            10,
+            16,
+            True,
+        )
         assert item == {
             "priority": "main",
             "kind": "race",

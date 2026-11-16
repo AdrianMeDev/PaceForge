@@ -7,9 +7,8 @@ from rest_framework import serializers
 from accounts.models import User
 from athletes.serializers import NumberField
 
-from .assessing import assess_goals
+from .assessing import assess_goals, assessment_data
 from .models import NOTES_MAX, TITLE_MAX, Goal
-from .realism import Assessment
 from .services import today_of
 
 MAX_GOALS = 30
@@ -177,17 +176,3 @@ class GoalSerializer(serializers.ModelSerializer[Goal]):
             others = others.exclude(pk=self.instance.pk)
         if others.exists():
             raise serializers.ValidationError({"priority": [MAIN_TAKEN]})
-
-
-def assessment_data(found: Assessment) -> dict[str, Any]:
-    """The judgement as the API tells it: fixed words and numbers, nothing of the athlete's text."""
-    return {
-        "rating": found.rating.value,
-        "reason": None if found.reason is None else found.reason.value,
-        "current": found.current,
-        "needed": found.needed,
-        "suggested": found.suggested,
-        "weeks": found.weeks,
-        "prep_short": found.prep_short,
-        "prep_weeks": found.prep_weeks,
-    }

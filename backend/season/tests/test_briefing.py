@@ -55,6 +55,15 @@ ALLOWED_KEYS = {
     "distance_m",
     "title",
     "races_not_shown",
+    # the assessment of a race: judged by code (goals.realism), numbers and fixed words
+    "assessment",
+    "rating",
+    "reason",
+    "current",
+    "needed",
+    "suggested",
+    "prep_short",
+    "prep_weeks",
     # taken from the briefing of the week plan, with what is under them
     "sports",
     "sport_preferences",
@@ -178,6 +187,8 @@ class TestWhatIsTold:
         briefing = full(alice)
 
         assert [r["title"] for r in briefing["races"]] == ["Spring 10k", "Berlin Marathon"]
+        assessment = briefing["races"][1].pop("assessment")
+        assert (assessment["rating"], assessment["reason"]) == ("unknown", "no_target")
         assert briefing["races"][1] == {
             "date": "2027-02-28",
             "priority": "main",
@@ -239,6 +250,47 @@ class TestWhatIsTold:
 
         assert [w["capacity_minutes"] for w in briefing["weeks"][:3]] == [60, 0, 60]
         assert briefing["weeks"][1]["target_minutes"] == 0
+
+
+class TestTheAssessmentOfARace:
+    def test_a_race_with_a_goal_that_can_be_judged_is_told_how_realistic_it_is(
+        self, alice: User
+    ) -> None:
+        BestTime.objects.create(
+            owner=alice, distance="10k", seconds=2481, date=TODAY - timedelta(days=9)
+        )
+        race(alice, 14, distance_m=10_000, target_time_seconds=1800, priority="main")
+
+        (told,) = brief(alice)["races"]
+
+        assert told["assessment"]["rating"] == "unrealistic"
+        assert told["assessment"]["suggested"] > 1800
+
+    def test_a_race_without_a_target_time_says_so(self, alice: User) -> None:
+        race(alice, 14)
+
+        (told,) = brief(alice)["races"]
+
+        assert told["assessment"]["reason"] == "no_target"
+
+    def test_a_race_that_is_no_goal_of_the_user_has_none(self, alice: User, bob: User) -> None:
+        race(bob, 14, target_time_seconds=1800)
+        race(alice, 14)
+
+        assert [r["assessment"]["reason"] for r in brief(alice)["races"]] == ["no_target"]
+
+    def test_a_goal_that_is_not_active_is_not_used(self, alice: User) -> None:
+        race(alice, 14, status="achieved", priority="main", target_time_seconds=1800)
+        race(alice, 14, priority="main")
+
+        assert [r["assessment"]["reason"] for r in brief(alice)["races"]] == ["no_target"]
+
+    def test_it_holds_nothing_of_the_titles(self, alice: User) -> None:
+        race(alice, 14, title="SECRET-TITLE", notes="SECRET-NOTES")
+
+        (told,) = brief(alice)["races"]
+
+        assert "SECRET" not in str(told["assessment"])
 
 
 class TestWhatIsNotTold:

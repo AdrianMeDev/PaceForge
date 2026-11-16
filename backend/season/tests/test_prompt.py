@@ -111,7 +111,7 @@ class TestTheSystemPrompt:
             assert key in SYSTEM_PROMPT, key
 
     def test_it_says_that_a_goal_time_far_above_the_form_is_not_to_be_promised(self) -> None:
-        assert "A goal time far above that form is unrealistic" in FLAT
+        assert 'Whether a race can be reached is judged by code: see "assessment"' in FLAT
 
     def test_the_answer_may_take_a_year_of_weeks(self) -> None:
         assert SEASON_MAX_TOKENS == 16_000

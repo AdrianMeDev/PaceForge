@@ -184,8 +184,16 @@ rule; none of it is a reason to leave a goal out.
 each is worth. "recent" says that the race is less than a year old; only then it can count, and \
 "counts" marks the one the threshold pace comes from. "vdot" is the VDOT of that one, null if \
 none counts: a measure of the athlete's running form. Use it to judge the paces of the goals and \
-the load, not to set paces of your own: the zones in "zone_systems" already follow from it. A \
-goal time far above that form is unrealistic: plan carefully towards it and do not promise it.
+the load, not to set paces of your own: the zones in "zone_systems" already follow from it. \
+Whether a goal can be reached is judged by code: see "assessment" of the goals below.
+- Every goal has an "assessment", or null if it has no target to judge: its "rating" is \
+"realistic", "ambitious" or "unrealistic" (the target against what the form can reach by the \
+date), or "unknown" with a "reason" ("no_form", "no_target", "no_date", "no_model" or \
+"out_of_range"); "current" and "needed" are the VDOT of the form and of the target (watts or \
+seconds per kilometre for a threshold), "suggested" the target that can be reached by the date, \
+"weeks" the whole weeks left and "prep_weeks" the weeks a race of that distance should have: with \
+"prep_short" true fewer are left. Plan towards the athlete's own target, but when the rating is \
+"unrealistic" or "prep_short" is true plan carefully and do not promise it.
 - "fixed_sessions" lists the sessions that happen every week at a fixed time (a running club, a \
 class): the "date" in the week to plan, the "sport", the "minutes" and the "slot" (null: no part \
 of the day named). Plan each of them on its date, in that sport, about that long and, if there is \

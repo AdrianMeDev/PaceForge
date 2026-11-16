@@ -118,8 +118,14 @@ call for, for example the long run, the threshold session, a session at race pac
 and, in the detail, how it is built. Never more than {MAX_KEY_SESSIONS} a week.
 - "athlete" says what the athlete told about themselves (age, sex, weight, years of training, \
 each null if not said); "best_times" and "vdot" tell the running form of the athlete. Use them to \
-judge how far and how fast the build can go. A goal time far above that form is unrealistic: plan \
-carefully towards it and do not promise it.
+judge how far and how fast the build can go. Whether a \
+race can be reached is judged by code: see "assessment" of the "races".
+- Every race has an "assessment", or null: its "rating" is "realistic", "ambitious" or \
+"unrealistic" (the target time against what the form can reach by the date), or "unknown" with a \
+"reason"; "suggested" is the time that can be reached by the date, "weeks" the whole weeks left \
+and "prep_weeks" the weeks a race of that distance should have: with "prep_short" true fewer are \
+left. Build towards the athlete's own target, but when the rating is "unrealistic" or \
+"prep_short" is true build carefully and do not promise it.
 - "limitations" in the data lists the current injuries and limitations: keep the affected sport \
 easy and short, or leave it out.
 - "limits" in the data holds the limits that follow from how hard the athlete wants to train; \

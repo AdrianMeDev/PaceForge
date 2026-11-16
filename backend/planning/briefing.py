@@ -29,7 +29,9 @@ from accounts.models import User
 from athletes import best_times
 from athletes.thresholds import all_candidates
 from athletes.zones import ZoneSet, heart_rate_zones, pace_zones, power_zones
+from goals.assessing import assessment_data, facts_of, form_from
 from goals.models import Goal
+from goals.realism import Form, assess
 from goals.services import today_of
 from reviews.services import WeekReview, week_summary
 from season.schema import DETAIL_MAX, REASON_MAX
@@ -49,8 +51,9 @@ MAX_LIMITATIONS_TOLD = 10
 LIMITATIONS_TEXT_MAX_TOLD = 150
 # The most the JSON of a briefing may take, measured in UTF-8 bytes with every free-text
 # character as a six-byte escape (a control character), the worst a character can cost. It was
-# 20 000 until the wishes for a week left 54 bytes of room; 24 000 is still a few thousand tokens.
-MAX_BYTES = 24_000
+# 20 000 until the wishes for a week left 54 bytes of room, and 24 000 until the assessment of
+# every goal came with it; 28 000 is still a few thousand tokens.
+MAX_BYTES = 28_000
 
 # The sport groups of the athlete's thresholds.
 _THRESHOLD_SPORT = {Sport.CYCLING: "ride", Sport.RUNNING: "run"}
@@ -65,7 +68,7 @@ def build_briefing(user: User, monday: date) -> dict[str, Any]:
     context = build_context(user, monday)  # raises ValueError unless it is a Monday
     today = today_of(user)
     held = all_candidates(user, list(context.best_times))
-    goals, goals_not_shown = _goals(user, today)
+    goals, goals_not_shown = _goals(user, today, form_from(list(context.best_times), held))
     return {
         "week_start": monday.isoformat(),
         "today": today.isoformat(),
@@ -304,7 +307,7 @@ def _zone_set(
     return heart_rate_zones(value("lthr"), value("max_hr"))
 
 
-def _goals(user: User, today: date) -> tuple[list[dict[str, Any]], int]:
+def _goals(user: User, today: date, form: Form) -> tuple[list[dict[str, Any]], int]:
     active = Goal.objects.for_user(user).filter(status=Goal.Status.ACTIVE)
     # A (main), then B (secondary), then C (preparation race); a goal without a date comes last.
     rank = Case(
@@ -316,11 +319,11 @@ def _goals(user: User, today: date) -> tuple[list[dict[str, Any]], int]:
     ordered = active.annotate(rank=rank).order_by(
         "rank", F("target_date").asc(nulls_last=True), "created_at", "id"
     )
-    shown = [_goal(goal, today) for goal in ordered[:MAX_GOALS]]
+    shown = [_goal(goal, today, form) for goal in ordered[:MAX_GOALS]]
     return shown, max(active.count() - MAX_GOALS, 0)
 
 
-def _goal(goal: Goal, today: date) -> dict[str, Any]:
+def _goal(goal: Goal, today: date, form: Form) -> dict[str, Any]:
     return {
         "priority": goal.priority,
         "kind": goal.kind,
@@ -333,6 +336,11 @@ def _goal(goal: Goal, today: date) -> dict[str, Any]:
         "target_time_seconds": goal.target_time_seconds,
         "metric": goal.metric or None,
         "target_value": goal.target_value,
+        # Whether the target is realistic, judged by code from the athlete's form and the time left
+        # (``goals.realism``); ``null`` for a goal that has no target to judge.
+        "assessment": None
+        if goal.kind == Goal.Kind.GENERAL
+        else assessment_data(assess(facts_of(goal), form, today)),
     }
 
 
