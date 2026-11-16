@@ -14,11 +14,13 @@ from athletes.models import AthleteProfile, ThresholdValue
 from availability.intensity import LEVEL_LIMITS, IntensityLevel, Limits
 from availability.models import (
     AvailabilitySettings,
+    FixedSession,
     Limitation,
     SportPreference,
     UnavailablePeriod,
     WeekdayMinutes,
 )
+from availability.serializers import MAX_FIXED_SESSIONS
 from goals import services as goal_services
 from goals.models import Goal
 from planning import briefing as briefing_module
@@ -91,6 +93,8 @@ ALLOWED_KEYS = {
     "sessions_min",
     "sessions_max",
     "strength_focus",
+    "fixed_sessions",
+    "slot",
     "limits",
     "limitations",
     "body_part",
@@ -213,6 +217,7 @@ class TestTheBriefingOfAUserWithNothing:
             "long_days": [],
             "sport_preferences": [],
             "strength_focus": None,
+            "fixed_sessions": [],
             "limits": {
                 "max_hard_days": 2,
                 "progression_warning_percent": 120,
@@ -512,6 +517,7 @@ class TestTheGoals:
             "long_days",
             "sport_preferences",
             "strength_focus",
+            "fixed_sessions",
             "limits",
             "limitations",
             "limitations_not_shown",
@@ -811,6 +817,63 @@ class TestTheWishesForAWeek:
         assert '"long_days":[{"date":"2027-07-24","sport":"running"}]' in text
 
 
+class TestTheFixedSessions:
+    def told(self, user: User) -> Any:
+        return build_briefing(user, MONDAY)["fixed_sessions"]
+
+    def test_a_user_with_none_has_nothing_told(self, alice: User) -> None:
+        assert self.told(alice) == []
+
+    def test_a_session_is_told_as_the_date_of_the_week(self, alice: User) -> None:
+        FixedSession.objects.create(
+            owner=alice, weekday=1, sport="running", minutes=60, slot="evening"
+        )
+
+        assert self.told(alice) == [
+            {"date": "2027-07-20", "sport": "running", "minutes": 60, "slot": "evening"}
+        ]
+
+    def test_no_part_of_the_day_is_null(self, alice: User) -> None:
+        FixedSession.objects.create(owner=alice, weekday=6, sport="cycling", minutes=120)
+
+        assert self.told(alice) == [
+            {"date": "2027-07-25", "sport": "cycling", "minutes": 120, "slot": None}
+        ]
+
+    def test_they_come_by_day_and_part_of_the_day(self, alice: User) -> None:
+        for weekday, sport, slot in (
+            (3, "running", "evening"),
+            (3, "strength", "morning"),
+            (0, "swimming", ""),
+            (3, "cycling", ""),
+        ):
+            FixedSession.objects.create(
+                owner=alice, weekday=weekday, sport=sport, minutes=45, slot=slot
+            )
+
+        assert [(entry["date"], entry["sport"]) for entry in self.told(alice)] == [
+            ("2027-07-19", "swimming"),
+            ("2027-07-22", "cycling"),
+            ("2027-07-22", "strength"),
+            ("2027-07-22", "running"),
+        ]
+
+    def test_the_sessions_of_another_user_are_not_told(self, alice: User, bob: User) -> None:
+        FixedSession.objects.create(owner=bob, weekday=1, sport="running", minutes=60)
+
+        assert self.told(alice) == []
+
+    def test_it_is_in_the_text_the_coach_gets(self, alice: User) -> None:
+        FixedSession.objects.create(owner=alice, weekday=1, sport="running", minutes=60)
+
+        text = to_json(build_briefing(alice, MONDAY))
+
+        assert (
+            '"fixed_sessions":[{"date":"2027-07-20","minutes":60,"slot":null,"sport":"running"}]'
+            in text
+        )
+
+
 class TestTheSportPreferences:
     def told(self, user: User) -> dict[str, Any]:
         briefing = build_briefing(user, MONDAY)
@@ -989,6 +1052,16 @@ class TestWhatIsSent:
             SportPreference.objects.create(
                 owner=alice, sport=sport, role="supplementary", sessions_min=14, sessions_max=14
             )
+        FixedSession.objects.bulk_create(
+            FixedSession(
+                owner=alice,
+                weekday=number % 7,
+                sport="strength",
+                minutes=600,
+                slot="afternoon",
+            )
+            for number in range(MAX_FIXED_SESSIONS)
+        )
 
         size = len(to_json(build_briefing(alice, MONDAY)).encode())
 
@@ -1009,7 +1082,7 @@ class TestWhatIsSent:
             build_briefing(alice, MONDAY)
 
         # 13 of the briefing and 8 of the review of the week before
-        assert len(empty) == len(full) == 21
+        assert len(empty) == len(full) == 22
 
 
 class TestHowTheWeekBeforeWent:

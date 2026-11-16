@@ -83,6 +83,7 @@ def build_briefing(user: User, monday: date) -> dict[str, Any]:
         "long_days": _long_days(context),
         "sport_preferences": _sport_preferences(context),
         "strength_focus": context.strength_focus,
+        "fixed_sessions": _fixed_sessions(context),
         "limits": _limits(context),
         "limitations": _limitations(context),
         "limitations_not_shown": max(0, len(context.limitations) - MAX_LIMITATIONS_TOLD),
@@ -115,6 +116,20 @@ def _sport_preferences(context: PlanContext) -> list[dict[str, Any]]:
             "sessions_max": facts.sessions_max,
         }
         for facts in context.sport_preferences
+    ]
+
+
+def _fixed_sessions(context: PlanContext) -> list[dict[str, Any]]:
+    """The sessions that happen every week, as the date of this week on which each one lies, the
+    sport, the minutes and the part of the day (``null``: none named). Fixed words and numbers."""
+    return [
+        {
+            "date": (context.week_start + timedelta(days=fixed.weekday)).isoformat(),
+            "sport": fixed.sport.value,
+            "minutes": fixed.minutes,
+            "slot": fixed.slot.value if fixed.slot else None,
+        }
+        for fixed in context.fixed_sessions
     ]
 
 

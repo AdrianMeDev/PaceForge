@@ -14,6 +14,7 @@ from accounts.models import User
 from activities.models import Activity
 from athletes.thresholds import all_candidates
 from availability.capacity import week_capacity
+from availability.fixed_sessions import fixed_sessions
 from availability.intensity import DEFAULT_LEVEL, LEVEL_LIMITS, Limits
 from availability.limitations import current_limitations
 from availability.preferences import sport_preferences
@@ -43,6 +44,17 @@ class SportFacts:
     role: str | None
     sessions_min: int | None
     sessions_max: int | None
+
+
+@dataclass(frozen=True)
+class FixedFacts:
+    """A session that happens every week: the weekday (Monday is 0), the sport, how long it lasts
+    and the part of the day (``None``: none named)."""
+
+    weekday: int
+    sport: Sport
+    minutes: int
+    slot: Slot | None
 
 
 @dataclass(frozen=True)
@@ -87,6 +99,8 @@ class PlanContext:
     # order of the format) and what strength training is for (``None``: not said).
     sport_preferences: tuple[SportFacts, ...] = ()
     strength_focus: str | None = None
+    # The sessions that happen every week, by weekday and part of the day.
+    fixed_sessions: tuple[FixedFacts, ...] = ()
 
     def offset(self, day: date) -> int | None:
         """The place of ``day`` in the week (Monday is 0), ``None`` if it lies outside."""
@@ -120,6 +134,10 @@ def build_context(user: User, monday: date) -> PlanContext:
         sport_preferences=tuple(
             SportFacts(Sport(sport), role, low, high)
             for sport, role, low, high in sport_preferences(user)
+        ),
+        fixed_sessions=tuple(
+            FixedFacts(weekday, Sport(sport), minutes, Slot(slot) if slot else None)
+            for weekday, sport, minutes, slot in fixed_sessions(user)
         ),
         training_days=capacity.training_days,
         min_weekly_minutes=capacity.min_weekly_minutes,

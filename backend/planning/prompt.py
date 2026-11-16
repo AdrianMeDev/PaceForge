@@ -137,6 +137,11 @@ not put it on the day before the longest run of the week or before a hard run. (
 allow it (both null: no wish); more days than "training_days" or fewer minutes than that is a \
 warning. "long_days" lists, for a sport, the date on which its longest \
 session of the week belongs (another day is a warning).
+- "fixed_sessions" lists the sessions that happen every week at a fixed time (a running club, a \
+class): the "date" in the week to plan, the "sport", the "minutes" and the "slot" (null: no part \
+of the day named). Plan each of them on its date, in that sport, about that long and, if there is \
+a "slot", in that part of the day; the rest of the week is planned around them. A plan without one \
+of them is a warning; on a day of absence or a day without minutes leave it out.
 - "limitations" in the data lists the athlete's current injuries and limitations, the newest \
 first: "body_part" from a fixed list and the "sports" it affects (none listed: no particular \
 sport, so use your judgement). Do not load the body part: keep an affected sport easy and short, \
