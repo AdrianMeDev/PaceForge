@@ -351,7 +351,7 @@ class TestTheContextOfAUser:
             MONDAY, (0,) * 7, (None,) * 7, None, 0, frozenset(), ()
         )
 
-    def test_it_takes_ten_queries_however_much_data_there_is(self, alice: User) -> None:
+    def test_it_takes_eleven_queries_however_much_data_there_is(self, alice: User) -> None:
         with CaptureQueriesContext(connection) as empty:
             build_context(alice, MONDAY)
         for weekday in range(7):
@@ -384,7 +384,7 @@ class TestTheContextOfAUser:
         with CaptureQueriesContext(connection) as full:
             build_context(alice, MONDAY)
 
-        assert len(empty) == len(full) == 10
+        assert len(empty) == len(full) == 11
 
     def test_the_typical_week_comes_from_the_settings(self, alice: User, bob: User) -> None:
         AvailabilitySettings.objects.create(owner=alice, typical_weekly_minutes=420)

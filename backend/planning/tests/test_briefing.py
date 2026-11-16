@@ -1202,7 +1202,7 @@ class TestWhatIsSent:
             build_briefing(alice, MONDAY)
 
         # 13 of the briefing and 8 of the review of the week before
-        assert len(empty) == len(full) == 23
+        assert len(empty) == len(full) == 25
 
 
 class TestHowTheWeekBeforeWent:

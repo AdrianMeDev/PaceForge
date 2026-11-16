@@ -15,13 +15,19 @@ from django.db import transaction
 
 from accounts.models import User
 
+from . import best_times
 from .models import ThresholdValue
 
 Metric = ThresholdValue.Metric
 Source = ThresholdValue.Source
 
+# A threshold pace that follows from a recent best time. It is not stored as a row of
+# ``ThresholdValue``: it is worked out when the candidates are read (see ``best_times``).
+BEST_TIME = "best_time"
+PACE = ("run", Metric.THRESHOLD_PACE)
+
 # The first source that holds a value wins.
-PRIORITY = (Source.MANUAL, Source.INTERVALS, Source.ESTIMATED)
+PRIORITY = (Source.MANUAL, BEST_TIME, Source.INTERVALS, Source.ESTIMATED)
 
 
 @dataclass(frozen=True)
@@ -32,22 +38,42 @@ class Value:
     updated_at: datetime
 
 
-def _in_order(rows: Iterable[ThresholdValue]) -> list[Value]:
-    values = [Value(row.value, row.source, row.basis, row.updated_at) for row in rows]
+def _sorted(values: Iterable[Value]) -> list[Value]:
     return sorted(values, key=lambda candidate: PRIORITY.index(candidate.source))
+
+
+def _best_time_value(user: User) -> Value | None:
+    """The threshold pace of the best time that counts, if there is one."""
+    entry = best_times.counting(best_times.entries(user))
+    if entry is None:
+        return None
+    pace = best_times.pace_of(entry)
+    if pace is None:
+        return None
+    return Value(pace, BEST_TIME, best_times.basis_of(entry), entry.updated_at)
 
 
 def candidates(user: User, sport: str, metric: str) -> list[Value]:
     """Every value the user has for this threshold, the one that counts first."""
-    return _in_order(ThresholdValue.objects.for_user(user).filter(sport=sport, metric=metric))
+    values = [
+        Value(row.value, row.source, row.basis, row.updated_at)
+        for row in ThresholdValue.objects.for_user(user).filter(sport=sport, metric=metric)
+    ]
+    if (sport, metric) == PACE and (from_race := _best_time_value(user)) is not None:
+        values.append(from_race)
+    return _sorted(values)
 
 
 def all_candidates(user: User) -> dict[tuple[str, str], list[Value]]:
-    """The candidates of every threshold the user has a value for, with one query."""
-    grouped: dict[tuple[str, str], list[ThresholdValue]] = {}
+    """The candidates of every threshold the user has a value for, with two queries."""
+    grouped: dict[tuple[str, str], list[Value]] = {}
     for row in ThresholdValue.objects.for_user(user):
-        grouped.setdefault((row.sport, row.metric), []).append(row)
-    return {key: _in_order(rows) for key, rows in grouped.items()}
+        grouped.setdefault((row.sport, row.metric), []).append(
+            Value(row.value, row.source, row.basis, row.updated_at)
+        )
+    if (from_race := _best_time_value(user)) is not None:
+        grouped.setdefault(PACE, []).append(from_race)
+    return {key: _sorted(values) for key, values in grouped.items()}
 
 
 def effective(user: User, sport: str, metric: str) -> Value | None:
