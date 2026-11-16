@@ -63,6 +63,15 @@
         </div>
       </div>
 
+      @if (profile(); as current) {
+        <app-body-data-panel
+          [profile]="current"
+          [provider]="provider()"
+          (saved)="onBodySaved($event)"
+          (signedOut)="endSession()"
+        />
+      }
+
       <div class="panel">
         <h2>Intervals.icu</h2>
         @if (profile(); as current) {

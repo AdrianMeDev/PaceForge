@@ -1,10 +1,15 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { AthleteApi } from '../../core/athlete/athlete-api';
+import { CoachApi } from '../../core/coach/coach-api';
+import { AiProviderState, GetProviderResult } from '../../core/coach/coach-models';
 import {
   AthleteProfile,
+  BodyAndTraining,
+  BodyChanges,
   ClearThresholdResult,
   GetAthleteResult,
+  SaveBodyResult,
   RideProfile,
   RunProfile,
   SetThresholdResult,
@@ -15,7 +20,7 @@ import {
   ThresholdValue,
   ZoneSet,
 } from '../../core/athlete/athlete-models';
-import { query, required, settle } from '../../testing/dom';
+import { query, required, settle, typeInto } from '../../testing/dom';
 import { AthletePage } from './athlete-page';
 
 const HOUR = 60 * 60 * 1000;
@@ -53,6 +58,7 @@ const PACE: ZoneSet = {
 
 interface Parts {
   timezone?: string;
+  body?: Partial<BodyAndTraining>;
   intervals?: AthleteProfile['intervals'];
   ride?: Partial<RideProfile['thresholds']>;
   run?: Partial<RunProfile['thresholds']>;
@@ -68,6 +74,14 @@ interface Parts {
 function profile(parts: Parts = {}): AthleteProfile {
   const zones = parts.zones ?? {};
   return {
+    birth_year: null,
+    sex: null,
+    weight_kg: null,
+    resting_hr: null,
+    training_years: { running: null, cycling: null, swimming: null, strength: null },
+    strength_experience: null,
+    strength_equipment: [],
+    ...parts.body,
     timezone: parts.timezone ?? 'Europe/Berlin',
     intervals: parts.intervals ?? { connected: false, synced_at: null },
     sports: {
@@ -106,9 +120,31 @@ const ok = (parts?: Parts): { kind: 'ok'; profile: AthleteProfile } => ({
   profile: profile(parts),
 });
 
+const PROVIDER: AiProviderState = {
+  configured: true,
+  provider: 'anthropic',
+  model: 'claude-sonnet-5-5',
+  base_url: null,
+  has_key: true,
+  status: 'connected',
+  last_checked_at: null,
+  last_success_at: null,
+  allowed_base_urls: [],
+  usage: { calls: 0, input_tokens: 0, output_tokens: 0, days: 30 },
+};
+
+function createCoachStub() {
+  return {
+    get: vi
+      .fn<() => Promise<GetProviderResult>>()
+      .mockResolvedValue({ kind: 'ok', state: PROVIDER }),
+  };
+}
+
 function createApiStub() {
   return {
     get: vi.fn<() => Promise<GetAthleteResult>>(),
+    saveBody: vi.fn<(changes: BodyChanges) => Promise<SaveBodyResult>>(),
     setTimezone: vi.fn<(name: string) => Promise<SetTimezoneResult>>(),
     setThreshold:
       vi.fn<(sport: string, metric: string, amount: number) => Promise<SetThresholdResult>>(),
@@ -133,7 +169,11 @@ describe('AthletePage', () => {
     api.get.mockResolvedValue(first);
     TestBed.configureTestingModule({
       imports: [AthletePage],
-      providers: [provideRouter([]), { provide: AthleteApi, useValue: api }],
+      providers: [
+        provideRouter([]),
+        { provide: AthleteApi, useValue: api },
+        { provide: CoachApi, useValue: createCoachStub() },
+      ],
     });
     fixture = TestBed.createComponent(AthletePage);
     page = fixture.nativeElement as HTMLElement;
@@ -191,7 +231,11 @@ describe('AthletePage', () => {
       api.get.mockReturnValue(new Promise<never>(() => undefined));
       TestBed.configureTestingModule({
         imports: [AthletePage],
-        providers: [provideRouter([]), { provide: AthleteApi, useValue: api }],
+        providers: [
+          provideRouter([]),
+          { provide: AthleteApi, useValue: api },
+          { provide: CoachApi, useValue: createCoachStub() },
+        ],
       });
       fixture = TestBed.createComponent(AthletePage);
       fixture.detectChanges();
@@ -211,7 +255,11 @@ describe('AthletePage', () => {
       api.get.mockRejectedValueOnce(new Error('offline')).mockResolvedValue(ok());
       TestBed.configureTestingModule({
         imports: [AthletePage],
-        providers: [provideRouter([]), { provide: AthleteApi, useValue: api }],
+        providers: [
+          provideRouter([]),
+          { provide: AthleteApi, useValue: api },
+          { provide: CoachApi, useValue: createCoachStub() },
+        ],
       });
       fixture = TestBed.createComponent(AthletePage);
       page = fixture.nativeElement as HTMLElement;
@@ -826,7 +874,11 @@ describe('AthletePage', () => {
       api.syncFromIntervals.mockResolvedValue(updated);
       TestBed.configureTestingModule({
         imports: [AthletePage],
-        providers: [provideRouter([]), { provide: AthleteApi, useValue: api }],
+        providers: [
+          provideRouter([]),
+          { provide: AthleteApi, useValue: api },
+          { provide: CoachApi, useValue: createCoachStub() },
+        ],
       });
       fixture = TestBed.createComponent(AthletePage);
       page = fixture.nativeElement as HTMLElement;
@@ -876,7 +928,11 @@ describe('AthletePage', () => {
       api.syncFromIntervals.mockReturnValue(pending.promise);
       TestBed.configureTestingModule({
         imports: [AthletePage],
-        providers: [provideRouter([]), { provide: AthleteApi, useValue: api }],
+        providers: [
+          provideRouter([]),
+          { provide: AthleteApi, useValue: api },
+          { provide: CoachApi, useValue: createCoachStub() },
+        ],
       });
       fixture = TestBed.createComponent(AthletePage);
       page = fixture.nativeElement as HTMLElement;
@@ -919,7 +975,11 @@ describe('AthletePage', () => {
         api.setThreshold.mockResolvedValue(ok());
         TestBed.configureTestingModule({
           imports: [AthletePage],
-          providers: [provideRouter([]), { provide: AthleteApi, useValue: api }],
+          providers: [
+            provideRouter([]),
+            { provide: AthleteApi, useValue: api },
+            { provide: CoachApi, useValue: createCoachStub() },
+          ],
         });
         fixture = TestBed.createComponent(AthletePage);
         page = fixture.nativeElement as HTMLElement;
@@ -1020,7 +1080,11 @@ describe('AthletePage', () => {
       api.syncFromIntervals.mockResolvedValue({ kind: 'not_connected' });
       TestBed.configureTestingModule({
         imports: [AthletePage],
-        providers: [provideRouter([]), { provide: AthleteApi, useValue: api }],
+        providers: [
+          provideRouter([]),
+          { provide: AthleteApi, useValue: api },
+          { provide: CoachApi, useValue: createCoachStub() },
+        ],
       });
       fixture = TestBed.createComponent(AthletePage);
       page = fixture.nativeElement as HTMLElement;
@@ -1036,13 +1100,59 @@ describe('AthletePage', () => {
       api.syncFromIntervals.mockResolvedValue({ kind: 'not_connected' });
       TestBed.configureTestingModule({
         imports: [AthletePage],
-        providers: [provideRouter([]), { provide: AthleteApi, useValue: api }],
+        providers: [
+          provideRouter([]),
+          { provide: AthleteApi, useValue: api },
+          { provide: CoachApi, useValue: createCoachStub() },
+        ],
       });
       fixture = TestBed.createComponent(AthletePage);
       page = fixture.nativeElement as HTMLElement;
       await settle(fixture);
 
       expect(query(page, '[data-testid="synced"]').textContent).toContain('never');
+    });
+  });
+  describe('the body and training data', () => {
+    beforeEach(() => setup(ok({ body: { weight_kg: 61.5 } })));
+
+    it('are offered in a panel of their own, below the time zone and above Intervals.icu', () => {
+      const panel = query(page, 'app-body-data-panel');
+
+      expect(panel.textContent).toContain('About you');
+      expect(
+        query(page, '#timezone').compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(query<HTMLInputElement>(page, '#body-weight').value).toBe('61.5');
+    });
+
+    it('name the provider they go to', () => {
+      expect(query(page, 'app-body-data-panel').textContent).toContain(
+        'Where they go: Anthropic, model claude-sonnet-5-5.',
+      );
+    });
+
+    it('are saved through the panel and the page says so', async () => {
+      api.saveBody.mockResolvedValue(ok({ body: { weight_kg: 70 } }));
+      typeInto(page, '#body-weight', '70');
+      query<HTMLFormElement>(page, 'app-body-data-panel form').dispatchEvent(
+        new Event('submit', { cancelable: true }),
+      );
+      await settle(fixture);
+
+      expect(api.saveBody).toHaveBeenCalledTimes(1);
+      expect(query(page, 'app-body-data-panel [role="status"]').textContent).toContain('Saved.');
+    });
+
+    it('end the page when the session is gone', async () => {
+      api.saveBody.mockResolvedValue({ kind: 'forbidden' });
+      query<HTMLFormElement>(page, 'app-body-data-panel form').dispatchEvent(
+        new Event('submit', { cancelable: true }),
+      );
+      await settle(fixture);
+
+      expect(text()).toContain('Your session has ended.');
+      expect(page.querySelector('app-body-data-panel')).toBeNull();
     });
   });
 });

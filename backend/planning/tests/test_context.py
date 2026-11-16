@@ -22,6 +22,7 @@ from availability.models import (
 from planning.context import (
     RECENT_WEEKS,
     ActiveLimitation,
+    AthleteFacts,
     FixedFacts,
     PlanContext,
     SportFacts,
@@ -350,7 +351,7 @@ class TestTheContextOfAUser:
             MONDAY, (0,) * 7, (None,) * 7, None, 0, frozenset(), ()
         )
 
-    def test_it_takes_nine_queries_however_much_data_there_is(self, alice: User) -> None:
+    def test_it_takes_ten_queries_however_much_data_there_is(self, alice: User) -> None:
         with CaptureQueriesContext(connection) as empty:
             build_context(alice, MONDAY)
         for weekday in range(7):
@@ -383,7 +384,7 @@ class TestTheContextOfAUser:
         with CaptureQueriesContext(connection) as full:
             build_context(alice, MONDAY)
 
-        assert len(empty) == len(full) == 9
+        assert len(empty) == len(full) == 10
 
     def test_the_typical_week_comes_from_the_settings(self, alice: User, bob: User) -> None:
         AvailabilitySettings.objects.create(owner=alice, typical_weekly_minutes=420)
@@ -492,6 +493,35 @@ class TestTheContextOfAUser:
             SportFacts(Sport.STRENGTH, "supplementary", None, None),
         )
         assert context.strength_focus == "legs"
+
+    def test_without_body_data_there_is_none(self, alice: User) -> None:
+        assert build_context(alice, MONDAY).athlete == AthleteFacts()
+
+    def test_the_body_data_is_the_own_one_with_the_age_of_the_year_of_the_week(
+        self, alice: User, bob: User
+    ) -> None:
+        AthleteProfile.objects.create(
+            owner=alice,
+            birth_year=1985,
+            sex="male",
+            weight_kg=70,
+            resting_hr=50,
+            years_strength=2,
+            years_running=9,
+            strength_experience="advanced",
+            strength_equipment=["home", "gym"],
+        )
+        AthleteProfile.objects.create(owner=bob, birth_year=1950, weight_kg=99)
+
+        assert build_context(alice, MONDAY).athlete == AthleteFacts(
+            age=MONDAY.year - 1985,
+            sex="male",
+            weight_kg=70,
+            resting_hr=50,
+            training_years=((Sport.RUNNING, 9), (Sport.STRENGTH, 2)),
+            strength_experience="advanced",
+            strength_equipment=("gym", "home"),
+        )
 
     def test_without_fixed_sessions_there_are_none(self, alice: User) -> None:
         assert build_context(alice, MONDAY).fixed_sessions == ()

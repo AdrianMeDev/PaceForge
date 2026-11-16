@@ -3,7 +3,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
 from typing import Any
-from uuid import uuid4
+from uuid import UUID
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -19,6 +19,10 @@ from athletes.models import ThresholdValue
 from .conftest import make_user, signed_in
 from .fit_builder import activity_file
 from .tcx_builder import tcx_document
+
+# A fixed id for the tests that are parametrized: the id is part of the name of a test, and
+# every worker of a parallel run has to collect the same names.
+UNKNOWN_ID = UUID("0195f3a0-0000-7000-8000-000000000001")
 
 pytestmark = pytest.mark.django_db
 
@@ -99,9 +103,9 @@ class TestWhoMayCome:
         ("method", "url"),
         [
             ("GET", LIST),
-            ("GET", detail_url(uuid4())),
-            ("DELETE", detail_url(uuid4())),
-            ("PATCH", detail_url(uuid4())),
+            ("GET", detail_url(UNKNOWN_ID)),
+            ("DELETE", detail_url(UNKNOWN_ID)),
+            ("PATCH", detail_url(UNKNOWN_ID)),
             ("POST", IMPORT),
         ],
     )
@@ -395,7 +399,7 @@ class TestOtherRequests:
         )
         assert Activity.objects.get(pk=mine["id"]).sport == "running"
 
-    @pytest.mark.parametrize("ident", ["not-a-uuid", "12345", str(uuid4())])
+    @pytest.mark.parametrize("ident", ["not-a-uuid", "12345", str(UNKNOWN_ID)])
     def test_an_unknown_id_is_a_404(self, alice: User, ident: str) -> None:
         api = signed_in(alice)
 

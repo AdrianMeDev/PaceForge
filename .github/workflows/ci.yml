@@ -56,7 +56,8 @@ jobs:
         run: |
           uv run python manage.py makemigrations --check --dry-run
           DJANGO_SETTINGS_MODULE=config.settings_test uv run python manage.py makemigrations --check --dry-run
-      - run: uv run pytest
+      # One worker per core; every worker has its own test database.
+      - run: uv run pytest -n auto
 
   frontend:
     name: Frontend (Angular)

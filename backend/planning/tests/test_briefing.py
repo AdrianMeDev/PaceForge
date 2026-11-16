@@ -93,6 +93,15 @@ ALLOWED_KEYS = {
     "sessions_min",
     "sessions_max",
     "strength_focus",
+    "athlete",
+    "age",
+    "sex",
+    "weight_kg",
+    "resting_hr",
+    "training_years",
+    "years",
+    "strength_experience",
+    "strength_equipment",
     "fixed_sessions",
     "slot",
     "limits",
@@ -217,6 +226,15 @@ class TestTheBriefingOfAUserWithNothing:
             "long_days": [],
             "sport_preferences": [],
             "strength_focus": None,
+            "athlete": {
+                "age": None,
+                "sex": None,
+                "weight_kg": None,
+                "resting_hr": None,
+                "training_years": [],
+                "strength_experience": None,
+                "strength_equipment": [],
+            },
             "fixed_sessions": [],
             "limits": {
                 "max_hard_days": 2,
@@ -535,6 +553,7 @@ class TestTheGoals:
             "long_days",
             "sport_preferences",
             "strength_focus",
+            "athlete",
             "fixed_sessions",
             "limits",
             "limitations",
@@ -835,6 +854,75 @@ class TestTheWishesForAWeek:
         assert '"long_days":[{"date":"2027-07-24","sport":"running"}]' in text
 
 
+class TestTheAthlete:
+    def told(self, user: User) -> Any:
+        return build_briefing(user, MONDAY)["athlete"]
+
+    def test_a_user_who_said_nothing_has_nothing_told(self, alice: User) -> None:
+        assert self.told(alice) == {
+            "age": None,
+            "sex": None,
+            "weight_kg": None,
+            "resting_hr": None,
+            "training_years": [],
+            "strength_experience": None,
+            "strength_equipment": [],
+        }
+
+    def test_everything_is_told_as_numbers_and_fixed_words(self, alice: User) -> None:
+        AthleteProfile.objects.create(
+            owner=alice,
+            birth_year=1985,
+            sex="female",
+            weight_kg=61.5,
+            resting_hr=48,
+            years_cycling=3,
+            years_running=12,
+            strength_experience="beginner",
+            strength_equipment=["dumbbells", "gym"],
+        )
+
+        assert self.told(alice) == {
+            "age": 42,  # the year of the week, 2027, minus the birth year
+            "sex": "female",
+            "weight_kg": 61.5,
+            "resting_hr": 48,
+            "training_years": [
+                {"sport": "running", "years": 12},
+                {"sport": "cycling", "years": 3},
+            ],
+            "strength_experience": "beginner",
+            "strength_equipment": ["gym", "dumbbells"],
+        }
+
+    def test_zero_years_is_told_and_a_sport_not_named_is_not(self, alice: User) -> None:
+        AthleteProfile.objects.create(owner=alice, years_swimming=0)
+
+        assert self.told(alice)["training_years"] == [{"sport": "swimming", "years": 0}]
+
+    def test_the_birth_year_is_not_told(self, alice: User) -> None:
+        AthleteProfile.objects.create(owner=alice, birth_year=1985)
+
+        text = to_json(build_briefing(alice, MONDAY))
+
+        assert "1985" not in text
+        assert "birth" not in text
+
+    def test_the_data_of_another_user_is_not_told(self, alice: User, bob: User) -> None:
+        AthleteProfile.objects.create(owner=bob, birth_year=1970, weight_kg=88.5, resting_hr=61)
+
+        assert self.told(alice)["weight_kg"] is None
+        assert "88.5" not in to_json(build_briefing(alice, MONDAY))
+
+    def test_it_is_in_the_text_the_coach_gets(self, alice: User) -> None:
+        AthleteProfile.objects.create(owner=alice, sex="male", strength_equipment=["home"])
+
+        text = to_json(build_briefing(alice, MONDAY))
+
+        assert '"sex":"male"' in text
+        assert '"strength_equipment":["home"]' in text
+
+
 class TestTheFixedSessions:
     def told(self, user: User) -> Any:
         return build_briefing(user, MONDAY)["fixed_sessions"]
@@ -1071,6 +1159,19 @@ class TestWhatIsSent:
             SportPreference.objects.create(
                 owner=alice, sport=sport, role="supplementary", sessions_min=14, sessions_max=14
             )
+        AthleteProfile.objects.create(
+            owner=alice,
+            birth_year=1900,
+            sex="female",
+            weight_kg=299.9,
+            resting_hr=120,
+            years_running=80,
+            years_cycling=80,
+            years_swimming=80,
+            years_strength=80,
+            strength_experience="advanced",
+            strength_equipment=["gym", "home", "dumbbells"],
+        )
         FixedSession.objects.bulk_create(
             FixedSession(
                 owner=alice,
@@ -1101,7 +1202,7 @@ class TestWhatIsSent:
             build_briefing(alice, MONDAY)
 
         # 13 of the briefing and 8 of the review of the week before
-        assert len(empty) == len(full) == 22
+        assert len(empty) == len(full) == 23
 
 
 class TestHowTheWeekBeforeWent:

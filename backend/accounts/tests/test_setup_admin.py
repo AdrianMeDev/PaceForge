@@ -1,5 +1,6 @@
 from http import HTTPStatus
 from io import StringIO
+from typing import Any
 
 import pytest
 from allauth.account.models import EmailAddress
@@ -7,6 +8,7 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 
 from accounts.models import User
+from config import settings as production_settings
 
 from .conftest import AuthApi
 
@@ -28,7 +30,10 @@ def run(**options) -> tuple[str, str]:
     return out.getvalue(), err.getvalue()
 
 
-def test_creates_a_verified_admin_who_can_log_in(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_creates_a_verified_admin_who_can_log_in(
+    monkeypatch: pytest.MonkeyPatch, settings: Any
+) -> None:
+    settings.PASSWORD_HASHERS = production_settings.PASSWORD_HASHERS
     monkeypatch.setenv("SETUP_ADMIN_PASSWORD", PASSWORD)
 
     out, _ = run(email="Admin@Example.com", display_name="Ada")

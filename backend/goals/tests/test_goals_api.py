@@ -2,7 +2,7 @@ import json
 from datetime import UTC, date, datetime
 from http import HTTPStatus
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from django.db import connection
@@ -16,6 +16,10 @@ from goals.models import Goal
 from goals.serializers import MAIN_TAKEN, MAX_GOALS, PAST_RACE, TOO_MANY
 
 from .conftest import make_user, signed_in
+
+# A fixed id for the tests that are parametrized: the id is part of the name of a test, and
+# every worker of a parallel run has to collect the same names.
+UNKNOWN_ID = UUID("0195f3a0-0000-7000-8000-000000000001")
 
 pytestmark = pytest.mark.django_db
 
@@ -91,9 +95,9 @@ class TestWhoMayCome:
         [
             ("GET", URL),
             ("POST", URL),
-            ("GET", detail(uuid4())),
-            ("PATCH", detail(uuid4())),
-            ("DELETE", detail(uuid4())),
+            ("GET", detail(UNKNOWN_ID)),
+            ("PATCH", detail(UNKNOWN_ID)),
+            ("DELETE", detail(UNKNOWN_ID)),
         ],
     )
     def test_anonymous_visitors_are_refused(self, method: str, url: str) -> None:
@@ -871,7 +875,7 @@ class TestIsolation:
 
         assert body(signed_in(boss).call("GET", URL)) == []
 
-    @pytest.mark.parametrize("ident", ["not-a-uuid", "12345", str(uuid4())])
+    @pytest.mark.parametrize("ident", ["not-a-uuid", "12345", str(UNKNOWN_ID)])
     def test_an_unknown_id_is_a_404(self, alice: User, ident: str) -> None:
         api = signed_in(alice)
 

@@ -28,6 +28,10 @@ from reviews.models import WorkoutReview
 
 from .test_services import good_week, prepared, workout
 
+# A fixed id for the tests that are parametrized: the id is part of the name of a test, and
+# every worker of a parallel run has to collect the same names.
+UNKNOWN_ID = UUID("0195f3a0-0000-7000-8000-000000000001")
+
 pytestmark = pytest.mark.django_db
 
 # A Wednesday: the week that can be edited first starts on Monday the 12th.
@@ -116,7 +120,16 @@ class TestReadingAnEditedPlan:
 class TestRefusingAnEditedPlan:
     @pytest.mark.parametrize(
         "value",
-        ["not-an-id", "", 5, True, ["x"], {"a": 1}, str(uuid4()).upper(), "{" + str(uuid4()) + "}"],
+        [
+            "not-an-id",
+            "",
+            5,
+            True,
+            ["x"],
+            {"a": 1},
+            str(UNKNOWN_ID).upper(),
+            "{" + str(UNKNOWN_ID) + "}",
+        ],
     )
     def test_a_lineage_that_is_no_id(self, value: Any) -> None:
         data = body()

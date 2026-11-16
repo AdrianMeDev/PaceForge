@@ -2,6 +2,7 @@ import { DatePipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { AthleteApi } from '../../core/athlete/athlete-api';
+import { CoachApi } from '../../core/coach/coach-api';
 import {
   AthleteProfile,
   Metric,
@@ -18,6 +19,8 @@ import {
   inputText,
   parseThreshold,
 } from './athlete-format';
+import { BodyDataPanel } from './body-data-panel';
+import { UNKNOWN_PROVIDER, providerLine } from '../availability/provider-line';
 
 type View = 'loading' | 'unreachable' | 'ready' | 'signed_out';
 
@@ -86,12 +89,13 @@ const RUN_ROWS: Row[] = [
  */
 @Component({
   selector: 'app-athlete-page',
-  imports: [RouterLink, DatePipe],
+  imports: [RouterLink, DatePipe, BodyDataPanel],
   templateUrl: './athlete-page.html',
   styleUrls: ['../auth/auth-form.css', './athlete-page.css'],
 })
 export class AthletePage implements OnInit {
   private readonly api = inject(AthleteApi);
+  private readonly coach = inject(CoachApi);
 
   protected readonly view = signal<View>('loading');
   protected readonly profile = signal<AthleteProfile | null>(null);
@@ -100,6 +104,9 @@ export class AthletePage implements OnInit {
   protected readonly syncing = signal(false);
   protected readonly errors = signal<string[]>([]);
   protected readonly notice = signal<string | null>(null);
+
+  /** Where what the user lets go to the AI coach goes, in a few words. */
+  protected readonly provider = signal(UNKNOWN_PROVIDER);
 
   protected readonly timezoneDraft = signal('');
   protected readonly timezoneError = signal<string | null>(null);
@@ -148,9 +155,30 @@ export class AthletePage implements OnInit {
     }
     this.take(loaded);
     this.view.set('ready');
+    void this.loadProvider();
     if (isStale(loaded)) {
       await this.readFromIntervals(true);
     }
+  }
+
+  /** The provider is only named in a hint: if it cannot be read, the hint says so in general. */
+  private async loadProvider(): Promise<void> {
+    try {
+      const result = await this.coach.get();
+      this.provider.set(providerLine(result.kind === 'ok' ? result.state : null));
+    } catch {
+      this.provider.set(UNKNOWN_PROVIDER);
+    }
+  }
+
+  // --- body and training data
+
+  protected onBodySaved(profile: AthleteProfile): void {
+    this.profile.set(profile);
+  }
+
+  protected endSession(): void {
+    this.view.set('signed_out');
   }
 
   // --- time zone

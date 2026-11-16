@@ -22,3 +22,8 @@ INSTALLED_APPS = [*INSTALLED_APPS, "core.tests.sample"]  # noqa: F405
 # A code computed at the end of a 30 s period must still be accepted when it is checked a moment
 # later; production keeps allauth's default of 0.
 MFA_TOTP_TOLERANCE = 1
+
+# Argon2 is slow on purpose (about 30 ms a hash) and almost every test creates a user with a
+# password. The tests that check the production hashers set them with the `settings` fixture
+# (`accounts/tests/test_models.py`, `accounts/tests/test_setup_admin.py`).
+PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]

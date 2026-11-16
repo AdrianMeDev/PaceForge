@@ -4,19 +4,27 @@ import { Observable, firstValueFrom } from 'rxjs';
 import { API_BASE } from '../api/api-providers';
 import {
   AthleteProfile,
+  BodyAndTraining,
+  BodyChanges,
   ClearThresholdResult,
+  Equipment,
   GetAthleteResult,
   Metric,
   MetricOf,
   RideProfile,
   RunProfile,
+  SaveBodyResult,
   SetThresholdResult,
   SetTimezoneResult,
+  Sex,
   SportGroup,
+  StrengthExperience,
   SyncResult,
   Threshold,
   ThresholdSource,
   ThresholdValue,
+  TrainingSport,
+  TrainingYears,
   Zone,
   ZoneSet,
   ZoneUnit,
@@ -32,6 +40,10 @@ const HANDLED_ERRORS = [400, 401, 403, 404, 409, 429, 502, 503];
 const SOURCES: readonly string[] = ['manual', 'intervals', 'estimated'];
 const METRICS: readonly string[] = ['ftp', 'lthr', 'max_hr', 'threshold_pace'];
 const UNITS: readonly string[] = ['W', 'bpm', 's/km'];
+const SEXES: readonly string[] = ['female', 'male', 'other'];
+const EXPERIENCES: readonly string[] = ['beginner', 'advanced'];
+const EQUIPMENT: readonly string[] = ['gym', 'home', 'dumbbells'];
+const TRAINING_SPORTS: readonly TrainingSport[] = ['running', 'cycling', 'swimming', 'strength'];
 
 interface Reply {
   status: number;
@@ -69,6 +81,22 @@ export class AthleteApi {
         return { kind: 'ok', profile: toProfile(reply) };
       case 400:
         return { kind: 'invalid', errors: messagesOf(reply.body) };
+      case 401:
+      case 403:
+        return { kind: 'forbidden' };
+      default:
+        throw unexpected(reply);
+    }
+  }
+
+  /** Changes the body and training data given; `null` clears a field, others stay as they are. */
+  async saveBody(changes: BodyChanges): Promise<SaveBodyResult> {
+    const reply = await this.send(this.http.patch(URL, changes, { observe: 'response' }));
+    switch (reply.status) {
+      case 200:
+        return { kind: 'ok', profile: toProfile(reply) };
+      case 400:
+        return { kind: 'invalid', errors: messagesOf(reply.body), fields: fieldsOf(reply.body) };
       case 401:
       case 403:
         return { kind: 'forbidden' };
@@ -179,12 +207,41 @@ function toProfile(reply: Reply): AthleteProfile {
     throw unexpected(reply);
   }
   return {
+    ...toBody(body, reply),
     timezone: body['timezone'],
     intervals: { connected: intervals['connected'], synced_at: synced },
     sports: {
       ride: toRide(sports['ride'], reply),
       run: toRun(sports['run'], reply),
     },
+  };
+}
+
+/** The body and training data; every field has to be there, `null` where nothing was said. */
+function toBody(body: Record<string, unknown>, reply: Reply): BodyAndTraining {
+  const years = asObject(body['training_years'], reply);
+  const equipment = body['strength_equipment'];
+  const sex = body['sex'];
+  const experience = body['strength_experience'];
+  if (
+    (sex !== null && !isOneOf<Sex>(sex, SEXES)) ||
+    (experience !== null && !isOneOf<StrengthExperience>(experience, EXPERIENCES)) ||
+    !Array.isArray(equipment) ||
+    !equipment.every((item) => isOneOf<Equipment>(item, EQUIPMENT)) ||
+    new Set(equipment).size !== equipment.length
+  ) {
+    throw unexpected(reply);
+  }
+  return {
+    birth_year: wholeNumberOrNull(body['birth_year'], reply),
+    sex,
+    weight_kg: numberOrNullStrict(body['weight_kg'], reply),
+    resting_hr: wholeNumberOrNull(body['resting_hr'], reply),
+    training_years: Object.fromEntries(
+      TRAINING_SPORTS.map((sport) => [sport, wholeNumberOrNull(years[sport], reply)]),
+    ) as TrainingYears,
+    strength_experience: experience,
+    strength_equipment: [...(equipment as Equipment[])],
   };
 }
 
@@ -302,6 +359,32 @@ function numberOrNull(value: unknown, reply: Reply): number | null {
   return value;
 }
 
+/** `null` or a whole number; a missing key is an answer of the wrong shape. */
+function wholeNumberOrNull(value: unknown, reply: Reply): number | null {
+  if (value === null) {
+    return null;
+  }
+  if (typeof value !== 'number' || !Number.isInteger(value)) {
+    throw unexpected(reply);
+  }
+  return value;
+}
+
+/** `null` or a finite number; a missing key is an answer of the wrong shape. */
+function numberOrNullStrict(value: unknown, reply: Reply): number | null {
+  if (value === null) {
+    return null;
+  }
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw unexpected(reply);
+  }
+  return value;
+}
+
+function isOneOf<T extends string>(value: unknown, allowed: readonly string[]): value is T {
+  return typeof value === 'string' && allowed.includes(value);
+}
+
 function isSource(value: unknown): value is ThresholdSource {
   return typeof value === 'string' && SOURCES.includes(value);
 }
@@ -317,6 +400,23 @@ function isUnit(value: unknown): value is ZoneUnit {
 function detailOf(body: unknown): string | null {
   const detail = (body as { detail?: unknown } | null)?.detail;
   return typeof detail === 'string' && detail ? detail : null;
+}
+
+/** The messages of each field of a refusal; fields without a usable text are left out. */
+function fieldsOf(body: unknown): Record<string, string[]> {
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+    return {};
+  }
+  const fields: Record<string, string[]> = {};
+  for (const [name, value] of Object.entries(body)) {
+    const texts = (Array.isArray(value) ? value : [value]).filter(
+      (text): text is string => typeof text === 'string',
+    );
+    if (texts.length) {
+      fields[name] = texts;
+    }
+  }
+  return fields;
 }
 
 /** DRF reports field errors as `{"value": ["…"]}` and other problems as `{"detail": "…"}`. */

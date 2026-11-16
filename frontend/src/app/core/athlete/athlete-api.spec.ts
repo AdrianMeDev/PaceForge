@@ -39,7 +39,27 @@ const zone = (
   unit,
 });
 
+const BODY = {
+  birth_year: 1985,
+  sex: 'female',
+  weight_kg: 61.5,
+  resting_hr: 48,
+  training_years: { running: 12, cycling: 3, swimming: null, strength: 0 },
+  strength_experience: 'beginner',
+  strength_equipment: ['gym', 'dumbbells'],
+};
+const NO_BODY = {
+  birth_year: null,
+  sex: null,
+  weight_kg: null,
+  resting_hr: null,
+  training_years: { running: null, cycling: null, swimming: null, strength: null },
+  strength_experience: null,
+  strength_equipment: [],
+};
+
 const RAW = {
+  ...BODY,
   timezone: 'Europe/Berlin',
   intervals: { connected: false, synced_at: null },
   sports: {
@@ -86,6 +106,7 @@ const RAW = {
 const PROFILE = RAW as unknown as AthleteProfile;
 
 const EMPTY = {
+  ...NO_BODY,
   timezone: '',
   intervals: { connected: false, synced_at: null },
   sports: {
@@ -362,6 +383,149 @@ describe('AthleteApi', () => {
 
     it.each([404, 500])('rejects the unexpected status %i', async (status) => {
       await runFailing(api.setTimezone('UTC'), 'PATCH', URL, 'oops', status);
+    });
+  });
+
+  describe('the body and training data', () => {
+    it('reads every field of them', async () => {
+      const { result } = await run(api.get(), 'GET', URL, RAW, 200);
+
+      expect(result).toMatchObject({ kind: 'ok', profile: BODY });
+    });
+
+    it('reads nothing as null and no equipment as an empty list', async () => {
+      const { result } = await run(api.get(), 'GET', URL, EMPTY, 200);
+
+      expect(result).toMatchObject({ kind: 'ok', profile: NO_BODY });
+    });
+
+    it('copies the equipment', async () => {
+      const reply = altered([['strength_equipment'], ['home']]) as { strength_equipment: string[] };
+
+      const { result } = await run(api.get(), 'GET', URL, reply, 200);
+
+      if (result.kind !== 'ok') {
+        throw new Error('expected the profile');
+      }
+      expect(result.profile.strength_equipment).toEqual(['home']);
+      expect(result.profile.strength_equipment).not.toBe(reply.strength_equipment);
+    });
+
+    it.each([
+      ['no birth year', altered([['birth_year'], REMOVE])],
+      ['a text as birth year', altered([['birth_year'], '1985'])],
+      ['a fractional birth year', altered([['birth_year'], 1985.5])],
+      ['an unknown sex', altered([['sex'], 'x'])],
+      ['no sex', altered([['sex'], REMOVE])],
+      ['a text as weight', altered([['weight_kg'], '61'])],
+      ['no weight', altered([['weight_kg'], REMOVE])],
+      ['an infinite weight', altered([['weight_kg'], Infinity])],
+      ['a fractional resting heart rate', altered([['resting_hr'], 48.5])],
+      ['no resting heart rate', altered([['resting_hr'], REMOVE])],
+      ['no years', altered([['training_years'], REMOVE])],
+      ['a list as years', altered([['training_years'], []])],
+      ['a text as years of a sport', altered([['training_years', 'running'], '12'])],
+      ['fractional years of a sport', altered([['training_years', 'running'], 1.5])],
+      ['no years of a sport', altered([['training_years', 'running'], REMOVE])],
+      ['an unknown experience', altered([['strength_experience'], 'expert'])],
+      ['no experience', altered([['strength_experience'], REMOVE])],
+      ['equipment that is no list', altered([['strength_equipment'], 'gym'])],
+      ['unknown equipment', altered([['strength_equipment'], ['barbell']])],
+      ['equipment twice', altered([['strength_equipment'], ['gym', 'gym']])],
+      ['no equipment', altered([['strength_equipment'], REMOVE])],
+    ])('rejects an answer with %s', async (_name, bad) => {
+      await runFailing(api.get(), 'GET', URL, bad as object, 200);
+    });
+  });
+
+  describe('saveBody', () => {
+    it('sends only what changes and returns the profile', async () => {
+      const changes = { weight_kg: 62, sex: null, training_years: { running: 13 } };
+
+      const { result, request } = await run(api.saveBody(changes), 'PATCH', URL, RAW, 200);
+
+      expect(request.request.body).toEqual(changes);
+      expect(result).toEqual({ kind: 'ok', profile: PROFILE });
+    });
+
+    it('sends the equipment as given', async () => {
+      const { request } = await run(
+        api.saveBody({ strength_equipment: [] }),
+        'PATCH',
+        URL,
+        RAW,
+        200,
+      );
+
+      expect(request.request.body).toEqual({ strength_equipment: [] });
+    });
+
+    it('returns the messages by field and as one list', async () => {
+      const refusal = {
+        weight_kg: ['Enter a weight between 25 and 300 kg.'],
+        resting_hr: ['Enter a resting heart rate between 25 and 120 bpm.'],
+      };
+
+      const { result } = await run(
+        api.saveBody({ weight_kg: 5, resting_hr: 5 }),
+        'PATCH',
+        URL,
+        refusal,
+        400,
+      );
+
+      expect(result).toEqual({
+        kind: 'invalid',
+        errors: [...refusal.weight_kg, ...refusal.resting_hr],
+        fields: refusal,
+      });
+    });
+
+    it('keeps a message that no field owns under non_field_errors', async () => {
+      const refusal = { non_field_errors: ['Send at least one field to change.'] };
+
+      const { result } = await run(api.saveBody({}), 'PATCH', URL, refusal, 400);
+
+      expect(result).toEqual({
+        kind: 'invalid',
+        errors: refusal.non_field_errors,
+        fields: refusal,
+      });
+    });
+
+    it.each([
+      ['no body', null],
+      ['a text', 'Bad Request'],
+      ['an empty object', {}],
+      ['messages that are no text', { weight_kg: [5] }],
+    ])('uses a fixed message and no fields for a refusal with %s', async (_name, reply) => {
+      const { result } = await run(api.saveBody({ weight_kg: 5 }), 'PATCH', URL, reply, 400);
+
+      expect(result).toEqual({
+        kind: 'invalid',
+        errors: ['The input was not accepted.'],
+        fields: {},
+      });
+    });
+
+    it.each([401, 403])('says when the session is gone (%i)', async (status) => {
+      const { result } = await run(
+        api.saveBody({ weight_kg: 62 }),
+        'PATCH',
+        URL,
+        NO_SESSION,
+        status,
+      );
+
+      expect(result).toEqual({ kind: 'forbidden' });
+    });
+
+    it('rejects an answer of the wrong shape', async () => {
+      await runFailing(api.saveBody({ weight_kg: 62 }), 'PATCH', URL, { timezone: 'UTC' }, 200);
+    });
+
+    it.each([404, 500])('rejects the unexpected status %i', async (status) => {
+      await runFailing(api.saveBody({ weight_kg: 62 }), 'PATCH', URL, 'oops', status);
     });
   });
 
