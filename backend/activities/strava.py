@@ -13,7 +13,9 @@ another language, a number that is no number) makes that line "unreadable": it i
 guessed and never part of a message. The names of the activities and their descriptions are not
 read: they are free text and not needed.
 
-The column names are English. An export of an account in another language has other names and is
+The export comes in the language the archive was requested in. English and German are read: the
+names of the columns, the names of the activity types, the way dates are written (``Nov 14, 2026,
+7:30:12 AM`` or ``14.11.2026, 07:30:12``, both UTC) and the decimal comma. Any other language is
 refused as a whole with a fixed text.
 """
 
@@ -39,7 +41,13 @@ from .services import DuplicateActivityError, FileTooLargeError, enter_activity,
 
 MAX_ROWS = 100_000
 _MAX_FIELD = 1_000
-_REQUIRED = ("Activity ID", "Activity Date", "Activity Type")
+# The names of the columns by language; the first of a list that the file has is the one used.
+_ID = ("Activity ID", "Aktivitäts-ID")
+_DATE = ("Activity Date", "Aktivitätsdatum")
+_TYPE = ("Activity Type", "Aktivitätsart")
+_ELAPSED = ("Elapsed Time", "Verstrichene Zeit")
+_DISTANCE = ("Distance", "Distanz")
+_FILENAME = ("Filename", "Dateiname")
 
 # What Strava calls its activity types (also those it has renamed over the years) and the sport
 # of PaceForge. Everything else (walks, hikes, yoga, skiing, …) is ``other``.
@@ -57,6 +65,18 @@ SPORTS = {
     "Velomobile": CYCLING,
     "Swim": SWIMMING,
     "Weight Training": STRENGTH,
+    # German. Only "Lauf", "Radfahrt" and "Virtuelle Radfahrt" were seen in a real export; the
+    # others are Strava's German names as far as they are known. An unknown name is ``other``.
+    "Lauf": RUNNING,
+    "Trail-Lauf": RUNNING,
+    "Virtueller Lauf": RUNNING,
+    "Radfahrt": CYCLING,
+    "Virtuelle Radfahrt": CYCLING,
+    "E-Bike-Fahrt": CYCLING,
+    "Mountainbike-Fahrt": CYCLING,
+    "Gravel-Fahrt": CYCLING,
+    "Schwimmen": SWIMMING,
+    "Krafttraining": STRENGTH,
 }
 
 _MONTHS = {
@@ -113,10 +133,10 @@ def read_activity_list(data: bytes) -> StravaList:
     if header is None:
         raise StravaListError("The activity list is empty.")
     names = [name.strip() for name in header]
-    if any(name not in names for name in _REQUIRED):
+    if any(not any(name in names for name in group) for group in (_ID, _DATE, _TYPE)):
         raise StravaListError(
-            "The activity list has not the columns of a Strava export "
-            "(Activity ID, Activity Date, Activity Type). Is the account set to English?"
+            "The activity list has not the columns of a Strava export in English or German "
+            "(Activity ID, Activity Date, Activity Type)."
         )
     columns = _Columns(names)
 
@@ -147,12 +167,13 @@ def read_activity_list(data: bytes) -> StravaList:
 
 class _Columns:
     def __init__(self, names: list[str]) -> None:
-        self.id = names.index("Activity ID")
-        self.date = names.index("Activity Date")
-        self.type = names.index("Activity Type")
-        self.elapsed = names.index("Elapsed Time") if "Elapsed Time" in names else None
-        self.filename = names.index("Filename") if "Filename" in names else None
-        distances = [i for i, name in enumerate(names) if name == "Distance"]
+        # the three of them are there: ``read_activity_list`` has checked
+        self.id = _first(names, _ID) or 0
+        self.date = _first(names, _DATE) or 0
+        self.type = _first(names, _TYPE) or 0
+        self.elapsed = _first(names, _ELAPSED)
+        self.filename = _first(names, _FILENAME)
+        distances = [i for i, name in enumerate(names) if name in _DISTANCE]
         # the last of them is metres where there are two, the only one is kilometres
         self.distance = distances[-1] if distances else None
         self.distance_factor = 1.0 if len(distances) > 1 else 1000.0
@@ -184,11 +205,32 @@ class _Columns:
         )
 
 
+def _german_start(text: str) -> datetime | None:
+    try:
+        day_text, clock = (part.strip() for part in text.split(",", 1))
+        day, month, year = (int(part) for part in day_text.split("."))
+        hour, minute, second = (int(part) for part in clock.split(":"))
+        return datetime(year, month, day, hour, minute, second, tzinfo=UTC)
+    except ValueError:
+        return None
+
+
+def _first(names: list[str], group: tuple[str, ...]) -> int | None:
+    """The place of the first column of the file that has one of these names."""
+    for index, name in enumerate(names):
+        if name in group:
+            return index
+    return None
+
+
 def _scaled(number: float | None, factor: float) -> float | None:
     return None if number is None else number * factor
 
 
 def _number(text: str) -> float | None:
+    """A number with a point (``25951.7``) or with a decimal comma (``25,95``, ``1.234,5``)."""
+    if "," in text:
+        text = text.replace(".", "").replace(",", ".")
     try:
         return float(text) if text else None
     except ValueError:
@@ -196,8 +238,11 @@ def _number(text: str) -> float | None:
 
 
 def _start(text: str) -> datetime | None:
-    """``Nov 14, 2026, 7:30:12 AM`` (UTC), read without the locale of the host: the names of the
-    months are the English ones Strava writes."""
+    """``Nov 14, 2026, 7:30:12 AM`` or ``14.11.2026, 07:30:12`` (UTC), read without the locale of
+    the host."""
+    german = _german_start(text)
+    if german is not None:
+        return german
     try:
         month_day, year, clock = (part.strip() for part in text.split(",", 2))
         month_name, day = month_day.split()

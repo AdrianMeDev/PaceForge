@@ -418,11 +418,15 @@ uv run python manage.py import_strava ~/Downloads/export_12345.zip --user you@ex
   and lines of the list that could not be read. Estimated thresholds are refreshed once at the end.
 - **No limit of the page applies** (30 a minute); each recording is still limited to
   `ACTIVITY_UPLOAD_MAX_BYTES` after unpacking, and nothing is ever extracted to disk.
-- **The list must be English.** `activities.csv` is read by the names of its columns (*Activity ID*,
-  *Activity Date*, *Activity Type*, *Elapsed Time*, *Distance*, *Filename*) and its dates as Strava
-  writes them in English (`Nov 14, 2026, 7:30:12 AM`, UTC). An account set to another language
-  is refused with a message that says so; set it to English at Strava, request the archive again
-  and run the command again. A line whose date or number cannot be read is skipped and counted.
+- **English and German exports are read.** `activities.csv` comes in the language of the archive
+  and is read by the names of its columns (*Activity ID*, *Activity Date*, *Activity Type*,
+  *Elapsed Time*, *Distance*, *Filename*, in German *Aktivitäts-ID*, *Aktivitätsdatum*,
+  *Aktivitätsart*, *Verstrichene Zeit*, *Distanz*, *Dateiname*), its dates (`Nov 14, 2026, 7:30:12
+  AM` or `14.11.2026, 17:14:38`, both UTC) and its decimal commas. The German names of the types
+  are those of a real export (Lauf, Radfahrt, Virtuelle Radfahrt, Wandern, Spaziergang, Training)
+  plus the likely ones (Trail-Lauf, Schwimmen, Krafttraining, …); a type it does not know is
+  *other*. Another language is refused with a message that says so. A line whose date or number
+  cannot be read is skipped and counted.
 - **Check it.** After the first run open **Activities**: the count there is the sum of what was
   imported.
 
