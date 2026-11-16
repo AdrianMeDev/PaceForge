@@ -738,7 +738,7 @@ Not there yet: time windows within a day, and different time per sport.
 The **Season** page (`/season`, also in the navigation) shows the skeleton of your season: one row
 for every week from this week to the week of your last **A or B race**, with the **phase** of the
 week (base, build, specific, taper), the minutes to aim for, the minutes the week offers and the
-races. It is the frame that your coach fills with the main plan (see [below](#filling-the-season-with-your-coach)); the week plan does not read it yet.
+races. It is the frame that your coach fills with the main plan (see [below](#filling-the-season-with-your-coach)); the [week plan](#week-plan) follows it.
 
 It is **worked out by the code, not by a coach**, every time you open the page, from your goals,
 your last four weeks of training (or your normal week, if that is more), your training time and
@@ -795,9 +795,13 @@ sessions (a long run, a threshold session, the race …) and a reason. The model
   the week; **Confirm plan** is disabled while it has errors and says why, **Discard** always
   works. Without an AI provider the page points to the Connections page. The coach's texts are
   shown as text, never as markup.
-- **Not there yet:** the week plan does not read the filled season, there is no timeline or chart,
-  no change request with a preview and no restoring of an older version. Whether a model fills a
-  whole year well within `SEASON_MAX_TOKENS` has not been tried against a real provider.
+- **The week plan follows the confirmed plan:** a week that lies in the **confirmed** season plan
+  (never a draft) is told to the coach with its phase, minutes of each sport, focus, key sessions
+  and reason, and the Week plan page shows the same above the versions. See
+  [Week plan](#week-plan) for what is checked.
+- **Not there yet:** there is no timeline or chart, no change request with a preview and no
+  restoring of an older version. Whether a model fills a whole year well within
+  `SEASON_MAX_TOKENS` has not been tried against a real provider.
 
 Every number and the rules are in [`docs/season.md`](docs/season.md). The API is `GET /api/season/`
 for the skeleton and, for the filled plans, `GET /api/season/plans/` (the versions),
@@ -824,6 +828,18 @@ links to the Connections page.
    Drafting again makes a **new version** of the week; all versions stay in the list, and
    confirming a draft replaces the version that was confirmed before.
 5. Send the confirmed week to your calendar: see [Sending to Intervals.icu](#sending-to-intervalsicu).
+
+**The season plan.** If you have a **confirmed** [season plan](#filling-the-season-with-your-coach)
+and the week lies in it, the page shows a box above the versions: the phase (and whether it is a
+recovery week), the minutes of each sport, the focus, the key sessions and the coach's reason for
+the week. The coach is told the same when it drafts the week and plans the week as a part of that
+season. It is a **plan and no rule**: the checks only **warn** when the minutes are more than 15
+percent away from the season week, when a sport it has minutes for is missing, or when a key
+session (tempo, threshold, VO2max, long or strength) has no workout of its own. You can still
+confirm the week. Drafts, replaced and discarded season plans are never used, and neither is a
+season plan for weeks it does not contain. A season week above what your progression limit allows
+can give both that warning and the one about the progression; the limit of your intensity level
+is the one that counts.
 
 **Zones as numbers.** Next to a zone the page shows what it means for you today, for example
 "Power zone 2 · 138–188 W", worked out from your thresholds (see

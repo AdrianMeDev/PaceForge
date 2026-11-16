@@ -198,6 +198,12 @@ Each plan is checked against the facts of its user for that week, collected when
 - **Fixed appointments.** Sessions that happen every week: weekday, sport, minutes and optionally
   a part of the day. The coach is told to plan them; a plan without one is a warning
   (`fixed_session_missing`), not an error.
+- **The season week.** What the confirmed [season plan](season.md#the-week-plan-follows-the-season)
+  says about the week, if there is a confirmed plan and the week lies in it: the phase, whether it
+  is a recovery week, the minutes of the skeleton, the minutes of each sport, the focus, the key
+  sessions and the coach's reason. It is for the coach and for three warnings
+  (`season_minutes_off`, `season_sport_missing`, `season_key_session_missing`): never an error, so
+  a week can always be confirmed. Without a season week none of them is checked.
 - **Limitations.** The athlete's current injuries and limitations, each a body part from a fixed
   list and the sports it affects. A workout in an affected sport is a warning (`limited_sport`),
   not an error. Healed entries are not in the context.

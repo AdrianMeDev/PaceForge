@@ -3,7 +3,8 @@
 The **skeleton** of a season is what the code works out before anyone asks a coach for anything:
 the weeks from today up to the last A or B race, the **phase** of every week, which weeks are
 recovery weeks and how many **minutes** to aim for in each. It is the frame the main plan will be
-filled into (the stories call it "Gerüst"); the week plan does not read it yet.
+filled into (the stories call it "Gerüst"); the week plan follows the confirmed plan that was made
+from it (see below).
 
 It is worked out on every request from what the athlete has now, by pure functions
 (`backend/season/skeleton.py`, no database, no Django) fed by `backend/season/inputs.py`, and it is
@@ -223,6 +224,21 @@ plan as a draft:
 | -------- | ----- | ------- |
 | `ATTEMPTS` | 3 | Answers of the coach for one season: one try and two repairs. |
 
+## The week plan follows the season
+
+`season/weeks.py` gives the week plan the week it is about: `confirmed_weeks` reads the
+**confirmed** plan of the user (never a draft, a replaced or a discarded one) with one query and
+returns, for each Monday that lies in the skeleton **that plan was made for**, the facts of the
+week: the phase, recovery, the minutes the skeleton aims for and the week offers, the races, and
+what the coach filled in. A plan that cannot be read counts as no season week, so planning a week
+never fails because of it.
+
+What the week plan does with it is in [the weekly plan](weekly-plan.md): the coach is told the week
+(`season_week`), three checks warn (`season_minutes_off`, `season_sport_missing`,
+`season_key_session_missing`, warnings only) and `GET /api/planning/weeks/` gives every week its
+`season`. The text of the coach in it (`reason`, `detail`) goes back to the coach as data, and only
+ever to the page as text.
+
 ## The API
 
 `GET /api/season/` answers the skeleton of the signed-in user and writes nothing. The filled plans are at `/api/season/plans/`: `GET` lists the versions (`id`, `version`, `status`, `reason`, `week_count`, `created_at`, `confirmed_at`), `POST generate/` drafts one (`201` with the plan, limited to 3 a minute), `GET <id>/` reads one and `POST <id>/confirm/` and `POST <id>/discard/` decide on a draft. A plan has `rationale`, `parent`, the `skeleton` it was made for, its `weeks` (the format with a `total_minutes`) and, for a draft, a `report` of `valid` and `findings`. Errors have a fixed text, a `code` and, where it helps, `problems` or `findings`. The answer has
@@ -234,6 +250,6 @@ plan as a draft:
 ## Not there yet
 
 The skeleton itself knows minutes only. The coach adds the split by sport, the key sessions and the
-reasons, and the Season page shows, drafts, confirms and discards them. The week plan does not read
-the filled season yet, there is no timeline or chart, no change request with a preview and no
-restoring of an older version, and the realism check of a goal time (US-4.2) is not part of it.
+reasons, and the Season page shows, drafts, confirms and discards them. There is no timeline or
+chart, no change request with a preview and no restoring of an older version, and the realism check
+of a goal time (US-4.2) is not part of it.
