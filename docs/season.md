@@ -219,6 +219,11 @@ plan as a draft:
 - **Status.** `draft`, `confirmed`, `superseded` or `discarded`; at most one confirmed plan per
   user. Confirming a draft with errors is refused. The content of a plan that is not a draft is
   never changed.
+- **Restoring.** `restore` brings back a `superseded` or `discarded` version as the next version, a
+  draft: the same weeks and rationale, **its own skeleton and sports** (not today's), `parent` the
+  version it comes from and the reason `Restored from version N`. The old version is not touched,
+  the confirmed one stays confirmed until the copy is, and a draft or the confirmed version is
+  refused (`PlanNotRestorable`). No coach is asked.
 
 | Constant | Value | Meaning |
 | -------- | ----- | ------- |
@@ -258,7 +263,7 @@ far); every other week and version has `done: null`.
 
 ## The API
 
-`GET /api/season/` answers the skeleton of the signed-in user and writes nothing. The filled plans are at `/api/season/plans/`: `GET` lists the versions (`id`, `version`, `status`, `reason`, `week_count`, `created_at`, `confirmed_at`), `POST generate/` drafts one (`201` with the plan, limited to 3 a minute), `GET <id>/` reads one and `POST <id>/confirm/` and `POST <id>/discard/` decide on a draft. A plan has `rationale`, `parent`, the `skeleton` it was made for, its `weeks` (the format with a `total_minutes` and `done`: for the **confirmed** version and the weeks that have begun the minutes the athlete trained by sport, `[{sport, minutes}]`, `other` for activities of no sport of the plan, `[]` for a week without any; `null` for every other week and version) and, for a draft, a `report` of `valid` and `findings`. Errors have a fixed text, a `code` and, where it helps, `problems` or `findings`. The answer has
+`GET /api/season/` answers the skeleton of the signed-in user and writes nothing. The filled plans are at `/api/season/plans/`: `GET` lists the versions (`id`, `version`, `status`, `reason`, `week_count`, `created_at`, `confirmed_at`), `POST generate/` drafts one (`201` with the plan, limited to 3 a minute), `GET <id>/` reads one and `POST <id>/confirm/` and `POST <id>/discard/` decide on a draft and `POST <id>/restore/` brings back a replaced or discarded version as a new draft (`201` with the plan; `409` `not_restorable` for any other). A plan has `rationale`, `parent`, the `skeleton` it was made for, its `weeks` (the format with a `total_minutes` and `done`: for the **confirmed** version and the weeks that have begun the minutes the athlete trained by sport, `[{sport, minutes}]`, `other` for activities of no sport of the plan, `[]` for a week without any; `null` for every other week and version) and, for a draft, a `report` of `valid` and `findings`. Errors have a fixed text, a `code` and, where it helps, `problems` or `findings`. The answer has
 `rolling`, `truncated`, `main_race` (or `null`), `peak_minutes` and `weeks`. A **week** has
 `week_start` (a Monday), `phase` (`base`, `build`, `specific`, `taper` or `transition`), `recovery`,
 `target_minutes`, `capacity_minutes` and `races`. A **race** has `date`, `priority` (`main`,
@@ -268,5 +273,5 @@ far); every other week and version has `done: null`.
 
 The skeleton itself knows minutes only. The coach adds the split by sport, the key sessions and the
 reasons, and the Season page shows, drafts, confirms and discards them, with a timeline and a chart.
-There is no change request with a preview, no restoring of an older version and no load measure
+There is no change request with a preview and no load measure
 (only minutes), and the realism check of a goal time (US-4.2) is not part of it.

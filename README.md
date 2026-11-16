@@ -785,6 +785,12 @@ sessions (a long run, a threshold session, the race …) and a reason. The model
   confirmed version, which stays as **superseded**) or **discarded**. A confirmed plan is never
   changed. A plan keeps the skeleton and the sports it was made for, so it stays readable and is
   checked against them when goals, time or the week move on; it is **not updated** by that.
+- **Restoring:** a version that was **replaced or discarded** can be brought back with **Make this
+  the new draft**. That copies it as the next version, a draft (its reason says "Restored from
+  version N"), with the skeleton and the sports it was made for; the old version is not touched
+  and the confirmed one stays confirmed until you confirm the copy. It is checked like any draft
+  and may have errors if it has any. A draft and the confirmed version cannot be restored. It
+  costs nothing: no coach is asked.
 - **On the page:** under the skeleton note the page shows your versions (the confirmed one, else
   the newest draft, opens on its own) and, for the one that is open, three more columns: the
   **plan** (minutes of each sport and the total), the **focus** and the **key sessions**, with the
@@ -812,7 +818,7 @@ sessions (a long run, a threshold session, the race …) and a reason. The model
   (never a draft) is told to the coach with its phase, minutes of each sport, focus, key sessions
   and reason, and the Week plan page shows the same above the versions. See
   [Week plan](#week-plan) for what is checked.
-- **Not there yet:** no change request with a preview and no restoring of an older version. Whether a model fills a whole year well within
+- **Not there yet:** no change request with a preview. Whether a model fills a whole year well within
   `SEASON_MAX_TOKENS` has not been tried against a real provider.
 
 Every number and the rules are in [`docs/season.md`](docs/season.md). The API is `GET /api/season/`

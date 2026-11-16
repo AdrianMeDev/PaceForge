@@ -227,7 +227,7 @@ class TestTheFilledPlans:
     def test_the_api_names_the_endpoints_and_the_fields_of_a_summary(self) -> None:
         text = section("The API")
 
-        for name in ("/api/season/plans/", "generate/", "confirm/", "discard/"):
+        for name in ("/api/season/plans/", "generate/", "confirm/", "discard/", "restore/"):
             assert name in text, name
         for field in (
             "id",
