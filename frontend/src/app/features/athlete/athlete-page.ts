@@ -19,6 +19,7 @@ import {
   inputText,
   parseThreshold,
 } from './athlete-format';
+import { BestTimesPanel } from './best-times-panel';
 import { BodyDataPanel } from './body-data-panel';
 import { UNKNOWN_PROVIDER, providerLine } from '../availability/provider-line';
 
@@ -89,7 +90,7 @@ const RUN_ROWS: Row[] = [
  */
 @Component({
   selector: 'app-athlete-page',
-  imports: [RouterLink, DatePipe, BodyDataPanel],
+  imports: [RouterLink, DatePipe, BestTimesPanel, BodyDataPanel],
   templateUrl: './athlete-page.html',
   styleUrls: ['../auth/auth-form.css', './athlete-page.css'],
 })
@@ -173,7 +174,7 @@ export class AthletePage implements OnInit {
 
   // --- body and training data
 
-  protected onBodySaved(profile: AthleteProfile): void {
+  protected onProfileChanged(profile: AthleteProfile): void {
     this.profile.set(profile);
   }
 

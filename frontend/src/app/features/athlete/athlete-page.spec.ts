@@ -5,11 +5,15 @@ import { CoachApi } from '../../core/coach/coach-api';
 import { AiProviderState, GetProviderResult } from '../../core/coach/coach-models';
 import {
   AthleteProfile,
+  BestTimeDistance,
+  BestTimeInput,
   BodyAndTraining,
   BodyChanges,
+  ClearBestTimeResult,
   ClearThresholdResult,
   GetAthleteResult,
   SaveBodyResult,
+  SetBestTimeResult,
   RideProfile,
   RunProfile,
   SetThresholdResult,
@@ -147,6 +151,8 @@ function createApiStub() {
   return {
     get: vi.fn<() => Promise<GetAthleteResult>>(),
     saveBody: vi.fn<(changes: BodyChanges) => Promise<SaveBodyResult>>(),
+    setBestTime: vi.fn<(d: BestTimeDistance, i: BestTimeInput) => Promise<SetBestTimeResult>>(),
+    clearBestTime: vi.fn<(d: BestTimeDistance) => Promise<ClearBestTimeResult>>(),
     setTimezone: vi.fn<(name: string) => Promise<SetTimezoneResult>>(),
     setThreshold:
       vi.fn<(sport: string, metric: string, amount: number) => Promise<SetThresholdResult>>(),
@@ -1174,6 +1180,58 @@ describe('AthletePage', () => {
 
       expect(text()).toContain('Your session has ended.');
       expect(page.querySelector('app-body-data-panel')).toBeNull();
+    });
+  });
+  describe('the best times', () => {
+    beforeEach(() => setup());
+
+    it('are offered in a panel below the running thresholds', () => {
+      const panel = query(page, 'app-best-times-panel');
+
+      expect(panel.textContent).toContain('Best times');
+      expect(
+        query(page, '[data-testid="value-run-threshold_pace"]').compareDocumentPosition(panel) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(page.querySelectorAll('app-best-times-panel').length).toBe(1);
+    });
+
+    it('move the pace and the zones when one is saved', async () => {
+      const moved = profile({
+        run: {
+          threshold_pace: threshold(
+            value(255, 'best_time', 'VDOT 50.0 from your 5 km on 2026-10-03'),
+          ),
+        },
+      });
+      api.setBestTime.mockResolvedValue({
+        kind: 'ok',
+        profile: { ...moved, vdot: { value: 50, distance: '5k', date: '2026-10-03' } },
+      });
+      typeInto(page, '#best-time-5k', '19:57');
+      typeInto(page, '#best-date-5k', '2026-10-03');
+      await settle(fixture);
+
+      query<HTMLFormElement>(page, '[data-testid="best-5k"] form').dispatchEvent(
+        new Event('submit', { cancelable: true }),
+      );
+      await settle(fixture);
+
+      expect(shown('run-threshold_pace')).toBe('4:15 /km');
+      expect(source('run-threshold_pace')).toBe('Best time');
+      expect(query(page, '[data-testid="counting"]').textContent).toContain('Your VDOT: 50');
+    });
+
+    it('end the page when the session is gone', async () => {
+      typeInto(page, '#best-time-5k', '19:57');
+      typeInto(page, '#best-date-5k', '2026-10-03');
+      api.setBestTime.mockResolvedValue({ kind: 'forbidden' });
+      query<HTMLFormElement>(page, '[data-testid="best-5k"] form').dispatchEvent(
+        new Event('submit', { cancelable: true }),
+      );
+      await settle(fixture);
+
+      expect(text()).toContain('Your session has ended.');
     });
   });
 });

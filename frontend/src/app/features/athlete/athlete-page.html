@@ -67,7 +67,7 @@
         <app-body-data-panel
           [profile]="current"
           [provider]="provider()"
-          (saved)="onBodySaved($event)"
+          (saved)="onProfileChanged($event)"
           (signedOut)="endSession()"
         />
       }
@@ -255,6 +255,13 @@
             }
           }
         </div>
+        @if (section.sport === 'run' && profile(); as current) {
+          <app-best-times-panel
+            [profile]="current"
+            (changed)="onProfileChanged($event)"
+            (signedOut)="endSession()"
+          />
+        }
       }
     }
   }
