@@ -250,6 +250,10 @@ describe('SeasonPage', () => {
       ]);
     });
 
+    it('draws the chart of the aim of the skeleton above the table', () => {
+      expect(page.querySelectorAll('svg [data-series="aim"]')).toHaveLength(4);
+    });
+
     it('marks a recovery week', () => {
       expect(cells(1)[1]).toBe('Base Recovery');
       expect(rows()[1].getAttribute('data-recovery')).toBe('true');
@@ -414,6 +418,14 @@ describe('SeasonPage', () => {
         'Race specific',
         'Running · Race · 1 h',
       ]);
+    });
+
+    it('charts the plan by sport instead of the aim', async () => {
+      await load([CONFIRMED]);
+
+      expect(page.querySelector('svg [data-series="aim"]')).toBeNull();
+      expect(page.querySelectorAll('svg [data-series="running"]')).toHaveLength(4);
+      expect(page.querySelectorAll('svg [data-series="cycling"]')).toHaveLength(3);
     });
 
     it('shows the reason of the week under it, and the rationale and status above', async () => {

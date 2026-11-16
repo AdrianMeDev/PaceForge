@@ -11,6 +11,7 @@ import {
   SeasonPlanVersion,
 } from '../../core/season/season-models';
 import { STATUS_LABELS, dayLabel, minutesText, weekRange } from '../planning/plan-format';
+import { SeasonChart } from './season-chart';
 import { SeasonTimeline } from './season-timeline';
 import {
   FOCUS_LABELS,
@@ -57,7 +58,7 @@ const REFRESH_FAILED = 'The list of plans could not be refreshed. Please try aga
  */
 @Component({
   selector: 'app-season-page',
-  imports: [DatePipe, RouterLink, SeasonTimeline],
+  imports: [DatePipe, RouterLink, SeasonChart, SeasonTimeline],
   templateUrl: './season-page.html',
   styleUrl: './season-page.css',
 })

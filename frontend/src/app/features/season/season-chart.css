@@ -1,0 +1,82 @@
+:host {
+  display: block;
+  margin: 0.75rem 0;
+}
+
+.scroll {
+  overflow-x: auto;
+}
+
+svg {
+  display: block;
+}
+
+.grid {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.axis {
+  fill: var(--muted);
+  font-size: 10px;
+}
+
+rect[data-series='running'],
+.swatch[data-series='running'] {
+  fill: var(--sport-running);
+  background: var(--sport-running);
+}
+
+rect[data-series='cycling'],
+.swatch[data-series='cycling'] {
+  fill: var(--sport-cycling);
+  background: var(--sport-cycling);
+}
+
+rect[data-series='swimming'],
+.swatch[data-series='swimming'] {
+  fill: var(--sport-swimming);
+  background: var(--sport-swimming);
+}
+
+rect[data-series='strength'],
+.swatch[data-series='strength'] {
+  fill: var(--sport-strength);
+  background: var(--sport-strength);
+}
+
+rect[data-series='other'],
+.swatch[data-series='other'] {
+  fill: var(--sport-other);
+  background: var(--sport-other);
+}
+
+rect[data-series='aim'],
+.swatch[data-series='aim'] {
+  fill: var(--sport-aim);
+  background: var(--sport-aim);
+}
+
+rect {
+  stroke: var(--surface);
+  stroke-width: 1;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  margin: 0 0 0.5rem;
+  padding: 0;
+  list-style: none;
+  font-size: 0.9rem;
+}
+
+.swatch {
+  display: inline-block;
+  width: 0.8rem;
+  height: 0.8rem;
+  margin-right: 0.3rem;
+  border-radius: 2px;
+  vertical-align: -0.05rem;
+}
