@@ -305,6 +305,37 @@ class TestTheAnswer:
 
         assert complete(fake, base, {**ANSWER, "choices": [choice]}).truncated is False
 
+    @pytest.mark.parametrize(
+        ("details", "expected"),
+        [
+            ({"cached_tokens": 1024}, 1024),
+            ({"cached_tokens": 0}, 0),
+            ({"cached_tokens": "1024"}, None),
+            ({"cached_tokens": -1}, None),
+            ({"cached_tokens": 1.5}, None),
+            ({"cached_tokens": True}, None),
+            ({"audio_tokens": 3}, None),
+            ({}, None),
+            (None, None),
+            ("many", None),
+        ],
+    )
+    def test_the_cached_part_of_the_prompt_is_read_where_it_is_given(
+        self, fake: FakeProvider, base: str, details: object, expected: int | None
+    ) -> None:
+        usage = {"prompt_tokens": 2000, "completion_tokens": 5, "prompt_tokens_details": details}
+
+        result = complete(fake, base, {**ANSWER, "usage": usage})
+
+        assert result.cache_read_tokens == expected
+        assert result.cache_write_tokens is None
+        assert result.input_tokens == 2000
+
+    def test_without_the_details_there_is_no_cache_count(
+        self, fake: FakeProvider, base: str
+    ) -> None:
+        assert complete(fake, base).cache_read_tokens is None
+
     def test_missing_usage_gives_no_counts(self, fake: FakeProvider, base: str) -> None:
         data = {k: v for k, v in ANSWER.items() if k != "usage"}
 

@@ -182,6 +182,49 @@ class TestTheAnswer:
 
         assert complete(fake, data) == Completion("Hi there", None, None, False)
 
+    def test_without_cache_fields_there_are_no_cache_counts(self, fake: FakeProvider) -> None:
+        result = complete(fake)
+
+        assert (result.cache_read_tokens, result.cache_write_tokens) == (None, None)
+
+    def test_the_input_is_the_rest_and_the_cached_parts_together(self, fake: FakeProvider) -> None:
+        usage = {
+            "input_tokens": 20,
+            "output_tokens": 5,
+            "cache_read_input_tokens": 3000,
+            "cache_creation_input_tokens": 400,
+        }
+
+        result = complete(fake, {**ANSWER, "usage": usage})
+
+        assert result.input_tokens == 3420
+        assert (result.cache_read_tokens, result.cache_write_tokens) == (3000, 400)
+        assert result.output_tokens == 5
+
+    @pytest.mark.parametrize(
+        ("usage", "expected"),
+        [
+            ({"input_tokens": 5, "cache_read_input_tokens": 0}, (5, 0, None)),
+            ({"input_tokens": 5, "cache_creation_input_tokens": 9}, (14, None, 9)),
+            ({"input_tokens": 5, "cache_read_input_tokens": "x"}, (5, None, None)),
+            ({"input_tokens": 5, "cache_read_input_tokens": -1}, (5, None, None)),
+            ({"input_tokens": 5, "cache_creation_input_tokens": 1.5}, (5, None, None)),
+            ({"input_tokens": 5, "cache_read_input_tokens": True}, (5, None, None)),
+            ({"cache_read_input_tokens": 100}, (None, 100, None)),
+            ({"input_tokens": "5", "cache_read_input_tokens": 100}, (None, 100, None)),
+        ],
+    )
+    def test_cache_counts_that_make_no_sense_are_dropped_one_by_one(
+        self, fake: FakeProvider, usage: object, expected: tuple[int | None, int | None, int | None]
+    ) -> None:
+        result = complete(fake, {**ANSWER, "usage": usage})
+
+        assert (
+            result.input_tokens,
+            result.cache_read_tokens,
+            result.cache_write_tokens,
+        ) == expected
+
     @pytest.mark.parametrize(
         ("usage", "expected"),
         [

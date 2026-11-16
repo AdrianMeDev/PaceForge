@@ -14,13 +14,18 @@ class Message:
 @dataclass(frozen=True)
 class Completion:
     """The answer of the model. The token counts are ``None`` where the provider did not report
-    them; ``truncated`` says the answer stopped because ``max_tokens`` was reached, so that a
-    structured answer that ends in the middle is not mistaken for a complete one."""
+    them. ``input_tokens`` counts the whole input, the cached part included;
+    ``cache_read_tokens`` and ``cache_write_tokens`` are the parts of it that were read from and
+    written to the provider's prompt cache (``None`` where it did not say, or has no such count).
+    ``truncated`` says the answer stopped because ``max_tokens`` was reached, so that a structured
+    answer that ends in the middle is not mistaken for a complete one."""
 
     text: str
     input_tokens: int | None = None
     output_tokens: int | None = None
     truncated: bool = False
+    cache_read_tokens: int | None = None
+    cache_write_tokens: int | None = None
 
 
 @runtime_checkable
