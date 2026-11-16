@@ -83,6 +83,9 @@
             requests a minute.
           </p>
         }
+        @if (work() === 'restoring') {
+          <p role="status" data-testid="restoring">Restoring the version…</p>
+        }
         @if (work() === 'generating') {
           <p role="status" data-testid="generating">
             Your coach is working on the season. This can take a few minutes.
@@ -135,6 +138,23 @@
             } @else {
               <p class="hint" data-testid="all-clear">The checks found nothing to point out.</p>
             }
+          }
+          @if (canRestore()) {
+            <p class="hint" data-testid="restore-hint">
+              This version is not the plan any more. Restoring copies it as a new draft; nothing is
+              changed before you confirm that draft.
+            </p>
+            <div class="actions">
+              <button
+                type="button"
+                class="secondary"
+                data-testid="restore"
+                [disabled]="busy()"
+                (click)="restore()"
+              >
+                Make this the new draft
+              </button>
+            </div>
           }
           @if (filled.status === 'draft') {
             @if (confirmed(); as before) {
