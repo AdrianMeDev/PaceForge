@@ -174,6 +174,9 @@ Each plan is checked against the facts of its user for that week, collected when
   want to train in a week, and the weekday of the long run and of the long ride. Each is optional
   and a missing one is never checked. They only produce warnings (`too_many_training_days`,
   `below_minimum_minutes`, `long_session_elsewhere`), never an error.
+- **Fixed appointments.** Sessions that happen every week: weekday, sport, minutes and optionally
+  a part of the day. The coach is told to plan them; a plan without one is a warning
+  (`fixed_session_missing`), not an error.
 - **Limitations.** The athlete's current injuries and limitations, each a body part from a fixed
   list and the sports it affects. A workout in an affected sport is a warning (`limited_sport`),
   not an error. Healed entries are not in the context.
@@ -222,6 +225,7 @@ user to weigh.
 | `long_session_elsewhere` | warning | For running and cycling, if the athlete named a day for the long session: the longest workout of that sport is on another day (with a tie one of the longest on that day is enough). Named at the `day` of the longest workout. Not said if the week has no workout of the sport or if that day is an absence or offers no minutes. |
 | `sessions_out_of_range` | warning | A sport has fewer sessions in the week than the least the athlete wants of it, or more than the most. Only sports with such a wish are looked at. Named once per sport, at the plan as a whole. |
 | `legs_before_key_run` | warning | With the strength focus legs or full body: a strength workout on the day before a key run, that is a hard run or the longest run of the week (with a tie, each of the longest). Named at the strength workout, once. Only days of the week are compared. |
+| `fixed_session_missing` | warning | A session that happens every week (training time page) is not in the plan: the day has no workout of its sport, in its part of the day if one was named (a workout without a time of day fits any part of the day). A workout covers one session only. The minutes are not checked. Named once per session, at the plan as a whole. Not said for a day of absence or a day that offers no minutes. |
 | `hard_days_in_a_row` | warning | A hard day directly after a hard day. |
 | `no_free_day` | warning | Every day of the week has a workout. |
 | `many_workouts_in_a_day` | error | More workouts on a day than the limit (two). Named once per day, at the first one too many. |
@@ -362,6 +366,7 @@ without this page.
 | `training_days` | On how many days of the week the athlete wants to train at most; `null` if they have no wish. |
 | `min_weekly_minutes` | The least the athlete wants to train in a week, in minutes (never above the weekly budget); `null` if they have no wish. |
 | `long_days` | For running and cycling, if the athlete named a weekday for the long session: the `sport` and the `date` of that day in the week to plan. Empty if there is none. |
+| `fixed_sessions` | The sessions that happen every week at a fixed time ([training time page](../README.md)), by day and part of the day: the `date` of the day in the week to plan, the `sport`, the `minutes` and the `slot` (`morning`, `afternoon`, `evening`; `null` if none was named). Fixed words and numbers, no name. Empty if there are none. |
 | `limits` | The limits of the rules that follow from the athlete's [intensity level](#the-intensity-levels): `max_hard_days`, `progression_warning_percent`, `progression_error_percent`, `easy_share_percent`. They are here and not in the system prompt, so that the prompt is the same for every athlete. |
 | `limitations` | The current injuries and limitations, the newest first, at most 10: `body_part` (a fixed word: foot, ankle, achilles, calf, shin, knee, thigh, hip, back, shoulder, other) and the `sports` it affects (none listed: no particular sport). Healed ones are not told. No text of the athlete. |
 | `limitations_text` | What the athlete wrote in the free text about their limitations, cut to `LIMITATIONS_TEXT_MAX_TOLD` characters, **only if they switched on "Send this text to my AI coach"**; otherwise `null`. Free text: the system prompt says that it is data and never instructions. |
@@ -554,6 +559,10 @@ what Intervals.icu said. Nothing holds a lock while the calls are made (sending 
   It is **not sent to the coach** unless the athlete switches that on (then its first
   `LIMITATIONS_TEXT_MAX_TOLD` characters, as data and never as instructions). What the rules use are
   the structured entries (body part and sports), not the text.
+- The **fixed appointments** are checked for their sport, their weekday and their part of the day,
+  not for their minutes, and a workout without a time of day fits any of their parts of the day.
+  They have no name or other text, so nothing of the athlete is repeated in a finding. Only
+  weekly appointments exist; a session on one date has no place in the rules.
 - The **time of day** is only an order (morning, afternoon, evening), not a clock time: two
   workouts on one day add up. The athlete can say which parts of the day are open on each weekday
   (`slot_outside_window`), but a workout without a time of day is not held to them, and the time

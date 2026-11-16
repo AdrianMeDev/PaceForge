@@ -9,7 +9,7 @@ import pytest
 from availability.intensity import LEVEL_LIMITS, IntensityLevel, Limits
 from availability.models import BodyPart
 from planning import rules
-from planning.context import ActiveLimitation, PlanContext, SportFacts
+from planning.context import ActiveLimitation, FixedFacts, PlanContext, SportFacts
 from planning.rules import (
     ALL_CHECKS,
     BASIC_CHECKS,
@@ -25,6 +25,7 @@ from planning.rules import (
     check_double_days,
     check_duplicates,
     check_easy_share,
+    check_fixed_sessions,
     check_hard_days,
     check_hard_days_in_a_row,
     check_legs_before_key_run,
@@ -1047,6 +1048,117 @@ class TestLegsBeforeAKeyRun:
         assert "SECRETMARKER" not in repr(found)
 
 
+class TestFixedSessions:
+    RUN = Sport.RUNNING
+    TUESDAY = 1
+
+    def found(self, workouts: list[Workout], *fixed: FixedFacts, **fields: Any) -> list[Finding]:
+        return check_fixed_sessions(week(*workouts), context(fixed_sessions=fixed, **fields))
+
+    def club(self, slot: Slot | None = None, weekday: int = 1) -> FixedFacts:
+        return FixedFacts(weekday, self.RUN, 60, slot)
+
+    def test_a_missing_session_is_a_warning_at_the_plan(self) -> None:
+        assert self.found([], self.club()) == [
+            Finding(
+                Severity.WARNING,
+                "fixed_session_missing",
+                "Tuesday has no running workout; you have a fixed appointment of 60 minutes then.",
+                "workouts",
+            )
+        ]
+
+    def test_the_part_of_the_day_is_named_if_there_is_one(self) -> None:
+        found = self.found([], self.club(Slot.EVENING))
+
+        assert found[0].message == (
+            "Tuesday has no running workout in the evening; you have a fixed appointment of 60 "
+            "minutes then."
+        )
+
+    def test_a_workout_of_the_sport_on_the_day_is_enough(self) -> None:
+        assert self.found([workout(1, 30, sport=self.RUN)], self.club()) == []
+
+    def test_the_minutes_of_the_workout_are_not_checked(self) -> None:
+        assert self.found([workout(1, 5, sport=self.RUN)], self.club()) == []
+
+    def test_another_sport_or_another_day_is_not_enough(self) -> None:
+        plan = [workout(1, 60, sport=Sport.CYCLING), workout(2, 60, sport=self.RUN)]
+
+        assert [f.code for f in self.found(plan, self.club())] == ["fixed_session_missing"]
+
+    def test_a_workout_in_another_part_of_the_day_is_not_enough(self) -> None:
+        plan = [workout(1, 60, sport=self.RUN, slot=Slot.MORNING)]
+
+        assert [f.code for f in self.found(plan, self.club(Slot.EVENING))] == [
+            "fixed_session_missing"
+        ]
+
+    def test_a_workout_in_that_part_of_the_day_is_enough(self) -> None:
+        plan = [workout(1, 60, sport=self.RUN, slot=Slot.EVENING)]
+
+        assert self.found(plan, self.club(Slot.EVENING)) == []
+
+    def test_a_workout_without_a_time_of_day_fits_any_part_of_the_day(self) -> None:
+        assert self.found([workout(1, 60, sport=self.RUN)], self.club(Slot.EVENING)) == []
+
+    def test_a_session_without_a_part_of_the_day_fits_any_workout_of_the_sport(self) -> None:
+        plan = [workout(1, 60, sport=self.RUN, slot=Slot.MORNING)]
+
+        assert self.found(plan, self.club()) == []
+
+    def test_one_workout_covers_one_session_only(self) -> None:
+        plan = [workout(1, 60, sport=self.RUN)]
+
+        found = self.found(plan, self.club(), self.club())
+
+        assert [f.code for f in found] == ["fixed_session_missing"]
+
+    def test_two_sessions_of_a_day_each_take_their_own_workout(self) -> None:
+        plan = [
+            workout(1, 60, sport=self.RUN, slot=Slot.EVENING),
+            workout(1, 60, sport=self.RUN, slot=Slot.MORNING),
+        ]
+
+        assert self.found(plan, self.club(Slot.MORNING), self.club(Slot.EVENING)) == []
+
+    def test_a_workout_without_a_time_of_day_does_not_take_the_place_of_an_exact_one(self) -> None:
+        plan = [workout(1, 60, sport=self.RUN), workout(1, 60, sport=self.RUN, slot=Slot.EVENING)]
+
+        found = self.found(plan, self.club(Slot.EVENING), self.club(Slot.MORNING))
+
+        assert found == []
+
+    def test_every_missing_session_is_named_in_the_order_of_the_context(self) -> None:
+        found = self.found([], self.club(weekday=0), self.club(weekday=4))
+
+        assert [f.message.split()[0] for f in found] == ["Monday", "Friday"]
+
+    def test_a_day_of_absence_is_not_named(self) -> None:
+        absences = (None, "vacation", None, None, None, None, None)
+
+        assert self.found([], self.club(), absences=absences) == []
+
+    def test_a_day_without_minutes_is_not_named(self) -> None:
+        assert self.found([], self.club(), minutes=(600, 0, 600, 600, 600, 600, 600)) == []
+
+    def test_workouts_outside_the_week_do_not_count(self) -> None:
+        plan = [workout(8, 60, sport=self.RUN), workout(-6, 60, sport=self.RUN)]
+
+        assert [f.code for f in self.found(plan, self.club())] == ["fixed_session_missing"]
+
+    def test_without_fixed_sessions_nothing_is_said(self) -> None:
+        assert self.found([]) == []
+
+    def test_the_title_and_the_notes_are_not_repeated(self) -> None:
+        plan = [workout(2, 30, sport=Sport.CYCLING, title="SECRETMARKER", notes="SECRETMARKER")]
+
+        found = self.found(plan, self.club())
+
+        assert found
+        assert "SECRETMARKER" not in repr(found)
+
+
 class TestTheSameWorkoutTwice:
     def test_the_same_sport_goal_and_duration_on_one_day_is_a_warning_at_the_repeat(self) -> None:
         plan = week(workout(1, 60), workout(1, 60))
@@ -1525,6 +1637,7 @@ class TestTheLists:
             check_long_days,
             check_sessions_per_sport,
             check_legs_before_key_run,
+            check_fixed_sessions,
         )
 
     def test_which_rules_are_errors_and_which_warnings(self) -> None:
@@ -1546,6 +1659,13 @@ class TestTheLists:
             "easy_share_low": Severity.WARNING,
             "slot_missing": Severity.WARNING,
         }
+
+    def test_a_missing_fixed_session_is_a_warning(self) -> None:
+        facts = (FixedFacts(1, Sport.RUNNING, 60, None),)
+
+        found = [f for check in RHYTHM_CHECKS for f in check(week(), context(fixed_sessions=facts))]
+
+        assert {f.code: f.severity for f in found} == {"fixed_session_missing": Severity.WARNING}
 
     def test_a_context_for_another_week_is_a_programming_error(self) -> None:
         for check in RHYTHM_CHECKS:

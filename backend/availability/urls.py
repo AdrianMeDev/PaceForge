@@ -6,6 +6,7 @@ from . import views
 router = SimpleRouter()
 router.register("periods", views.PeriodViewSet, basename="period")
 router.register("limitations", views.LimitationViewSet, basename="limitation")
+router.register("fixed-sessions", views.FixedSessionViewSet, basename="fixed-session")
 
 urlpatterns = [
     path("", views.AvailabilityView.as_view(), name="availability"),

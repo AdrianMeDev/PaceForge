@@ -25,6 +25,8 @@ from .intensity import (
 )
 from .models import (
     DAY_MINUTES_MAX,
+    FIXED_MINUTES_MAX,
+    FIXED_MINUTES_MIN,
     LIMITATIONS_MAX,
     MINIMUM_ABOVE_BUDGET,
     NOTE_MAX,
@@ -37,6 +39,7 @@ from .models import (
     WEEKDAY_MAX,
     AvailabilitySettings,
     BodyPart,
+    FixedSession,
     Limitation,
     LimitationStatus,
     SportPreference,
@@ -80,6 +83,16 @@ TOO_MANY_LIMITATIONS = f"You can have at most {MAX_LIMITATIONS} limitations. Del
 BODY_PART_CHOICE = f"Choose one of: {', '.join(BodyPart.values)}."
 LIMITATION_STATUS_CHOICE = f"Choose one of: {', '.join(LimitationStatus.values)}."
 LIMITATION_SPORTS_CHOICE = f"Choose any of: {', '.join(SPORTS)}, or none."
+MAX_FIXED_SESSIONS = 14
+TOO_MANY_FIXED_SESSIONS = (
+    f"You can have at most {MAX_FIXED_SESSIONS} fixed appointments. Delete one first."
+)
+FIXED_WEEKDAY_CHOICE = f"Choose a weekday from 0 (Monday) to {WEEKDAY_MAX} (Sunday)."
+FIXED_SPORT_CHOICE = f"Choose one of: {', '.join(SPORTS)}."
+FIXED_MINUTES_RANGE = (
+    f"Enter a whole number of minutes between {FIXED_MINUTES_MIN} and {FIXED_MINUTES_MAX}."
+)
+FIXED_SLOT_CHOICE = f"Choose one of: {', '.join(SLOTS)}, or null for no part of the day."
 
 # What a client may send for a period; everything else (id, owner, the computed fields) is ours.
 PERIOD_WRITABLE = ("kind", "start_date", "end_date", "note")
@@ -512,4 +525,68 @@ class LimitationSerializer(serializers.ModelSerializer[Limitation]):
     def to_representation(self, instance: Limitation) -> dict[str, Any]:
         data = dict(super().to_representation(instance))
         data["sports"] = instance.affected_sports
+        return data
+
+
+class FixedSessionSerializer(serializers.ModelSerializer[FixedSession]):
+    """A session that repeats every week. The part of the day is ``null`` for none (stored as an
+    empty text, as the role of a sport)."""
+
+    weekday = WholeNumberField(
+        min_value=0,
+        max_value=WEEKDAY_MAX,
+        error_messages={
+            "invalid": FIXED_WEEKDAY_CHOICE,
+            "min_value": FIXED_WEEKDAY_CHOICE,
+            "max_value": FIXED_WEEKDAY_CHOICE,
+            "required": FIXED_WEEKDAY_CHOICE,
+            "null": FIXED_WEEKDAY_CHOICE,
+        },
+    )
+    sport = serializers.ChoiceField(
+        choices=SPORTS,
+        error_messages={
+            "invalid_choice": FIXED_SPORT_CHOICE,
+            "required": FIXED_SPORT_CHOICE,
+            "null": FIXED_SPORT_CHOICE,
+        },
+    )
+    minutes = WholeNumberField(
+        min_value=FIXED_MINUTES_MIN,
+        max_value=FIXED_MINUTES_MAX,
+        error_messages={
+            "invalid": FIXED_MINUTES_RANGE,
+            "min_value": FIXED_MINUTES_RANGE,
+            "max_value": FIXED_MINUTES_RANGE,
+            "required": FIXED_MINUTES_RANGE,
+            "null": FIXED_MINUTES_RANGE,
+        },
+    )
+    slot = serializers.ChoiceField(
+        choices=SLOTS,
+        allow_null=True,
+        required=False,
+        error_messages={"invalid_choice": FIXED_SLOT_CHOICE},
+    )
+
+    class Meta:
+        model = FixedSession
+        fields = ["id", "weekday", "sport", "minutes", "slot"]
+        read_only_fields = ["id"]
+        validators: list[Any] = []
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        user = self.context["request"].user
+        if (
+            self.instance is None
+            and FixedSession.objects.for_user(user).count() >= MAX_FIXED_SESSIONS
+        ):
+            raise serializers.ValidationError({"non_field_errors": [TOO_MANY_FIXED_SESSIONS]})
+        if "slot" in attrs:
+            attrs["slot"] = attrs["slot"] or ""
+        return attrs
+
+    def to_representation(self, instance: FixedSession) -> dict[str, Any]:
+        data = dict(super().to_representation(instance))
+        data["slot"] = instance.slot or None
         return data

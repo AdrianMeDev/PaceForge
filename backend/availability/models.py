@@ -29,6 +29,9 @@ MINIMUM_ABOVE_BUDGET = "The minimum cannot be above your weekly budget."
 NOTE_MAX = 200
 # The longest period of absence: a year (and a leap day).
 PERIOD_MAX_DAYS = 366
+# The length of a fixed appointment, in minutes.
+FIXED_MINUTES_MIN = 5
+FIXED_MINUTES_MAX = 600
 
 
 class Sport(models.TextChoices):
@@ -349,6 +352,50 @@ class SportPreference(OwnedModel):
             errors["sessions_min"] = "The least cannot be above the most."
         if errors:
             raise ValidationError(errors)
+
+
+class FixedSession(OwnedModel):
+    """A session that happens every week at a fixed time (a running club on Tuesday): the weekday,
+    the sport, how long it lasts and, if the athlete wants, the part of the day.
+
+    Only fixed words and numbers are stored, never a name, so that what reaches the coach cannot
+    carry words of the user. ``slot`` is empty if no part of the day was named. The id is
+    time-ordered."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid7, editable=False)
+    weekday = models.PositiveSmallIntegerField(choices=WeekdayMinutes.Weekday.choices)
+    sport = models.CharField(max_length=20, choices=Sport.choices)
+    minutes = models.PositiveSmallIntegerField()
+    slot = models.CharField(
+        max_length=20, choices=[(slot, slot.capitalize()) for slot in SLOTS], blank=True, default=""
+    )
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(weekday__gte=0, weekday__lte=6), name="availability_fixed_weekday_known"
+            ),
+            models.CheckConstraint(
+                condition=Q(sport__in=Sport.values), name="availability_fixed_sport_known"
+            ),
+            models.CheckConstraint(
+                condition=Q(minutes__gte=FIXED_MINUTES_MIN, minutes__lte=FIXED_MINUTES_MAX),
+                name="availability_fixed_minutes_in_range",
+            ),
+            models.CheckConstraint(
+                condition=Q(slot__in=["", *SLOTS]), name="availability_fixed_slot_known"
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"fixed {self.sport} session of user {self.owner_id}"
+
+    def clean(self) -> None:
+        super().clean()
+        if self.minutes is not None and not FIXED_MINUTES_MIN <= self.minutes <= FIXED_MINUTES_MAX:
+            raise ValidationError(
+                {"minutes": f"Enter between {FIXED_MINUTES_MIN} and {FIXED_MINUTES_MAX} minutes."}
+            )
 
 
 class UnavailablePeriod(OwnedModel):

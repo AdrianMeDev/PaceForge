@@ -13,6 +13,7 @@ from athletes.models import AthleteProfile, ThresholdValue
 from availability.intensity import LEVEL_LIMITS, IntensityLevel, Limits
 from availability.models import (
     AvailabilitySettings,
+    FixedSession,
     Limitation,
     SportPreference,
     UnavailablePeriod,
@@ -21,6 +22,7 @@ from availability.models import (
 from planning.context import (
     RECENT_WEEKS,
     ActiveLimitation,
+    FixedFacts,
     PlanContext,
     SportFacts,
     build_context,
@@ -348,7 +350,7 @@ class TestTheContextOfAUser:
             MONDAY, (0,) * 7, (None,) * 7, None, 0, frozenset(), ()
         )
 
-    def test_it_takes_eight_queries_however_much_data_there_is(self, alice: User) -> None:
+    def test_it_takes_nine_queries_however_much_data_there_is(self, alice: User) -> None:
         with CaptureQueriesContext(connection) as empty:
             build_context(alice, MONDAY)
         for weekday in range(7):
@@ -367,6 +369,7 @@ class TestTheContextOfAUser:
                 start_date=MONDAY + timedelta(days=day),
                 end_date=MONDAY + timedelta(days=day),
             )
+            FixedSession.objects.create(owner=alice, weekday=day, sport="running", minutes=60)
         for metric in ("ftp", "lthr", "max_hr"):
             self.held(alice, "ride", metric)
         for _ in range(15):
@@ -380,7 +383,7 @@ class TestTheContextOfAUser:
         with CaptureQueriesContext(connection) as full:
             build_context(alice, MONDAY)
 
-        assert len(empty) == len(full) == 8
+        assert len(empty) == len(full) == 9
 
     def test_the_typical_week_comes_from_the_settings(self, alice: User, bob: User) -> None:
         AvailabilitySettings.objects.create(owner=alice, typical_weekly_minutes=420)
@@ -489,6 +492,27 @@ class TestTheContextOfAUser:
             SportFacts(Sport.STRENGTH, "supplementary", None, None),
         )
         assert context.strength_focus == "legs"
+
+    def test_without_fixed_sessions_there_are_none(self, alice: User) -> None:
+        assert build_context(alice, MONDAY).fixed_sessions == ()
+
+    def test_the_fixed_sessions_are_the_own_ones_by_day_and_part_of_the_day(
+        self, alice: User, bob: User
+    ) -> None:
+        FixedSession.objects.create(
+            owner=alice, weekday=3, sport="strength", minutes=45, slot="evening"
+        )
+        FixedSession.objects.create(owner=alice, weekday=1, sport="running", minutes=60)
+        FixedSession.objects.create(
+            owner=alice, weekday=3, sport="cycling", minutes=90, slot="morning"
+        )
+        FixedSession.objects.create(owner=bob, weekday=0, sport="swimming", minutes=30)
+
+        assert build_context(alice, MONDAY).fixed_sessions == (
+            FixedFacts(1, Sport.RUNNING, 60, None),
+            FixedFacts(3, Sport.CYCLING, 90, Slot.MORNING),
+            FixedFacts(3, Sport.STRENGTH, 45, Slot.EVENING),
+        )
 
     def test_without_wishes_there_are_none(self, alice: User) -> None:
         context = build_context(alice, MONDAY)

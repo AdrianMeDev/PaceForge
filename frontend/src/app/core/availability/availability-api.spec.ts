@@ -127,6 +127,21 @@ const BACK = {
   status: 'healed',
   sports: [],
 };
+const FIXED_SESSIONS = '/api/availability/fixed-sessions/';
+const CLUB = {
+  id: '01a1d563-9a11-7c01-8a11-000000000011',
+  weekday: 1,
+  sport: 'running',
+  minutes: 60,
+  slot: 'evening',
+};
+const RIDE = {
+  id: '01a1d563-9a11-7c01-8a11-000000000012',
+  weekday: 5,
+  sport: 'cycling',
+  minutes: 120,
+  slot: null,
+};
 const UPCOMING = {
   id: ID,
   kind: 'vacation',
@@ -176,6 +191,25 @@ function altered(source: object, ...edits: Edit[]): unknown {
   }
   return copy;
 }
+
+const WRONG_FIXED_SESSIONS: [string, unknown][] = [
+  ['no id', altered(CLUB, [['id'], REMOVE])],
+  ['a number as id', altered(CLUB, [['id'], 5])],
+  ['no weekday', altered(CLUB, [['weekday'], REMOVE])],
+  ['a weekday of 7', altered(CLUB, [['weekday'], 7])],
+  ['a negative weekday', altered(CLUB, [['weekday'], -1])],
+  ['a fractional weekday', altered(CLUB, [['weekday'], 1.5])],
+  ['a text as weekday', altered(CLUB, [['weekday'], '1'])],
+  ['no sport', altered(CLUB, [['sport'], REMOVE])],
+  ['an unknown sport', altered(CLUB, [['sport'], 'golf'])],
+  ['no minutes', altered(CLUB, [['minutes'], REMOVE])],
+  ['zero minutes', altered(CLUB, [['minutes'], 0])],
+  ['fractional minutes', altered(CLUB, [['minutes'], 60.5])],
+  ['a text as minutes', altered(CLUB, [['minutes'], '60'])],
+  ['no slot', altered(CLUB, [['slot'], REMOVE])],
+  ['an unknown slot', altered(CLUB, [['slot'], 'night'])],
+  ['an empty slot', altered(CLUB, [['slot'], ''])],
+];
 
 describe('AvailabilityApi', () => {
   let api: AvailabilityApi;
@@ -1444,6 +1478,324 @@ describe('AvailabilityApi', () => {
 
       it.each([200, 400, 500])('rejects the unexpected status %i', async (status) => {
         await runFailing(api.deleteLimitation(ACHILLES.id), 'DELETE', ADDRESS, 'oops', status);
+      });
+    });
+  });
+  describe('fixed sessions', () => {
+    const ADDRESS = `${FIXED_SESSIONS}${CLUB.id}/`;
+
+    describe('listFixedSessions', () => {
+      it('returns the entries in the order sent', async () => {
+        const { result, request } = await run(
+          api.listFixedSessions(),
+          'GET',
+          FIXED_SESSIONS,
+          [CLUB, RIDE],
+          200,
+        );
+
+        expect(request.request.body).toBeNull();
+        expect(result).toEqual({ kind: 'ok', sessions: [CLUB, RIDE] });
+      });
+
+      it('returns an empty list', async () => {
+        const { result } = await run(api.listFixedSessions(), 'GET', FIXED_SESSIONS, [], 200);
+
+        expect(result).toEqual({ kind: 'ok', sessions: [] });
+      });
+
+      it('takes over only the known fields', async () => {
+        const crowded = altered(CLUB, [['owner'], 'x'], [['name'], 'secret']);
+
+        const { result } = await run(
+          api.listFixedSessions(),
+          'GET',
+          FIXED_SESSIONS,
+          [crowded] as object[],
+          200,
+        );
+
+        expect(result).toEqual({ kind: 'ok', sessions: [CLUB] });
+      });
+
+      it.each([401, 403])('says when the session is gone (%i)', async (status) => {
+        const { result } = await run(
+          api.listFixedSessions(),
+          'GET',
+          FIXED_SESSIONS,
+          NO_SESSION,
+          status,
+        );
+
+        expect(result).toEqual({ kind: 'forbidden' });
+      });
+
+      it.each(WRONG_FIXED_SESSIONS)('rejects a list holding an entry with %s', async (_n, bad) => {
+        await runFailing(
+          api.listFixedSessions(),
+          'GET',
+          FIXED_SESSIONS,
+          [CLUB, bad] as object[],
+          200,
+        );
+      });
+
+      it.each([null, 5, 'entry', []])(
+        'rejects a list holding %j instead of an entry',
+        async (item) => {
+          await runFailing(api.listFixedSessions(), 'GET', FIXED_SESSIONS, [item] as object[], 200);
+        },
+      );
+
+      it.each([
+        ['no body', null],
+        ['a text', 'sessions'],
+        ['an object instead of a list', CLUB],
+      ])('rejects an answer with %s', async (_name, bad) => {
+        await runFailing(api.listFixedSessions(), 'GET', FIXED_SESSIONS, bad, 200);
+      });
+
+      it.each([404, 500])('rejects the unexpected status %i', async (status) => {
+        await runFailing(api.listFixedSessions(), 'GET', FIXED_SESSIONS, 'oops', status);
+      });
+    });
+
+    describe('createFixedSession', () => {
+      const INPUT = { weekday: 1 as const, sport: 'running' as const, minutes: 60 };
+
+      it('posts the input as it is and returns the entry', async () => {
+        const input = { ...INPUT, slot: 'evening' as const };
+
+        const { result, request } = await run(
+          api.createFixedSession(input),
+          'POST',
+          FIXED_SESSIONS,
+          CLUB,
+          201,
+        );
+
+        expect(request.request.body).toEqual(input);
+        expect(result).toEqual({ kind: 'ok', session: CLUB });
+      });
+
+      it('leaves out what is not given and reads no slot as null', async () => {
+        const { result, request } = await run(
+          api.createFixedSession(INPUT),
+          'POST',
+          FIXED_SESSIONS,
+          RIDE,
+          201,
+        );
+
+        expect(request.request.body).toEqual(INPUT);
+        expect(result).toMatchObject({ kind: 'ok', session: { slot: null } });
+      });
+
+      it('returns the messages by field and as one list', async () => {
+        const refusal = {
+          minutes: ['Enter a whole number of minutes between 5 and 600.'],
+          sport: ['Choose one of: running, cycling, swimming, strength.'],
+        };
+
+        const { result } = await run(
+          api.createFixedSession(INPUT),
+          'POST',
+          FIXED_SESSIONS,
+          refusal,
+          400,
+        );
+
+        expect(result).toEqual({
+          kind: 'invalid',
+          errors: [...refusal.minutes, ...refusal.sport],
+          fields: refusal,
+        });
+      });
+
+      it('keeps the message about the limit under non_field_errors', async () => {
+        const refusal = {
+          non_field_errors: ['You can have at most 14 fixed appointments. Delete one first.'],
+        };
+
+        const { result } = await run(
+          api.createFixedSession(INPUT),
+          'POST',
+          FIXED_SESSIONS,
+          refusal,
+          400,
+        );
+
+        expect(result).toEqual({
+          kind: 'invalid',
+          errors: refusal.non_field_errors,
+          fields: refusal,
+        });
+      });
+
+      it.each([401, 403])('says when the session is gone (%i)', async (status) => {
+        const { result } = await run(
+          api.createFixedSession(INPUT),
+          'POST',
+          FIXED_SESSIONS,
+          NO_SESSION,
+          status,
+        );
+
+        expect(result).toEqual({ kind: 'forbidden' });
+      });
+
+      it.each(WRONG_FIXED_SESSIONS)('rejects an answer with %s', async (_name, bad) => {
+        await runFailing(
+          api.createFixedSession(INPUT),
+          'POST',
+          FIXED_SESSIONS,
+          bad as object | null,
+          201,
+        );
+      });
+
+      it.each([200, 404, 500])('rejects the unexpected status %i', async (status) => {
+        await runFailing(api.createFixedSession(INPUT), 'POST', FIXED_SESSIONS, 'oops', status);
+      });
+    });
+
+    describe('updateFixedSession', () => {
+      it('patches only the fields given and returns the entry', async () => {
+        const { result, request } = await run(
+          api.updateFixedSession(CLUB.id, { minutes: 90, slot: null }),
+          'PATCH',
+          ADDRESS,
+          { ...CLUB, minutes: 90, slot: null },
+          200,
+        );
+
+        expect(request.request.body).toEqual({ minutes: 90, slot: null });
+        expect(result).toMatchObject({ kind: 'ok', session: { minutes: 90, slot: null } });
+      });
+
+      it('writes the id safely into the address', async () => {
+        const { request } = await run(
+          api.updateFixedSession('a/b', { minutes: 90 }),
+          'PATCH',
+          `${FIXED_SESSIONS}a%2Fb/`,
+          'Not found',
+          404,
+        );
+
+        expect(request.request.url).toBe(`${FIXED_SESSIONS}a%2Fb/`);
+      });
+
+      it('returns the messages by field and as one list', async () => {
+        const refusal = { minutes: ['Enter a whole number of minutes between 5 and 600.'] };
+
+        const { result } = await run(
+          api.updateFixedSession(CLUB.id, { minutes: 1 }),
+          'PATCH',
+          ADDRESS,
+          refusal,
+          400,
+        );
+
+        expect(result).toEqual({ kind: 'invalid', errors: refusal.minutes, fields: refusal });
+      });
+
+      it('says when the entry does not exist or belongs to someone else', async () => {
+        const { result } = await run(
+          api.updateFixedSession(CLUB.id, { minutes: 90 }),
+          'PATCH',
+          ADDRESS,
+          'Not found',
+          404,
+        );
+
+        expect(result).toEqual({ kind: 'not_found' });
+      });
+
+      it.each([401, 403])('says when the session is gone (%i)', async (status) => {
+        const { result } = await run(
+          api.updateFixedSession(CLUB.id, { minutes: 90 }),
+          'PATCH',
+          ADDRESS,
+          NO_SESSION,
+          status,
+        );
+
+        expect(result).toEqual({ kind: 'forbidden' });
+      });
+
+      it.each(WRONG_FIXED_SESSIONS)('rejects an answer with %s', async (_name, bad) => {
+        await runFailing(
+          api.updateFixedSession(CLUB.id, { minutes: 90 }),
+          'PATCH',
+          ADDRESS,
+          bad as object | null,
+          200,
+        );
+      });
+
+      it.each([201, 204, 500])('rejects the unexpected status %i', async (status) => {
+        await runFailing(
+          api.updateFixedSession(CLUB.id, { minutes: 90 }),
+          'PATCH',
+          ADDRESS,
+          'oops',
+          status,
+        );
+      });
+    });
+
+    describe('deleteFixedSession', () => {
+      it('deletes the entry', async () => {
+        const { result, request } = await run(
+          api.deleteFixedSession(CLUB.id),
+          'DELETE',
+          ADDRESS,
+          null,
+          204,
+        );
+
+        expect(request.request.body).toBeNull();
+        expect(result).toEqual({ kind: 'deleted' });
+      });
+
+      it('says when the entry does not exist or belongs to someone else', async () => {
+        const { result } = await run(
+          api.deleteFixedSession(CLUB.id),
+          'DELETE',
+          ADDRESS,
+          'Not found',
+          404,
+        );
+
+        expect(result).toEqual({ kind: 'not_found' });
+      });
+
+      it('writes the id safely into the address', async () => {
+        const { request } = await run(
+          api.deleteFixedSession('a/b'),
+          'DELETE',
+          `${FIXED_SESSIONS}a%2Fb/`,
+          null,
+          404,
+        );
+
+        expect(request.request.url).toBe(`${FIXED_SESSIONS}a%2Fb/`);
+      });
+
+      it.each([401, 403])('says when the session is gone (%i)', async (status) => {
+        const { result } = await run(
+          api.deleteFixedSession(CLUB.id),
+          'DELETE',
+          ADDRESS,
+          NO_SESSION,
+          status,
+        );
+
+        expect(result).toEqual({ kind: 'forbidden' });
+      });
+
+      it.each([200, 400, 500])('rejects the unexpected status %i', async (status) => {
+        await runFailing(api.deleteFixedSession(CLUB.id), 'DELETE', ADDRESS, 'oops', status);
       });
     });
   });

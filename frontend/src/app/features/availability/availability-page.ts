@@ -30,6 +30,7 @@ import {
   ownLimitTexts,
   readOwnLimits,
 } from './intensity-settings';
+import { FixedSessionsPanel } from './fixed-sessions-panel';
 import { LimitationsPanel } from './limitations-panel';
 import {
   NO_PREFERENCE_FORM,
@@ -91,6 +92,7 @@ function dayMinutes(text: string): Parsed<number> {
   imports: [
     RouterLink,
     PeriodsPanel,
+    FixedSessionsPanel,
     LimitationsPanel,
     IntensitySettings,
     DayOptions,
