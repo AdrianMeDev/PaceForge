@@ -137,6 +137,13 @@ not put it on the day before the longest run of the week or before a hard run. (
 allow it (both null: no wish); more days than "training_days" or fewer minutes than that is a \
 warning. "long_days" lists, for a sport, the date on which its longest \
 session of the week belongs (another day is a warning).
+- "athlete" says what the athlete told about themselves, each field null if they did not: the \
+"age" in years, the "sex" ("female", "male", "other"), the "weight_kg", the "resting_hr", the \
+"training_years" in each sport they named, their "strength_experience" ("beginner", "advanced") \
+and the "strength_equipment" they have ("gym", "home", "dumbbells"; an empty list: not said). Use \
+it to size the load: a beginner, a long break or few years of training call for a gentler build \
+and shorter sessions, and strength sessions have to fit the equipment. It is information and no \
+rule; none of it is a reason to leave a goal out.
 - "fixed_sessions" lists the sessions that happen every week at a fixed time (a running club, a \
 class): the "date" in the week to plan, the "sport", the "minutes" and the "slot" (null: no part \
 of the day named). Plan each of them on its date, in that sport, about that long and, if there is \

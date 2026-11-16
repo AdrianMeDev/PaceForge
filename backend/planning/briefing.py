@@ -83,6 +83,7 @@ def build_briefing(user: User, monday: date) -> dict[str, Any]:
         "long_days": _long_days(context),
         "sport_preferences": _sport_preferences(context),
         "strength_focus": context.strength_focus,
+        "athlete": _athlete(context),
         "fixed_sessions": _fixed_sessions(context),
         "limits": _limits(context),
         "limitations": _limitations(context),
@@ -117,6 +118,25 @@ def _sport_preferences(context: PlanContext) -> list[dict[str, Any]]:
         }
         for facts in context.sport_preferences
     ]
+
+
+def _athlete(context: PlanContext) -> dict[str, Any]:
+    """What the athlete said about their body and training: the age (not the birth year), the sex,
+    the weight, the resting heart rate, the years of training of the sports they named, the
+    experience with strength training and the equipment for it. Numbers and fixed words; ``null``
+    for what was not said."""
+    facts = context.athlete
+    return {
+        "age": facts.age,
+        "sex": facts.sex,
+        "weight_kg": facts.weight_kg,
+        "resting_hr": facts.resting_hr,
+        "training_years": [
+            {"sport": sport.value, "years": years} for sport, years in facts.training_years
+        ],
+        "strength_experience": facts.strength_experience,
+        "strength_equipment": list(facts.strength_equipment),
+    }
 
 
 def _fixed_sessions(context: PlanContext) -> list[dict[str, Any]]:

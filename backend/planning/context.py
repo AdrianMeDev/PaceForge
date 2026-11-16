@@ -12,6 +12,7 @@ from datetime import UTC, date, datetime, time, timedelta, tzinfo
 
 from accounts.models import User
 from activities.models import Activity
+from athletes.facts import body_and_training
 from athletes.thresholds import all_candidates
 from availability.capacity import week_capacity
 from availability.fixed_sessions import fixed_sessions
@@ -58,6 +59,21 @@ class FixedFacts:
 
 
 @dataclass(frozen=True)
+class AthleteFacts:
+    """What the athlete said about their body and their training, ``None`` or empty for what they
+    did not say. The age is the year of the week to plan minus the birth year (it can be one too
+    high before the birthday); the birth year itself is not kept."""
+
+    age: int | None = None
+    sex: str | None = None
+    weight_kg: float | None = None
+    resting_hr: int | None = None
+    training_years: tuple[tuple[Sport, int], ...] = ()
+    strength_experience: str | None = None
+    strength_equipment: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class PlanContext:
     week_start: date
     # What each day offers, Monday first; 0 inside an absence. The weekly budget is not in here.
@@ -99,6 +115,8 @@ class PlanContext:
     # order of the format) and what strength training is for (``None``: not said).
     sport_preferences: tuple[SportFacts, ...] = ()
     strength_focus: str | None = None
+    # The athlete's body and training data.
+    athlete: AthleteFacts = AthleteFacts()
     # The sessions that happen every week, by weekday and part of the day.
     fixed_sessions: tuple[FixedFacts, ...] = ()
 
@@ -109,8 +127,10 @@ class PlanContext:
 
 
 def build_context(user: User, monday: date) -> PlanContext:
-    """The context of the week that starts on ``monday``: seven queries however full the data."""
+    """The context of the week that starts on ``monday``: the same few queries however full the
+    data."""
     capacity = week_capacity(user, monday)  # raises ValueError unless it is a Monday
+    body = body_and_training(user)
     held = set(all_candidates(user))
     zone = time_zone_of(user)
     return PlanContext(
@@ -131,6 +151,15 @@ def build_context(user: User, monday: date) -> PlanContext:
         ),
         limitations_text=capacity.shared_limitations_text,
         strength_focus=capacity.strength_focus,
+        athlete=AthleteFacts(
+            age=None if body.birth_year is None else max(monday.year - body.birth_year, 0),
+            sex=body.sex,
+            weight_kg=body.weight_kg,
+            resting_hr=body.resting_hr,
+            training_years=tuple((Sport(sport), years) for sport, years in body.training_years),
+            strength_experience=body.strength_experience,
+            strength_equipment=body.strength_equipment,
+        ),
         sport_preferences=tuple(
             SportFacts(Sport(sport), role, low, high)
             for sport, role, low, high in sport_preferences(user)

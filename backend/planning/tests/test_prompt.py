@@ -414,6 +414,14 @@ class TestTheSystemPrompt:
         assert "Put the harder running, cycling or swimming session of a day first" in flat
         assert "and the easier one after it. (warning)" in flat
 
+    def test_it_explains_the_athlete(self) -> None:
+        flat = " ".join(SYSTEM_PROMPT.split())
+
+        assert '"athlete" says what the athlete told about themselves' in flat
+        assert '"strength_experience" ("beginner", "advanced")' in flat
+        assert '"strength_equipment" they have ("gym", "home", "dumbbells"' in flat
+        assert "It is information and no rule" in flat
+
     def test_it_explains_the_fixed_sessions(self) -> None:
         flat = " ".join(SYSTEM_PROMPT.split())
 
