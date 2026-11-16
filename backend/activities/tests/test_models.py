@@ -193,7 +193,7 @@ class TestTheValues:
         assert created.distance_m == 0.0
 
     @pytest.mark.parametrize(
-        ("field", "value"), [("sport", "golf"), ("source", "gpx_file"), ("source_hash", "x" * 65)]
+        ("field", "value"), [("sport", "golf"), ("source", "kml_file"), ("source_hash", "x" * 65)]
     )
     def test_unknown_choices_and_too_long_hashes_are_not_valid(
         self, alice: User, field: str, value: str

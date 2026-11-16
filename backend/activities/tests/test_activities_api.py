@@ -203,7 +203,12 @@ class TestRefusals:
         ("name", "content", "status", "message"),
         [
             ("empty.fit", b"", HTTPStatus.BAD_REQUEST, "The file is empty."),
-            ("a.fit", b"hello, this is text", HTTPStatus.BAD_REQUEST, "neither a FIT nor a TCX"),
+            (
+                "a.fit",
+                b"hello, this is text",
+                HTTPStatus.BAD_REQUEST,
+                "neither a FIT, a TCX nor a GPX",
+            ),
             ("a.fit", activity_file()[:-30], HTTPStatus.BAD_REQUEST, None),
             ("a.fit", activity_file(sessions=2), HTTPStatus.BAD_REQUEST, None),
             (

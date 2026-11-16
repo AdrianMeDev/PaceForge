@@ -163,7 +163,7 @@ describe('ActivitiesApi', () => {
       ['no count', { results: [] }],
       ['results that are no list', { count: 1, results: {} }],
       ['an unknown sport', { count: 1, results: [{ ...SUMMARY, sport: 'curling' }] }],
-      ['an unknown source', { count: 1, results: [{ ...SUMMARY, source: 'gpx_file' }] }],
+      ['an unknown source', { count: 1, results: [{ ...SUMMARY, source: 'kml_file' }] }],
       ['a text instead of a number', { count: 1, results: [{ ...SUMMARY, distance_m: '10' }] }],
       ['no id', { count: 1, results: [{ ...SUMMARY, id: undefined }] }],
       ['no body', null],
@@ -495,7 +495,7 @@ describe('ActivitiesApi', () => {
       ['a note that is no text', { ...CREATED, notes: 5 }],
       ['an rpe that is text', { ...CREATED, rpe: '7' }],
       ['a load that is text', { ...CREATED, load: '315' }],
-      ['an unknown source', { ...CREATED, source: 'gpx_file' }],
+      ['an unknown source', { ...CREATED, source: 'kml_file' }],
     ])('rejects a created answer with %s', async (_name, reply) => {
       await runFailing(api.enter(INPUT), 'POST', MANUAL, reply, 201);
     });

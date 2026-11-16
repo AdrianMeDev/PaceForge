@@ -72,6 +72,7 @@ describe('activity formatting', () => {
   it('names the source formats', () => {
     expect(sourceLabel('fit_file')).toBe('FIT');
     expect(sourceLabel('tcx_file')).toBe('TCX');
+    expect(sourceLabel('gpx_file')).toBe('GPX');
   });
 
   describe('formatRpe and formatLoad', () => {

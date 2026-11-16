@@ -63,7 +63,7 @@ class TestUnpacking:
         ],
     )
     def test_broken_gzip_is_not_a_file_of_a_known_kind(self, data: bytes) -> None:
-        with pytest.raises(UnsupportedFileError, match="neither a FIT nor a TCX"):
+        with pytest.raises(UnsupportedFileError, match="neither a FIT, a TCX nor a GPX"):
             unpack(data, 1000)
 
     def test_a_message_holds_nothing_of_the_data(self) -> None:

@@ -29,7 +29,7 @@ const REJECTED_MANUAL = 'The session could not be saved. Please check your entri
 const REJECTED_RATING = 'The rating could not be saved. Please check your entries.';
 const HANDLED_ERRORS = [400, 401, 403, 404, 409, 413, 429];
 const SPORTS: readonly string[] = ['running', 'cycling', 'swimming', 'strength', 'other'];
-const SOURCES: readonly string[] = ['fit_file', 'tcx_file', 'manual'];
+const SOURCES: readonly string[] = ['fit_file', 'tcx_file', 'gpx_file', 'manual'];
 const MANUAL_FIELDS: readonly ManualField[] = [
   'sport',
   'date',

@@ -1,5 +1,5 @@
 export type Sport = 'running' | 'cycling' | 'swimming' | 'strength' | 'other';
-export type ActivitySource = 'fit_file' | 'tcx_file' | 'manual';
+export type ActivitySource = 'fit_file' | 'tcx_file' | 'gpx_file' | 'manual';
 
 /**
  * One lap of an activity. A value the file does not report is `null`; nothing is estimated.

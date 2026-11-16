@@ -1195,8 +1195,9 @@ Set in `.env` or in the environment. Values without a default are required.
 - **`Port 4200 is already in use` / `That port is already in use`.** Another dev server is running.
   Stop it, or start this one elsewhere: `uv run python manage.py runserver 8010` together with
   `npx ng serve --port 4210 --proxy-config <file>` that points `/api` to that port.
-- **An import says "The file is neither a FIT nor a TCX file".** The file is compressed (`.gz`),
-  a zip archive, a GPX file or something else. Unpack it, or export FIT or TCX instead.
+- **An import says "The file is neither a FIT, a TCX nor a GPX file".** The file is a zip
+  archive, a format of another kind or something else. Unpack it (a `.gz` file is read as it is), or
+  export FIT, TCX or GPX instead.
 - **Importing a big file fails with "413" or an error page before PaceForge answers.** A reverse
   proxy in front limits the request body; raise its limit to the value of
   `ACTIVITY_UPLOAD_MAX_BYTES` or more.

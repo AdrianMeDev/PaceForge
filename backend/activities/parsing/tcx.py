@@ -52,8 +52,9 @@ class Handlers(Protocol):
     def text(self, data: str) -> None: ...
 
 
-def feed(data: bytes, handlers: Handlers) -> None:
-    """Stream ``data`` through expat into ``handlers``, with the protections described above."""
+def feed(data: bytes, handlers: Handlers, kind: str = "TCX") -> None:
+    """Stream ``data`` through expat into ``handlers``, with the protections described above.
+    ``kind`` is the name of the format in the messages (also used for GPX)."""
     # Some exporters put a line break before the XML declaration, which strict XML forbids.
     trimmed = data.lstrip(b" \t\r\n")
     if trimmed.startswith(b"<"):
@@ -63,21 +64,24 @@ def feed(data: bytes, handlers: Handlers) -> None:
     parser.StartElementHandler = handlers.start
     parser.EndElementHandler = handlers.end
     parser.CharacterDataHandler = handlers.text
-    parser.StartDoctypeDeclHandler = _refuse_doctype
+    parser.StartDoctypeDeclHandler = _refuse_doctype(kind)
     try:
         for offset in range(0, len(data), _CHUNK):
             parser.Parse(data[offset : offset + _CHUNK], False)
         parser.Parse(b"", True)
     except expat.ExpatError, UnicodeError:
-        raise InvalidFileError("The TCX file is not well-formed XML.") from None
+        raise InvalidFileError(f"The {kind} file is not well-formed XML.") from None
     except LookupError as error:
         if isinstance(error, IndexError | KeyError):
             raise  # a bug in this module, not a bad file: it must not look like one
-        raise InvalidFileError("The TCX file uses an encoding that is not supported.") from None
+        raise InvalidFileError(f"The {kind} file uses an encoding that is not supported.") from None
 
 
-def _refuse_doctype(*_: Any) -> None:
-    raise InvalidFileError("The TCX file must not contain a document type declaration.")
+def _refuse_doctype(kind: str) -> Any:
+    def refuse(*_: Any) -> None:
+        raise InvalidFileError(f"The {kind} file must not contain a document type declaration.")
+
+    return refuse
 
 
 def _local(name: str) -> str:

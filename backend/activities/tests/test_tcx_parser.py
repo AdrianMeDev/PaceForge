@@ -561,7 +561,7 @@ class TestFormatDetection:
         ],
     )
     def test_everything_else_is_unsupported(self, data: bytes) -> None:
-        with pytest.raises(UnsupportedFileError, match="neither a FIT nor a TCX"):
+        with pytest.raises(UnsupportedFileError, match="neither a FIT, a TCX nor a GPX"):
             parse_activity_file(data)
 
     def test_the_name_of_a_file_decides_nothing_because_only_the_content_is_given(self) -> None:

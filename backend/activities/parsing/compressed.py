@@ -37,10 +37,10 @@ def unpack(data: bytes, limit: int) -> bytes:
         if len(unpacked) <= limit and not unpacker.eof:
             unpacked += unpacker.flush()
     except zlib.error:
-        raise UnsupportedFileError("The file is neither a FIT nor a TCX file.") from None
+        raise UnsupportedFileError("The file is neither a FIT, a TCX nor a GPX file.") from None
     if len(unpacked) > limit:
         raise UnpackedTooLargeError("The file is too large.")
     if not unpacker.eof:
         # cut off in the middle: what was read is not a file
-        raise UnsupportedFileError("The file is neither a FIT nor a TCX file.")
+        raise UnsupportedFileError("The file is neither a FIT, a TCX nor a GPX file.")
     return unpacked

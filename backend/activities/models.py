@@ -22,6 +22,7 @@ class Activity(OwnedModel):
     class Source(models.TextChoices):
         FIT_FILE = "fit_file", "FIT file"
         TCX_FILE = "tcx_file", "TCX file"
+        GPX_FILE = "gpx_file", "GPX file"
         # Entered by hand: no file, so no hash, and the user's own RPE and note.
         MANUAL = "manual", "Entered by hand"
 
