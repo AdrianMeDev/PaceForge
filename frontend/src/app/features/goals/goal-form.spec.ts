@@ -317,6 +317,39 @@ describe('GoalForm', () => {
       expect(api.create).not.toHaveBeenCalled();
     });
 
+    it('offers A, B and for a race also C', async () => {
+      const labels = () =>
+        Array.from(form.querySelectorAll('#goal-priority option')).map((o) =>
+          o.textContent?.trim(),
+        );
+
+      expect(labels()).toEqual(['A · Main goal', 'B · Secondary goal', 'C · Preparation race']);
+
+      await choose('#goal-kind', 'threshold');
+
+      expect(labels()).toEqual(['A · Main goal', 'B · Secondary goal']);
+    });
+
+    it('sends a race as a preparation race', async () => {
+      await fillRace();
+      await choose('#goal-priority', 'preparation');
+
+      await submit();
+
+      expect(api.create.mock.calls[0][0]).toMatchObject({ priority: 'preparation' });
+    });
+
+    it('takes the choice of C back when the kind is no race any more', async () => {
+      await choose('#goal-priority', 'preparation');
+      await choose('#goal-kind', 'general');
+      await type('#goal-title', 'Build endurance');
+
+      await submit();
+
+      expect(value('#goal-priority')).toBe('secondary');
+      expect(api.create.mock.calls[0][0]).toMatchObject({ priority: 'secondary' });
+    });
+
     it('sends the priority and the notes', async () => {
       await fillRace();
       await choose('#goal-priority', 'main');

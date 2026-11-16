@@ -220,6 +220,24 @@ describe('GoalsPage', () => {
       expect(card('general').querySelector('[data-testid="date"]')).toBeNull();
     });
 
+    it('shows the priority of every goal as A, B or C', async () => {
+      TestBed.resetTestingModule();
+      await setup(ok(MAIN, FTP, goal({ id: 'tune', title: 'Tune-up', priority: 'preparation' })));
+
+      expect(within('main', 'priority')).toBe('A · Main goal');
+      expect(within('ftp', 'priority')).toBe('B · Secondary goal');
+      expect(within('tune', 'priority')).toBe('C · Preparation race');
+    });
+
+    it('offers to make a preparation race the main goal, and to step down only from A', async () => {
+      TestBed.resetTestingModule();
+      await setup(ok(MAIN, goal({ id: 'tune', title: 'Tune-up', priority: 'preparation' })));
+
+      expect(buttonsOf('tune')).toContain('Make main goal');
+      expect(buttonsOf('tune')).not.toContain('Make secondary');
+      expect(buttonsOf('main')).toContain('Make secondary');
+    });
+
     it('names the kind and marks the main goal', () => {
       expect(card('main').textContent).toContain('Race');
       expect(card('main').textContent).toContain('Main goal');

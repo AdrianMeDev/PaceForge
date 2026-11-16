@@ -7,6 +7,7 @@ import {
   kilometresText,
   parseDistanceKm,
   parseTargetTime,
+  PRIORITY_LABELS,
 } from './goal-format';
 import { formatDuration } from '../activities/activity-format';
 
@@ -237,5 +238,15 @@ describe('the distance presets', () => {
     expect(DISTANCE_PRESETS.triathlon.map((p) => p.meters)).toEqual([25750, 51500, 113000, 226000]);
     expect(DISTANCE_PRESETS.cycling).toEqual([]);
     expect(DISTANCE_PRESETS.swimming).toEqual([]);
+  });
+});
+
+describe('the priority labels', () => {
+  it('name A, B and C', () => {
+    expect(PRIORITY_LABELS).toEqual({
+      main: 'A · Main goal',
+      secondary: 'B · Secondary goal',
+      preparation: 'C · Preparation race',
+    });
   });
 });

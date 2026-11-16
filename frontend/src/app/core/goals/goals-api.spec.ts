@@ -164,6 +164,18 @@ describe('GoalsApi', () => {
       expect(result).toEqual({ kind: 'ok', goals: [] });
     });
 
+    it('reads the three priorities', async () => {
+      const goals = ['main', 'secondary', 'preparation'].map((priority) =>
+        altered(RACE, [['priority'], priority]),
+      );
+
+      const { result } = await run(api.list(), 'GET', URL, goals, 200);
+
+      expect(result).toMatchObject({
+        goals: [{ priority: 'main' }, { priority: 'secondary' }, { priority: 'preparation' }],
+      });
+    });
+
     it('keeps values that do not apply to a kind as null', async () => {
       const bare = altered(GENERAL, [['discipline'], REMOVE], [['distance_m'], REMOVE]);
 

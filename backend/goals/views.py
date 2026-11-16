@@ -37,7 +37,8 @@ class GoalViewSet(OwnedModelViewSet):
                 ),
                 priority_rank=Case(
                     When(priority=Goal.Priority.MAIN, then=Value(0)),
-                    default=Value(1),
+                    When(priority=Goal.Priority.SECONDARY, then=Value(1)),
+                    default=Value(2),
                     output_field=IntegerField(),
                 ),
             )

@@ -160,6 +160,11 @@ a day first and the easier one after it. (warning)
 - Stretching is never a session of its own: no workout has stretching as its sport or its title. \
 If "stretching" in the data is true you may add "stretching_minutes" to a session, usually 5 to \
 15, and it is not part of "duration_minutes". If it is false, leave the field out. (error)
+- "goals" are listed by "priority": "main" is the goal everything is built towards (A), \
+"secondary" a second goal (B) and "preparation" a race on the way (C). Plan the week for the main \
+goal first. A "preparation" race is trained through, not tapered for: if its date is in the week, \
+plan it as a hard session of that day, keep the day before easy and do not cut the rest of the \
+build for it.
 - Plan for the athlete's goals, the main goal first, and use "previous_week_plan" to vary and \
 progress the week. Fewer workouts than the time allows is fine.
 - "previous_week_review" tells how the week before went, and is null if there is nothing to tell: \

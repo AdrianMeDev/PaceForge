@@ -96,12 +96,25 @@ export class GoalForm implements OnInit, AfterViewInit {
   protected readonly kinds = Object.entries(KIND_LABELS);
   protected readonly kindLabel = KIND_LABELS;
   protected readonly disciplines = Object.entries(DISCIPLINE_LABELS);
-  protected readonly priorities = Object.entries(PRIORITY_LABELS);
+  /** C, the preparation race, is only for a race. */
+  protected readonly priorities = computed(() =>
+    Object.entries(PRIORITY_LABELS).filter(
+      ([value]) => value !== 'preparation' || this.kind() === 'race',
+    ),
+  );
   protected readonly presets = computed(() => {
     const discipline = this.discipline();
     return discipline ? DISTANCE_PRESETS[discipline] : [];
   });
   protected readonly other = OTHER;
+
+  /** Another kind than a race cannot be a preparation race, so that choice is taken back. */
+  protected setKind(kind: GoalKind): void {
+    this.kind.set(kind);
+    if (kind !== 'race' && this.priority() === 'preparation') {
+      this.priority.set('secondary');
+    }
+  }
 
   ngOnInit(): void {
     const goal = this.goal();

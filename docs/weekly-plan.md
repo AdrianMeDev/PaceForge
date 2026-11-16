@@ -355,7 +355,7 @@ without this page.
 | `weekly_budget_minutes` | The weekly budget, none if not set. |
 | `weekly_minutes_available` | What the week offers in all, the budget applied. |
 | `zone_systems` | For each zone system the athlete can use: sport, threshold and the zone table. |
-| `goals` | The active goals, the main goal first, then the nearest date. |
+| `goals` | The active goals by `priority` – `main` (A), `secondary` (B), `preparation` (C, a race on the way) – then the nearest date. |
 | `goals_not_shown` | How many active goals were left out because of the limit. |
 | `recent_weeks_minutes` | Minutes done in each of the up to 4 weeks before, latest first. |
 | `typical_weekly_minutes` | What the athlete calls a normal week, in minutes; `null` if not given (or 0). The progression rule's reference is the higher of this and the recent average. |

@@ -138,6 +138,42 @@ class TestKinds:
         refused(alice, field, **race(**{field: value}))
 
 
+class TestThePreparationRace:
+    def test_a_race_can_be_a_preparation_race(self, alice: User) -> None:
+        check(alice, **race(priority="preparation"))
+
+    @pytest.mark.parametrize("fields", [threshold(), general()])
+    def test_another_kind_cannot(self, alice: User, fields: dict[str, Any]) -> None:
+        refused(alice, "priority", **fields | {"priority": "preparation"})
+
+    def test_the_message_says_why(self, alice: User) -> None:
+        with pytest.raises(ValidationError) as raised:
+            check(alice, **general(priority="preparation"))
+
+        assert raised.value.message_dict["priority"] == ["Only a race can be a preparation race."]
+
+    @pytest.mark.parametrize("fields", [threshold(), general()])
+    def test_the_database_refuses_it_for_another_kind(
+        self, alice: User, fields: dict[str, Any]
+    ) -> None:
+        with pytest.raises(IntegrityError, match="goals_preparation_is_a_race"):
+            with transaction.atomic():
+                Goal.objects.create(owner=alice, **fields | {"priority": "preparation"})
+
+    def test_a_race_is_stored_as_one(self, alice: User) -> None:
+        assert make(alice, priority="preparation").priority == "preparation"
+
+    def test_it_is_no_main_goal_so_any_number_can_be_active(self, alice: User) -> None:
+        make(alice, priority="main")
+        make(alice, priority="preparation")
+        make(alice, priority="preparation")
+
+        assert Goal.objects.filter(priority="preparation").count() == 2
+
+    def test_the_choices_are_main_secondary_and_preparation(self) -> None:
+        assert Goal.Priority.values == ["main", "secondary", "preparation"]
+
+
 class TestRanges:
     @pytest.mark.parametrize(
         ("metric", "value"),

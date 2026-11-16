@@ -422,6 +422,14 @@ class TestTheSystemPrompt:
         assert "Plan each of them on its date" in flat
         assert "A plan without one of them is a warning" in flat
 
+    def test_it_explains_the_goal_priorities(self) -> None:
+        flat = " ".join(SYSTEM_PROMPT.split())
+
+        assert '"goals" are listed by "priority"' in flat
+        assert '"preparation" a race on the way (C)' in flat
+        assert 'A "preparation" race is trained through, not tapered for' in flat
+        assert "keep the day before easy" in flat
+
     def test_it_explains_the_sport_preferences(self) -> None:
         flat = " ".join(SYSTEM_PROMPT.split())
 

@@ -34,6 +34,8 @@ class Goal(OwnedModel):
     class Priority(models.TextChoices):
         MAIN = "main", "Main goal"
         SECONDARY = "secondary", "Secondary goal"
+        # A race on the way to the main goal; only a race can be one.
+        PREPARATION = "preparation", "Preparation race"
 
     class Status(models.TextChoices):
         ACTIVE = "active", "Active"
@@ -84,6 +86,10 @@ class Goal(OwnedModel):
                 condition=~Q(kind="threshold") | (~Q(metric="") & Q(target_value__isnull=False)),
                 name="goals_threshold_is_complete",
             ),
+            models.CheckConstraint(
+                condition=~Q(priority="preparation") | Q(kind="race"),
+                name="goals_preparation_is_a_race",
+            ),
             models.CheckConstraint(condition=~Q(title=""), name="goals_title_not_empty"),
             models.CheckConstraint(
                 condition=Q(distance_m__isnull=True)
@@ -113,6 +119,8 @@ class Goal(OwnedModel):
         errors: dict[str, str] = {}
         if not (self.title or "").strip():
             errors["title"] = "Enter a title."
+        if self.priority == self.Priority.PREPARATION and self.kind != self.Kind.RACE:
+            errors["priority"] = "Only a race can be a preparation race."
         if self.kind == self.Kind.RACE:
             self._clean_race(errors)
         elif self.kind == self.Kind.THRESHOLD:
