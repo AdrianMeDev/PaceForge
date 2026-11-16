@@ -3,6 +3,7 @@ import { provideRouter } from '@angular/router';
 import { AthleteApi } from '../../core/athlete/athlete-api';
 import {
   AthleteProfile,
+  BodyAndTraining,
   ClearThresholdResult,
   GetAthleteResult,
   RideProfile,
@@ -53,6 +54,7 @@ const PACE: ZoneSet = {
 
 interface Parts {
   timezone?: string;
+  body?: Partial<BodyAndTraining>;
   intervals?: AthleteProfile['intervals'];
   ride?: Partial<RideProfile['thresholds']>;
   run?: Partial<RunProfile['thresholds']>;
@@ -68,6 +70,14 @@ interface Parts {
 function profile(parts: Parts = {}): AthleteProfile {
   const zones = parts.zones ?? {};
   return {
+    birth_year: null,
+    sex: null,
+    weight_kg: null,
+    resting_hr: null,
+    training_years: { running: null, cycling: null, swimming: null, strength: null },
+    strength_experience: null,
+    strength_equipment: [],
+    ...parts.body,
     timezone: parts.timezone ?? 'Europe/Berlin',
     intervals: parts.intervals ?? { connected: false, synced_at: null },
     sports: {

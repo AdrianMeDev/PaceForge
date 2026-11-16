@@ -57,7 +57,39 @@ export interface RunProfile {
   zones: { pace: ZoneSet | null; heart_rate: ZoneSet | null };
 }
 
-export interface AthleteProfile {
+export type Sex = 'female' | 'male' | 'other';
+export type StrengthExperience = 'beginner' | 'advanced';
+/** What the user has for strength training, in the order the server lists it. */
+export type Equipment = 'gym' | 'home' | 'dumbbells';
+/** The sports that have a number of years of training. */
+export type TrainingSport = 'running' | 'cycling' | 'swimming' | 'strength';
+/** Whole years of training in each sport; `null` for a sport the user said nothing about. */
+export type TrainingYears = Record<TrainingSport, number | null>;
+
+/** The body and training data the user entered (all optional; `null` or empty: not said). */
+export interface BodyAndTraining {
+  birth_year: number | null;
+  sex: Sex | null;
+  weight_kg: number | null;
+  resting_hr: number | null;
+  training_years: TrainingYears;
+  strength_experience: StrengthExperience | null;
+  strength_equipment: Equipment[];
+}
+
+/** What is sent to change them: only the fields that change, `null` clears one. */
+export interface BodyChanges {
+  birth_year?: number | null;
+  sex?: Sex | null;
+  weight_kg?: number | null;
+  resting_hr?: number | null;
+  /** Only the sports given change. */
+  training_years?: Partial<TrainingYears>;
+  strength_experience?: StrengthExperience | null;
+  strength_equipment?: Equipment[];
+}
+
+export interface AthleteProfile extends BodyAndTraining {
   /** An IANA name such as `Europe/Berlin`; empty if the user has not set one. */
   timezone: string;
   intervals: {
@@ -85,6 +117,13 @@ export interface Invalid {
   errors: string[];
 }
 
+/** The input was refused; `fields` holds the messages of each field, `errors` all of them. */
+export interface InvalidFields {
+  kind: 'invalid';
+  errors: string[];
+  fields: Record<string, string[]>;
+}
+
 /** Too many calls to Intervals.icu; the server asks to wait. */
 export interface RateLimited {
   kind: 'rate_limited';
@@ -93,6 +132,7 @@ export interface RateLimited {
 /** Every successful change answers with the whole profile. */
 export type GetAthleteResult = { kind: 'ok'; profile: AthleteProfile } | Forbidden;
 export type SetTimezoneResult = { kind: 'ok'; profile: AthleteProfile } | Invalid | Forbidden;
+export type SaveBodyResult = { kind: 'ok'; profile: AthleteProfile } | InvalidFields | Forbidden;
 export type SetThresholdResult =
   { kind: 'ok'; profile: AthleteProfile } | Invalid | NotFound | Forbidden;
 export type ClearThresholdResult = { kind: 'ok'; profile: AthleteProfile } | NotFound | Forbidden;
