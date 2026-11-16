@@ -8,6 +8,7 @@ import {
   ReviewActivity,
   ReviewWorkout,
   ReviewableWeek,
+  WeekVerdict,
   WorkoutStatus,
 } from '../../core/review/review-models';
 import { MISSING, formatDistance, formatDuration } from '../activities/activity-format';
@@ -149,6 +150,14 @@ export const FEEDBACK_SCALES: {
     label: 'Pain',
     choices: scaleChoices(['None', 'Slight', 'Noticeable', 'Strong', 'Severe']),
   },
+];
+
+/** The week as a whole, in four steps, from the worst to the best. */
+export const VERDICT_CHOICES: { value: WeekVerdict; label: string }[] = [
+  { value: 'bad', label: 'Bad' },
+  { value: 'fair', label: 'Fair' },
+  { value: 'good', label: 'Good' },
+  { value: 'strong', label: 'Strong' },
 ];
 
 const RECOMMENDATION_TEXTS: Record<Recommendation, string> = {

@@ -13,6 +13,7 @@ OTHER = "other"
 # The values of ``Activity.Source``.
 FIT_FILE = "fit_file"
 TCX_FILE = "tcx_file"
+GPX_FILE = "gpx_file"
 
 # A lap list longer than this is not a lap list of one activity; refusing it also bounds the
 # size of what is stored.

@@ -1,5 +1,6 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
+import { PlanningApi } from '../../core/planning/planning-api';
 import { ReviewApi } from '../../core/review/review-api';
 import {
   Comparison,
@@ -11,7 +12,7 @@ import {
   WeekReview,
   WorkoutStatus,
 } from '../../core/review/review-models';
-import { dayLabel, minutesText, weekRange } from '../planning/plan-format';
+import { dayLabel, minutesText, weekAfter, weekRange } from '../planning/plan-format';
 import {
   NONE,
   AUTOMATIC,
@@ -35,7 +36,7 @@ import { WeekFeedbackForm } from './week-feedback-form';
 
 type View = 'loading' | 'unreachable' | 'ready' | 'signed_out';
 /** What the page is waiting for; one thing at a time. */
-type Work = 'opening' | 'saving' | 'asking';
+type Work = 'opening' | 'saving' | 'asking' | 'drafting';
 
 const FALLBACK = 'Something went wrong. Please try again.';
 const REFRESH_FAILED = 'The list of weeks could not be refreshed. Please try again.';
@@ -46,6 +47,12 @@ const SAVED = 'Saved.';
 const RATED = 'The rating was saved.';
 const FEEDBACK_SAVED = 'Your feedback was saved.';
 const COMMENTED = 'Your coach commented on the week.';
+const NEXT_NOT_PLANNABLE =
+  'The week after this one cannot be planned (only the current week and the next four can).';
+const NEXT_NOT_CONFIGURED = 'No AI provider is set up, so the next week was not drafted.';
+const NEXT_NO_TIME = 'You have no training time for the next week, so it was not drafted.';
+const NEXT_NOT_USABLE = 'The coach did not give a plan that could be used. Please try again.';
+const NEXT_TOO_MANY = 'Too many plans were requested. Please wait a minute and try again.';
 const NO_SUCH_ACTIVITY = 'That session does not exist any more.';
 /** The fields of the correction, in the order a person reads them. */
 const CORRECTION_FIELDS: readonly CorrectionField[] = ['activity', 'no_activity', 'status'];
@@ -72,6 +79,8 @@ interface ReviewDay {
 })
 export class ReviewPage implements OnInit {
   private readonly api = inject(ReviewApi);
+  private readonly planning = inject(PlanningApi);
+  private readonly router = inject(Router);
 
   protected readonly view = signal<View>('loading');
   protected readonly weeks = signal<ReviewableWeek[]>([]);
@@ -175,6 +184,60 @@ export class ReviewPage implements OnInit {
     this.errors.set([]);
     this.review.set(review);
     this.notice.set(FEEDBACK_SAVED);
+  }
+
+  /**
+   * The week was closed: the feedback is stored, so the coach is asked to draft the week after
+   * it, told the note of the user. That takes a minute or two and nothing else may start
+   * meanwhile. When it worked the draft is on the Week plan page; if not, the feedback stays
+   * saved, the week stays here and the note stays in the form.
+   */
+  protected async closeWeek(closed: { review: WeekReview; note: string }): Promise<void> {
+    this.errors.set([]);
+    this.review.set(closed.review);
+    this.notice.set(FEEDBACK_SAVED);
+    const next = weekAfter(closed.review.week_start);
+    this.work.set('drafting');
+    try {
+      const result = await this.planning.generate(next, closed.note);
+      switch (result.kind) {
+        case 'ok':
+          await this.router.navigate(['/planning'], { queryParams: { week: next } });
+          break;
+        case 'invalid':
+          this.errors.set([result.message]);
+          break;
+        case 'not_plannable':
+          this.errors.set([NEXT_NOT_PLANNABLE]);
+          break;
+        case 'not_configured':
+          this.errors.set([NEXT_NOT_CONFIGURED]);
+          break;
+        case 'no_time':
+          this.errors.set([NEXT_NO_TIME]);
+          break;
+        case 'not_usable':
+          this.errors.set([NEXT_NOT_USABLE]);
+          break;
+        case 'provider_problem':
+          this.errors.set([
+            result.retry_after === null
+              ? result.message
+              : `${result.message} Try again in ${result.retry_after} seconds.`,
+          ]);
+          break;
+        case 'rate_limited':
+          this.errors.set([NEXT_TOO_MANY]);
+          break;
+        case 'forbidden':
+          this.view.set('signed_out');
+          break;
+      }
+    } catch {
+      this.errors.set([FALLBACK]);
+    } finally {
+      this.work.set(null);
+    }
   }
 
   /** The coach commented: the whole week comes back with the comment in it. */

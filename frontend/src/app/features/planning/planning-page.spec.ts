@@ -1,5 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
 import { CoachApi } from '../../core/coach/coach-api';
 import { AiProviderState, GetProviderResult } from '../../core/coach/coach-models';
 import { PlanningApi } from '../../core/planning/planning-api';
@@ -52,6 +52,7 @@ function plan(changes: Partial<WeekPlan> = {}): WeekPlan {
     version: 2,
     status: 'draft',
     reason: 'Drafted by the coach',
+    note: '',
     rationale: 'Base week with one tempo session.',
     parent: null,
     created_at: '2026-11-13T23:27:53.638352Z',
@@ -210,7 +211,7 @@ function createStubs() {
   return {
     planning: {
       weeks: vi.fn<() => Promise<ListWeeksResult>>(),
-      generate: vi.fn<(week: string) => Promise<GenerateResult>>(),
+      generate: vi.fn<(week: string, note?: string) => Promise<GenerateResult>>(),
       get: vi.fn<(id: string) => Promise<GetPlanResult>>(),
       confirm: vi.fn<(id: string, push?: boolean) => Promise<ConfirmPlanResult>>(),
       push: vi.fn<(id: string) => Promise<PushPlanResult>>(),
@@ -239,6 +240,8 @@ describe('PlanningPage', () => {
       weeks?: ListWeeksResult;
       provider?: GetProviderResult;
       plans?: Record<string, GetPlanResult>;
+      /** The address the page is opened at, e.g. `/planning?week=2026-11-23`. */
+      url?: string;
     } = {},
   ) {
     stubs = createStubs();
@@ -261,11 +264,14 @@ describe('PlanningPage', () => {
     TestBed.configureTestingModule({
       imports: [PlanningPage],
       providers: [
-        provideRouter([]),
+        provideRouter([{ path: 'planning', component: PlanningPage }]),
         { provide: PlanningApi, useValue: stubs.planning },
         { provide: CoachApi, useValue: stubs.coach },
       ],
     });
+    if (options.url !== undefined) {
+      await TestBed.inject(Router).navigateByUrl(options.url);
+    }
     fixture = TestBed.createComponent(PlanningPage);
     page = fixture.nativeElement as HTMLElement;
     await settle(fixture);
@@ -767,6 +773,137 @@ describe('PlanningPage', () => {
     });
   });
 
+  describe('the week named in the address', () => {
+    it('opens that week instead of the usual one', async () => {
+      await setup({ url: `/planning?week=${LATER}` });
+
+      expect(select().value).toBe(LATER);
+    });
+
+    it.each(['2026-11-24', 'nonsense', '', '2020-01-06'])(
+      'falls back to next week for %j, which is no week of the list',
+      async (week) => {
+        await setup({ url: `/planning?week=${week}` });
+
+        expect(select().value).toBe(NEXT);
+      },
+    );
+
+    it('opens next week without an address that names one', async () => {
+      await setup({ url: '/planning' });
+
+      expect(select().value).toBe(NEXT);
+    });
+  });
+
+  describe('the note for the coach', () => {
+    const field = () => query<HTMLTextAreaElement>(page, '#draft-note');
+
+    /** Typing: the page has shown the text before anything is pressed, as it does for a person. */
+    async function write(text: string) {
+      field().value = text;
+      field().dispatchEvent(new Event('input'));
+      await settle(fixture);
+    }
+
+    it('is offered with its limit, and only with a provider', async () => {
+      await setup();
+
+      expect(field().value).toBe('');
+      expect(text()).toContain('Up to 300 characters');
+      expect(text()).toContain('the rules of the plan come first');
+    });
+
+    it('is not offered without a provider', async () => {
+      await setup({ provider: provider(false) });
+
+      expect(page.querySelector('#draft-note')).toBeNull();
+    });
+
+    it('goes with the draft, and is empty again once the draft is there', async () => {
+      await setup();
+      stubs.planning.generate.mockResolvedValue({ kind: 'ok', plan: plan({ note: 'A trip' }) });
+      await write('A trip');
+
+      await click('generate');
+
+      expect(stubs.planning.generate).toHaveBeenCalledExactlyOnceWith(NEXT, 'A trip');
+      expect(field().value).toBe('');
+    });
+
+    it('stays in the field when the coach did not give a plan', async () => {
+      await setup();
+      stubs.planning.generate.mockResolvedValue({ kind: 'not_usable', problems: [] });
+      await write('A trip');
+
+      await click('generate');
+
+      expect(field().value).toBe('A trip');
+    });
+
+    it('is not sent when it is too long, and the page says so', async () => {
+      await setup();
+      await write('x'.repeat(301));
+
+      await click('generate');
+
+      expect(stubs.planning.generate).not.toHaveBeenCalled();
+      expect(alerts()).toEqual(['Use at most 300 characters for the note.']);
+    });
+
+    it('may be as long as the limit', async () => {
+      await setup();
+      stubs.planning.generate.mockResolvedValue({ kind: 'ok', plan: plan() });
+      await write('x'.repeat(300));
+
+      await click('generate');
+
+      expect(stubs.planning.generate).toHaveBeenCalledTimes(1);
+    });
+
+    it('shows what the server said when it refuses the note', async () => {
+      await setup();
+      stubs.planning.generate.mockResolvedValue({
+        kind: 'invalid',
+        message: 'A note is plain text.',
+      });
+      await write('a');
+
+      await click('generate');
+
+      expect(alerts()).toEqual(['A note is plain text.']);
+      expect(field().value).toBe('a');
+    });
+
+    it('is switched off while the coach works', async () => {
+      await setup();
+      stubs.planning.generate.mockReturnValue(deferred<GenerateResult>().promise);
+
+      button('generate').click();
+      await settle(fixture);
+
+      expect(field().disabled).toBe(true);
+    });
+
+    it('is shown as text with the draft it was made for, and left out when empty', async () => {
+      await setup({
+        plans: {
+          [DRAFT_ID]: { kind: 'ok', plan: plan({ note: '<b>No time</b>\nA trip' }) },
+        },
+      });
+
+      expect(byId('note')?.textContent).toContain('Your note for this draft:');
+      expect(byId('note')?.textContent).toContain('<b>No time</b>');
+      expect(byId('note')?.querySelector('b')).toBeNull();
+    });
+
+    it('is not shown when there was none', async () => {
+      await setup();
+
+      expect(byId('note')).toBeNull();
+    });
+  });
+
   describe('drafting', () => {
     it('asks for the selected week, says it takes a while and does one thing at a time', async () => {
       await setup();
@@ -776,7 +913,7 @@ describe('PlanningPage', () => {
       button('generate').click();
       await settle(fixture);
 
-      expect(stubs.planning.generate).toHaveBeenCalledExactlyOnceWith(NEXT);
+      expect(stubs.planning.generate).toHaveBeenCalledExactlyOnceWith(NEXT, '');
       expect(byId('generating')?.textContent).toContain('This can take a minute or two.');
       expect(button('generate').disabled).toBe(true);
       expect(select().disabled).toBe(true);

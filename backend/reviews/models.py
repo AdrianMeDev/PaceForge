@@ -86,20 +86,32 @@ class WorkoutReview(OwnedModel):
 
 class WeekFeedback(OwnedModel):
     """How the user felt about one week (Monday to Sunday): at most one per user and week, which
-    can be changed at any time. Every scale may be left empty; ``notes`` is the user's own free
-    text, shown as text and never interpreted (and never sent to the coach)."""
+    can be changed at any time. Every scale may be left empty; ``verdict`` is the week as a whole in
+    one of four fixed words (empty: none given); ``notes`` is the user's own free text, shown as
+    text and never interpreted (and never sent to the coach)."""
+
+    class Verdict(models.TextChoices):
+        BAD = "bad", "Bad"
+        FAIR = "fair", "Fair"
+        GOOD = "good", "Good"
+        STRONG = "strong", "Strong"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid7, editable=False)
     week_start = models.DateField()
     fatigue = models.PositiveSmallIntegerField(null=True, blank=True)
     motivation = models.PositiveSmallIntegerField(null=True, blank=True)
     pain = models.PositiveSmallIntegerField(null=True, blank=True)
+    verdict = models.CharField(max_length=10, choices=Verdict.choices, blank=True)
     notes = models.CharField(max_length=NOTES_MAX, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         constraints = [
             models.UniqueConstraint(fields=["owner", "week_start"], name="reviews_one_per_week"),
+            models.CheckConstraint(
+                condition=Q(verdict__in=["", "bad", "fair", "good", "strong"]),
+                name="reviews_feedback_verdict_is_known",
+            ),
             models.CheckConstraint(
                 condition=Q(week_start__iso_week_day=1), name="reviews_feedback_week_is_a_monday"
             ),

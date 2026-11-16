@@ -183,6 +183,26 @@ describe('ActivitiesPage', () => {
     });
   });
 
+  describe('the file input', () => {
+    it('offers the formats the server reads, compressed ones too', async () => {
+      await setup(ok([]));
+
+      const input = query<HTMLInputElement>(page, '#file');
+
+      expect(input.accept.split(',')).toEqual(['.fit', '.tcx', '.gpx', '.gz']);
+      expect(input.multiple).toBe(true);
+    });
+
+    it('sends a compressed and a gpx file like any other', async () => {
+      await setup(ok([]));
+      api.import.mockResolvedValue({ kind: 'imported', activity: RUN });
+
+      await choose(file('a.fit.gz'), file('b.gpx'));
+
+      expect(api.import.mock.calls.map((call) => call[0].name)).toEqual(['a.fit.gz', 'b.gpx']);
+    });
+  });
+
   describe('the list', () => {
     it('shows what the files report and a dash for the rest', async () => {
       await setup(ok([RUN, BARE]));

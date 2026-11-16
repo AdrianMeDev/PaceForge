@@ -19,6 +19,8 @@ from .schema import (
 )
 
 REASON_MAX = 200
+# The note of the athlete that a draft was made with: their own words about the week, as text.
+NOTE_MAX = 300
 # The other limits are those of the format in ``planning.schema``, the single source.
 
 
@@ -47,6 +49,9 @@ class WeeklyPlan(OwnedModel):
     )
     reason = models.CharField(max_length=REASON_MAX, blank=True)
     rationale = models.CharField(max_length=RATIONALE_MAX, blank=True)
+    # What the athlete wrote about the week when asking for this draft (plain text, line breaks
+    # allowed); empty if nothing. Free text, shown as text and never interpreted.
+    note = models.CharField(max_length=NOTE_MAX, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     # Set when the plan is confirmed and kept when it is superseded; empty for drafts.
     confirmed_at = models.DateTimeField(null=True, blank=True)

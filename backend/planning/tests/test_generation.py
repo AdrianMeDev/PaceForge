@@ -4,6 +4,7 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import pytest
+from django.core.exceptions import ValidationError
 
 from accounts.models import User
 from athletes.models import AthleteProfile, ThresholdValue
@@ -31,7 +32,7 @@ from planning.generation import (
     generate,
     plannable_weeks,
 )
-from planning.models import PlannedWorkout, WeeklyPlan
+from planning.models import NOTE_MAX, PlannedWorkout, WeeklyPlan
 from planning.prompt import SYSTEM_PROMPT
 from planning.schema import Goal, Sport, WeekPlan, Workout, ZoneSystem, to_json
 
@@ -250,6 +251,98 @@ class TestADraftFromTheFirstAnswer:
 
         assert (first.version, second.version) == (1, 2)
         assert [p.status for p in plans(alice)] == [Status.DRAFT, Status.DRAFT]
+
+
+class TestTheNoteOfTheAthlete:
+    NOTE = "No time on Tuesday.\nA trip on Saturday."
+
+    def test_it_is_told_to_the_coach_as_data_and_stored_with_the_draft(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        scripted = provide(good())
+
+        result = generate(alice, MONDAY, self.NOTE)
+
+        (message,) = scripted.calls[0][1]
+        data = json.loads(message.content.split("The data follows.\n\n", 1)[1])
+        assert data["athlete_note"] == self.NOTE
+        assert result.plan.note == self.NOTE
+        assert plans(alice)[0].note == self.NOTE
+
+    def test_it_is_cleaned_before_the_coach_and_the_database_see_it(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        scripted = provide(good())
+
+        result = generate(alice, MONDAY, "  one\r\ntwo \n")
+
+        assert '"athlete_note":"one\\ntwo"' in scripted.calls[0][1][0].content
+        assert result.plan.note == "one\ntwo"
+
+    def test_without_a_note_none_is_told_and_none_is_stored(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        scripted = provide(good())
+
+        result = generate(alice, MONDAY)
+
+        assert '"athlete_note":null' in scripted.calls[0][1][0].content
+        assert result.plan.note == ""
+
+    def test_the_repair_round_keeps_the_note(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        scripted = provide("not a plan", good())
+
+        result = generate(alice, MONDAY, self.NOTE)
+
+        assert len(scripted.calls) == 2
+        for _, messages, _ in scripted.calls:
+            assert self.NOTE.replace("\n", "\\n") in messages[0].content
+        assert result.plan.note == self.NOTE
+
+    def test_each_version_has_its_own_note(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        provide(good(), good())
+
+        generate(alice, MONDAY, "first")
+        generate(alice, MONDAY)
+
+        assert [plan.note for plan in plans(alice)] == ["first", ""]
+
+    @pytest.mark.parametrize("note", ["x" * (NOTE_MAX + 1), "a\x00b", "a\u202eb"])
+    def test_a_note_that_does_not_fit_is_refused_before_anything_is_asked(
+        self, alice: User, provide: Callable[..., Scripted], note: str
+    ) -> None:
+        scripted = provide(good())
+
+        with pytest.raises(ValidationError) as raised:
+            generate(alice, MONDAY, note)
+
+        assert set(raised.value.message_dict) == {"note"}
+        assert scripted.calls == []
+        assert records(alice) == []
+        assert plans(alice) == []
+
+    def test_a_bad_note_is_said_before_a_week_that_cannot_be_planned(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        provide(good())
+
+        with pytest.raises(ValidationError):
+            generate(alice, MONDAY + timedelta(weeks=20), "x" * (NOTE_MAX + 1))
+
+    def test_a_week_without_time_asks_nothing_whatever_the_note_says(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        scripted = provide(good())
+        WeekdayMinutes.objects.filter(owner=alice).update(minutes=0)
+
+        with pytest.raises(NoTimeAvailable):
+            generate(alice, MONDAY, self.NOTE)
+
+        assert scripted.calls == []
 
 
 class TestJsonOutput:

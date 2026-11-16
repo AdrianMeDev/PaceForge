@@ -7,7 +7,7 @@ The long-term goal is described in `PROJECT_PLAN.md`; this repository is in earl
 admin page for invitations, email verification, sign-in and sign-out with server-side sessions,
 password reset, two-factor authentication (authenticator app plus recovery codes, mandatory for
 administrators), a personal Intervals.icu connection with an API key (stored encrypted), importing
-activities from FIT and TCX files, an athlete profile with your time zone, your thresholds (typed in,
+activities from FIT, TCX and GPX files (also the whole Strava export), an athlete profile with your time zone, your thresholds (typed in,
 read from Intervals.icu or estimated from your activities) and the training zones that follow from
 them, goals (races, threshold targets and general goals, with priorities A, B and C), your training time
 (minutes per weekday, a weekly budget, injuries and limitations, vacation and illness), your own AI provider
@@ -329,10 +329,11 @@ name for it would answer with an error, shown as an unexpected answer.
 ## Activities
 
 The **Activities** page (`/activities`, also in the navigation) is where athletes bring their
-history in: choose FIT or TCX files from a watch or from an export (Garmin, COROS, Strava, …), one
-or several at once. Intervals.icu does not hand out activities that it received from Strava, so for
-an athlete whose history lives in Strava the file import is the way in (details in
-[`docs/phase0-intervals.md`](docs/phase0-intervals.md)).
+history in: choose FIT, TCX or GPX files from a watch or from an export (Garmin, COROS, Strava, …),
+one or several at once, compressed (`.fit.gz`) or not. Intervals.icu does not hand out activities
+that it received from Strava, so for an athlete whose history lives in Strava the file import is the
+way in (details in [`docs/phase0-intervals.md`](docs/phase0-intervals.md)). The whole history of
+Strava is imported with one command: see [The whole Strava history](#the-whole-strava-history).
 
 1. Get the files. The menus change from time to time; if one of these is gone, look for "export
    original" or "export FIT/TCX" in the same place.
@@ -342,8 +343,9 @@ an athlete whose history lives in Strava the file import is the way in (details 
      List**, **Export Data** sends you a bulk export of FIT or TCX files by email.
    - **Strava:** on an activity's web page, the three dots, **Export Original**. For the whole
      history use Settings, My Account, **Download or Delete Your Account**, **Request Your
-     Archive**; it can take hours or days to arrive. The files in its `activities` folder are often
-     compressed (`.fit.gz`): unpack them first (`gunzip activities/*.gz`).
+     Archive**; it can take hours or days to arrive. Do not unpack it: the ZIP goes to
+     [one command](#the-whole-strava-history). A single file of it, also a compressed one
+     (`.fit.gz`), can be chosen on the page as it is.
 2. Open **Activities**, press the file chooser and select the files. Each file is sent on its own
    and gets its own line: *Imported*, *Already imported*, the reason it was refused, or *too
    large*. The list below shows date, sport, duration, distance, average heart rate, RPE, load and
@@ -357,8 +359,15 @@ an athlete whose history lives in Strava the file import is the way in (details 
 What you should know:
 
 - **The content decides, not the name.** A FIT file named `.txt` imports; a text file named `.fit`
-  does not. Compressed files (`.gz`) and zip archives are refused with "The file is neither a FIT
-  nor a TCX file": unpack them first.
+  does not. A gzip-compressed file (`.fit.gz`, `.tcx.gz`, `.gpx.gz`) is unpacked first, in memory,
+  and what is stored (and compared for duplicates) is the unpacked file, so the same activity as
+  `.fit` and as `.fit.gz` is one. It may not unpack to more than the limit below. Zip archives are
+  refused with "The file is neither a FIT, a TCX nor a GPX file".
+- **A GPX file has less in it.** It is a list of points with a time and, where the app wrote it, a
+  heart rate. The start, the elapsed time (first to last point), the distance (added up from the
+  points) and the average and maximum heart rate are stored; there is no moving time, no power, no
+  ascent and no calories. The sport is the type of the track if it has one (running, cycling,
+  swimming), otherwise *other*; an import of a whole Strava export fills it in from Strava's list.
 - **Only what the file reports is stored, nothing is estimated.** Sport (running, cycling,
   swimming, strength, otherwise *other* with the file's own wording), start (UTC, shown in your
   browser's time zone), elapsed and timer time, distance, average and maximum heart rate, average
@@ -377,8 +386,45 @@ What you should know:
   reverse proxy, allow request bodies at least that large (for nginx `client_max_body_size`); the
   proxy would otherwise answer before PaceForge can.
 - **Damaged or hostile files** are refused with a message and store nothing: FIT checksums are
-  verified, TCX documents with a `DOCTYPE` or entities are refused, and the number of records,
-  laps and nested elements is capped.
+  verified, TCX and GPX documents with a `DOCTYPE` or entities are refused, and the number of
+  records, points, laps and nested elements is capped.
+
+### The whole Strava history
+
+Strava hands out the history as a **ZIP** (Settings, My Account, **Download or Delete Your
+Account**, **Request Your Archive**; the mail with the link can take hours or days). It holds an
+`activities` folder with the recordings, most of them compressed (`.fit.gz`, `.tcx.gz`, `.gpx`),
+and `activities.csv`, one line per activity. Import it for your account with one command on the
+server, without unpacking it:
+
+```
+cd backend
+uv run python manage.py import_strava ~/Downloads/export_12345.zip --user you@example.com
+```
+
+- **What is imported:** every recording the list names, through the same import as the page (so a
+  duplicate, also one that came from Intervals.icu or by hand, is skipped), and every line of the
+  list that has **no** recording (a session entered by hand at Strava): it is stored like a session
+  [entered by hand](#sessions-entered-by-hand) with its sport, start, duration in whole minutes and
+  distance. The sport of Strava's list is used where the file does not know it (a GPX file never
+  does): Run, Trail Run and Virtual Run are running; Ride, Virtual Ride, E-Bike Ride, Mountain Bike
+  Ride and Gravel Ride are cycling; Swim is swimming; Weight Training is strength; everything else
+  (Walk, Hike, Yoga, …) is *other*. A file that says a sport itself keeps it.
+- **What is not:** the name and the description of an activity, the gear, the photos, the comments
+  and Strava's own load (*Relative Effort*). Only what the files and the list report is stored.
+- **You can run it again.** What you have is skipped, so a second run, or one with a newer export,
+  adds only what is new. The command prints counts only: imported with and without a recording,
+  skipped because you have them already, recordings that cannot be read or are not in the export,
+  and lines of the list that could not be read. Estimated thresholds are refreshed once at the end.
+- **No limit of the page applies** (30 a minute); each recording is still limited to
+  `ACTIVITY_UPLOAD_MAX_BYTES` after unpacking, and nothing is ever extracted to disk.
+- **The list must be English.** `activities.csv` is read by the names of its columns (*Activity ID*,
+  *Activity Date*, *Activity Type*, *Elapsed Time*, *Distance*, *Filename*) and its dates as Strava
+  writes them in English (`Nov 14, 2026, 7:30:12 AM`, UTC). An account set to another language
+  is refused with a message that says so; set it to English at Strava, request the archive again
+  and run the command again. A line whose date or number cannot be read is skipped and counted.
+- **Check it.** After the first run open **Activities**: the count there is the sum of what was
+  imported.
 
 ### Sessions entered by hand
 
@@ -874,8 +920,12 @@ links to the Connections page.
 
 1. Choose the **week**. The current week and the four after it can be planned; the page starts with
    next week.
-2. Press **Draft a plan with my coach**. The page waits for the answer, which can take **a minute or
-   two**. You can do nothing else on the page meanwhile.
+2. Optionally write **what the coach should know about the week** (a day without time, a trip, a
+   niggle; up to 300 characters, `NOTE_MAX` in `backend/planning/models.py`), then press **Draft a
+   plan with my coach**. The page waits for the answer, which can take **a minute or two**. You can
+   do nothing else on the page meanwhile. The note is told to the coach as advice, not as an
+   instruction: the rules of the plan come first. It is kept with the draft and shown above it
+   (*Your note for this draft*); drafting again takes a new note.
 3. Read the **draft**: the workouts by day with their length, their zone (power, heart rate or
    pace) and, for intervals, their parts, and below the title what the **checks** say. An *error*
    (for example a workout on a day you cannot train, or segments that do not add up to the length)
@@ -1063,9 +1113,21 @@ the workouts that are the same training (see [Week plan](#week-plan)).
 to 500 characters. You can change or clear it at any time. The load follows the rating (minutes
 times RPE, in AU; it is not TSS).
 
-**How the week felt.** Tiredness, motivation and pain, each from 1 to 5, and a note of up to 500
-characters. There is one feedback per week; saving replaces it, and saving with nothing in it
-removes it.
+**How the week felt.** Tiredness, motivation and pain, each from 1 to 5, the week as a whole
+(*bad*, *fair*, *good* or *strong*) and a note of up to 500 characters. There is one feedback per
+week; saving replaces it, and saving with nothing in it removes it.
+
+**Close the week.** At the end of the week (on a Sunday, say) the form has a second part, *The next
+week*: an optional note of up to 300 characters for the coach (a day without time, a trip, a
+niggle) and the button **Close the week and draft the next one**. It saves the feedback as above
+and then asks your own coach for a draft of the **week after** the one on the screen, told your
+verdict and your note; when the draft is there the page takes you to it on the
+[Week plan](#week-plan) page, where you read it and confirm or discard it as always. It takes a
+minute or two and **is billed to your AI provider** like any draft. If the coach cannot draft (no
+provider, no training time that week, an answer that cannot be used), the page says why, the
+feedback stays saved and the note stays in the form. The note belongs to the draft and is shown
+with it; it is not part of the feedback. Nothing runs by itself: there is no automatic weekly
+run.
 
 **Planned and done.** A table per sport and for the week: the planned workouts and minutes, the
 activities done and their minutes (every activity of the week counts, planned or not), and the sum
@@ -1092,7 +1154,7 @@ shown as text, and it is **never sent back** to the coach, not even when it plan
 
 **The effect on the next week.** When your coach drafts a [week plan](#week-plan), it is told how
 the week before went (`previous_week_review`): the workouts by status, the minutes planned and
-done, the mean RPE, the three scales and the recommendation of your review of that week, if you
+done, the mean RPE, the three scales, your verdict on the week and the recommendation of your review of that week, if you
 asked for one. That is advice, not a rule: the checks of the plan stay as they are, and nothing is
 confirmed without you. The figures are worked out when the plan is drafted, so a correction or a
 rating you make later is in the next draft without asking the coach again.
@@ -1111,7 +1173,7 @@ is not part of a form is refused):
 | `GET /api/reviews/weeks/`                          | the weeks that can be reviewed                            |
 | `GET /api/reviews/weeks/<Monday>/`                 | one week: plan, match, activities, comparison, feedback, comment |
 | `PUT /api/reviews/weeks/<Monday>/workouts/<id>/`   | `activity`, `no_activity`, `status` of one workout        |
-| `PUT /api/reviews/weeks/<Monday>/feedback/`        | `fatigue`, `motivation`, `pain`, `notes` of the week      |
+| `PUT /api/reviews/weeks/<Monday>/feedback/`        | `fatigue`, `motivation`, `pain`, `verdict`, `notes`      |
 | `POST /api/reviews/weeks/<Monday>/comment/`        | asks the coach to comment on the week (`201`)             |
 | `PATCH /api/activities/<id>/`                      | `rpe` and `notes` of an activity (nothing else changes)  |
 
@@ -1179,7 +1241,7 @@ Set in `.env` or in the environment. Values without a default are required.
 | `INTERVALS_API_BASE_URL`       | `https://intervals.icu/api/v1`      | Only for tests or a fake server: where the Intervals.icu API is. `http://` or `https://`. |
 | `AI_ALLOWED_BASE_URLS`         | empty                               | Comma-separated base URLs of OpenAI-compatible AI endpoints that users may choose, e.g. `https://api.openai.com/v1` or `https://api.deepseek.com`. Empty: none. A bad entry stops Django at startup, see [AI coach](#ai-coach-bring-your-own-key). |
 | `ANTHROPIC_API_BASE_URL`       | `https://api.anthropic.com`         | Only for tests or a fake server: where the Anthropic API is. `http://` or `https://`. |
-| `ACTIVITY_UPLOAD_MAX_BYTES`    | `26214400` (25 MB)                  | Largest FIT or TCX file accepted for import, in bytes. Must be a positive integer. |
+| `ACTIVITY_UPLOAD_MAX_BYTES`    | `26214400` (25 MB)                  | Largest FIT, TCX or GPX file accepted for import, in bytes, and the most a compressed file may unpack to. Must be a positive integer. |
 | `SMTP_HOST`                    | empty                               | Empty: emails are printed to the Django console. Set: they are sent via SMTP.     |
 | `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_USE_TLS` | `587`, empty, empty, `true` | SMTP settings, used when `SMTP_HOST` is set. |
 | `DEFAULT_FROM_EMAIL`           | `PaceForge <noreply@localhost>`     | Sender of all emails.                                                             |
@@ -1195,8 +1257,9 @@ Set in `.env` or in the environment. Values without a default are required.
 - **`Port 4200 is already in use` / `That port is already in use`.** Another dev server is running.
   Stop it, or start this one elsewhere: `uv run python manage.py runserver 8010` together with
   `npx ng serve --port 4210 --proxy-config <file>` that points `/api` to that port.
-- **An import says "The file is neither a FIT nor a TCX file".** The file is compressed (`.gz`),
-  a zip archive, a GPX file or something else. Unpack it, or export FIT or TCX instead.
+- **An import says "The file is neither a FIT, a TCX nor a GPX file".** The file is a zip
+  archive, a format of another kind or something else. Unpack it (a `.gz` file is read as it is), or
+  export FIT, TCX or GPX instead.
 - **Importing a big file fails with "413" or an error page before PaceForge answers.** A reverse
   proxy in front limits the request body; raise its limit to the value of
   `ACTIVITY_UPLOAD_MAX_BYTES` or more.

@@ -13,7 +13,7 @@ from accounts.models import User
 from athletes.models import ThresholdValue
 from availability.models import AvailabilitySettings, UnavailablePeriod, WeekdayMinutes
 from planning import services
-from planning.models import PlannedWorkout, WeeklyPlan
+from planning.models import NOTE_MAX, PlannedWorkout, WeeklyPlan
 from planning.schema import (
     Exercise,
     ExerciseEquipment,
@@ -35,6 +35,7 @@ from planning.services import (
     PlanNotFound,
     PlanStateError,
     canonical,
+    clean_note,
     confirm,
     discard,
     get,
@@ -135,6 +136,55 @@ def bad_week(monday: date = MONDAY) -> WeekPlan:
 
 def draft(user: User, plan: WeekPlan | None = None, **kwargs: Any) -> WeeklyPlan:
     return save_draft(user, plan or good_week(), **kwargs)
+
+
+class TestTheNote:
+    def test_a_draft_keeps_the_note_it_was_made_with(self, alice: User) -> None:
+        plan = draft(alice, note="No time on Tuesday.\nKnee is sore.")
+
+        plan.refresh_from_db()
+        assert plan.note == "No time on Tuesday.\nKnee is sore."
+
+    def test_a_draft_without_a_note_has_none(self, alice: User) -> None:
+        assert draft(alice).note == ""
+
+    def test_the_note_is_cleaned_before_it_is_stored(self, alice: User) -> None:
+        plan = draft(alice, note="  one\r\ntwo\rthree \n")
+
+        assert plan.note == "one\ntwo\nthree"
+
+    def test_a_note_that_does_not_fit_stores_nothing(self, alice: User) -> None:
+        with pytest.raises(ValidationError) as raised:
+            draft(alice, note="x" * (NOTE_MAX + 1))
+
+        assert set(raised.value.message_dict) == {"note"}
+        assert WeeklyPlan.objects.count() == 0
+
+    def test_the_longest_note_is_accepted(self, alice: User) -> None:
+        assert len(draft(alice, note="n" * NOTE_MAX).note) == NOTE_MAX
+
+    @pytest.mark.parametrize(
+        "note",
+        ["a\x00b", "a\tb", "a\x1bb", "a\u202eb", "a\u2028b", "a\x85b", "a\x7fb"],
+    )
+    def test_a_note_is_plain_text(self, note: str) -> None:
+        with pytest.raises(ValidationError) as raised:
+            clean_note(note)
+
+        assert raised.value.message_dict == {"note": ["A note is plain text."]}
+
+    def test_a_message_holds_nothing_of_the_note(self) -> None:
+        for note in ("SECRET\x00" + "x" * NOTE_MAX, "SECRET" * 100):
+            with pytest.raises(ValidationError) as raised:
+                clean_note(note)
+
+            assert "SECRET" not in str(raised.value)
+
+    def test_a_note_of_only_blanks_is_no_note(self) -> None:
+        assert clean_note(" \n \r\n ") == ""
+
+    def test_the_limit_counts_characters_not_bytes(self) -> None:
+        assert clean_note("\U0001f600" * NOTE_MAX) == "\U0001f600" * NOTE_MAX
 
 
 class TestSavingADraft:

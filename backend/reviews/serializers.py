@@ -123,6 +123,7 @@ def feedback_data(feedback: WeekFeedback) -> dict[str, Any]:
         "fatigue": feedback.fatigue,
         "motivation": feedback.motivation,
         "pain": feedback.pain,
+        "verdict": feedback.verdict or None,
         "notes": feedback.notes,
         "updated_at": _time(feedback.updated_at),
     }
@@ -157,6 +158,7 @@ def _origin(value: Any) -> str | None:
 
 # What the forms may say, in fixed words: nothing of the input is repeated in an answer.
 NOT_A_STATUS = "Choose one of the statuses."
+NOT_A_VERDICT = "Choose one of the verdicts."
 NOT_AN_ID = "Must be a valid id."
 NOT_A_BOOLEAN = "Must be true or false."
 ONLY_THESE_FIELDS = "Only the fields of this form can be sent."
@@ -219,7 +221,8 @@ class CorrectionSerializer(_Form):
 
 
 class FeedbackSerializer(_Form):
-    """How the user felt about the week: three scales of 1 to 5 and a note."""
+    """How the user felt about the week: three scales of 1 to 5, the week as a whole in one of four
+    words and a note."""
 
     fatigue = WholeNumberField(
         min_value=SCALE_MIN, max_value=SCALE_MAX, allow_null=True, required=False, default=None
@@ -229,6 +232,13 @@ class FeedbackSerializer(_Form):
     )
     pain = WholeNumberField(
         min_value=SCALE_MIN, max_value=SCALE_MAX, allow_null=True, required=False, default=None
+    )
+    verdict = serializers.ChoiceField(
+        choices=WeekFeedback.Verdict.choices,
+        allow_null=True,
+        required=False,
+        default=None,
+        error_messages={"invalid_choice": NOT_A_VERDICT},
     )
     notes = TextField(max_length=NOTES_MAX, allow_blank=True, required=False, default="")
 

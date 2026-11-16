@@ -96,6 +96,21 @@
           <a routerLink="/settings/connections">Set one up</a>
         </p>
       } @else {
+        <div class="field">
+          <label for="draft-note">What should the coach know about this week? (optional)</label>
+          <textarea
+            id="draft-note"
+            rows="2"
+            [attr.maxlength]="noteMax + 100"
+            [value]="draftNote()"
+            [disabled]="busy()"
+            (input)="draftNote.set($any($event.target).value)"
+          ></textarea>
+          <p class="hint">
+            A day without time, a trip, a niggle. Up to {{ noteMax }} characters. The coach reads it
+            as advice; the rules of the plan come first.
+          </p>
+        </div>
         <p>
           <button
             type="button"
@@ -160,6 +175,11 @@
             </div>
             @if (shown.rationale) {
               <p class="rationale" data-testid="rationale">{{ shown.rationale }}</p>
+            }
+            @if (shown.note) {
+              <p class="note" data-testid="note">
+                <strong>Your note for this draft:</strong> {{ shown.note }}
+              </p>
             }
 
             @if (canRestore()) {

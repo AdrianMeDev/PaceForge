@@ -91,6 +91,7 @@ const REVIEW = {
     fatigue: 4,
     motivation: null,
     pain: 1,
+    verdict: 'good',
     notes: 'Heavy legs',
     updated_at: '2026-11-14T08:00:00.123456Z',
   },
@@ -237,6 +238,26 @@ describe('ReviewApi', () => {
       expect(result.kind === 'ok' && result.review.feedback?.fatigue).toBeNull();
     });
 
+    it.each(['bad', 'fair', 'good', 'strong'] as const)('reads the verdict %s', async (word) => {
+      const judged = changed((review) => {
+        review.feedback.verdict = word;
+      });
+
+      const { result } = await run(api.week(WEEK), 'GET', `${BASE}${WEEK}/`, judged, 200);
+
+      expect(result.kind === 'ok' && result.review.feedback?.verdict).toBe(word);
+    });
+
+    it('reads no verdict as null', async () => {
+      const unjudged = changed((review) => {
+        review.feedback.verdict = null as unknown as string;
+      });
+
+      const { result } = await run(api.week(WEEK), 'GET', `${BASE}${WEEK}/`, unjudged, 200);
+
+      expect(result.kind === 'ok' && result.review.feedback?.verdict).toBeNull();
+    });
+
     it('returns the comment of the coach', async () => {
       const commented = changed((review) => {
         Object.assign(review, {
@@ -346,6 +367,9 @@ describe('ReviewApi', () => {
       ['no workouts list', (r) => ((r as { workouts: unknown }).workouts = {})],
       ['no comparison', (r) => ((r as { comparison: unknown }).comparison = null)],
       ['feedback that is a list', (r) => ((r as { feedback: unknown }).feedback = [])],
+      ['a verdict that is none of the four', (r) => (r.feedback.verdict = 'great')],
+      ['a verdict that is a number', (r) => (r.feedback.verdict = 3 as unknown as string)],
+      ['no verdict at all', (r) => delete (r.feedback as { verdict?: unknown }).verdict],
     ])('rejects an answer of the wrong shape: %s', async (_, change) => {
       await runFailing(api.week(WEEK), 'GET', `${BASE}${WEEK}/`, changed(change), 200);
     });
@@ -499,7 +523,13 @@ describe('ReviewApi', () => {
 
   describe('saveFeedback', () => {
     const URL = `${BASE}${WEEK}/feedback/`;
-    const INPUT: FeedbackInput = { fatigue: 4, motivation: null, pain: 1, notes: 'Heavy legs' };
+    const INPUT: FeedbackInput = {
+      fatigue: 4,
+      motivation: null,
+      pain: 1,
+      verdict: 'good',
+      notes: 'Heavy legs',
+    };
 
     it('puts the feedback as JSON and returns the whole week', async () => {
       const { result, request } = await run(api.saveFeedback(WEEK, INPUT), 'PUT', URL, REVIEW, 200);
@@ -531,6 +561,22 @@ describe('ReviewApi', () => {
           fatigue: ['Ensure this value is less than or equal to 5.'],
           notes: ['Must not contain control characters.'],
         },
+        message: null,
+      });
+    });
+
+    it('returns the message about the verdict', async () => {
+      const { result } = await run(
+        api.saveFeedback(WEEK, INPUT),
+        'PUT',
+        URL,
+        { verdict: ['Choose one of the verdicts.'] },
+        400,
+      );
+
+      expect(result).toEqual({
+        kind: 'invalid',
+        errors: { verdict: ['Choose one of the verdicts.'] },
         message: null,
       });
     });

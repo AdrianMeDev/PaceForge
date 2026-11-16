@@ -17,7 +17,7 @@ from reviews import matching, models, services
 from reviews.briefing import MAX_UNPLANNED
 from reviews.commenting import ATTEMPTS
 from reviews.matching import PARTIAL_BELOW_PERCENT, Status
-from reviews.models import COMMENT_MAX, NOTES_MAX, SCALE_MAX, SCALE_MIN
+from reviews.models import COMMENT_MAX, NOTES_MAX, SCALE_MAX, SCALE_MIN, WeekFeedback
 from reviews.prompt import NEXT_WEEK_WORDS
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -94,8 +94,13 @@ class TestTheApi:
 
     def test_the_fields_of_the_forms(self) -> None:
         assert "`activity`, `no_activity`, `status`" in TEXT
-        assert "`fatigue`, `motivation`, `pain`, `notes`" in TEXT
+        assert "`fatigue`, `motivation`, `pain`, `verdict`, `notes`" in TEXT
         assert "`rpe` and `notes`" in TEXT
+
+    def test_the_verdicts_are_the_words_of_the_model(self) -> None:
+        words = [value for value, _ in WeekFeedback.Verdict.choices]
+        assert "(*bad*, *fair*, *good* or *strong*)" in TEXT
+        assert all(f"*{word}*" in TEXT for word in words)
 
 
 class TestTheCoachsComment:

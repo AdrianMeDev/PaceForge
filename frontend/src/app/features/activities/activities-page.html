@@ -17,19 +17,21 @@
       <div class="panel">
         <h2>Import</h2>
         <div class="field">
-          <label for="file">FIT or TCX files</label>
+          <label for="file">FIT, TCX or GPX files</label>
           <input
             id="file"
             type="file"
-            accept=".fit,.tcx"
+            accept=".fit,.tcx,.gpx,.gz"
             multiple
             aria-describedby="file-hint"
             [disabled]="busy()"
             (change)="select($event)"
           />
           <p class="hint" id="file-hint">
-            Files from your watch or an export (Garmin, COROS, Strava, …). You can choose several at
-            once. What a file contains decides, not its name.
+            Files from your watch or an export (Garmin, COROS, Strava, …), also compressed ones
+            (<code>.fit.gz</code>). You can choose several at once. What a file contains decides,
+            not its name. A whole Strava export is imported on the server with a command; see the
+            README.
           </p>
         </div>
 
@@ -95,7 +97,7 @@
       <h2 class="list-title">Your activities</h2>
       @if (page().count === 0) {
         <p class="hint">
-          No activities yet. Import a FIT or TCX file above, or enter a session by hand.
+          No activities yet. Import a FIT, TCX or GPX file above, or enter a session by hand.
         </p>
       } @else {
         <div class="table-wrap" [attr.aria-busy]="refreshing()">

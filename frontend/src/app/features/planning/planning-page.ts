@@ -1,6 +1,6 @@
 import { DatePipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { CoachApi } from '../../core/coach/coach-api';
 import { PlanningApi } from '../../core/planning/planning-api';
 import {
@@ -28,6 +28,7 @@ import {
   EQUIPMENT_LABELS,
   stretchingText,
   targetText,
+  WEEK_NOTE_MAX,
   weekRange,
 } from './plan-format';
 import {
@@ -79,6 +80,7 @@ interface PlanDay {
 export class PlanningPage implements OnInit {
   private readonly planning = inject(PlanningApi);
   private readonly coach = inject(CoachApi);
+  private readonly route = inject(ActivatedRoute);
 
   protected readonly view = signal<View>('loading');
   protected readonly weeks = signal<PlannableWeek[]>([]);
@@ -95,6 +97,10 @@ export class PlanningPage implements OnInit {
   protected readonly noTime = signal(false);
   /** Intervals.icu is not usable: the page says where to connect it again. */
   protected readonly needsConnection = signal(false);
+  /** What the user wants the coach to know about the week, told with the next draft. */
+  protected readonly draftNote = signal('');
+  protected readonly noteMax = WEEK_NOTE_MAX;
+  protected readonly noteTooLong = computed(() => this.draftNote().length > WEEK_NOTE_MAX);
   /** Whether confirming a draft also sends the week to Intervals.icu (never without asking). */
   protected readonly sendAfterConfirm = signal(false);
 
@@ -161,8 +167,11 @@ export class PlanningPage implements OnInit {
       }
       this.weeks.set(weeks.weeks);
       this.configured.set(provider.state.configured);
-      // Next week is the usual one to plan; the first week is the one that is running now.
-      this.selected.set((weeks.weeks[1] ?? weeks.weeks[0])?.week_start ?? '');
+      // The week the address names (the week review sends one here after drafting it); else next
+      // week, the usual one to plan: the first week is the one that is running now.
+      const wanted = this.route.snapshot.queryParamMap.get('week');
+      const named = weeks.weeks.find((week) => week.week_start === wanted);
+      this.selected.set((named ?? weeks.weeks[1] ?? weeks.weeks[0])?.week_start ?? '');
       this.view.set('ready');
     } catch {
       this.view.set('unreachable');
@@ -194,14 +203,22 @@ export class PlanningPage implements OnInit {
       return;
     }
     this.clearMessages();
+    if (this.noteTooLong()) {
+      this.errors.set([`Use at most ${WEEK_NOTE_MAX} characters for the note.`]);
+      return;
+    }
     this.work.set('generating');
     try {
-      const result = await this.planning.generate(this.selected());
+      const result = await this.planning.generate(this.selected(), this.draftNote());
       switch (result.kind) {
         case 'ok':
+          this.draftNote.set('');
           this.plan.set(result.plan);
           this.notice.set('A draft was made. Please read it before you confirm it.');
           await this.refresh();
+          break;
+        case 'invalid':
+          this.errors.set([result.message]);
           break;
         case 'not_plannable':
           this.errors.set([NOT_PLANNABLE]);

@@ -24,6 +24,7 @@ import {
   ListReviewWeeksResult,
   Origin,
   Recommendation,
+  WeekVerdict,
   ReviewActivity,
   ReviewPlan,
   ReviewWorkout,
@@ -43,7 +44,7 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 const ACTIVITY_SPORTS: readonly string[] = ['running', 'cycling', 'swimming', 'strength', 'other'];
 const PLANNED_SPORTS: readonly string[] = ['running', 'cycling', 'swimming', 'strength'];
-const SOURCES: readonly string[] = ['fit_file', 'tcx_file', 'manual'];
+const SOURCES: readonly string[] = ['fit_file', 'tcx_file', 'gpx_file', 'manual'];
 const GOALS: readonly string[] = [
   'recovery',
   'endurance',
@@ -65,7 +66,14 @@ const PROVIDER_PROBLEMS: readonly string[] = [
   'not_allowed',
 ];
 const CORRECTION_FIELDS: readonly CorrectionField[] = ['activity', 'no_activity', 'status'];
-const FEEDBACK_FIELDS: readonly FeedbackField[] = ['fatigue', 'motivation', 'pain', 'notes'];
+const FEEDBACK_FIELDS: readonly FeedbackField[] = [
+  'fatigue',
+  'motivation',
+  'pain',
+  'verdict',
+  'notes',
+];
+const VERDICTS: readonly string[] = ['bad', 'fair', 'good', 'strong'];
 
 interface Reply {
   status: number;
@@ -338,6 +346,8 @@ function toFeedback(raw: unknown, reply: Reply): WeekFeedback {
     fatigue: numberOrNull(item['fatigue'], reply),
     motivation: numberOrNull(item['motivation'], reply),
     pain: numberOrNull(item['pain'], reply),
+    verdict:
+      item['verdict'] === null ? null : (oneOf(item['verdict'], VERDICTS, reply) as WeekVerdict),
     notes: string(item['notes'], reply),
     updated_at: text(item['updated_at'], reply),
   };

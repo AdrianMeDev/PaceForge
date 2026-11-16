@@ -82,6 +82,7 @@ h4 {
 }
 
 .rationale,
+.note,
 .notes {
   margin: 0.4rem 0 0;
   color: var(--muted);
@@ -200,4 +201,15 @@ button.secondary {
 .key-sessions {
   margin: 0.25rem 0;
   padding-left: 1.2rem;
+}
+
+textarea {
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
 }

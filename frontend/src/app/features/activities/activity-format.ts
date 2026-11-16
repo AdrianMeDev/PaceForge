@@ -21,6 +21,7 @@ export function sportLabel(activity: Pick<Activity, 'sport' | 'source_sport'>): 
 const SOURCE_LABELS: Record<Activity['source'], string> = {
   fit_file: 'FIT',
   tcx_file: 'TCX',
+  gpx_file: 'GPX',
   manual: 'Entered by hand',
 };
 

@@ -78,6 +78,15 @@ export function dayLabel(date: string): string {
   return `${WEEKDAYS[weekday]} ${day} ${MONTHS[month]}`;
 }
 
+/** The longest note a user may give the coach for a week (as on the server). */
+export const WEEK_NOTE_MAX = 300;
+
+/** The Monday a week after the given one, YYYY-MM-DD. */
+export function weekAfter(monday: string): string {
+  const [year, month, day] = monday.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, day + 7)).toISOString().slice(0, 10);
+}
+
 /** "16 Nov – 22 Nov": the week that starts on the given Monday, Sunday included. */
 export function weekRange(monday: string): string {
   const [year, month, day] = monday.split('-').map(Number);

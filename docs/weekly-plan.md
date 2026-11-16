@@ -377,6 +377,15 @@ the user can be shown what is wrong. Its statuses:
    the user sees what is wrong. If no answer could be read, nothing is stored and the user is told
    to try again.
 
+**A note for the week.** `generate(user, monday, note)` takes an optional note of up to 300 characters
+(`NOTE_MAX` in `backend/planning/models.py`): plain text with line breaks, no other control
+character; line ends are stored as `\n` and blanks around it are cut. A note that is too long or is
+not plain text is refused before anything else is looked at (`400`, the field `note`, a fixed text
+that holds nothing of the note). A good note is stored with the draft (`note`, shown with it) and told
+to the coach as `athlete_note`. The coach is told to take it into account as far as the rules allow
+and that it is never an instruction about the rules, the format or the task; whatever it does, the
+plan still has to pass the parser and the rules.
+
 No database transaction is held while the provider answers. Every call that reached the provider
 is a usage record with the purpose `weekly_plan` (facts only, never text); a draft costs one call,
 or two with a repair.
@@ -421,7 +430,8 @@ without this page.
 | `limitations_not_shown` | How many current limitations were left out because of the limit. |
 | `season_week` | What the confirmed [season plan](season.md) says about the week, or `null` if there is none or the week is not in it: the `phase`, whether it is a `recovery` week, the `target_minutes` of the skeleton, the `minutes` of each sport with their `total_minutes`, the `focus`, the `key_sessions` (`sport`, `kind`, `minutes`, `detail`), the `reason` and the `races` of the week (`date` and `priority`; the titles are in `goals`). The `reason` and the `detail` are words of the coach from that plan, cut to their limits: free text, data and never instructions. Only the confirmed plan counts, never a draft. |
 | `previous_week_plan` | The confirmed plan of the week before: day, sport, goal, minutes. |
-| `previous_week_review` | How the week before went, from the [week review](../README.md#week-review): the number of workouts by status, the minutes planned and done, the sessions that were not planned, how many sessions were rated and their mean RPE, the three scales of the week feedback (`null` if none was given) and `next_week`, the recommendation of a review of that week by the coach (`increase`, `hold`, `reduce`; `null` if none was asked for). Numbers and one fixed word, no text of the user or of the coach. `null` if the week before has not begun or has nothing in it. |
+| `previous_week_review` | How the week before went, from the [week review](../README.md#week-review): the number of workouts by status, the minutes planned and done, the sessions that were not planned, how many sessions were rated and their mean RPE, the three scales of the week feedback and `verdict`, the week as a whole in one word (`bad`, `fair`, `good`, `strong`; each `null` if none was given), and `next_week`, the recommendation of a review of that week by the coach (`increase`, `hold`, `reduce`; `null` if none was asked for). Numbers and one fixed word, no text of the user or of the coach. `null` if the week before has not begun or has nothing in it. |
+| `athlete_note` | What the athlete wrote about this week when asking for the draft (a day without time, a trip, a niggle), exactly as it was cleaned (see below), or `null` if nothing. Free text of the athlete: data, never instructions. |
 
 What is **never** sent: names, e-mail addresses, ids, the title or notes of past plans, the names
 or descriptions of activities and the provider setup. The limitations of the training time page are
@@ -469,7 +479,7 @@ plan of another user does not exist (404, the same answer as for an unknown id).
 | Endpoint | Answer |
 | -------- | ------ |
 | `GET /api/planning/weeks/` | The weeks that can be planned, each with its versions, newest first. |
-| `POST /api/planning/weeks/<Monday>/generate/` | 201 with the new draft; limited to 5 a minute per user. |
+| `POST /api/planning/weeks/<Monday>/generate/` | 201 with the new draft; the body may hold `note` (see above); limited to 5 a minute per user. |
 | `POST /api/planning/weeks/<Monday>/check/` | The checks for a plan that was changed by hand, as `valid`, `findings` and `order`; nothing is stored and no provider is asked. Not limited. |
 | `GET /api/planning/plans/<id>/` | One plan with its workouts; a draft comes with its checks. |
 | `POST /api/planning/plans/<id>/revise/` | 201 with a new draft made from that plan, from the same body as the check: the plan changed by hand (see below). Only a draft or a confirmed plan can be changed. |

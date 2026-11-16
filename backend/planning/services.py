@@ -23,7 +23,7 @@ from accounts.models import User
 from reviews.services import carry_over
 
 from .context import build_context
-from .models import REASON_MAX, PlannedWorkout, WeeklyPlan
+from .models import NOTE_MAX, REASON_MAX, PlannedWorkout, WeeklyPlan
 from .schema import WeekPlan, order_key, parse_week_plan, workout_to_json
 from .validation import Report, validate_week
 
@@ -63,14 +63,20 @@ def canonical(plan: WeekPlan) -> WeekPlan:
 
 
 def save_draft(
-    user: User, week_plan: WeekPlan, reason: str = "", parent: UUID | None = None
+    user: User,
+    week_plan: WeekPlan,
+    reason: str = "",
+    parent: UUID | None = None,
+    note: str = "",
 ) -> WeeklyPlan:
     """Store ``week_plan`` as the next version of its week, as a draft.
 
     ``parent`` is the version it replaces (it must be of the same week); ``reason`` is a short
-    plain line saying why. Nothing is stored if anything goes wrong. The plan is stored as it is,
+    plain line saying why; ``note`` is what the athlete wrote about the week when asking for it
+    (see ``clean_note``). Nothing is stored if anything goes wrong. The plan is stored as it is,
     even if the validation has things to say about it."""
     reason = _clean_reason(reason)
+    note = clean_note(note)
     week_plan = canonical(week_plan)  # stored and read back in the order of the day
     if parent is not None:
         replaced = get(user, parent)
@@ -79,7 +85,7 @@ def save_draft(
     for attempt in (1, 2):
         try:
             with transaction.atomic():
-                return _store(user, week_plan, reason, parent)
+                return _store(user, week_plan, reason, parent, note)
         except IntegrityError:
             # Another request took the version number first; the next round counts again.
             if attempt == 2:
@@ -209,7 +215,9 @@ def _lock_the_week(user: User, plan_id: UUID) -> WeeklyPlan:
     raise PlanNotFound  # deleted meanwhile
 
 
-def _store(user: User, week_plan: WeekPlan, reason: str, parent: UUID | None) -> WeeklyPlan:
+def _store(
+    user: User, week_plan: WeekPlan, reason: str, parent: UUID | None, note: str
+) -> WeeklyPlan:
     last = (
         WeeklyPlan.objects.for_user(user)
         .filter(week_start=week_plan.week_start)
@@ -224,6 +232,7 @@ def _store(user: User, week_plan: WeekPlan, reason: str, parent: UUID | None) ->
         parent_id=parent,
         reason=reason,
         rationale=week_plan.rationale,
+        note=note,
     )
     positions: dict[object, int] = {}
     rows = []
@@ -253,6 +262,19 @@ def _store(user: User, week_plan: WeekPlan, reason: str, parent: UUID | None) ->
         )
     PlannedWorkout.objects.bulk_create(rows)
     return plan
+
+
+def clean_note(note: str) -> str:
+    """The note of the athlete as it is stored and told to the coach: line ends as ``\\n``,
+    trimmed. Plain text with line breaks; any other control character, or more than ``NOTE_MAX``
+    characters, is refused (``ValidationError`` with the field ``note``; nothing of the text is in
+    the message)."""
+    text = note.replace("\r\n", "\n").replace("\r", "\n").strip()
+    if len(text) > NOTE_MAX:
+        raise ValidationError({"note": f"Use at most {NOTE_MAX} characters."})
+    if not all(char == "\n" or char.isprintable() for char in text):
+        raise ValidationError({"note": "A note is plain text."})
+    return text
 
 
 def _clean_reason(reason: str) -> str:

@@ -67,6 +67,7 @@ PLAN_FIELDS = {
     "version",
     "status",
     "reason",
+    "note",
     "rationale",
     "parent",
     "created_at",
@@ -408,6 +409,67 @@ class TestGenerating:
         assert [w["lineage"] for w in data["workouts"]] == [str(w.lineage) for w in stored]
         (record,) = AIUsageRecord.objects.filter(owner=alice)
         assert (record.purpose, record.outcome) == ("weekly_plan", "success")
+
+    def test_a_note_goes_to_the_coach_and_comes_back_with_the_draft(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        scripted = provide(good())
+
+        response = signed_in(alice).call("POST", generate_url(), {"note": "No time on Tuesday."})
+
+        assert response.status_code == HTTPStatus.CREATED
+        assert body(response)["note"] == "No time on Tuesday."
+        assert '"athlete_note":"No time on Tuesday."' in scripted.calls[0][1][0].content
+        assert WeeklyPlan.objects.get().note == "No time on Tuesday."
+        assert body(signed_in(alice).call("GET", plan_url(body(response)["id"])))["note"] == (
+            "No time on Tuesday."
+        )
+
+    def test_no_body_and_an_empty_note_give_a_draft_without_one(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        provide(good(), good())
+
+        first = signed_in(alice).call("POST", generate_url())
+        second = signed_in(alice).call("POST", generate_url(), {"note": "  "})
+
+        assert (first.status_code, second.status_code) == (HTTPStatus.CREATED, HTTPStatus.CREATED)
+        assert (body(first)["note"], body(second)["note"]) == ("", "")
+
+    @pytest.mark.parametrize(
+        ("note", "fields"),
+        [
+            ("x" * 301, {"note"}),
+            ("x" * 4001, {"note"}),
+            ("a\x00b", {"note"}),
+            (5, {"note"}),
+            (True, {"note"}),
+            (["a"], {"note"}),
+            (None, {"note"}),
+        ],
+    )
+    def test_a_note_that_does_not_fit_is_refused_and_nothing_is_asked(
+        self, alice: User, provide: Callable[..., Scripted], note: Any, fields: set[str]
+    ) -> None:
+        scripted = provide(good())
+
+        response = signed_in(alice).call("POST", generate_url(), {"note": note})
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert set(body(response)) == fields
+        assert scripted.calls == []
+        assert WeeklyPlan.objects.count() == 0
+
+    def test_nothing_of_the_note_is_repeated_in_an_error(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        provide(good())
+
+        for note in (MARKER * 100, MARKER + "\x00"):
+            response = signed_in(alice).call("POST", generate_url(), {"note": note})
+
+            assert response.status_code == HTTPStatus.BAD_REQUEST
+            assert MARKER not in response.content.decode()
 
     def test_rule_errors_are_part_of_the_answer_not_a_failure(
         self, alice: User, provide: Callable[..., Scripted]

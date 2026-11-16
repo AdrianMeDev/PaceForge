@@ -16,6 +16,7 @@ const STORED: WeekFeedback = {
   fatigue: 4,
   motivation: null,
   pain: 1,
+  verdict: 'good',
   notes: 'Heavy legs',
   updated_at: '2026-11-08T08:00:00Z',
 };
@@ -33,12 +34,14 @@ describe('WeekFeedbackForm', () => {
   let fixture: ComponentFixture<WeekFeedbackForm>;
   let page: HTMLElement;
   const saved = vi.fn();
+  const closed = vi.fn();
   const notReviewable = vi.fn();
   const signedOut = vi.fn();
 
   function setup(feedback: WeekFeedback | null = null, disabled = false) {
     saveFeedback = vi.fn<(week: string, input: FeedbackInput) => Promise<SaveFeedbackResult>>();
     saved.mockClear();
+    closed.mockClear();
     notReviewable.mockClear();
     signedOut.mockClear();
     TestBed.configureTestingModule({
@@ -50,6 +53,7 @@ describe('WeekFeedbackForm', () => {
     fixture.componentRef.setInput('feedback', feedback);
     fixture.componentRef.setInput('disabled', disabled);
     fixture.componentInstance.saved.subscribe(saved);
+    fixture.componentInstance.closed.subscribe(closed);
     fixture.componentInstance.notReviewable.subscribe(notReviewable);
     fixture.componentInstance.signedOut.subscribe(signedOut);
     page = fixture.nativeElement as HTMLElement;
@@ -59,6 +63,9 @@ describe('WeekFeedbackForm', () => {
   const scale = (field: string) => query<HTMLSelectElement>(page, `#feedback-${field}`);
   const note = () => query<HTMLTextAreaElement>(page, '#feedback-notes');
   const saveButton = () => query<HTMLButtonElement>(page, '[data-testid="feedback-save"]');
+  const closeButton = () => query<HTMLButtonElement>(page, '[data-testid="feedback-close"]');
+  const verdict = () => query<HTMLSelectElement>(page, '#feedback-verdict');
+  const nextNote = () => query<HTMLTextAreaElement>(page, '#next-week-note');
   const fieldErrors = () =>
     Array.from(page.querySelectorAll('.field-error')).map((e) => e.textContent?.trim());
   const message = () => page.querySelector('[data-testid="feedback-message"]')?.textContent?.trim();
@@ -72,8 +79,23 @@ describe('WeekFeedbackForm', () => {
     note().dispatchEvent(new Event('input'));
   }
 
+  function judge(value: string) {
+    verdict().value = value;
+    verdict().dispatchEvent(new Event('change'));
+  }
+
+  function tell(text: string) {
+    nextNote().value = text;
+    nextNote().dispatchEvent(new Event('input'));
+  }
+
   async function submit() {
     saveButton().click();
+    await settle(fixture);
+  }
+
+  async function close() {
+    closeButton().click();
     await settle(fixture);
   }
 
@@ -81,7 +103,14 @@ describe('WeekFeedbackForm', () => {
     setup();
 
     const labels = Array.from(page.querySelectorAll('label')).map((l) => l.textContent?.trim());
-    expect(labels).toEqual(['Tiredness', 'Motivation', 'Pain', 'Note (optional)']);
+    expect(labels).toEqual([
+      'Tiredness',
+      'Motivation',
+      'Pain',
+      'The week as a whole',
+      'Note (optional)',
+      'What should the coach know about next week? (optional)',
+    ]);
     const options = Array.from(scale('pain').options).map((o) => [o.value, o.textContent?.trim()]);
     expect(options).toEqual([
       ['', '–'],
@@ -93,10 +122,24 @@ describe('WeekFeedbackForm', () => {
     ]);
   });
 
-  it('says that the note stays with the user', () => {
+  it('offers the four verdicts and none', () => {
+    setup();
+
+    const options = Array.from(verdict().options).map((o) => [o.value, o.textContent?.trim()]);
+    expect(options).toEqual([
+      ['', '–'],
+      ['bad', 'Bad'],
+      ['fair', 'Fair'],
+      ['good', 'Good'],
+      ['strong', 'Strong'],
+    ]);
+  });
+
+  it('says that the note stays with the user and what the coach is told', () => {
     setup();
 
     expect(page.textContent).toContain('Your note stays with you');
+    expect(page.textContent).toContain('how you judge the week');
   });
 
   it('starts empty without feedback', () => {
@@ -105,7 +148,9 @@ describe('WeekFeedbackForm', () => {
     expect(scale('fatigue').value).toBe('');
     expect(scale('motivation').value).toBe('');
     expect(scale('pain').value).toBe('');
+    expect(verdict().value).toBe('');
     expect(note().value).toBe('');
+    expect(nextNote().value).toBe('');
   });
 
   it('shows the stored feedback', () => {
@@ -114,6 +159,7 @@ describe('WeekFeedbackForm', () => {
     expect(scale('fatigue').value).toBe('4');
     expect(scale('motivation').value).toBe('');
     expect(scale('pain').value).toBe('1');
+    expect(verdict().value).toBe('good');
     expect(note().value).toBe('Heavy legs');
   });
 
@@ -121,6 +167,7 @@ describe('WeekFeedbackForm', () => {
     setup();
     saveFeedback.mockResolvedValue({ kind: 'ok', review: REVIEW });
     fill({ fatigue: '4', motivation: '2', pain: '1' }, '  Heavy legs ');
+    judge('strong');
 
     await submit();
 
@@ -128,15 +175,18 @@ describe('WeekFeedbackForm', () => {
       fatigue: 4,
       motivation: 2,
       pain: 1,
+      verdict: 'strong',
       notes: 'Heavy legs',
     });
     expect(saved).toHaveBeenCalledExactlyOnceWith(REVIEW);
+    expect(closed).not.toHaveBeenCalled();
   });
 
   it('sends what is left empty as empty: nothing at all removes the feedback', async () => {
     setup(STORED);
     saveFeedback.mockResolvedValue({ kind: 'ok', review: REVIEW });
     fill({ fatigue: '', pain: '' }, '');
+    judge('');
 
     await submit();
 
@@ -144,6 +194,7 @@ describe('WeekFeedbackForm', () => {
       fatigue: null,
       motivation: null,
       pain: null,
+      verdict: null,
       notes: '',
     });
   });
@@ -156,7 +207,42 @@ describe('WeekFeedbackForm', () => {
     fixture.detectChanges();
 
     expect(scale('fatigue').value).toBe('4');
+    expect(verdict().value).toBe('good');
     expect(note().value).toBe('Heavy legs');
+  });
+
+  it('keeps a verdict that was not touched when the rest is saved', async () => {
+    setup(STORED);
+    saveFeedback.mockResolvedValue({ kind: 'ok', review: REVIEW });
+    fill({ fatigue: '2' }, 'Heavy legs');
+
+    await submit();
+
+    expect(saveFeedback.mock.calls[0][1].verdict).toBe('good');
+  });
+
+  it('sends nothing for a verdict that is none of the four', async () => {
+    setup();
+    saveFeedback.mockResolvedValue({ kind: 'ok', review: REVIEW });
+    judge('great');
+
+    await submit();
+
+    expect(saveFeedback.mock.calls[0][1].verdict).toBeNull();
+  });
+
+  it('shows the message of the server about the verdict', async () => {
+    setup();
+    saveFeedback.mockResolvedValue({
+      kind: 'invalid',
+      errors: { verdict: ['Choose one of the verdicts.'] },
+      message: null,
+    });
+
+    await submit();
+
+    expect(fieldErrors()).toEqual(['Choose one of the verdicts.']);
+    expect(verdict().getAttribute('aria-invalid')).toBe('true');
   });
 
   it('refuses a note that is too long without asking the server', async () => {
@@ -271,7 +357,145 @@ describe('WeekFeedbackForm', () => {
     setup(null, true);
 
     expect(saveButton().disabled).toBe(true);
-    await fixture.componentInstance['submit']();
+    await fixture.componentInstance['submit'](false);
     expect(saveFeedback).not.toHaveBeenCalled();
+  });
+  describe('closing the week', () => {
+    it('saves the feedback with the verdict, then hands the week and the note on', async () => {
+      setup();
+      saveFeedback.mockResolvedValue({ kind: 'ok', review: REVIEW });
+      fill({ fatigue: '3' }, 'Own note');
+      judge('fair');
+      tell('  No time on Tuesday.\nA trip on Saturday. ');
+
+      await close();
+
+      expect(saveFeedback).toHaveBeenCalledExactlyOnceWith(WEEK, {
+        fatigue: 3,
+        motivation: null,
+        pain: null,
+        verdict: 'fair',
+        notes: 'Own note',
+      });
+      expect(closed).toHaveBeenCalledExactlyOnceWith({
+        review: REVIEW,
+        note: 'No time on Tuesday.\nA trip on Saturday.',
+      });
+      expect(saved).not.toHaveBeenCalled();
+    });
+
+    it('hands on an empty note when there is none', async () => {
+      setup();
+      saveFeedback.mockResolvedValue({ kind: 'ok', review: REVIEW });
+
+      await close();
+
+      expect(closed).toHaveBeenCalledExactlyOnceWith({ review: REVIEW, note: '' });
+    });
+
+    it('does not send the note for the next week to the server with the feedback', async () => {
+      setup();
+      saveFeedback.mockResolvedValue({ kind: 'ok', review: REVIEW });
+      tell('For the coach');
+
+      await close();
+
+      expect(JSON.stringify(saveFeedback.mock.calls[0][1])).not.toContain('For the coach');
+    });
+
+    it('does not close when the feedback was refused, and keeps both notes', async () => {
+      setup();
+      saveFeedback.mockResolvedValue({
+        kind: 'invalid',
+        errors: { notes: ['Must not contain control characters.'] },
+        message: null,
+      });
+      fill({}, 'my note');
+      tell('for the coach');
+
+      await close();
+
+      expect(closed).not.toHaveBeenCalled();
+      expect(fieldErrors()).toEqual(['Must not contain control characters.']);
+      expect(note().value).toBe('my note');
+      expect(nextNote().value).toBe('for the coach');
+    });
+
+    it('refuses a note for the next week that is too long, before saving anything', async () => {
+      setup();
+      tell('x'.repeat(301));
+
+      await close();
+
+      expect(saveFeedback).not.toHaveBeenCalled();
+      expect(closed).not.toHaveBeenCalled();
+      expect(fieldErrors()).toEqual(['Use at most 300 characters.']);
+      expect(nextNote().getAttribute('aria-invalid')).toBe('true');
+    });
+
+    it('takes a note of exactly the limit', async () => {
+      setup();
+      saveFeedback.mockResolvedValue({ kind: 'ok', review: REVIEW });
+      tell('x'.repeat(300));
+
+      await close();
+
+      expect(closed).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not mind the note for the next week when only the feedback is saved', async () => {
+      setup();
+      saveFeedback.mockResolvedValue({ kind: 'ok', review: REVIEW });
+      tell('x'.repeat(301));
+
+      await submit();
+
+      expect(saved).toHaveBeenCalledTimes(1);
+      expect(fieldErrors()).toEqual([]);
+    });
+
+    it('tells the page when the week cannot be reviewed or the session has ended', async () => {
+      setup();
+      saveFeedback.mockResolvedValueOnce({ kind: 'not_reviewable' });
+      await close();
+      saveFeedback.mockResolvedValueOnce({ kind: 'forbidden' });
+      await close();
+
+      expect(notReviewable).toHaveBeenCalledTimes(1);
+      expect(signedOut).toHaveBeenCalledTimes(1);
+      expect(closed).not.toHaveBeenCalled();
+    });
+
+    it('allows one thing at a time', async () => {
+      setup();
+      const pending = deferred<SaveFeedbackResult>();
+      saveFeedback.mockReturnValue(pending.promise);
+
+      closeButton().click();
+      await fixture.whenStable();
+
+      expect(closeButton().disabled).toBe(true);
+      expect(nextNote().disabled).toBe(true);
+      closeButton().click();
+      expect(saveFeedback).toHaveBeenCalledTimes(1);
+      pending.resolve({ kind: 'forbidden' });
+      await settle(fixture);
+      expect(closeButton().disabled).toBe(false);
+    });
+
+    it('does nothing while the page is busy', async () => {
+      setup(null, true);
+
+      expect(closeButton().disabled).toBe(true);
+      await fixture.componentInstance['submit'](true);
+      expect(saveFeedback).not.toHaveBeenCalled();
+    });
+
+    it('says what closing does and costs', () => {
+      setup();
+
+      expect(page.textContent).toContain('billed to your AI provider');
+      expect(page.textContent).toContain('Nothing is confirmed without you');
+    });
   });
 });
