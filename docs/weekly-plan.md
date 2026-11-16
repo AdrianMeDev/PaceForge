@@ -177,6 +177,10 @@ Each plan is checked against the facts of its user for that week, collected when
 - **Body and training data.** Age, sex, weight, resting heart rate, years of training per sport,
   strength experience and equipment, as the athlete entered them. They are for the coach only: no
   rule checks anything against them.
+- **Best times and VDOT.** The running best times of the athlete and the VDOT of the one that
+  counts, for the coach only; no rule checks a plan against them. They move the running pace zones
+  (a recent best time gives the threshold pace after a typed-in value), and the zones are checked
+  as before.
 - **Fixed appointments.** Sessions that happen every week: weekday, sport, minutes and optionally
   a part of the day. The coach is told to plan them; a plan without one is a warning
   (`fixed_session_missing`), not an error.
