@@ -2,9 +2,25 @@ import { HttpClient, HttpErrorResponse, HttpResponse } from '@angular/common/htt
 import { Injectable, inject } from '@angular/core';
 import { Observable, firstValueFrom } from 'rxjs';
 import { API_BASE } from '../api/api-providers';
-import { Reply, UUID, asObject, isCount, isOneOf, isUuid, toReport } from '../api/coach-replies';
 import {
+  Reply,
+  UUID,
+  asObject,
+  codeOf,
+  isCount,
+  isOneOf,
+  isUuid,
+  toFindings,
+  toProblems,
+  toProviderProblem,
+  toRateLimit,
+  toReport,
+} from '../api/coach-replies';
+import {
+  ConfirmSeasonResult,
+  DiscardSeasonResult,
   Focus,
+  GenerateSeasonResult,
   GetSeasonPlanResult,
   GetSeasonResult,
   KeySession,
@@ -24,7 +40,7 @@ import {
 
 const URL = `${API_BASE}/season/`;
 const PLANS_URL = `${URL}plans/`;
-const HANDLED_ERRORS = [401, 403, 404];
+const HANDLED_ERRORS = [401, 403, 404, 409, 422, 429, 502, 503];
 const PHASES: readonly string[] = ['base', 'build', 'specific', 'taper', 'transition'];
 const PRIORITIES: readonly string[] = ['main', 'secondary', 'preparation'];
 const DISCIPLINES: readonly string[] = ['running', 'cycling', 'swimming', 'triathlon'];
@@ -103,6 +119,88 @@ export class SeasonApi {
         return { kind: 'ok', plan: toPlan(reply.body, reply) };
       case 404:
         return { kind: 'not_found' };
+      case 401:
+      case 403:
+        return { kind: 'forbidden' };
+      default:
+        throw unexpected(reply);
+    }
+  }
+
+  /**
+   * Asks the user's own coach to fill the season. Synchronous: the answer can take minutes (up to
+   * three calls of the provider), and it costs the user's own money.
+   */
+  async generate(): Promise<GenerateSeasonResult> {
+    const reply = await this.send(
+      this.http.post(`${PLANS_URL}generate/`, {}, { observe: 'response' }),
+    );
+    switch (reply.status) {
+      case 201:
+        return { kind: 'ok', plan: toPlan(reply.body, reply) };
+      case 409:
+        // Two reasons share the status; the code tells them apart. Anything else (a proxy's page,
+        // an answer of another shape) keeps meaning what 409 meant first: no provider.
+        return codeOf(reply.body) === 'no_time' ? { kind: 'no_time' } : { kind: 'not_configured' };
+      case 422:
+        return { kind: 'not_usable', problems: toProblems(reply) };
+      case 429:
+        return toRateLimit(reply);
+      case 502:
+        return toProviderProblem(reply, 'unexpected');
+      case 503:
+        return toProviderProblem(reply, 'unavailable');
+      case 401:
+      case 403:
+        return { kind: 'forbidden' };
+      default:
+        throw unexpected(reply);
+    }
+  }
+
+  /** Confirms a draft; the confirmed version before it is replaced. */
+  async confirm(id: string): Promise<ConfirmSeasonResult> {
+    if (!UUID.test(id)) {
+      return { kind: 'not_found' };
+    }
+    const reply = await this.send(
+      this.http.post(`${PLANS_URL}${id}/confirm/`, {}, { observe: 'response' }),
+    );
+    switch (reply.status) {
+      case 200:
+        return { kind: 'ok', plan: toPlan(reply.body, reply) };
+      case 404:
+        return { kind: 'not_found' };
+      case 409:
+        return { kind: 'not_a_draft' };
+      case 422:
+        return {
+          kind: 'not_confirmable',
+          findings: toFindings(asObject(reply.body, reply), reply),
+        };
+      case 401:
+      case 403:
+        return { kind: 'forbidden' };
+      default:
+        throw unexpected(reply);
+    }
+  }
+
+  /** Discards a draft. The version stays in the list. */
+  async discard(id: string): Promise<DiscardSeasonResult> {
+    if (!UUID.test(id)) {
+      return { kind: 'not_found' };
+    }
+    const reply = await this.send(
+      this.http.post(`${PLANS_URL}${id}/discard/`, {}, { observe: 'response' }),
+    );
+    switch (reply.status) {
+      case 200:
+        return { kind: 'ok', plan: toPlan(reply.body, reply) };
+      case 404:
+        return { kind: 'not_found' };
+      case 409:
+        return { kind: 'not_a_draft' };
       case 401:
       case 403:
         return { kind: 'forbidden' };

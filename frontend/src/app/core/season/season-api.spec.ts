@@ -515,3 +515,266 @@ describe('SeasonApi season plans', () => {
     });
   });
 });
+
+describe('SeasonApi acting on season plans', () => {
+  let api: SeasonApi;
+  let backend: HttpTestingController;
+  const GENERATE = `${PLANS_URL}generate/`;
+  const PROVIDER_TEXT = 'The provider did not accept the key. Check that you copied all of it.';
+  const THROTTLED = { detail: 'Request was throttled. Expected available in 60 seconds.' };
+  const PROXY_PAGE = '<html><body>Bad gateway</body></html>';
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({ providers: [provideApiClient(), provideHttpClientTesting()] });
+    api = TestBed.inject(SeasonApi);
+    backend = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => backend.verify());
+
+  async function post<T>(
+    action: Promise<T>,
+    url: string,
+    reply: string | object | null,
+    status: number,
+  ): Promise<{ result: T; request: TestRequest }> {
+    const request = await vi.waitFor(() =>
+      backend.expectOne((req) => req.method === 'POST' && req.url === url),
+    );
+    request.flush(reply, { status, statusText: `HTTP ${status}` });
+    return { result: await action, request };
+  }
+
+  async function postFailing(
+    action: Promise<unknown>,
+    url: string,
+    reply: string | object | null,
+    status: number,
+  ): Promise<void> {
+    action.catch(() => undefined);
+    await post(
+      action.catch(() => undefined),
+      url,
+      reply,
+      status,
+    );
+    await expect(action).rejects.toThrow();
+  }
+
+  describe('generate', () => {
+    it('posts and returns the draft', async () => {
+      const { result, request } = await post(api.generate(), GENERATE, DRAFT, 201);
+
+      expect(request.request.body).toEqual({});
+      expect(result).toMatchObject({ kind: 'ok', plan: { status: 'draft', id: ID } });
+    });
+
+    it('says when no provider is set up', async () => {
+      const { result } = await post(
+        api.generate(),
+        GENERATE,
+        { detail: 'No AI provider is set up.', code: 'not_configured' },
+        409,
+      );
+
+      expect(result).toEqual({ kind: 'not_configured' });
+    });
+
+    it('says when no week of the season offers training time', async () => {
+      const { result } = await post(
+        api.generate(),
+        GENERATE,
+        { detail: 'You have no training time.', code: 'no_time' },
+        409,
+      );
+
+      expect(result).toEqual({ kind: 'no_time' });
+    });
+
+    it.each([
+      ['no body', null],
+      ['a page of a proxy', PROXY_PAGE],
+      ['a list as body', []],
+      ['an unknown code', { code: 'weird' }],
+      ['the code in other letters', { code: 'NO_TIME' }],
+    ])('keeps a 409 with %s as "no provider"', async (_name, body) => {
+      const { result } = await post(api.generate(), GENERATE, body as object | null, 409);
+
+      expect(result).toEqual({ kind: 'not_configured' });
+    });
+
+    it('says when the coach gave nothing usable, and what was wrong', async () => {
+      const problems = [{ path: '', message: 'The answer is not one JSON object.' }];
+
+      const { result } = await post(
+        api.generate(),
+        GENERATE,
+        { detail: 'The coach did not give a plan.', code: 'not_usable', problems },
+        422,
+      );
+
+      expect(result).toEqual({ kind: 'not_usable', problems });
+    });
+
+    it.each([
+      ['no problems', { code: 'not_usable' }],
+      ['an object as problems', { problems: {} }],
+      ['a problem without a message', { problems: [{ path: '' }] }],
+    ])('rejects an unusable-plan answer with %s', async (_name, body) => {
+      await postFailing(api.generate(), GENERATE, body, 422);
+    });
+
+    it('says when this server limits the requests', async () => {
+      const { result } = await post(api.generate(), GENERATE, THROTTLED, 429);
+
+      expect(result).toEqual({ kind: 'rate_limited' });
+    });
+
+    it('returns the provider asking to slow down with the time to wait', async () => {
+      const { result } = await post(
+        api.generate(),
+        GENERATE,
+        { detail: 'Slow down.', code: 'rate_limited', retry_after: 17 },
+        429,
+      );
+
+      expect(result).toEqual({
+        kind: 'provider_problem',
+        problem: 'rate_limited',
+        message: 'Slow down.',
+        retry_after: 17,
+      });
+    });
+
+    it.each([
+      [502, 'invalid_key'],
+      [502, 'unexpected'],
+      [502, 'not_allowed'],
+      [503, 'unavailable'],
+    ])('returns the problem %i %s with the text of the server', async (status, code) => {
+      const { result } = await post(
+        api.generate(),
+        GENERATE,
+        { detail: PROVIDER_TEXT, code },
+        status,
+      );
+
+      expect(result).toEqual({
+        kind: 'provider_problem',
+        problem: code,
+        message: PROVIDER_TEXT,
+        retry_after: null,
+      });
+    });
+
+    it.each([
+      [502, 'unexpected'],
+      [503, 'unavailable'],
+    ])(
+      'keeps a %i without a code a problem of its own kind, with a fixed text',
+      async (status, problem) => {
+        const { result } = await post(api.generate(), GENERATE, PROXY_PAGE, status);
+
+        expect(result).toMatchObject({ kind: 'provider_problem', problem });
+        expect(JSON.stringify(result)).not.toContain('Bad gateway');
+      },
+    );
+
+    it.each([401, 403])('says when the session is gone (%i)', async (status) => {
+      const { result } = await post(api.generate(), GENERATE, NO_SESSION, status);
+
+      expect(result).toEqual({ kind: 'forbidden' });
+    });
+
+    it.each([
+      ['a draft without a report', altered(DRAFT, [['report'], null])],
+      ['a broken week', altered(DRAFT, [['weeks', 0, 'focus'], 'rest'])],
+      ['no body', null],
+    ])('rejects a draft with %s', async (_name, bad) => {
+      await postFailing(api.generate(), GENERATE, bad as object | null, 201);
+    });
+
+    it.each([200, 404, 500])('rejects the unexpected status %i', async (status) => {
+      await postFailing(api.generate(), GENERATE, 'oops', status);
+    });
+  });
+
+  describe.each([
+    ['confirm', (id: string) => api.confirm(id)],
+    ['discard', (id: string) => api.discard(id)],
+  ])('%s', (action, call) => {
+    const url = `${PLANS_URL}${ID}/${action}/`;
+    const decided =
+      action === 'confirm' ? PLAN : { ...PLAN, status: 'discarded', confirmed_at: null };
+
+    it('posts to the address of the plan and returns it', async () => {
+      const { result, request } = await post(call(ID), url, decided, 200);
+
+      expect(request.request.body).toEqual({});
+      expect(result).toMatchObject({ kind: 'ok', plan: { id: ID, status: decided.status } });
+    });
+
+    it('says that a plan does not exist', async () => {
+      const { result } = await post(call(ID), url, { code: 'not_found' }, 404);
+
+      expect(result).toEqual({ kind: 'not_found' });
+    });
+
+    it('says that only a draft can be decided on', async () => {
+      const { result } = await post(call(ID), url, { code: 'not_a_draft' }, 409);
+
+      expect(result).toEqual({ kind: 'not_a_draft' });
+    });
+
+    it.each(['1', 'not-an-id', '../season', `${ID}/x`])(
+      'does not send %j, which is no id',
+      async (id) => {
+        expect(await call(id)).toEqual({ kind: 'not_found' });
+        backend.expectNone(() => true);
+      },
+    );
+
+    it.each([401, 403])('says when the session is gone (%i)', async (status) => {
+      const { result } = await post(call(ID), url, NO_SESSION, status);
+
+      expect(result).toEqual({ kind: 'forbidden' });
+    });
+
+    it('rejects a plan of the wrong shape', async () => {
+      await postFailing(call(ID), url, altered(decided, [['weeks'], REMOVE]) as object, 200);
+    });
+
+    it.each([429, 500, 502])('rejects the unexpected status %i', async (status) => {
+      await postFailing(call(ID), url, 'oops', status);
+    });
+  });
+
+  describe('confirm with errors', () => {
+    const url = `${PLANS_URL}${ID}/confirm/`;
+    const findings = DRAFT.report.findings;
+
+    it('returns the findings of a plan that cannot be confirmed', async () => {
+      const { result } = await post(
+        api.confirm(ID),
+        url,
+        {
+          detail: 'The plan has errors and cannot be confirmed.',
+          code: 'not_confirmable',
+          findings,
+        },
+        422,
+      );
+
+      expect(result).toEqual({ kind: 'not_confirmable', findings });
+    });
+
+    it.each([
+      ['no findings', { code: 'not_confirmable' }],
+      ['a text as finding', { findings: ['bad'] }],
+      ['an unknown severity', { findings: [{ ...findings[0], severity: 'fatal' }] }],
+      ['a finding without a message', { findings: [{ severity: 'error', code: 'x', path: '' }] }],
+    ])('rejects an answer with %s', async (_name, body) => {
+      await postFailing(api.confirm(ID), url, body, 422);
+    });
+  });
+});

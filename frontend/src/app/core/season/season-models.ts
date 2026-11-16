@@ -1,7 +1,15 @@
 import { Forbidden } from '../goals/goals-models';
-import { PlanStatus, Report, Sport } from '../planning/planning-models';
+import { ProviderProblemResult } from '../api/coach-replies';
+import {
+  Finding,
+  PlanProblem,
+  PlanStatus,
+  RateLimited,
+  Report,
+  Sport,
+} from '../planning/planning-models';
 
-export type { Forbidden, PlanStatus, Report, Sport };
+export type { Forbidden, PlanProblem, PlanStatus, RateLimited, Report, Sport };
 
 /** What a week of the season is for. `transition` is the rest after the main race. */
 export type SeasonPhase = 'base' | 'build' | 'specific' | 'taper' | 'transition';
@@ -116,3 +124,34 @@ export interface SeasonPlanNotFound {
 export type ListSeasonPlansResult = { kind: 'ok'; plans: SeasonPlanVersion[] } | Forbidden;
 
 export type GetSeasonPlanResult = { kind: 'ok'; plan: SeasonPlan } | SeasonPlanNotFound | Forbidden;
+
+/** Only a draft can be confirmed or discarded. */
+export interface SeasonPlanNotADraft {
+  kind: 'not_a_draft';
+}
+
+export type GenerateSeasonResult =
+  /** A draft was stored (version 1 or newer); its checks may still have errors. */
+  | { kind: 'ok'; plan: SeasonPlan }
+  /** No AI provider is set up. */
+  | { kind: 'not_configured' }
+  /** No week of the season offers any training time; nothing was asked of the coach. */
+  | { kind: 'no_time' }
+  /** The coach gave no readable plan, even after being told what was wrong. */
+  | { kind: 'not_usable'; problems: PlanProblem[] }
+  /** The provider refused or could not be reached; `message` is the server's text for users. */
+  | ProviderProblemResult
+  /** Too many seasons requested in a short time (this server's limit, not the provider's). */
+  | RateLimited
+  | Forbidden;
+
+export type ConfirmSeasonResult =
+  | { kind: 'ok'; plan: SeasonPlan }
+  | SeasonPlanNotFound
+  | SeasonPlanNotADraft
+  /** The plan has errors; `findings` has all checks, the errors among them. */
+  | { kind: 'not_confirmable'; findings: Finding[] }
+  | Forbidden;
+
+export type DiscardSeasonResult =
+  { kind: 'ok'; plan: SeasonPlan } | SeasonPlanNotFound | SeasonPlanNotADraft | Forbidden;
