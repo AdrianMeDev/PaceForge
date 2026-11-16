@@ -566,6 +566,49 @@ describe('WorkoutForm', () => {
       expect(lastSaved().exercises).toEqual([]);
     });
 
+    const hint = () => page.querySelector('[data-testid="exercises-hint"]')?.textContent;
+
+    it('are announced in the form with their number', () => {
+      setup(LIFTING);
+
+      expect(hint()?.replace(/\s+/g, ' ').trim()).toBe(
+        'This workout has 2 exercises; they are kept as they are.',
+      );
+    });
+
+    it('say so in the singular for one', () => {
+      setup({ ...LIFTING, exercises: [LIFTING.exercises[0]] });
+
+      expect(hint()?.replace(/\s+/g, ' ').trim()).toBe(
+        'This workout has 1 exercise; they are kept as they are.',
+      );
+    });
+
+    it('are announced as removed when the sport is changed away from strength', () => {
+      setup(LIFTING);
+      choose('workout-sport', 'cycling');
+
+      expect(hint()?.trim()).toBe(
+        'The exercises are removed when you save, because the sport is not strength any more.',
+      );
+    });
+
+    it('are announced as kept again when the sport is changed back', () => {
+      setup(LIFTING);
+      choose('workout-sport', 'cycling');
+      choose('workout-sport', 'strength');
+
+      expect(hint()).toContain('kept as they are');
+      submit();
+      expect(lastSaved().exercises).toEqual(LIFTING.exercises);
+    });
+
+    it('say nothing for a workout without any', () => {
+      setup(RIDE);
+
+      expect(hint()).toBeUndefined();
+    });
+
     it('are not added to a workout that becomes strength', () => {
       setup(RIDE);
       choose('workout-sport', 'strength');

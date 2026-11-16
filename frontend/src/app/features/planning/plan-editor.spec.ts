@@ -504,6 +504,68 @@ describe('PlanEditor', () => {
     });
   });
 
+  describe('exercises', () => {
+    const SQUAT = {
+      name: 'Goblet squat',
+      region: 'legs' as const,
+      equipment: 'dumbbells' as const,
+      sets: 3,
+      reps: 10,
+      seconds: null,
+      rpe: 7,
+      rest_seconds: 90,
+    };
+    const STRENGTH_LINEAGE = '01a1d73d-aaaa-7000-8000-000000000004';
+
+    function liftingPlan(): WeekPlan {
+      return plan({
+        workouts: [
+          workout({
+            lineage: STRENGTH_LINEAGE,
+            day: '2026-11-17',
+            sport: 'strength',
+            goal: 'strength',
+            title: 'Strength',
+            zone_system: null,
+            zone: null,
+            slot: null,
+            exercises: [SQUAT],
+          }),
+        ],
+      });
+    }
+
+    it('are sent with the plan as it is', async () => {
+      await setup(liftingPlan());
+
+      expect(lastChecked().workouts[0].exercises).toEqual([SQUAT]);
+    });
+
+    it('stay with a workout that is moved to another day', async () => {
+      await setup(liftingPlan());
+      await click('change-0');
+
+      choose('workout-day', '2026-11-19');
+      await click('workout-save');
+
+      expect(lastChecked().workouts[0]).toMatchObject({
+        day: '2026-11-19',
+        lineage: STRENGTH_LINEAGE,
+        exercises: [SQUAT],
+      });
+    });
+
+    it('go when the workout becomes a run', async () => {
+      await setup(liftingPlan());
+      await click('change-0');
+
+      choose('workout-sport', 'running');
+      await click('workout-save');
+
+      expect(lastChecked().workouts[0]).toMatchObject({ sport: 'running', exercises: [] });
+    });
+  });
+
   describe('removing and adding', () => {
     it('removes a workout and checks the plan again', async () => {
       await setup();
