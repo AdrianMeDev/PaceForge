@@ -31,6 +31,7 @@ import {
   Season,
   SeasonPhase,
   SeasonPlan,
+  SeasonWeekFacts,
   SeasonPlanVersion,
   SeasonRace,
   SeasonWeek,
@@ -344,6 +345,66 @@ function toPlanWeek(raw: unknown, reply: Reply): PlanWeek {
     focus,
     key_sessions: sessions.map((session: unknown) => toKeySession(session, reply)),
     reason,
+  };
+}
+
+/**
+ * The week of the confirmed season as the week plan API tells it (`GET /api/planning/weeks/`),
+ * or `null`. Anything of another shape rejects: a sport twice, a total that is not the sum, more
+ * than three key sessions.
+ */
+export function toSeasonWeekFacts(raw: unknown, reply: Reply): SeasonWeekFacts | null {
+  if (raw === null) {
+    return null;
+  }
+  const item = asObject(raw, reply);
+  const { phase, recovery, target_minutes, total_minutes, focus, reason } = item;
+  const minutes = item['minutes'];
+  const sessions = item['key_sessions'];
+  const races = item['races'];
+  if (
+    !isOneOf<SeasonPhase>(phase, PHASES) ||
+    typeof recovery !== 'boolean' ||
+    !isCount(target_minutes) ||
+    !isCount(total_minutes) ||
+    !isOneOf<Focus>(focus, FOCI) ||
+    typeof reason !== 'string' ||
+    !Array.isArray(minutes) ||
+    !Array.isArray(sessions) ||
+    sessions.length > KEY_SESSIONS_MAX ||
+    !Array.isArray(races)
+  ) {
+    throw unexpected(reply);
+  }
+  const amounts = minutes.map((entry: unknown) => {
+    const { sport, minutes: amount } = asObject(entry, reply);
+    if (!isOneOf<Sport>(sport, SPORTS) || !isCount(amount)) {
+      throw unexpected(reply);
+    }
+    return { sport, minutes: amount };
+  });
+  if (
+    new Set(amounts.map((entry) => entry.sport)).size !== amounts.length ||
+    total_minutes !== amounts.reduce((sum, entry) => sum + entry.minutes, 0)
+  ) {
+    throw unexpected(reply);
+  }
+  return {
+    phase,
+    recovery,
+    target_minutes,
+    minutes: amounts,
+    total_minutes,
+    focus,
+    key_sessions: sessions.map((session: unknown) => toKeySession(session, reply)),
+    reason,
+    races: races.map((race: unknown) => {
+      const { date, priority } = asObject(race, reply);
+      if (!isDate(date) || !isOneOf<RacePriority>(priority, PRIORITIES)) {
+        throw unexpected(reply);
+      }
+      return { date, priority };
+    }),
   };
 }
 

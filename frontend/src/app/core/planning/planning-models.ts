@@ -1,4 +1,5 @@
 import { Forbidden } from '../goals/goals-models';
+import type { SeasonWeekFacts } from '../season/season-models';
 import { RateLimited } from '../integrations/intervals-models';
 
 export type { Forbidden, RateLimited };
@@ -142,6 +143,8 @@ export interface PlanVersion {
 /** A week that can be planned (`week_start` is its Monday), newest version first. */
 export interface PlannableWeek {
   week_start: string;
+  /** What the confirmed season plan says about the week; `null`: nothing (no plan, or not in it). */
+  season: SeasonWeekFacts | null;
   plans: PlanVersion[];
 }
 

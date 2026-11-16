@@ -7,6 +7,7 @@ import {
   PlanProblem,
   PlannableWeek,
   PushOutcome,
+  Sport,
   WeekPlan,
   Workout,
 } from '../../core/planning/planning-models';
@@ -29,6 +30,13 @@ import {
   targetText,
   weekRange,
 } from './plan-format';
+import {
+  FOCUS_LABELS,
+  PHASE_LABELS,
+  PRIORITY_LETTERS,
+  keySessionText,
+  minutesBySport,
+} from '../season/season-format';
 import { PlanEditor } from './plan-editor';
 
 type View = 'loading' | 'unreachable' | 'ready' | 'signed_out';
@@ -94,6 +102,8 @@ export class PlanningPage implements OnInit {
     () => this.weeks().find((week) => week.week_start === this.selected()) ?? null,
   );
   protected readonly versions = computed(() => this.week()?.plans ?? []);
+  /** What the confirmed season plan says about the week, if it says anything. */
+  protected readonly season = computed(() => this.week()?.season ?? null);
   protected readonly confirmed = computed(
     () => this.versions().find((version) => version.status === 'confirmed') ?? null,
   );
@@ -118,7 +128,14 @@ export class PlanningPage implements OnInit {
   protected readonly sport = SPORT_LABELS;
   protected readonly goal = GOAL_LABELS;
   protected readonly status = STATUS_LABELS;
+  protected readonly phase = PHASE_LABELS;
+  protected readonly focus = FOCUS_LABELS;
+  protected readonly letter = PRIORITY_LETTERS;
+  protected readonly keySession = keySessionText;
+  protected readonly seasonMinutes = (entries: { sport: Sport; minutes: number }[]): string =>
+    minutesBySport(Object.fromEntries(entries.map((entry) => [entry.sport, entry.minutes])));
   protected readonly range = weekRange;
+  protected readonly day = dayLabel;
   protected readonly stretching = stretchingText;
   protected readonly minutes = minutesText;
   protected readonly target = targetText;

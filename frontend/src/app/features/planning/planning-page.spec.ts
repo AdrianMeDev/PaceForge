@@ -21,6 +21,7 @@ import {
   WeekPlan,
   WorkoutExport,
 } from '../../core/planning/planning-models';
+import { SeasonWeekFacts } from '../../core/season/season-models';
 import { query, settle } from '../../testing/dom';
 import { PlanningPage } from './planning-page';
 
@@ -191,11 +192,11 @@ const CONFIRMED_VERSION = version({
 
 function weeks(next: PlanVersion[] = [version(), OLD], later: PlanVersion[] = []): PlannableWeek[] {
   return [
-    { week_start: '2026-11-09', plans: [] },
-    { week_start: NEXT, plans: next },
-    { week_start: LATER, plans: later },
-    { week_start: '2026-11-30', plans: [] },
-    { week_start: '2026-12-07', plans: [] },
+    { week_start: '2026-11-09', season: null, plans: [] },
+    { week_start: NEXT, season: null, plans: next },
+    { week_start: LATER, season: null, plans: later },
+    { week_start: '2026-11-30', season: null, plans: [] },
+    { week_start: '2026-12-07', season: null, plans: [] },
   ];
 }
 
@@ -277,6 +278,21 @@ describe('PlanningPage', () => {
   const button = (id: string) => query<HTMLButtonElement>(page, `[data-testid="${id}"]`);
   const select = () => query<HTMLSelectElement>(page, '#plan-week');
   const notice = () => page.querySelector('.notice')?.textContent?.trim();
+
+  const SEASON: SeasonWeekFacts = {
+    phase: 'build',
+    recovery: true,
+    target_minutes: 300,
+    minutes: [
+      { sport: 'running', minutes: 200 },
+      { sport: 'cycling', minutes: 90 },
+    ],
+    total_minutes: 290,
+    focus: 'threshold',
+    key_sessions: [{ sport: 'running', kind: 'long', minutes: 90, detail: '3 x 10 min' }],
+    reason: 'Build the base.',
+    races: [{ date: '2026-11-22', priority: 'main' }],
+  };
 
   async function choose(week: string) {
     select().value = week;
@@ -370,7 +386,7 @@ describe('PlanningPage', () => {
     });
 
     it('starts with the only week if there is just one', async () => {
-      await setup({ weeks: ok([{ week_start: '2026-11-09', plans: [] }]) });
+      await setup({ weeks: ok([{ week_start: '2026-11-09', season: null, plans: [] }]) });
 
       expect(select().value).toBe('2026-11-09');
     });
@@ -1974,6 +1990,80 @@ describe('PlanningPage', () => {
 
         expect(stubs.planning.restore).not.toHaveBeenCalled();
       });
+    });
+  });
+
+  describe('the season week', () => {
+    const withSeason = (season: SeasonWeekFacts | null) => {
+      const list = weeks();
+      list[1] = { ...list[1], season };
+      return ok(list);
+    };
+    const box = () => byId('season-week');
+
+    it('shows nothing when the season says nothing about the week', async () => {
+      await setup();
+
+      expect(box()).toBeNull();
+    });
+
+    it('shows the phase, the minutes, the key sessions and the reason of the week', async () => {
+      await setup({ weeks: withSeason(SEASON) });
+
+      expect(box()).not.toBeNull();
+      expect(byId('season-phase')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+        'Build Recovery · Focus: Threshold',
+      );
+      expect(byId('season-minutes')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+        'Running 3 h 20 min · Cycling 1 h 30 min · 4 h 50 min in all (the skeleton aims for 5 h)',
+      );
+      expect(page.querySelector('.key-sessions li')?.textContent).toBe(
+        'Running · Long · 1 h 30 min · 3 x 10 min',
+      );
+      expect(byId('season-reason')?.textContent).toBe('Build the base.');
+      expect(byId('season-race')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+        'Race on Sun 22 Nov (priority A)',
+      );
+    });
+
+    it('does not say recovery for an ordinary week', async () => {
+      await setup({ weeks: withSeason({ ...SEASON, recovery: false }) });
+
+      expect(byId('season-recovery')).toBeNull();
+    });
+
+    it('has no list of key sessions, no race and no reason when there are none', async () => {
+      await setup({
+        weeks: withSeason({ ...SEASON, key_sessions: [], races: [], reason: '' }),
+      });
+
+      expect(page.querySelector('.key-sessions')).toBeNull();
+      expect(byId('season-race')).toBeNull();
+      expect(byId('season-reason')).toBeNull();
+    });
+
+    it('follows the week that is chosen', async () => {
+      await setup({ weeks: withSeason(SEASON) });
+      expect(box()).not.toBeNull();
+
+      await choose(LATER);
+
+      expect(box()).toBeNull();
+    });
+
+    it('shows the texts of the coach as text, never as markup', async () => {
+      const text = '<img src=x onerror=alert(1)>';
+      await setup({
+        weeks: withSeason({
+          ...SEASON,
+          reason: text,
+          key_sessions: [{ sport: 'running', kind: 'long', minutes: 60, detail: text }],
+        }),
+      });
+
+      expect(page.querySelector('img')).toBeNull();
+      expect(byId('season-reason')?.textContent).toBe(text);
+      expect(page.querySelector('.key-sessions li')?.textContent).toContain(text);
     });
   });
 });

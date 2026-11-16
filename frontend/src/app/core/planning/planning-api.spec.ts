@@ -157,11 +157,11 @@ const VERSION = {
 };
 const WEEKS = {
   weeks: [
-    { week_start: '2026-11-09', plans: [] },
-    { week_start: '2026-11-16', plans: [VERSION] },
-    { week_start: '2026-11-23', plans: [] },
-    { week_start: '2026-11-30', plans: [] },
-    { week_start: '2026-12-07', plans: [] },
+    { week_start: '2026-11-09', season: null, plans: [] },
+    { week_start: '2026-11-16', season: null, plans: [VERSION] },
+    { week_start: '2026-11-23', season: null, plans: [] },
+    { week_start: '2026-11-30', season: null, plans: [] },
+    { week_start: '2026-12-07', season: null, plans: [] },
   ],
 };
 
@@ -455,7 +455,55 @@ const WRONG_PLANS: [string, unknown][] = [
   ['an unknown segment zone system', altered(DRAFT, [[...SEGMENT, 'zone_system'], 'speed'])],
 ];
 
+const SEASON = {
+  phase: 'build',
+  recovery: false,
+  target_minutes: 300,
+  minutes: [
+    { sport: 'running', minutes: 200 },
+    { sport: 'cycling', minutes: 90 },
+  ],
+  total_minutes: 290,
+  focus: 'threshold',
+  key_sessions: [{ sport: 'running', kind: 'long', minutes: 90, detail: '3 x 10 min' }],
+  reason: 'Build the base.',
+  races: [{ date: '2026-11-22', priority: 'main' }],
+};
+const WITH_SEASON = altered(WEEKS, [['weeks', 1, 'season'], SEASON]) as typeof WEEKS;
+const SEASON_AT = ['weeks', 1, 'season'];
+
 const WRONG_WEEKS: [string, unknown][] = [
+  ['no season', altered(WEEKS, [['weeks', 0, 'season'], REMOVE])],
+  ['a text as season', altered(WEEKS, [['weeks', 0, 'season'], 'build'])],
+  ['an unknown phase', altered(WITH_SEASON, [[...SEASON_AT, 'phase'], 'peak'])],
+  ['no recovery flag', altered(WITH_SEASON, [[...SEASON_AT, 'recovery'], REMOVE])],
+  ['a fractional aim', altered(WITH_SEASON, [[...SEASON_AT, 'target_minutes'], 1.5])],
+  ['an unknown focus', altered(WITH_SEASON, [[...SEASON_AT, 'focus'], 'rest'])],
+  ['no reason', altered(WITH_SEASON, [[...SEASON_AT, 'reason'], REMOVE])],
+  ['minutes that are no list', altered(WITH_SEASON, [[...SEASON_AT, 'minutes'], {}])],
+  [
+    'an unknown sport in the minutes',
+    altered(WITH_SEASON, [[...SEASON_AT, 'minutes', 0, 'sport'], 'rowing']),
+  ],
+  [
+    'a sport twice in the minutes',
+    altered(WITH_SEASON, [[...SEASON_AT, 'minutes', 1, 'sport'], 'running']),
+  ],
+  ['a total that is not the sum', altered(WITH_SEASON, [[...SEASON_AT, 'total_minutes'], 291])],
+  [
+    'four key sessions',
+    altered(WITH_SEASON, [[...SEASON_AT, 'key_sessions'], Array(4).fill(SEASON.key_sessions[0])]),
+  ],
+  [
+    'an unknown kind of key session',
+    altered(WITH_SEASON, [[...SEASON_AT, 'key_sessions', 0, 'kind'], 'party']),
+  ],
+  ['no races', altered(WITH_SEASON, [[...SEASON_AT, 'races'], REMOVE])],
+  [
+    'a race without a priority',
+    altered(WITH_SEASON, [[...SEASON_AT, 'races', 0, 'priority'], 'x']),
+  ],
+  ['a race that is no date', altered(WITH_SEASON, [[...SEASON_AT, 'races', 0, 'date'], 'sunday'])],
   ['no body', null],
   ['a list as body', []],
   ['a text as body', 'weeks'],
@@ -543,6 +591,38 @@ describe('PlanningApi', () => {
 
       expect(request.request.body).toBeNull();
       expect(result).toEqual({ kind: 'ok', weeks: WEEKS.weeks });
+    });
+
+    it('reads the week of the confirmed season plan', async () => {
+      const { result } = await run(api.weeks(), 'GET', WEEKS_URL, WITH_SEASON, 200);
+
+      const weeks = (result as { weeks: { season: unknown }[] }).weeks;
+      expect(weeks.map((week) => week.season)).toEqual([null, SEASON, null, null, null]);
+    });
+
+    it('keeps the texts of the coach as they are, markup included', async () => {
+      const text = '<img src=x onerror=alert(1)>';
+      const hostile = altered(
+        WITH_SEASON,
+        [[...SEASON_AT, 'reason'], text],
+        [[...SEASON_AT, 'key_sessions', 0, 'detail'], text],
+      );
+
+      const { result } = await run(api.weeks(), 'GET', WEEKS_URL, hostile as object, 200);
+
+      const weeks = (result as { weeks: { season: unknown }[] }).weeks;
+      expect(weeks[1].season).toMatchObject({
+        reason: text,
+        key_sessions: [{ detail: text }],
+      });
+    });
+
+    it('takes over only the known fields of the season week', async () => {
+      const crowded = altered(WITH_SEASON, [[...SEASON_AT, 'owner'], 'x']);
+
+      const { result } = await run(api.weeks(), 'GET', WEEKS_URL, crowded as object, 200);
+
+      expect(JSON.stringify(result)).not.toContain('owner');
     });
 
     it('returns five weeks without any plan', async () => {
