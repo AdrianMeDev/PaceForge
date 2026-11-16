@@ -24,6 +24,7 @@ const SAVED: Goal = {
   metric: null,
   target_value: null,
   days_to_go: null,
+  assessment: null,
   created_at: '2026-11-13T13:23:19Z',
   updated_at: '2026-11-13T13:23:19Z',
 };
@@ -40,6 +41,7 @@ const RACE: Goal = {
   distance_m: 42195,
   target_time_seconds: 13500,
   days_to_go: 317,
+  assessment: null,
 };
 
 const THRESHOLD: Goal = {
@@ -750,6 +752,102 @@ describe('GoalForm', () => {
       expect(value('#goal-notes')).toBe('Strength');
       expect(has('#goal-discipline')).toBe(false);
       expect(has('#goal-metric')).toBe(false);
+    });
+  });
+
+  describe('the suggested target', () => {
+    const judged = (changes: Partial<Goal>): Goal => ({
+      ...RACE,
+      assessment: {
+        rating: 'unrealistic',
+        reason: null,
+        current: 50,
+        needed: 56,
+        suggested: 12345,
+        weeks: 10,
+        prep_short: false,
+        prep_weeks: 16,
+      },
+      ...changes,
+    });
+
+    it('is offered for a race that is a stretch, and fills the time without saving', async () => {
+      await setup(judged({}));
+      expect(query(form, '[data-testid="suggestion"]').textContent).toContain('3:25:45');
+      expect(value('#goal-time')).toBe('3:45:00');
+
+      query<HTMLButtonElement>(form, '[data-testid="use-suggestion"]').click();
+      await settle(fixture);
+
+      expect(value('#goal-time')).toBe('3:25:45');
+      expect(api.update).not.toHaveBeenCalled();
+      expect(api.create).not.toHaveBeenCalled();
+    });
+
+    it('is only saved when the form is saved, and then as the time that was filled in', async () => {
+      await setup(judged({}));
+
+      query<HTMLButtonElement>(form, '[data-testid="use-suggestion"]').click();
+      await settle(fixture);
+      await submit();
+
+      expect(api.update).toHaveBeenCalledTimes(1);
+      expect(api.update.mock.calls[0][1]).toMatchObject({ target_time_seconds: 12345 });
+    });
+
+    it('can be ignored: the own time stays', async () => {
+      await setup(judged({}));
+
+      await submit();
+
+      expect(api.update.mock.calls[0][1]).toMatchObject({ target_time_seconds: 13500 });
+    });
+
+    it('is offered for a threshold goal and fills the value', async () => {
+      await setup(
+        judged({
+          ...THRESHOLD,
+          assessment: {
+            rating: 'ambitious',
+            reason: null,
+            current: 300,
+            needed: 270,
+            suggested: 286,
+            weeks: 10,
+            prep_short: false,
+            prep_weeks: null,
+          },
+        }),
+      );
+      expect(query(form, '[data-testid="suggestion"]').textContent).toContain('4:46 /km');
+
+      query<HTMLButtonElement>(form, '[data-testid="use-suggestion"]').click();
+      await settle(fixture);
+
+      expect(value('#goal-value')).toBe('4:46');
+    });
+
+    it('is not offered for a realistic goal', async () => {
+      const given = judged({});
+      await setup({
+        ...given,
+        assessment: given.assessment && { ...given.assessment, rating: 'realistic' },
+      });
+
+      expect(has('[data-testid="suggestion"]')).toBe(false);
+    });
+
+    it('is not offered for a goal without a judgement', async () => {
+      await setup(RACE);
+
+      expect(has('[data-testid="suggestion"]')).toBe(false);
+    });
+
+    it('is not offered when a goal is added', async () => {
+      await setup(null);
+      await choose('#goal-kind', 'race');
+
+      expect(has('[data-testid="suggestion"]')).toBe(false);
     });
   });
 });

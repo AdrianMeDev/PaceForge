@@ -2,6 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { GoalsApi } from '../../core/goals/goals-api';
 import {
+  Assessment,
   CreateGoalResult,
   DeleteGoalResult,
   Goal,
@@ -27,6 +28,7 @@ function goal(changes: Partial<Goal> = {}): Goal {
     metric: null,
     target_value: null,
     days_to_go: 317,
+    assessment: null,
     created_at: '2026-11-13T13:23:19Z',
     updated_at: '2026-11-13T13:23:19Z',
     ...changes,
@@ -40,6 +42,7 @@ const FTP = goal({
   title: 'Raise FTP',
   target_date: '2027-03-01',
   days_to_go: 108,
+  assessment: null,
   discipline: null,
   distance_m: null,
   target_time_seconds: null,
@@ -60,6 +63,7 @@ const GENERAL = goal({
   notes: 'Strength as a supplement',
   target_date: null,
   days_to_go: null,
+  assessment: null,
   discipline: null,
   distance_m: null,
   target_time_seconds: null,
@@ -69,6 +73,7 @@ const ACHIEVED = goal({
   title: 'First 10k',
   status: 'achieved',
   days_to_go: -30,
+  assessment: null,
   target_date: '2026-10-14',
 });
 const DROPPED = goal({ id: 'dropped', title: 'Ultra', status: 'dropped' });
@@ -770,6 +775,83 @@ describe('GoalsPage', () => {
       await settle(fixture);
 
       expect(api.delete).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('how realistic a goal is', () => {
+    const judged = (assessment: Assessment, changes: Partial<Goal> = {}) =>
+      goal({ id: 'judged', assessment, ...changes });
+    const A: Assessment = {
+      rating: 'unrealistic',
+      reason: null,
+      current: 50,
+      needed: 56.2,
+      suggested: 2450,
+      weeks: 3,
+      prep_short: true,
+      prep_weeks: 16,
+    };
+
+    it('shows the rating, the sentence, the numbers, the suggestion and the warning', async () => {
+      await setup(ok(judged(A, { distance_m: 10000, target_time_seconds: 1800 })));
+
+      expect(within('judged', 'rating')).toBe('Unrealistic');
+      expect(within('judged', 'judgement')).toContain('Out of reach');
+      expect(within('judged', 'figures')).toBe(
+        'Your running form: VDOT 50.0. The target needs VDOT 56.2.',
+      );
+      expect(within('judged', 'suggestion')).toBe('A target that can be reached by then: 40:50.');
+      expect(within('judged', 'preparation')).toContain('Only 3 weeks are left');
+      expect(card('judged').querySelector('.assessment')?.getAttribute('data-rating')).toBe(
+        'unrealistic',
+      );
+    });
+
+    it('shows a realistic goal without a suggestion and without a warning', async () => {
+      await setup(ok(judged({ ...A, rating: 'realistic', prep_short: false, suggested: 1800 })));
+
+      expect(within('judged', 'rating')).toBe('Realistic');
+      expect(card('judged').querySelector('[data-testid="suggestion"]')).toBeNull();
+      expect(card('judged').querySelector('[data-testid="preparation"]')).toBeNull();
+    });
+
+    it('says why a goal cannot be judged and what to do', async () => {
+      const unknown: Assessment = {
+        rating: 'unknown',
+        reason: 'no_form',
+        current: null,
+        needed: null,
+        suggested: null,
+        weeks: 10,
+        prep_short: false,
+        prep_weeks: 6,
+      };
+      await setup(ok(judged(unknown)));
+
+      expect(within('judged', 'rating')).toBe('Cannot be judged yet');
+      expect(within('judged', 'judgement')).toContain('Enter a recent best time');
+      expect(card('judged').querySelector('[data-testid="figures"]')).toBeNull();
+    });
+
+    it('shows nothing for a goal without a judgement', async () => {
+      await setup(ok(GENERAL, ACHIEVED));
+
+      expect(page.querySelector('[data-testid="assessment"]')).toBeNull();
+    });
+
+    it('shows the threshold values in their own unit', async () => {
+      await setup(
+        ok(
+          goal({
+            ...FTP,
+            id: 'f',
+            assessment: { ...A, rating: 'ambitious', current: 240, needed: 280, suggested: 252 },
+          }),
+        ),
+      );
+
+      expect(within('f', 'figures')).toBe('Your FTP: 240 W. The target: 280 W.');
+      expect(within('f', 'suggestion')).toBe('A target that can be reached by then: 252 W.');
     });
   });
 });

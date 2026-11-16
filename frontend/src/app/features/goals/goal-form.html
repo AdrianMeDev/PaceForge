@@ -118,6 +118,15 @@
         <p class="field-error" role="alert">{{ message }}</p>
       }
       <p class="hint" id="goal-time-hint">Hours, minutes and seconds, for example 3:45:00.</p>
+      @if (suggested(); as hint) {
+        <p class="hint" data-testid="suggestion">
+          A time that can be reached by the date: {{ hint.text }}.
+          <button type="button" class="link" data-testid="use-suggestion" (click)="useSuggestion()">
+            Use it
+          </button>
+          Nothing is saved until you save; your own time is yours to keep.
+        </p>
+      }
     </div>
   }
 
@@ -154,6 +163,15 @@
             : 'Minutes and seconds per kilometre, for example 4:45.'
         }}
       </p>
+      @if (suggested(); as hint) {
+        <p class="hint" data-testid="suggestion">
+          A value that can be reached by the date: {{ hint.text }}.
+          <button type="button" class="link" data-testid="use-suggestion" (click)="useSuggestion()">
+            Use it
+          </button>
+          Nothing is saved until you save; your own value is yours to keep.
+        </p>
+      }
     </div>
   }
 

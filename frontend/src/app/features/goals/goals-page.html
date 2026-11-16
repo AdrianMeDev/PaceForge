@@ -71,6 +71,21 @@
               @if (target(goal); as text) {
                 <p class="meta" data-testid="target">{{ text }}</p>
               }
+              @if (goal.assessment; as judged) {
+                <div class="assessment" [attr.data-rating]="judged.rating" data-testid="assessment">
+                  <span class="badge" data-testid="rating">{{ ratingLabel[judged.rating] }}</span>
+                  <span data-testid="judgement">{{ judgement(judged) }}</span>
+                  @if (figures(goal); as numbers) {
+                    <span class="figures" data-testid="figures">{{ numbers }}</span>
+                  }
+                  @if (suggestion(goal); as hint) {
+                    <span class="figures" data-testid="suggestion">{{ hint }}</span>
+                  }
+                  @if (preparation(judged); as warning) {
+                    <span class="warning" data-testid="preparation">{{ warning }}</span>
+                  }
+                </div>
+              }
               @if (goal.notes) {
                 <p class="notes" data-testid="notes">{{ goal.notes }}</p>
               }

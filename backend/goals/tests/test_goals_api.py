@@ -10,7 +10,8 @@ from django.test.utils import CaptureQueriesContext
 
 from accounts.models import User
 from accounts.tests.conftest import AuthApi
-from athletes.models import AthleteProfile
+from athletes import best_times
+from athletes.models import AthleteProfile, BestTime, ThresholdValue
 from goals import services
 from goals.models import Goal
 from goals.serializers import MAIN_TAKEN, MAX_GOALS, PAST_RACE, TOO_MANY
@@ -30,13 +31,14 @@ FUTURE = "2027-09-26"
 FIELDS = {
     "id", "kind", "title", "notes", "priority", "status", "target_date", "discipline",
     "distance_m", "target_time_seconds", "metric", "target_value", "days_to_go",
-    "created_at", "updated_at",
+    "assessment", "created_at", "updated_at",
 }  # fmt: skip
 
 
 @pytest.fixture(autouse=True)
 def _fixed_clock(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(services, "_utc_now", lambda: NOW)
+    monkeypatch.setattr(best_times, "_today", lambda: TODAY)
 
 
 @pytest.fixture
@@ -387,6 +389,136 @@ class TestTheDate:
         profile_queries = [q for q in queries if "athletes_athleteprofile" in q["sql"]]
         assert len(profile_queries) == 1
         assert len(queries) <= 6
+
+
+ASSESSMENT = {
+    "rating", "reason", "current", "needed", "suggested", "weeks", "prep_short", "prep_weeks"
+}  # fmt: skip
+
+
+def run_form(user: User, seconds: int = 2481) -> None:
+    """A 10 km best time that is worth about VDOT 50."""
+    BestTime.objects.create(owner=user, distance="10k", seconds=seconds, date=date(2026, 10, 14))
+
+
+class TestTheAssessment:
+    def test_a_race_with_a_form_is_judged(self, alice: User) -> None:
+        run_form(alice)
+        stored(alice, distance_m=10_000, target_time_seconds=2600, target_date=date(2027, 1, 22))
+
+        (listed,) = body(signed_in(alice).call("GET", URL))
+
+        assessment = listed["assessment"]
+        assert set(assessment) == ASSESSMENT
+        assert (assessment["rating"], assessment["reason"]) == ("realistic", None)
+        assert assessment["current"] == pytest.approx(50, abs=0.2)
+        assert assessment["weeks"] == 10
+        assert (assessment["prep_short"], assessment["prep_weeks"]) == (False, 6)
+
+    def test_an_unreasonable_target_is_unrealistic_with_a_suggestion(self, alice: User) -> None:
+        run_form(alice)
+        stored(alice, distance_m=10_000, target_time_seconds=1800, target_date=date(2027, 1, 22))
+
+        (listed,) = body(signed_in(alice).call("GET", URL))
+
+        assert listed["assessment"]["rating"] == "unrealistic"
+        assert listed["assessment"]["suggested"] > 1800
+
+    def test_a_goal_that_cannot_be_judged_says_why(self, alice: User) -> None:
+        stored(alice, distance_m=10_000, target_time_seconds=2600)  # no best time
+
+        (listed,) = body(signed_in(alice).call("GET", URL))
+
+        assert (listed["assessment"]["rating"], listed["assessment"]["reason"]) == (
+            "unknown",
+            "no_form",
+        )
+
+    def test_a_threshold_goal_is_judged_against_the_current_value(self, alice: User) -> None:
+        ThresholdValue.objects.create(
+            owner=alice, sport="ride", metric="ftp", value=240, source="manual", basis="t"
+        )
+        Goal.objects.create(
+            owner=alice, **threshold(target_value=400, target_date=date(2027, 1, 22))
+        )
+
+        (listed,) = body(signed_in(alice).call("GET", URL))
+
+        assert listed["assessment"]["rating"] == "unrealistic"
+        assert listed["assessment"]["suggested"] == 252
+
+    def test_a_general_goal_has_none(self, alice: User) -> None:
+        Goal.objects.create(owner=alice, **general())
+
+        assert body(signed_in(alice).call("GET", URL))[0]["assessment"] is None
+
+    @pytest.mark.parametrize("status", ["achieved", "dropped"])
+    def test_a_goal_that_is_not_active_has_none(self, alice: User, status: str) -> None:
+        run_form(alice)
+        stored(alice, status=status, target_date=date(2026, 12, 1))
+
+        assert body(signed_in(alice).call("GET", URL))[0]["assessment"] is None
+
+    def test_one_goal_has_it_when_it_is_read_created_and_changed(self, alice: User) -> None:
+        run_form(alice)
+        api = signed_in(alice)
+        created = body(create(api, race(distance_m=10_000, target_time_seconds=2600)))
+        goal_id = created["id"]
+
+        read = body(api.call("GET", detail(goal_id)))
+        changed = body(api.call("PATCH", detail(goal_id), {"target_time_seconds": 1800}))
+
+        assert created["assessment"]["rating"] == "realistic"
+        assert read["assessment"] == created["assessment"]
+        assert changed["assessment"]["rating"] == "unrealistic"
+
+    def test_writing_ignores_it(self, alice: User) -> None:
+        run_form(alice)
+        goal = stored(alice, distance_m=10_000, target_time_seconds=2600)
+
+        changed = body(
+            signed_in(alice).call("PATCH", detail(goal.pk), {"assessment": {"rating": "x"}})
+        )
+
+        assert changed["assessment"]["rating"] in ("realistic", "ambitious", "unrealistic")
+
+    def test_the_form_of_another_user_does_not_count(self, alice: User, bob: User) -> None:
+        run_form(bob)
+        stored(alice, distance_m=10_000, target_time_seconds=2600)
+
+        (listed,) = body(signed_in(alice).call("GET", URL))
+
+        assert listed["assessment"]["reason"] == "no_form"
+
+    def test_it_holds_nothing_of_the_athletes_text(self, alice: User) -> None:
+        run_form(alice)
+        stored(alice, title="SECRET-TITLE", notes="SECRET-NOTES", target_date=date(2027, 1, 22))
+
+        (listed,) = body(signed_in(alice).call("GET", URL))
+
+        assert "SECRET" not in str(listed["assessment"])
+
+    def test_the_queries_of_the_list_do_not_grow_with_the_goals(self, alice: User) -> None:
+        run_form(alice)
+        api = signed_in(alice)
+        stored(alice, distance_m=10_000, target_time_seconds=2600, target_date=date(2027, 1, 22))
+        api.call("GET", URL)  # warm up
+        with CaptureQueriesContext(connection) as few:
+            api.call("GET", URL)
+        for n in range(15):
+            stored(
+                alice,
+                priority="preparation",
+                title=f"Race {n}",
+                distance_m=10_000,
+                target_time_seconds=2600,
+                target_date=date(2027, 1, 22),
+            )
+
+        with CaptureQueriesContext(connection) as lots:
+            api.call("GET", URL)
+
+        assert len(few) == len(lots)
 
 
 class TestTheMainGoal:

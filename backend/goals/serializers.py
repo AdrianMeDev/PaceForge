@@ -7,6 +7,7 @@ from rest_framework import serializers
 from accounts.models import User
 from athletes.serializers import NumberField
 
+from .assessing import assess_goals, assessment_data
 from .models import NOTES_MAX, TITLE_MAX, Goal
 from .services import today_of
 
@@ -57,6 +58,7 @@ class GoalSerializer(serializers.ModelSerializer[Goal]):
     target_time_seconds = WholeNumberField(allow_null=True, required=False)
     target_value = NumberField(allow_null=True, required=False)
     days_to_go = serializers.SerializerMethodField()
+    assessment = serializers.SerializerMethodField()
 
     class Meta:
         model = Goal
@@ -74,10 +76,11 @@ class GoalSerializer(serializers.ModelSerializer[Goal]):
             "metric",
             "target_value",
             "days_to_go",
+            "assessment",
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "days_to_go", "created_at", "updated_at"]
+        read_only_fields = ["id", "days_to_go", "assessment", "created_at", "updated_at"]
         # The rules are checked in ``validate`` (the unique-together helpers of the framework do
         # not know the condition of the main goal rule).
         validators: list[Any] = []
@@ -86,6 +89,19 @@ class GoalSerializer(serializers.ModelSerializer[Goal]):
 
     def get_days_to_go(self, goal: Goal) -> int | None:
         return None if goal.target_date is None else (goal.target_date - self._today()).days
+
+    def get_assessment(self, goal: Goal) -> dict[str, Any] | None:
+        """How realistic the target is (``goals.realism``), for an active goal that has a target to
+        judge; ``null`` otherwise. A view that lists goals puts all of them in the context at once;
+        a single goal is looked up on its own."""
+        if goal.kind == Goal.Kind.GENERAL or goal.status != Goal.Status.ACTIVE:
+            return None
+        cache = self.context.get("assessments")
+        if not isinstance(cache, dict):
+            cache = {}  # no view to share it: this goal alone
+        if goal.pk not in cache:
+            cache.update(assess_goals(self._user(), [goal], self._today()))
+        return assessment_data(cache[goal.pk])
 
     def to_representation(self, instance: Goal) -> dict[str, Any]:
         data = super().to_representation(instance)

@@ -452,7 +452,7 @@ class TestTheSystemPrompt:
         assert '"best_times" lists the athlete\'s running best times' in flat
         assert '"recent" says that the race is less than a year old' in flat
         assert "not to set paces of your own" in flat
-        assert "A goal time far above that form is unrealistic" in flat
+        assert 'Whether a goal can be reached is judged by code: see "assessment"' in flat
 
     def test_it_explains_the_athlete(self) -> None:
         flat = " ".join(SYSTEM_PROMPT.split())

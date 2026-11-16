@@ -397,7 +397,7 @@ without this page.
 | `weekly_budget_minutes` | The weekly budget, none if not set. |
 | `weekly_minutes_available` | What the week offers in all, the budget applied. |
 | `zone_systems` | For each zone system the athlete can use: sport, threshold and the zone table. |
-| `goals` | The active goals by `priority` – `main` (A), `secondary` (B), `preparation` (C, a race on the way) – then the nearest date. |
+| `goals` | The active goals by `priority` – `main` (A), `secondary` (B), `preparation` (C, a race on the way) – then the nearest date. Each has an `assessment` (`null` for a general goal): whether its target is realistic, judged by code from the athlete's form and the time left (see [goals](goals.md)): `rating` (`realistic`, `ambitious`, `unrealistic` or `unknown`), `reason` (why it is `unknown`), `current` and `needed` (VDOT for a race), `suggested` (the time or value that can be reached by then), `weeks` left, `prep_weeks` a race of that distance should have and `prep_short` (fewer are left). |
 | `goals_not_shown` | How many active goals were left out because of the limit. |
 | `recent_weeks_minutes` | Minutes done in each of the up to 4 weeks before, latest first. |
 | `typical_weekly_minutes` | What the athlete calls a normal week, in minutes; `null` if not given (or 0). The progression rule's reference is the higher of this and the recent average. |
@@ -445,7 +445,7 @@ What it cannot do is get a plan past the parser and the rules.
 | `GOAL_NOTES_MAX` | 300 | Characters of the notes of a goal that are sent. |
 | `LIMITATIONS_TEXT_MAX_TOLD` | 150 | Characters of the free text about limitations that are sent, if the athlete allows it. |
 | `MAX_LIMITATIONS_TOLD` | 10 | Current limitations told to the coach (the newest first); the rest is counted. |
-| `MAX_BYTES` | 24000 | The most the briefing may take (UTF-8), checked in the tests. |
+| `MAX_BYTES` | 28000 | The most the briefing may take (UTF-8), checked in the tests. |
 
 ### Time and the web server
 

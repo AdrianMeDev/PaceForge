@@ -97,3 +97,32 @@ button.secondary {
   align-items: center;
   gap: 0.5rem;
 }
+
+.assessment {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.75rem;
+  margin: 0.5rem 0;
+}
+
+.assessment[data-rating='ambitious'] .badge {
+  border-color: var(--info);
+  color: var(--info);
+}
+
+.assessment[data-rating='unrealistic'] .badge {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.figures {
+  flex-basis: 100%;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.warning {
+  flex-basis: 100%;
+  color: var(--danger);
+}

@@ -16,6 +16,9 @@ from datetime import date
 from typing import Any
 
 from accounts.models import User
+from goals.assessing import assessment_data, facts_of, form_of
+from goals.models import Goal
+from goals.realism import Assessment, assess
 from planning import briefing as week_briefing
 from planning.schema import Sport
 
@@ -57,13 +60,16 @@ def build_briefing(
     first = skeleton.weeks[0].week_start if skeleton.weeks else today
     week = week_briefing.build_briefing(user, first)
     shown = _races(skeleton)
+    judged = _judgements(user, today, shown[:MAX_RACES_TOLD])
     return {
         "today": today.isoformat(),
         "rolling": skeleton.rolling,
         "truncated": skeleton.truncated,
         "peak_minutes": skeleton.peak_minutes,
         "weeks": [_week(week) for week in skeleton_data(skeleton)["weeks"]],
-        "races": [_race(race) for race in shown[:MAX_RACES_TOLD]],
+        "races": [
+            _race(race, judged.get((race.day, race.priority))) for race in shown[:MAX_RACES_TOLD]
+        ],
         "races_not_shown": max(len(shown) - MAX_RACES_TOLD, 0),
         **{name: week[name] for name in TAKEN_FROM_THE_WEEK},
         **({} if sports is None else {"sports": [s.value for s in Sport if s in sports]}),
@@ -93,11 +99,35 @@ def _races(skeleton: Skeleton) -> list[Race]:
     return sorted((race for week in skeleton.weeks for race in week.races), key=lambda r: r.day)
 
 
-def _race(race: Race) -> dict[str, Any]:
+def _judgements(user: User, today: date, races: list[Race]) -> dict[tuple[date, str], Assessment]:
+    """How realistic the target of each race is, by its day and priority: the active race goal of
+    the athlete that lies on that day with that priority (the first one if there are two). A race
+    that has no such goal (the skeleton knows no target time) has no judgement. Three queries,
+    whether there are races or not (a user has at most ``goals.serializers.MAX_GOALS`` goals)."""
+    goals = (
+        Goal.objects.for_user(user)
+        .filter(
+            status=Goal.Status.ACTIVE,
+            kind=Goal.Kind.RACE,
+            target_date__isnull=False,
+        )
+        .order_by("created_at", "id")
+    )
+    form = form_of(user)
+    found: dict[tuple[date, str], Assessment] = {}
+    for goal in goals:
+        if goal.target_date is not None:
+            found.setdefault((goal.target_date, goal.priority), assess(facts_of(goal), form, today))
+    return found
+
+
+def _race(race: Race, judged: Assessment | None) -> dict[str, Any]:
     return {
         "date": race.day.isoformat(),
         "priority": race.priority,
         "discipline": race.discipline,
         "distance_m": race.distance_m,
         "title": race.title[:RACE_TITLE_TOLD_MAX],
+        # Whether the target time is realistic (``goals.realism``); ``null`` without a goal.
+        "assessment": None if judged is None else assessment_data(judged),
     }

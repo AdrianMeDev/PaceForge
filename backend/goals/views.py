@@ -2,11 +2,14 @@ from typing import Any
 
 from django.db import IntegrityError, transaction
 from django.db.models import Case, F, IntegerField, QuerySet, Value, When
+from rest_framework.request import Request
+from rest_framework.response import Response
 from rest_framework.serializers import BaseSerializer, ValidationError
 
 from accounts.models import User
 from core.views import OwnedModelViewSet
 
+from .assessing import assess_goals
 from .models import Goal
 from .serializers import MAIN_TAKEN, GoalSerializer
 from .services import today_of
@@ -57,7 +60,20 @@ class GoalViewSet(OwnedModelViewSet):
         assert isinstance(user, User)  # IsAuthenticated is the default permission
         # One lookup of the time zone per request, not one per goal.
         context["today"] = today_of(user)
+        # The judgements of the goals, by id; the list fills it with one set of queries.
+        context["assessments"] = {}
         return context
+
+    def list(self, request: Request, *args: Any, **kwargs: Any) -> Response:
+        user = request.user
+        assert isinstance(user, User)
+        goals = list(self.filter_queryset(self.get_queryset()))
+        serializer = self.get_serializer(goals, many=True)
+        context = serializer.context
+        # a general goal has nothing to judge and is not asked about
+        judged = [goal for goal in goals if goal.kind != Goal.Kind.GENERAL]
+        context["assessments"].update(assess_goals(user, judged, context["today"]))
+        return Response(serializer.data)
 
     def perform_create(self, serializer: BaseSerializer[Any]) -> None:
         self._save(super().perform_create, serializer)

@@ -1,13 +1,20 @@
-import { Goal } from '../../core/goals/goals-models';
+import { Assessment, Goal } from '../../core/goals/goals-models';
 import {
   DISTANCE_PRESETS,
   daysToGoText,
   describeTarget,
+  figuresText,
   formatGoalDistance,
+  judgementText,
   kilometresText,
   parseDistanceKm,
   parseTargetTime,
+  preparationText,
   PRIORITY_LABELS,
+  RATING_LABELS,
+  REASON_TEXTS,
+  suggestedTarget,
+  suggestionText,
 } from './goal-format';
 import { formatDuration } from '../activities/activity-format';
 
@@ -25,6 +32,7 @@ const goal = (changes: Partial<Goal>): Goal => ({
   metric: null,
   target_value: null,
   days_to_go: null,
+  assessment: null,
   created_at: '2026-11-13T00:00:00Z',
   updated_at: '2026-11-13T00:00:00Z',
   ...changes,
@@ -248,5 +256,153 @@ describe('the priority labels', () => {
       secondary: 'B · Secondary goal',
       preparation: 'C · Preparation race',
     });
+  });
+});
+
+const assessment = (changes: Partial<Assessment> = {}): Assessment => ({
+  rating: 'ambitious',
+  reason: null,
+  current: 50,
+  needed: 52.44,
+  suggested: 2450,
+  weeks: 10,
+  prep_short: false,
+  prep_weeks: 6,
+  ...changes,
+});
+
+const race = (changes: Partial<Assessment> = {}): Goal =>
+  goal({
+    kind: 'race',
+    discipline: 'running',
+    distance_m: 10000,
+    target_time_seconds: 2400,
+    assessment: assessment(changes),
+  });
+
+describe('the words about how realistic a goal is', () => {
+  it('name every rating', () => {
+    expect(RATING_LABELS).toEqual({
+      realistic: 'Realistic',
+      ambitious: 'Ambitious',
+      unrealistic: 'Unrealistic',
+      unknown: 'Cannot be judged yet',
+    });
+  });
+
+  it('say what to do for every reason', () => {
+    expect(Object.keys(REASON_TEXTS).sort()).toEqual(
+      ['no_date', 'no_form', 'no_model', 'no_target', 'out_of_range'].sort(),
+    );
+  });
+
+  it.each([
+    ['realistic', 'Within reach'],
+    ['ambitious', 'A stretch'],
+    ['unrealistic', 'Out of reach'],
+  ] as const)('judges %s in a sentence', (rating, start) => {
+    expect(judgementText(assessment({ rating })).startsWith(start)).toBe(true);
+  });
+
+  it('says why a goal could not be judged', () => {
+    const unknown = assessment({ rating: 'unknown', reason: 'no_form' });
+
+    expect(judgementText(unknown)).toBe(REASON_TEXTS.no_form);
+  });
+});
+
+describe('figuresText', () => {
+  it('tells the VDOT of a race with one decimal', () => {
+    expect(figuresText(race())).toBe('Your running form: VDOT 50.0. The target needs VDOT 52.4.');
+  });
+
+  it('tells FTP in watts', () => {
+    const ftp = goal({
+      kind: 'threshold',
+      metric: 'ftp',
+      target_value: 300,
+      assessment: assessment({ current: 240, needed: 300 }),
+    });
+
+    expect(figuresText(ftp)).toBe('Your FTP: 240 W. The target: 300 W.');
+  });
+
+  it('tells the threshold pace as minutes and seconds', () => {
+    const pace = goal({
+      kind: 'threshold',
+      metric: 'threshold_pace',
+      target_value: 270,
+      assessment: assessment({ current: 300, needed: 270 }),
+    });
+
+    expect(figuresText(pace)).toBe('Your threshold pace: 5:00 /km. The target: 4:30 /km.');
+  });
+
+  it.each([
+    ['no judgement', goal({})],
+    ['no form', race({ current: null })],
+    ['no target', race({ needed: null })],
+  ])('is empty with %s', (_name, given) => {
+    expect(figuresText(given)).toBe('');
+  });
+});
+
+describe('the suggested target', () => {
+  it('is a time for a race, as text and as it is typed', () => {
+    expect(suggestedTarget(race())).toEqual({ text: '40:50', field: '40:50' });
+    expect(suggestedTarget(race({ suggested: 12345 }))).toEqual({
+      text: '3:25:45',
+      field: '3:25:45',
+    });
+  });
+
+  it('is a value for a threshold, as text and as it is typed', () => {
+    const pace = goal({
+      kind: 'threshold',
+      metric: 'threshold_pace',
+      assessment: assessment({ suggested: 286 }),
+    });
+    const ftp = goal({
+      kind: 'threshold',
+      metric: 'ftp',
+      assessment: assessment({ suggested: 252 }),
+    });
+
+    expect(suggestedTarget(pace)).toEqual({ text: '4:46 /km', field: '4:46' });
+    expect(suggestedTarget(ftp)).toEqual({ text: '252 W', field: '252' });
+  });
+
+  it.each(['realistic', 'unknown'] as const)('is none for a goal that is %s', (rating) => {
+    expect(suggestedTarget(race({ rating }))).toBeNull();
+  });
+
+  it('is none without a suggestion or a judgement', () => {
+    expect(suggestedTarget(race({ suggested: null }))).toBeNull();
+    expect(suggestedTarget(goal({}))).toBeNull();
+  });
+
+  it('is said in a sentence', () => {
+    expect(suggestionText(race())).toBe('A target that can be reached by then: 40:50.');
+    expect(suggestionText(race({ rating: 'realistic' }))).toBe('');
+  });
+});
+
+describe('preparationText', () => {
+  it('warns when fewer weeks are left than the distance needs', () => {
+    expect(preparationText(assessment({ prep_short: true, weeks: 3, prep_weeks: 6 }))).toBe(
+      'Only 3 weeks are left; a race of this distance should have about 6 weeks of preparation.',
+    );
+  });
+
+  it('says one week in the singular', () => {
+    expect(preparationText(assessment({ prep_short: true, weeks: 1 }))).toContain(
+      'Only 1 week is left',
+    );
+  });
+
+  it('is empty when the preparation is long enough or unknown', () => {
+    expect(preparationText(assessment())).toBe('');
+    expect(preparationText(assessment({ prep_short: true, weeks: null }))).toBe('');
+    expect(preparationText(assessment({ prep_short: true, prep_weeks: null }))).toBe('');
   });
 });

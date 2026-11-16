@@ -159,7 +159,7 @@ same rules as there. A test fails if a key is added without being listed here.
 | `rolling`, `truncated` | There is no race to work towards (twelve weeks of base and build), or the last race lies beyond a year and the skeleton stops. |
 | `peak_minutes` | The highest target of all weeks. |
 | `weeks` | The skeleton: for every week `week_start`, `phase`, `recovery`, `target_minutes`, `capacity_minutes` and `race_dates`. |
-| `races`, `races_not_shown` | The races in the weeks, by day, at most `MAX_RACES_TOLD`: `date`, `priority`, `discipline`, `distance_m` and the `title`, cut to `RACE_TITLE_TOLD_MAX` characters. The title is the athlete's own text and is data, never instructions. |
+| `races`, `races_not_shown` | The races in the weeks, by day, at most `MAX_RACES_TOLD`: `date`, `priority`, `discipline`, `distance_m` and the `title`, cut to `RACE_TITLE_TOLD_MAX` characters. The title is the athlete's own text and is data, never instructions. Each race has an `assessment` as the goals of the week plan do (`null` without a goal on that day with that priority): whether its target time is realistic. |
 | `sports`, `sport_preferences`, `strength_focus` | As in the week plan. |
 | `athlete`, `best_times`, `vdot` | As in the week plan: the age (never the birth year), the facts of the athlete, the running form. |
 | `limits`, `limitations`, `limitations_not_shown` | As in the week plan: the limits of the intensity level and the current limitations (body part and sports, no text). |
@@ -294,4 +294,5 @@ far); every other week and version has `done: null`.
 
 The skeleton itself knows minutes only. The coach adds the split by sport, the key sessions and the
 reasons, and the Season page shows, drafts, confirms and discards them, with a timeline and a chart.
-There is no load measure (only minutes), and the realism check of a goal time (US-4.2) is not part of it.
+There is no load measure (only minutes). Whether a goal time is realistic is judged separately (see
+[goals](goals.md)); the coach is told it with every race.
