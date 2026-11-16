@@ -1,4 +1,5 @@
 from ..efforts import Sample
+from .compressed import UnpackedTooLargeError, is_compressed, unpack
 from .fit import parse_fit
 from .series import fit_series, tcx_series
 from .tcx import parse_tcx
@@ -7,6 +8,9 @@ from .types import ActivityFileError, InvalidFileError, ParsedActivity, Unsuppor
 __all__ = [
     "ActivityFileError",
     "InvalidFileError",
+    "UnpackedTooLargeError",
+    "is_compressed",
+    "unpack",
     "ParsedActivity",
     "UnsupportedFileError",
     "parse_activity_file",
