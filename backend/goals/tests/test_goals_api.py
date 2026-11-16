@@ -484,6 +484,67 @@ class TestTheMainGoal:
         assert Goal.objects.count() == 1
 
 
+class TestThePreparationRace:
+    def test_a_race_is_created_as_a_preparation_race(self, alice: User) -> None:
+        response = create(signed_in(alice), race(priority="preparation"))
+
+        assert response.status_code == HTTPStatus.CREATED
+        assert body(response)["priority"] == "preparation"
+
+    @pytest.mark.parametrize("data", [threshold(), general()])
+    def test_another_kind_is_refused_at_the_priority(
+        self, alice: User, data: dict[str, Any]
+    ) -> None:
+        response = create(signed_in(alice), data | {"priority": "preparation"})
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert body(response) == {"priority": ["Only a race can be a preparation race."]}
+        assert not Goal.objects.exists()
+
+    def test_a_race_can_be_changed_to_one_and_back(self, alice: User) -> None:
+        mine = stored(alice)
+        api = signed_in(alice)
+
+        up = api.call("PATCH", detail(mine.pk), {"priority": "preparation"})
+        back = api.call("PATCH", detail(mine.pk), {"priority": "secondary"})
+
+        assert (up.status_code, body(up)["priority"]) == (HTTPStatus.OK, "preparation")
+        assert (back.status_code, body(back)["priority"]) == (HTTPStatus.OK, "secondary")
+
+    def test_a_goal_that_is_not_a_race_cannot_be_changed_to_one(self, alice: User) -> None:
+        mine = Goal.objects.create(owner=alice, **general())
+
+        response = signed_in(alice).call("PATCH", detail(mine.pk), {"priority": "preparation"})
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert set(body(response)) == {"priority"}
+        mine.refresh_from_db()
+        assert mine.priority == "secondary"
+
+    def test_it_does_not_count_as_the_main_goal(self, alice: User) -> None:
+        api = signed_in(alice)
+        create(api, race(priority="main"))
+
+        for n in range(3):
+            response = create(api, race(priority="preparation", title=f"Tune-up {n}"))
+            assert response.status_code == HTTPStatus.CREATED
+
+    def test_a_preparation_race_can_become_the_main_goal(self, alice: User) -> None:
+        mine = stored(alice, priority="preparation")
+
+        response = signed_in(alice).call("PATCH", detail(mine.pk), {"priority": "main"})
+
+        assert response.status_code == HTTPStatus.OK
+
+    def test_the_main_goal_rule_still_holds_against_it(self, alice: User) -> None:
+        stored(alice, priority="main")
+        mine = stored(alice, priority="preparation", title="Tune-up")
+
+        response = signed_in(alice).call("PATCH", detail(mine.pk), {"priority": "main"})
+
+        assert body(response) == {"priority": [MAIN_TAKEN]}
+
+
 class TestOtherDatabaseErrors:
     def test_an_integrity_error_that_is_not_the_main_goal_rule_is_not_disguised(
         self, alice: User, monkeypatch: pytest.MonkeyPatch
@@ -740,6 +801,20 @@ class TestOrder:
         assert titles == [
             "main", "secondary early", "secondary late", "secondary undated", "achieved", "dropped"
         ]  # fmt: skip
+
+    def test_preparation_races_come_after_the_secondary_goals_by_date(self, alice: User) -> None:
+        def add(title: str, **fields: Any) -> None:
+            Goal.objects.create(owner=alice, **(race(title=title, target_date=None) | fields))
+
+        add("c late", priority="preparation", target_date=date(2027, 5, 1))
+        add("c early", priority="preparation", target_date=date(2027, 3, 1))
+        add("b", target_date=date(2028, 1, 1))
+        add("a", priority="main", target_date=date(2028, 6, 1))
+        add("c done", priority="preparation", status="achieved", target_date=date(2026, 1, 1))
+
+        titles = [goal["title"] for goal in body(signed_in(alice).call("GET", URL))]
+
+        assert titles == ["a", "b", "c early", "c late", "c done"]
 
     def test_goals_with_the_same_date_come_in_the_order_they_were_made(self, alice: User) -> None:
         for n in range(3):
