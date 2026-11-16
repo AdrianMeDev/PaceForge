@@ -145,7 +145,7 @@ def build_context(user: User, monday: date) -> PlanContext:
         weekly_budget=capacity.budget,
         weekly_minutes=capacity.total,
         zone_systems=usable_zone_systems(held),
-        recent_weeks=recent_weekly_minutes(_recent_activities(user, monday, zone), zone, monday),
+        recent_weeks=recent_weekly_minutes(recent_activities(user, monday, zone), zone, monday),
         typical_weekly_minutes=capacity.typical_weekly_minutes,
         sports=frozenset(Sport(sport) for sport in capacity.sports),
         stretching=capacity.stretching,
@@ -239,7 +239,7 @@ def recent_weekly_minutes(
     )
 
 
-def _recent_activities(
+def recent_activities(
     user: User, monday: date, zone: tzinfo
 ) -> list[tuple[datetime, float | None, float | None]]:
     """The user's activities of the weeks before ``monday``, with one query."""

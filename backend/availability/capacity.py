@@ -122,6 +122,26 @@ def week_capacity(user: User, monday: date) -> WeekCapacity:
     )
 
 
+def weekly_capacities(user: User, monday: date, weeks: int) -> tuple[int, ...]:
+    """What each of ``weeks`` weeks from ``monday`` on offers, the first week first: the days of the
+    week added up (an absence offers nothing), at most the weekly budget. Three queries however
+    many weeks."""
+    if monday.weekday() != 0:
+        raise ValueError(f"{monday} is not a Monday")
+    if weeks <= 0:
+        return ()
+    days = _load(user, monday, 7 * weeks)
+    budget = (
+        AvailabilitySettings.objects.for_user(user)
+        .values_list("weekly_budget_minutes", flat=True)
+        .first()
+    )
+    totals = [
+        sum(day.minutes for day in days[start : start + 7]) for start in range(0, len(days), 7)
+    ]
+    return tuple(total if budget is None else min(total, budget) for total in totals)
+
+
 def minutes_on(user: User, day: date) -> int:
     """The minutes ``user`` can train on ``day``; the weekly budget does not apply to a day."""
     return _load(user, day, 1)[0].minutes
