@@ -24,6 +24,7 @@ from .rules import (
     DURATION_TOLERANCE_SECONDS,
     EASY_UP_TO_ZONE,
     HARD_FROM_ZONE,
+    LONG_MATCH_PERCENT,
     MAX_WORKOUTS_PER_DAY,
     SEASON_WEEK_WINDOW_PERCENT,
     TYPICAL_VOLUME_PERCENT,
@@ -223,7 +224,10 @@ are workouts with that goal, "long" a long session of that sport, "strength" a s
 and keep a recovery week easy. "races" lists the races of the week. It is a plan and not a \
 rule: the rules above and the time of the days come first. The minutes of the week more than \
 {SEASON_WEEK_WINDOW_PERCENT} percent away from "total_minutes", and a sport with minutes in \
-"minutes" that has no workout, are warnings.
+"minutes" that has no workout, are warnings. So is a key session of the kind "tempo", "threshold", \
+"vo2max", "long" or "strength" without a workout of its own: a workout counts for one key \
+session only, and a "long" one is a workout of at least {LONG_MATCH_PERCENT} percent of its \
+minutes. "race" and "race_pace" are not checked.
 - Plan for the athlete's goals, the main goal first, and use "previous_week_plan" to vary and \
 progress the week. Fewer workouts than the time allows is fine.
 - "previous_week_review" tells how the week before went, and is null if there is nothing to tell: \

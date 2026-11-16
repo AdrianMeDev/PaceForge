@@ -258,6 +258,7 @@ user to weigh.
 | `easy_share_low` | warning | Less of the endurance minutes are easy than the intensity level asks for. |
 | `season_minutes_off` | warning | The confirmed [season plan](season.md) has minutes for this week, and the week adds up to more than `SEASON_WEEK_WINDOW_PERCENT` percent away from them (a season week of 0 minutes warns for any minute). Not said without a season week. It can come with `volume_increase` when the season asks for more than the progression limit allows; both are warnings, and the limit of the athlete is the one that counts. |
 | `season_sport_missing` | warning | A sport the season plan has minutes for in this week has no workout in the plan. Named once per sport, at the plan as a whole. A sport the athlete no longer wants is not named. Not said without a season week. |
+| `season_key_session_missing` | warning | A key session of the season plan for this week has no workout of its own. A workout fits it if it is of its sport and, for `tempo`, `threshold` and `vo2max`, has that goal; for `long` if it is at least `LONG_MATCH_PERCENT` percent of the key session's minutes; for `strength` any strength workout. `race` and `race_pace` are not checked. A workout counts for one key session only; the key sessions are matched as well as they can be, earlier ones first, and the ones left over are named, once each, at the plan as a whole. Not said without a season week. |
 
 Workouts outside the week are ignored by every rule except `outside_week`. Nothing is checked
 against the next or the previous week, so Sunday and the following Monday are not "in a row".
@@ -276,6 +277,7 @@ decisions, not coaching science; better ones will come from using the feature.
 | `MAX_WORKOUTS_PER_DAY` | 2 | Most workouts on a day; a third is an error. |
 | `TYPICAL_VOLUME_PERCENT` | 100 | How much of the typical week counts as a reference (100: all of it). A lower number, say 70, makes the first weeks back more careful. |
 | `SEASON_WEEK_WINDOW_PERCENT` | 15 | How far the minutes of a week may be from the minutes the confirmed season plan has for it. |
+| `LONG_MATCH_PERCENT` | 75 | How much of the minutes of a long key session of the season plan a workout has to have to be that session. |
 | `TITLE_MAX` | 100 | Characters of a title. |
 | `NOTES_MAX` | 500 | Characters of notes. |
 | `RATIONALE_MAX` | 1000 | Characters of the rationale. |

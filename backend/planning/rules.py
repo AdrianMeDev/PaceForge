@@ -16,6 +16,8 @@ from dataclasses import dataclass
 from enum import StrEnum
 from fractions import Fraction
 
+from season.schema import KeySession, SessionKind
+
 from .context import PlanContext
 from .schema import (
     ExerciseEquipment,
@@ -56,6 +58,9 @@ TYPICAL_VOLUME_PERCENT = 100
 # a warning. Wider than the season's own window (``season.rules.WINDOW_PERCENT``), because the week
 # is planned with the real days in view.
 SEASON_WEEK_WINDOW_PERCENT = 15
+# A workout is the long session of a key session of the season plan if it is at least this much of
+# the minutes of that key session, in percent.
+LONG_MATCH_PERCENT = 75
 
 # The sports whose minutes make up the share of easy training; strength counts neither way.
 ENDURANCE_SPORTS = frozenset({Sport.RUNNING, Sport.CYCLING, Sport.SWIMMING})
@@ -964,6 +969,80 @@ def check_season_sports(plan: WeekPlan, context: PlanContext) -> list[Finding]:
     ]
 
 
+# The goal that makes a workout one of a key session of the season plan; ``long`` is matched by
+# its length and ``strength`` by its sport, ``race`` and ``race_pace`` are not checked (a week plan
+# has no race workout and no race pace).
+_KEY_SESSION_GOALS = {
+    SessionKind.TEMPO: Goal.TEMPO,
+    SessionKind.THRESHOLD: Goal.THRESHOLD,
+    SessionKind.VO2MAX: Goal.VO2MAX,
+}
+_KEY_SESSION_WORDS = {
+    SessionKind.LONG: "long",
+    SessionKind.TEMPO: "tempo",
+    SessionKind.THRESHOLD: "threshold",
+    SessionKind.VO2MAX: "VO2max",
+    SessionKind.STRENGTH: "strength",
+}
+
+
+def _fits_key_session(workout: Workout, session: KeySession) -> bool:
+    if workout.sport is not session.sport:
+        return False
+    if session.kind in _KEY_SESSION_GOALS:
+        return workout.goal is _KEY_SESSION_GOALS[session.kind]
+    if session.kind is SessionKind.LONG:
+        return workout.duration_minutes * 100 >= LONG_MATCH_PERCENT * session.minutes
+    return session.kind is SessionKind.STRENGTH
+
+
+def check_season_key_sessions(plan: WeekPlan, context: PlanContext) -> list[Finding]:
+    """Every key session of the season plan for this week that can be checked has a workout of its
+    own (a warning, once per key session, in the order of the season plan).
+
+    A workout fits a key session if it is of its sport and, for ``tempo``, ``threshold`` and
+    ``vo2max``, has that goal; for ``long`` if it is at least ``LONG_MATCH_PERCENT`` percent of the
+    minutes of the key session; for ``strength`` it is enough to be a strength workout. ``race``
+    and ``race_pace`` are not checked. A workout counts for one key session only: the key sessions
+    are matched to the workouts as well as they can be (earlier ones first), and the ones left
+    over are named. A sport the athlete no longer wants is not named. Without a season week
+    nothing is checked."""
+    _same_week(plan, context)
+    season = context.season_week
+    if season is None:
+        return []
+    workouts = [w for w in plan.workouts if context.offset(w.day) is not None]
+    sessions = [
+        session
+        for session in season.key_sessions
+        if session.kind in _KEY_SESSION_WORDS and session.sport in context.sports
+    ]
+    taken: dict[int, int] = {}  # the workout -> the key session that has it
+
+    def place(number: int, seen: set[int]) -> bool:
+        for index, workout in enumerate(workouts):
+            if index in seen or not _fits_key_session(workout, sessions[number]):
+                continue
+            seen.add(index)
+            if index not in taken or place(taken[index], seen):
+                taken[index] = number
+                return True
+        return False
+
+    unmatched = [number for number in range(len(sessions)) if not place(number, set())]
+    return [
+        Finding(
+            Severity.WARNING,
+            "season_key_session_missing",
+            f"The season plan has a {_KEY_SESSION_WORDS[sessions[number].kind]} session of "
+            f"{sessions[number].minutes} minutes in {sessions[number].sport.value} for this "
+            "week; the plan has no workout for it.",
+            "workouts",
+        )
+        for number in unmatched
+    ]
+
+
 # The checks of structure, zones and capacity, in the order their findings are listed.
 BASIC_CHECKS: tuple[Check, ...] = (
     check_inside_week,
@@ -1003,6 +1082,7 @@ RHYTHM_CHECKS: tuple[Check, ...] = (
 SEASON_CHECKS: tuple[Check, ...] = (
     check_season_minutes,
     check_season_sports,
+    check_season_key_sessions,
 )
 
 ALL_CHECKS: tuple[Check, ...] = BASIC_CHECKS + RHYTHM_CHECKS + SEASON_CHECKS
