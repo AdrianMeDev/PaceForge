@@ -21,7 +21,7 @@ import json
 from datetime import date, timedelta
 from typing import Any
 
-from django.db.models import F
+from django.db.models import Case, F, IntegerField, Value, When
 
 from accounts.models import User
 from athletes.thresholds import all_candidates
@@ -223,8 +223,16 @@ def _zone_set(
 
 def _goals(user: User, today: date) -> tuple[list[dict[str, Any]], int]:
     active = Goal.objects.for_user(user).filter(status=Goal.Status.ACTIVE)
-    # "main" sorts before "secondary"; a goal without a date comes last.
-    ordered = active.order_by("priority", F("target_date").asc(nulls_last=True), "created_at", "id")
+    # A (main), then B (secondary), then C (preparation race); a goal without a date comes last.
+    rank = Case(
+        When(priority=Goal.Priority.MAIN, then=Value(0)),
+        When(priority=Goal.Priority.SECONDARY, then=Value(1)),
+        default=Value(2),
+        output_field=IntegerField(),
+    )
+    ordered = active.annotate(rank=rank).order_by(
+        "rank", F("target_date").asc(nulls_last=True), "created_at", "id"
+    )
     shown = [_goal(goal, today) for goal in ordered[:MAX_GOALS]]
     return shown, max(active.count() - MAX_GOALS, 0)
 

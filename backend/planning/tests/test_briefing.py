@@ -474,6 +474,24 @@ class TestTheGoals:
 
         assert titles == ["Main", "Sooner", "Later", "Undated"]
 
+    def test_the_preparation_races_come_after_the_secondary_goals(self, alice: User) -> None:
+        race = {"kind": "race", "discipline": "running"}
+        goal(alice, title="C late", priority="preparation", target_date=date(2027, 8, 1), **race)
+        goal(alice, title="C early", priority="preparation", target_date=date(2027, 7, 25), **race)
+        goal(alice, title="B", target_date=date(2027, 12, 1))
+        goal(alice, title="B undated")
+        goal(alice, title="A", priority="main", target_date=date(2028, 1, 1), **race)
+
+        goals = build_briefing(alice, MONDAY)["goals"]
+
+        assert [(item["title"], item["priority"]) for item in goals] == [
+            ("A", "main"),
+            ("B", "secondary"),
+            ("B undated", "secondary"),
+            ("C early", "preparation"),
+            ("C late", "preparation"),
+        ]
+
     def test_at_most_five_goals_are_told_and_the_rest_is_counted(self, alice: User) -> None:
         for number in range(MAX_GOALS + 2):
             goal(alice, title=f"Goal {number}", target_date=date(2027, 9, 1 + number))
@@ -1023,6 +1041,7 @@ class TestWhatIsSent:
             goal(
                 alice,
                 kind="race",
+                priority="preparation",  # the longest of the three words
                 title="\x01" * 100,
                 notes="\x01" * 1000,
                 target_date=date(2027, 9, 1 + number),
