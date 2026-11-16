@@ -17,6 +17,7 @@ from typing import Any
 
 from accounts.models import User
 from planning import briefing as week_briefing
+from planning.schema import Sport
 
 from .skeleton import Race, Skeleton
 from .storage import skeleton_data
@@ -46,9 +47,13 @@ TAKEN_FROM_THE_WEEK = (
 )
 
 
-def build_briefing(user: User, today: date, skeleton: Skeleton) -> dict[str, Any]:
+def build_briefing(
+    user: User, today: date, skeleton: Skeleton, sports: frozenset[Sport] | None = None
+) -> dict[str, Any]:
     """The briefing for filling ``skeleton``, as JSON-compatible data. ``today`` is the day it is
-    for the athlete; the first week of the skeleton is the week it lies in."""
+    for the athlete; the first week of the skeleton is the week it lies in. ``sports`` are the
+    sports to tell instead of the ones the athlete has chosen now: a plan that is changed keeps the
+    sports it was made for."""
     first = skeleton.weeks[0].week_start if skeleton.weeks else today
     week = week_briefing.build_briefing(user, first)
     shown = _races(skeleton)
@@ -61,6 +66,7 @@ def build_briefing(user: User, today: date, skeleton: Skeleton) -> dict[str, Any
         "races": [_race(race) for race in shown[:MAX_RACES_TOLD]],
         "races_not_shown": max(len(shown) - MAX_RACES_TOLD, 0),
         **{name: week[name] for name in TAKEN_FROM_THE_WEEK},
+        **({} if sports is None else {"sports": [s.value for s in Sport if s in sports]}),
     }
 
 

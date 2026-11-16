@@ -205,6 +205,7 @@ class TestWhatTheCoachIsTold:
             "RACE_TITLE_TOLD_MAX": briefing.RACE_TITLE_TOLD_MAX,
             "MAX_BYTES": briefing.MAX_BYTES,
             "SEASON_MAX_TOKENS": prompt.SEASON_MAX_TOKENS,
+            "CHANGE_MAX_BYTES": prompt.CHANGE_MAX_BYTES,
         }
 
 

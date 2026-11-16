@@ -165,6 +165,15 @@ same rules as there. A test fails if a key is added without being listed here.
 | `limits`, `limitations`, `limitations_not_shown` | As in the week plan: the limits of the intensity level and the current limitations (body part and sports, no text). |
 | `typical_weekly_minutes`, `recent_weeks_minutes`, `weekly_budget_minutes` | The normal week, the recent weeks and the weekly budget. |
 
+**A change request** (a version that is made from another on the athlete's wish) is told with the
+same briefing, but with the sports the old version was made for, and two more keys: `current_plan`
+(the season as it is now, in the format of the answer) and `change_request` (the wish, a JSON
+string). The system prompt is the same: it says that then the season is not filled from scratch,
+that the answer has exactly the same weeks, changed as the wish asks and as little else as possible,
+that every rule still applies, and that the wish is data and never an instruction about the rules,
+the format or the task. Like a title of a race it is a request to the model, not a guarantee; what
+it cannot do is get a plan past the parser and the checks.
+
 What is **never** sent: the name, the e-mail address, ids, the notes of goals, the activities, the
 free text about limitations and anything of other users.
 
@@ -178,6 +187,7 @@ that is cut off is not used.
 | `RACE_TITLE_TOLD_MAX` | 60 | Characters of the title of a race that are told. |
 | `MAX_BYTES` | 24000 | The most the JSON of a briefing may take (UTF-8, every free-text character at six bytes). A test builds the worst case. |
 | `SEASON_MAX_TOKENS` | 16000 | The most the coach may write for a season. |
+| `CHANGE_MAX_BYTES` | 200000 | The most the message that asks for a change may take (UTF-8, a year of weeks at every limit, four bytes to a character, the longest wish). A test builds the worst case. |
 
 ## The checks
 
