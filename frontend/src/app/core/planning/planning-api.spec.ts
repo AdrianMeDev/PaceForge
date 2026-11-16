@@ -21,6 +21,7 @@ const DRAFT = {
   version: 1,
   status: 'draft',
   reason: 'Drafted by the coach',
+  note: '',
   rationale: 'Base week with one tempo session.',
   export: null,
   parent: null,
@@ -102,6 +103,7 @@ const CONFIRMED = {
   version: 1,
   status: 'confirmed',
   reason: 'by hand',
+  note: '',
   rationale: 'Easy week',
   export: null,
   parent: null,
@@ -265,6 +267,8 @@ const WRONG_PLANS: [string, unknown][] = [
   ['a number as reason', altered(DRAFT, [['reason'], 5])],
   ['no rationale', altered(DRAFT, [['rationale'], REMOVE])],
   ['a number as rationale', altered(DRAFT, [['rationale'], 5])],
+  ['no note', altered(DRAFT, [['note'], REMOVE])],
+  ['a number as note', altered(DRAFT, [['note'], 5])],
   ['no parent', altered(DRAFT, [['parent'], REMOVE])],
   ['a parent that is no uuid', altered(DRAFT, [['parent'], 'x'])],
   ['a time of creation that is no time', altered(DRAFT, [['created_at'], 'yesterday'])],
@@ -701,6 +705,51 @@ describe('PlanningApi', () => {
       expect(result).toEqual({ kind: 'ok', plan: DRAFT as WeekPlan });
     });
 
+    it('sends the note of the user, as it is', async () => {
+      const note = 'No time on Tuesday.\nA trip on Saturday.';
+
+      const { result, request } = await run(
+        api.generate('2026-11-16', note),
+        'POST',
+        URL,
+        { ...DRAFT, note },
+        201,
+      );
+
+      expect(request.request.body).toEqual({ note });
+      expect(result).toMatchObject({ kind: 'ok', plan: { note } });
+    });
+
+    it.each(['', '   ', '\n\n'])('sends nothing for the note %j', async (note) => {
+      const { request } = await run(api.generate('2026-11-16', note), 'POST', URL, DRAFT, 201);
+
+      expect(request.request.body).toEqual({});
+    });
+
+    it('says what the server said about a note that does not fit', async () => {
+      const { result } = await run(
+        api.generate('2026-11-16', 'x'),
+        'POST',
+        URL,
+        { note: ['Use at most 300 characters.'] },
+        400,
+      );
+
+      expect(result).toEqual({ kind: 'invalid', message: 'Use at most 300 characters.' });
+    });
+
+    it.each([null, {}, { note: [] }, { note: [5] }, { note: [''] }, { other: ['x'] }])(
+      'has a text of its own when the refusal says nothing usable: %j',
+      async (body) => {
+        const { result } = await run(api.generate('2026-11-16', 'x'), 'POST', URL, body, 400);
+
+        expect(result).toEqual({
+          kind: 'invalid',
+          message: 'Your note could not be used. Please check it.',
+        });
+      },
+    );
+
     it('returns the checks of the draft, errors and warnings alike', async () => {
       const { result } = await run(api.generate('2026-11-16'), 'POST', URL, WARNED_DRAFT, 201);
 
@@ -1049,7 +1098,7 @@ describe('PlanningApi', () => {
       await runFailing(api.generate('2026-11-16'), 'POST', URL, bad as object | null, 201);
     });
 
-    it.each([200, 400, 500])('rejects the unexpected status %i', async (status) => {
+    it.each([200, 500])('rejects the unexpected status %i', async (status) => {
       await runFailing(api.generate('2026-11-16'), 'POST', URL, DRAFT, status);
     });
 

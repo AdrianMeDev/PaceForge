@@ -1,7 +1,9 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
 import { ActivitiesApi } from '../../core/activities/activities-api';
 import { RateActivityResult } from '../../core/activities/activities-models';
+import { PlanningApi } from '../../core/planning/planning-api';
+import { GenerateResult } from '../../core/planning/planning-models';
 import { ReviewApi } from '../../core/review/review-api';
 import {
   AskCoachResult,
@@ -162,6 +164,7 @@ function createStubs() {
       askCoach: vi.fn<(week: string) => Promise<AskCoachResult>>(),
     },
     activities: { rate: vi.fn<(id: string, input: unknown) => Promise<RateActivityResult>>() },
+    planning: { generate: vi.fn<(week: string, note?: string) => Promise<GenerateResult>>() },
   };
 }
 
@@ -191,6 +194,7 @@ describe('ReviewPage', () => {
         provideRouter([]),
         { provide: ReviewApi, useValue: stubs.api },
         { provide: ActivitiesApi, useValue: stubs.activities },
+        { provide: PlanningApi, useValue: stubs.planning },
       ],
     });
     fixture = TestBed.createComponent(ReviewPage);
@@ -853,6 +857,7 @@ describe('ReviewPage', () => {
               fatigue: 4,
               motivation: null,
               pain: 1,
+              verdict: 'good',
               notes: 'Heavy legs',
               updated_at: '2026-11-08T08:00:00Z',
             },
@@ -861,6 +866,7 @@ describe('ReviewPage', () => {
       });
 
       expect(query<HTMLSelectElement>(page, '#feedback-fatigue').value).toBe('4');
+      expect(query<HTMLSelectElement>(page, '#feedback-verdict').value).toBe('good');
       expect(query<HTMLTextAreaElement>(page, '#feedback-notes').value).toBe('Heavy legs');
     });
 
@@ -871,6 +877,7 @@ describe('ReviewPage', () => {
           fatigue: 3,
           motivation: null,
           pain: null,
+          verdict: null,
           notes: 'Fine',
           updated_at: '2026-11-08T08:00:00Z',
         },
@@ -884,6 +891,7 @@ describe('ReviewPage', () => {
         fatigue: 3,
         motivation: null,
         pain: null,
+        verdict: null,
         notes: 'Fine',
       });
       expect(notice()).toBe('Your feedback was saved.');
@@ -938,6 +946,191 @@ describe('ReviewPage', () => {
       pending.resolve({ kind: 'ok', review: review() });
       await settle(fixture);
       expect(feedbackButton().disabled).toBe(false);
+    });
+  });
+
+  describe('closing the week', () => {
+    const closeButton = () => query<HTMLButtonElement>(page, '[data-testid="feedback-close"]');
+    const NEXT = '2026-11-09';
+    let navigate: ReturnType<typeof vi.spyOn>;
+
+    function close(note = '', verdict = 'good') {
+      const judge = query<HTMLSelectElement>(page, '#feedback-verdict');
+      judge.value = verdict;
+      judge.dispatchEvent(new Event('change'));
+      const field = query<HTMLTextAreaElement>(page, '#next-week-note');
+      field.value = note;
+      field.dispatchEvent(new Event('input'));
+      closeButton().click();
+    }
+
+    async function ready(answer: GenerateResult) {
+      await setup();
+      navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      stubs.api.saveFeedback.mockResolvedValue({ kind: 'ok', review: review() });
+      stubs.planning.generate.mockResolvedValue(answer);
+    }
+
+    const DRAFTED: GenerateResult = { kind: 'ok', plan: { id: 'p1' } as never };
+
+    it('saves the feedback, drafts the week after it with the note and opens it', async () => {
+      await ready(DRAFTED);
+
+      close('No time on Tuesday.', 'strong');
+      await settle(fixture);
+
+      expect(stubs.api.saveFeedback).toHaveBeenCalledExactlyOnceWith(
+        FIRST,
+        expect.objectContaining({ verdict: 'strong' }),
+      );
+      expect(stubs.planning.generate).toHaveBeenCalledExactlyOnceWith(NEXT, 'No time on Tuesday.');
+      expect(navigate).toHaveBeenCalledExactlyOnceWith(['/planning'], {
+        queryParams: { week: NEXT },
+      });
+    });
+
+    it('asks nothing of the coach when the feedback could not be saved', async () => {
+      await ready(DRAFTED);
+      stubs.api.saveFeedback.mockResolvedValue({
+        kind: 'invalid',
+        errors: { verdict: ['Choose one of the verdicts.'] },
+        message: null,
+      });
+
+      close('A note');
+      await settle(fixture);
+
+      expect(stubs.planning.generate).not.toHaveBeenCalled();
+      expect(navigate).not.toHaveBeenCalled();
+    });
+
+    it('says that the coach is drafting, and allows nothing else meanwhile', async () => {
+      await ready(DRAFTED);
+      const pending = deferred<GenerateResult>();
+      stubs.planning.generate.mockReturnValue(pending.promise);
+
+      close('A note');
+      await settle(fixture);
+
+      expect(byId('drafting')?.textContent).toContain('drafting the next week');
+      expect(closeButton().disabled).toBe(true);
+      expect(weekSelect().disabled).toBe(true);
+      pending.resolve(DRAFTED);
+      await settle(fixture);
+      expect(byId('drafting')).toBeNull();
+    });
+
+    it('keeps the feedback and the week when the coach could not draft, and says why', async () => {
+      await ready({ kind: 'not_usable', problems: [] });
+
+      close('A note');
+      await settle(fixture);
+
+      expect(notice()).toBe('Your feedback was saved.');
+      expect(alerts()).toEqual([
+        'The coach did not give a plan that could be used. Please try again.',
+      ]);
+      expect(navigate).not.toHaveBeenCalled();
+      expect(query<HTMLTextAreaElement>(page, '#next-week-note').value).toBe('A note');
+      expect(closeButton().disabled).toBe(false);
+    });
+
+    it.each([
+      [
+        { kind: 'invalid', message: 'Use at most 300 characters.' } as GenerateResult,
+        'Use at most 300 characters.',
+      ],
+      [
+        { kind: 'not_plannable' } as GenerateResult,
+        'The week after this one cannot be planned (only the current week and the next four can).',
+      ],
+      [
+        { kind: 'not_configured' } as GenerateResult,
+        'No AI provider is set up, so the next week was not drafted.',
+      ],
+      [
+        { kind: 'no_time' } as GenerateResult,
+        'You have no training time for the next week, so it was not drafted.',
+      ],
+      [
+        { kind: 'rate_limited', retry_after: null } as GenerateResult,
+        'Too many plans were requested. Please wait a minute and try again.',
+      ],
+      [
+        {
+          kind: 'provider_problem',
+          problem: 'unavailable',
+          message: 'Your AI provider could not be reached.',
+          retry_after: 20,
+        } as GenerateResult,
+        'Your AI provider could not be reached. Try again in 20 seconds.',
+      ],
+      [
+        {
+          kind: 'provider_problem',
+          problem: 'invalid_key',
+          message: 'Your AI provider did not accept the key.',
+          retry_after: null,
+        } as GenerateResult,
+        'Your AI provider did not accept the key.',
+      ],
+    ])('says what went wrong when drafting did not work: %j', async (answer, expected) => {
+      await ready(answer);
+
+      close('A note');
+      await settle(fixture);
+
+      expect(alerts()).toEqual([expected]);
+      expect(navigate).not.toHaveBeenCalled();
+    });
+
+    it('says so when drafting fails without an answer', async () => {
+      await ready(DRAFTED);
+      stubs.planning.generate.mockRejectedValue(new Error('down'));
+
+      close('A note');
+      await settle(fixture);
+
+      expect(alerts()).toEqual(['Something went wrong. Please try again.']);
+      expect(notice()).toBe('Your feedback was saved.');
+    });
+
+    it('says when the session has ended while drafting', async () => {
+      await ready({ kind: 'forbidden' });
+
+      close('A note');
+      await settle(fixture);
+
+      expect(alerts()).toEqual(['Your session has ended. Please sign in again.']);
+    });
+
+    it('drafts the week after the one that is shown, whichever it is', async () => {
+      await setup({ shown: ok(review({ week_start: '2026-10-19' })) });
+      navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      stubs.api.saveFeedback.mockResolvedValue({
+        kind: 'ok',
+        review: review({ week_start: '2026-10-19' }),
+      });
+      stubs.planning.generate.mockResolvedValue(DRAFTED);
+
+      close('');
+      await settle(fixture);
+
+      expect(stubs.planning.generate).toHaveBeenCalledExactlyOnceWith('2026-10-26', '');
+    });
+
+    it('can be done again after a failure', async () => {
+      await ready({ kind: 'not_usable', problems: [] });
+      close('A note');
+      await settle(fixture);
+      stubs.planning.generate.mockResolvedValue(DRAFTED);
+
+      closeButton().click();
+      await settle(fixture);
+
+      expect(stubs.planning.generate).toHaveBeenCalledTimes(2);
+      expect(alerts()).toEqual([]);
+      expect(navigate).toHaveBeenCalledTimes(1);
     });
   });
 

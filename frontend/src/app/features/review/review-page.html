@@ -38,6 +38,11 @@
       @if (work() === 'opening') {
         <p role="status" data-testid="opening">Loading the week…</p>
       }
+      @if (work() === 'drafting') {
+        <p role="status" data-testid="drafting">
+          Your coach is drafting the next week. This can take a minute or two…
+        </p>
+      }
 
       @if (review(); as shown) {
         <article class="week" data-testid="week">
@@ -239,6 +244,7 @@
             [feedback]="shown.feedback"
             [disabled]="work() !== null"
             (saved)="feedbackSaved($event)"
+            (closed)="closeWeek($event)"
             (notReviewable)="notReviewable()"
             (signedOut)="signOut()"
           />

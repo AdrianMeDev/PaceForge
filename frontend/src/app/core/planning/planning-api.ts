@@ -55,7 +55,8 @@ import {
 } from './planning-models';
 
 const BASE = `${API_BASE}/planning`;
-const HANDLED_ERRORS = [401, 403, 404, 409, 422, 429, 502, 503];
+const HANDLED_ERRORS = [400, 401, 403, 404, 409, 422, 429, 502, 503];
+const NOTE_REFUSED = 'Your note could not be used. Please check it.';
 const PUSH_FALLBACK = 'The week could not be sent to Intervals.icu. Please try again later.';
 
 const SPORTS: readonly string[] = ['running', 'cycling', 'swimming', 'strength'];
@@ -118,18 +119,23 @@ export class PlanningApi {
   /**
    * Asks the user's own coach for a draft of the week that starts on `week` (a Monday,
    * YYYY-MM-DD). This takes a while: up to a minute or two. A week that is no date is not
-   * sent at all.
+   * sent at all. `note` is what the user wants the coach to know about the week (at most 300
+   * characters; the server checks that and says so).
    */
-  async generate(week: string): Promise<GenerateResult> {
+  async generate(week: string, note = ''): Promise<GenerateResult> {
     if (!isDate(week)) {
       return { kind: 'not_plannable' };
     }
+    // What the user wants the coach to know about the week; nothing is sent when there is none.
+    const body = note.trim() === '' ? {} : { note };
     const reply = await this.send(
-      this.http.post(`${BASE}/weeks/${week}/generate/`, {}, { observe: 'response' }),
+      this.http.post(`${BASE}/weeks/${week}/generate/`, body, { observe: 'response' }),
     );
     switch (reply.status) {
       case 201:
         return { kind: 'ok', plan: toPlan(reply.body, reply) };
+      case 400:
+        return { kind: 'invalid', message: noteMessage(reply.body) };
       case 404:
         return { kind: 'not_plannable' };
       case 409:
@@ -403,7 +409,7 @@ function toVersion(raw: unknown, reply: Reply): PlanVersion {
 
 function toPlan(raw: unknown, reply: Reply): WeekPlan {
   const item = asObject(raw, reply);
-  const { id, week_start, version, status, reason, rationale, parent, created_at } = item;
+  const { id, week_start, version, status, reason, note, rationale, parent, created_at } = item;
   const workouts = item['workouts'];
   const confirmedAt = item['confirmed_at'];
   if (
@@ -413,6 +419,7 @@ function toPlan(raw: unknown, reply: Reply): WeekPlan {
     version < 1 ||
     !isOneOf<PlanStatus>(status, STATUSES) ||
     typeof reason !== 'string' ||
+    typeof note !== 'string' ||
     typeof rationale !== 'string' ||
     (parent !== null && !isUuid(parent)) ||
     !isTimestamp(created_at) ||
@@ -429,6 +436,7 @@ function toPlan(raw: unknown, reply: Reply): WeekPlan {
     version,
     status,
     reason,
+    note,
     rationale,
     parent,
     created_at,
@@ -691,6 +699,13 @@ function toRange(raw: unknown): ZoneTarget | null | undefined {
 function isConfirmedAt(value: unknown, status: PlanStatus): value is string | null {
   // The time of confirming is kept for a confirmed plan and for one that was replaced since.
   return status === 'confirmed' || status === 'superseded' ? isTimestamp(value) : value === null;
+}
+
+/** The first text the server gave for the note, or a fixed one. */
+function noteMessage(body: unknown): string {
+  const texts = (body as { note?: unknown } | null)?.note;
+  const first = Array.isArray(texts) ? texts[0] : undefined;
+  return typeof first === 'string' && first !== '' ? first : NOTE_REFUSED;
 }
 
 function isDate(value: unknown): value is string {

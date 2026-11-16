@@ -45,6 +45,7 @@ function plan(changes: Partial<WeekPlan> = {}): WeekPlan {
     version: 2,
     status: 'confirmed',
     reason: 'Drafted by the coach',
+    note: '',
     rationale: 'Base week.',
     parent: null,
     created_at: '2026-11-13T23:27:53.638352Z',

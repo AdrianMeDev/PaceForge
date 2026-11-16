@@ -100,11 +100,16 @@ export interface Comparison {
   done_percent: number | null;
 }
 
-/** How the user felt about the week: scales of 1 to 5, a note (free text). */
+/** The week as a whole, in one word. */
+export type WeekVerdict = 'bad' | 'fair' | 'good' | 'strong';
+
+/** How the user felt about the week: scales of 1 to 5, a verdict, a note (free text). */
 export interface WeekFeedback {
   fatigue: number | null;
   motivation: number | null;
   pain: number | null;
+  /** The week as a whole; `null`: none given. The coach is told it. */
+  verdict: WeekVerdict | null;
   notes: string;
   updated_at: string;
 }
@@ -150,12 +155,13 @@ export interface FeedbackInput {
   fatigue: number | null;
   motivation: number | null;
   pain: number | null;
+  verdict: WeekVerdict | null;
   notes: string;
 }
 
 /** The fields of the forms the server can name in a refusal. */
 export type CorrectionField = 'activity' | 'no_activity' | 'status';
-export type FeedbackField = 'fatigue' | 'motivation' | 'pain' | 'notes';
+export type FeedbackField = 'fatigue' | 'motivation' | 'pain' | 'verdict' | 'notes';
 
 /** The week is not one that can be reviewed (not a Monday, too far back, or in the future). */
 export interface NotReviewable {

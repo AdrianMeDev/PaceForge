@@ -158,6 +158,8 @@ export interface WeekPlan {
   version: number;
   status: PlanStatus;
   reason: string;
+  /** What the user wrote about the week when asking for this draft; empty if nothing. Free text. */
+  note: string;
   rationale: string;
   parent: string | null;
   created_at: string;
@@ -191,6 +193,8 @@ export type GenerateResult =
   | { kind: 'ok'; plan: WeekPlan }
   /** The week is not one that can be planned. */
   | { kind: 'not_plannable' }
+  /** The note was refused (too long, not plain text); `message` is the server's text for users. */
+  | { kind: 'invalid'; message: string }
   /** No AI provider is set up. */
   | { kind: 'not_configured' }
   /** The week offers no training time at all; nothing was asked of the coach. */

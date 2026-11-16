@@ -2,10 +2,12 @@
   class="panel"
   novalidate
   aria-labelledby="feedback-title"
-  (submit)="$event.preventDefault(); submit()"
+  (submit)="$event.preventDefault(); submit(false)"
 >
   <h2 id="feedback-title">How the week felt</h2>
-  <p class="hint">Your note stays with you: the coach is told only the three scales.</p>
+  <p class="hint">
+    Your note stays with you: the coach is told only the three scales and how you judge the week.
+  </p>
 
   <div class="grid">
     @for (scale of scales; track scale.field) {
@@ -32,6 +34,25 @@
         }
       </div>
     }
+    <div class="field">
+      <label for="feedback-verdict">The week as a whole</label>
+      <select
+        id="feedback-verdict"
+        [attr.aria-invalid]="errors().verdict ? 'true' : null"
+        [disabled]="disabled() || saving()"
+        (change)="verdict.set(value($event))"
+      >
+        <option value="" [selected]="verdict() === ''">–</option>
+        @for (choice of verdicts; track choice.value) {
+          <option [value]="choice.value" [selected]="choice.value === verdict()">
+            {{ choice.label }}
+          </option>
+        }
+      </select>
+      @if (errors().verdict; as text) {
+        <p class="field-error">{{ text }}</p>
+      }
+    </div>
   </div>
 
   <div class="field">
@@ -61,4 +82,41 @@
   >
     Save feedback
   </button>
+
+  <div class="next">
+    <h3>The next week</h3>
+    <div class="field">
+      <label for="next-week-note">What should the coach know about next week? (optional)</label>
+      <textarea
+        id="next-week-note"
+        rows="3"
+        [attr.maxlength]="noteMax + 100"
+        [value]="nextNote()"
+        [attr.aria-describedby]="'next-week-hint'"
+        [attr.aria-invalid]="errors().nextNote ? 'true' : null"
+        [disabled]="disabled() || saving()"
+        (input)="nextNote.set(value($event))"
+      ></textarea>
+      <p class="hint" id="next-week-hint">
+        A day without time, a trip, a niggle. Up to {{ noteMax }} characters. The coach reads this
+        and how you judged the week as advice; the rules of the plan come first.
+      </p>
+      @if (errors().nextNote; as text) {
+        <p class="field-error">{{ text }}</p>
+      }
+    </div>
+    <button
+      type="button"
+      class="primary"
+      data-testid="feedback-close"
+      [disabled]="disabled() || saving()"
+      (click)="submit(true)"
+    >
+      Close the week and draft the next one
+    </button>
+    <p class="hint">
+      Saves this feedback, then asks your coach for a draft of the next week. That takes a minute or
+      two and is billed to your AI provider. Nothing is confirmed without you.
+    </p>
+  </div>
 </form>
