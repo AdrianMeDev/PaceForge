@@ -52,6 +52,13 @@
               {{ current.usage.calls === 1 ? 'call' : 'calls' }},
               {{ current.usage.input_tokens | number: '1.0-0' }} input and
               {{ current.usage.output_tokens | number: '1.0-0' }} output tokens
+              @if (current.usage.cache_read_tokens > 0 || current.usage.cache_write_tokens > 0) {
+                <span class="cache" data-testid="cache">
+                  Of the input, {{ current.usage.cache_read_tokens | number: '1.0-0' }} tokens were
+                  read from the cache and {{ current.usage.cache_write_tokens | number: '1.0-0' }}
+                  written to it.
+                </span>
+              }
             </dd>
           </dl>
 

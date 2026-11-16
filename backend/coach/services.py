@@ -47,6 +47,9 @@ class UsageSummary:
     input_tokens: int
     output_tokens: int
     days: int
+    # Parts of ``input_tokens``: what came from the prompt cache, and what was written to it.
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
 
 
 def _now() -> datetime:
@@ -244,13 +247,21 @@ def usage_summary(user: User, days: int = USAGE_DAYS) -> UsageSummary:
     totals = (
         AIUsageRecord.objects.for_user(user)
         .filter(created_at__gte=since)
-        .aggregate(calls=Count("id"), input=Sum("input_tokens"), output=Sum("output_tokens"))
+        .aggregate(
+            calls=Count("id"),
+            input=Sum("input_tokens"),
+            output=Sum("output_tokens"),
+            cache_read=Sum("cache_read_tokens"),
+            cache_write=Sum("cache_write_tokens"),
+        )
     )
     return UsageSummary(
         calls=totals["calls"],
         input_tokens=totals["input"] or 0,
         output_tokens=totals["output"] or 0,
         days=days,
+        cache_read_tokens=totals["cache_read"] or 0,
+        cache_write_tokens=totals["cache_write"] or 0,
     )
 
 
@@ -272,6 +283,8 @@ def _finish(
             outcome=outcome,
             input_tokens=completion.input_tokens if completion else None,
             output_tokens=completion.output_tokens if completion else None,
+            cache_read_tokens=completion.cache_read_tokens if completion else None,
+            cache_write_tokens=completion.cache_write_tokens if completion else None,
         )
         changes: dict[str, object] = {"last_checked_at": now}
         if status is not None:

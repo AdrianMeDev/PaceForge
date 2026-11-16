@@ -272,10 +272,24 @@ fixed text on the page; nothing the provider says is shown or stored.
 
 **What is stored about your calls.** One record per request that reached the provider: provider,
 the model that was used (the season model for the season plan, else the normal one), purpose, how it ended (success, key refused, rate limited, unavailable, unexpected), the
-tokens the provider counted (if it said) and the time. **Never** the prompt, the answer or an error
-text. The page shows the sum of the last 30 days: calls (failed ones included), input and output
-tokens. A request that was refused before it was sent (the address is no longer allowed) is not
+tokens the provider counted (if it said), how many of the input tokens came from the provider's
+prompt cache and how many were written to it, and the time. **Never** the prompt, the answer or an
+error text. The page shows the sum of the last 30 days: calls (failed ones included), input and
+output tokens and, when there are any, the cached ones. A request that was refused before it was sent (the address is no longer allowed) is not
 counted. Costs and budgets are not calculated yet. The records stay when you remove the setup.
+
+**Prompt caching.** The system prompt of the coach (the rules and the format, the same for every
+athlete) and the first message of a conversation (the briefing about you) are marked for
+**Anthropic's prompt cache**, for the default of **five minutes**. A repair round, which starts with
+the same bytes, and the next draft within five minutes read them from the cache for a tenth of the
+price of reading them again; writing to the cache costs a quarter more once. The cache is the one
+of **your own key and organization**: nothing of it is shared with other users of this server. It
+only works above a minimum length that depends on the model (512 to 4096 tokens), so a short
+prompt is simply not cached, and a first answer that needs no repair has paid the small extra for
+nothing. The connection check sends no system prompt and caches nothing. **OpenAI** and compatible
+servers cache a long prefix on their own; the request is not changed, and where the provider says
+how much it read, that is counted. The Connections page shows both numbers, which is how you see
+whether it works; nothing about it can change what the coach answers.
 
 **Limits.** Checks are limited to 10 per minute per user, with a counter of their own (it does not
 use up the Intervals.icu limit). An answer larger than 2 MB is refused. Redirects are not followed,

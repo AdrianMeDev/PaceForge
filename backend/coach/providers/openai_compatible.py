@@ -81,11 +81,16 @@ def _completion(data: object) -> Completion:
         raise UnexpectedResponseError("The answer has no text.")
     usage = data.get("usage")
     usage = usage if isinstance(usage, dict) else {}
+    details = usage.get("prompt_tokens_details")
+    details = details if isinstance(details, dict) else {}
     return Completion(
         text=text,
         input_tokens=_count(usage.get("prompt_tokens")),
         output_tokens=_count(usage.get("completion_tokens")),
         truncated=isinstance(first, dict) and first.get("finish_reason") == "length",
+        # OpenAI caches a long prefix on its own and says how much of the prompt it read; the
+        # request does not ask for it, and most servers on your own hardware say nothing.
+        cache_read_tokens=_count(details.get("cached_tokens")),
     )
 
 

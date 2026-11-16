@@ -35,7 +35,14 @@ const NO_AI: AiProviderState = {
   last_checked_at: null,
   last_success_at: null,
   allowed_base_urls: [],
-  usage: { calls: 0, input_tokens: 0, output_tokens: 0, days: 30 },
+  usage: {
+    calls: 0,
+    input_tokens: 0,
+    output_tokens: 0,
+    cache_read_tokens: 0,
+    cache_write_tokens: 0,
+    days: 30,
+  },
 };
 
 function createApiStub() {

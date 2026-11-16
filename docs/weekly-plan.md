@@ -360,7 +360,10 @@ the user can be shown what is wrong. Its statuses:
 1. A **briefing** is built from the data of the user (below) and sent with the fixed system prompt
    (`planning/prompt.py`), which describes the format and the rules above. If the week offers no
    training time at all (no minutes on any day, a weekly budget of 0, or away all week) nothing is
-   sent: there is nothing to plan, and the answer is `no_time` (below).
+   sent: there is nothing to plan, and the answer is `no_time` (below). Because the system prompt
+   is one fixed text with nothing of the athlete or the day in it, Anthropic's [prompt
+   cache](../README.md#ai-coach-bring-your-own-key) can read it (and, in a repair round, the
+   briefing too) instead of paying for it again.
 2. The answer has to be **one JSON object** and nothing else (one code fence around it is
    tolerated). It is read by the strict parser; a repeated key, `NaN`, a huge number or an answer
    of more than the answer limit is refused, and so is a plan for another week.

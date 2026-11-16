@@ -88,9 +88,20 @@ class TestTheRequest:
         assert fake.requests[0]["json"] == {
             "model": MODEL,
             "max_tokens": 321,
-            "system": "You are a coach.",
+            "system": [
+                {
+                    "type": "text",
+                    "text": "You are a coach.",
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
             "messages": [
-                {"role": "user", "content": "Hi"},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Hi", "cache_control": {"type": "ephemeral"}}
+                    ],
+                },
                 {"role": "assistant", "content": "Hello"},
             ],
         }
@@ -106,8 +117,8 @@ class TestTheRequest:
         provider(fake).complete("Größe ✓", [Message("user", "Übung 🏃 für Ältere")], 10)
 
         body = fake.requests[0]["json"]
-        assert body["system"] == "Größe ✓"
-        assert body["messages"][0]["content"] == "Übung 🏃 für Ältere"
+        assert body["system"][0]["text"] == "Größe ✓"
+        assert body["messages"][0]["content"][0]["text"] == "Übung 🏃 für Ältere"
 
     def test_the_address_comes_from_the_settings_and_a_trailing_slash_does_not_matter(
         self, fake: FakeProvider, settings: Any
@@ -181,6 +192,49 @@ class TestTheAnswer:
         data = {k: v for k, v in ANSWER.items() if k != "usage"}
 
         assert complete(fake, data) == Completion("Hi there", None, None, False)
+
+    def test_without_cache_fields_there_are_no_cache_counts(self, fake: FakeProvider) -> None:
+        result = complete(fake)
+
+        assert (result.cache_read_tokens, result.cache_write_tokens) == (None, None)
+
+    def test_the_input_is_the_rest_and_the_cached_parts_together(self, fake: FakeProvider) -> None:
+        usage = {
+            "input_tokens": 20,
+            "output_tokens": 5,
+            "cache_read_input_tokens": 3000,
+            "cache_creation_input_tokens": 400,
+        }
+
+        result = complete(fake, {**ANSWER, "usage": usage})
+
+        assert result.input_tokens == 3420
+        assert (result.cache_read_tokens, result.cache_write_tokens) == (3000, 400)
+        assert result.output_tokens == 5
+
+    @pytest.mark.parametrize(
+        ("usage", "expected"),
+        [
+            ({"input_tokens": 5, "cache_read_input_tokens": 0}, (5, 0, None)),
+            ({"input_tokens": 5, "cache_creation_input_tokens": 9}, (14, None, 9)),
+            ({"input_tokens": 5, "cache_read_input_tokens": "x"}, (5, None, None)),
+            ({"input_tokens": 5, "cache_read_input_tokens": -1}, (5, None, None)),
+            ({"input_tokens": 5, "cache_creation_input_tokens": 1.5}, (5, None, None)),
+            ({"input_tokens": 5, "cache_read_input_tokens": True}, (5, None, None)),
+            ({"cache_read_input_tokens": 100}, (None, 100, None)),
+            ({"input_tokens": "5", "cache_read_input_tokens": 100}, (None, 100, None)),
+        ],
+    )
+    def test_cache_counts_that_make_no_sense_are_dropped_one_by_one(
+        self, fake: FakeProvider, usage: object, expected: tuple[int | None, int | None, int | None]
+    ) -> None:
+        result = complete(fake, {**ANSWER, "usage": usage})
+
+        assert (
+            result.input_tokens,
+            result.cache_read_tokens,
+            result.cache_write_tokens,
+        ) == expected
 
     @pytest.mark.parametrize(
         ("usage", "expected"),
@@ -428,3 +482,76 @@ class TestSecrecy:
         assert KEY not in everything
         assert raised.value.__cause__ is None
         assert raised.value.__suppress_context__
+
+
+class TestThePromptCache:
+    """What is marked for the cache: the system prompt and the first message, five minutes."""
+
+    @staticmethod
+    def marks(body: Any) -> int:
+        return json.dumps(body).count("cache_control")
+
+    def sent(self, fake: FakeProvider, system: str, messages: list[Message]) -> Any:
+        fake.reply(ANSWER)
+        provider(fake).complete(system, messages, 100)
+        return fake.requests[-1]["json"]
+
+    def test_the_system_prompt_and_the_first_message_end_a_cached_prefix(
+        self, fake: FakeProvider
+    ) -> None:
+        body = self.sent(fake, "Rules.", [Message("user", "Data")])
+
+        assert body["system"][0]["cache_control"] == {"type": "ephemeral"}
+        assert body["messages"][0]["content"][0]["cache_control"] == {"type": "ephemeral"}
+        assert self.marks(body) == 2
+
+    def test_the_lifetime_is_the_default_of_five_minutes(self, fake: FakeProvider) -> None:
+        body = self.sent(fake, "Rules.", [Message("user", "Data")])
+
+        assert "ttl" not in json.dumps(body)
+
+    def test_a_repair_round_starts_with_the_same_bytes_as_the_first_try(
+        self, fake: FakeProvider
+    ) -> None:
+        first = self.sent(fake, "Rules.", [Message("user", "Data")])
+        repair = self.sent(
+            fake,
+            "Rules.",
+            [Message("user", "Data"), Message("assistant", "Oops"), Message("user", "Fix it")],
+        )
+
+        assert repair["system"] == first["system"]
+        assert repair["messages"][0] == first["messages"][0]
+        assert repair["messages"][1:] == [
+            {"role": "assistant", "content": "Oops"},
+            {"role": "user", "content": "Fix it"},
+        ]
+        assert self.marks(repair) == 2  # never more than the two, whatever the length
+
+    def test_the_text_arrives_unchanged_in_its_blocks(self, fake: FakeProvider) -> None:
+        text = 'Käse "quoted" \n 😀 {"json": 1}'
+
+        body = self.sent(fake, text, [Message("user", text)])
+
+        assert body["system"][0]["text"] == text
+        assert body["messages"][0]["content"][0]["text"] == text
+
+    def test_without_a_system_prompt_nothing_is_marked(self, fake: FakeProvider) -> None:
+        body = self.sent(fake, "", [Message("user", "Reply with the single word: ok")])
+
+        assert self.marks(body) == 0
+        assert "system" not in body
+        assert body["messages"] == [{"role": "user", "content": "Reply with the single word: ok"}]
+
+    def test_a_first_message_of_the_assistant_is_not_marked(self, fake: FakeProvider) -> None:
+        body = self.sent(fake, "Rules.", [Message("assistant", "Hello")])
+
+        assert self.marks(body) == 1
+        assert body["messages"] == [{"role": "assistant", "content": "Hello"}]
+
+    def test_the_headers_and_the_version_do_not_change(self, fake: FakeProvider) -> None:
+        self.sent(fake, "Rules.", [Message("user", "Data")])
+
+        headers = fake.requests[0]["headers"]
+        assert headers["anthropic-version"] == "2023-06-01"
+        assert "anthropic-beta" not in headers

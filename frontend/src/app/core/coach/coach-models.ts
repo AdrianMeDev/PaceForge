@@ -16,8 +16,12 @@ export type CheckProblem =
 /** What the user has used of their own provider in the last `days` days, failed calls included. */
 export interface AiUsage {
   calls: number;
+  /** All input tokens, the cached ones included. */
   input_tokens: number;
   output_tokens: number;
+  /** The parts of `input_tokens` that were read from the provider's prompt cache and written to it. */
+  cache_read_tokens: number;
+  cache_write_tokens: number;
   days: number;
 }
 
