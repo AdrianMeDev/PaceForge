@@ -18,8 +18,8 @@ from typing import Any
 from accounts.models import User
 from planning import briefing as week_briefing
 
-from .serializers import skeleton_data
 from .skeleton import Race, Skeleton
+from .storage import skeleton_data
 
 # At most this many races are told, the earliest first; the rest is only counted.
 MAX_RACES_TOLD = 20

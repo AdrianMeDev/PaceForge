@@ -198,6 +198,12 @@ Each plan is checked against the facts of its user for that week, collected when
 - **Fixed appointments.** Sessions that happen every week: weekday, sport, minutes and optionally
   a part of the day. The coach is told to plan them; a plan without one is a warning
   (`fixed_session_missing`), not an error.
+- **The season week.** What the confirmed [season plan](season.md#the-week-plan-follows-the-season)
+  says about the week, if there is a confirmed plan and the week lies in it: the phase, whether it
+  is a recovery week, the minutes of the skeleton, the minutes of each sport, the focus, the key
+  sessions and the coach's reason. It is for the coach and for three warnings
+  (`season_minutes_off`, `season_sport_missing`, `season_key_session_missing`): never an error, so
+  a week can always be confirmed. Without a season week none of them is checked.
 - **Limitations.** The athlete's current injuries and limitations, each a body part from a fixed
   list and the sports it affects. A workout in an affected sport is a warning (`limited_sport`),
   not an error. Healed entries are not in the context.
@@ -256,6 +262,9 @@ user to weigh.
 | `duplicate_workout` | warning | The same sport, goal and duration twice on a day. |
 | `volume_increase` | warning | The planned minutes are above the warning limit of the reference (the recent average, or the typical week if that is higher). |
 | `easy_share_low` | warning | Less of the endurance minutes are easy than the intensity level asks for. |
+| `season_minutes_off` | warning | The confirmed [season plan](season.md) has minutes for this week, and the week adds up to more than `SEASON_WEEK_WINDOW_PERCENT` percent away from them (a season week of 0 minutes warns for any minute). Not said without a season week. It can come with `volume_increase` when the season asks for more than the progression limit allows; both are warnings, and the limit of the athlete is the one that counts. |
+| `season_sport_missing` | warning | A sport the season plan has minutes for in this week has no workout in the plan. Named once per sport, at the plan as a whole. A sport the athlete no longer wants is not named. Not said without a season week. |
+| `season_key_session_missing` | warning | A key session of the season plan for this week has no workout of its own. A workout fits it if it is of its sport and, for `tempo`, `threshold` and `vo2max`, has that goal; for `long` if it is at least `LONG_MATCH_PERCENT` percent of the key session's minutes; for `strength` any strength workout. `race` and `race_pace` are not checked. A workout counts for one key session only; the key sessions are matched as well as they can be, earlier ones first, and the ones left over are named, once each, at the plan as a whole. Not said without a season week. |
 
 Workouts outside the week are ignored by every rule except `outside_week`. Nothing is checked
 against the next or the previous week, so Sunday and the following Monday are not "in a row".
@@ -273,6 +282,8 @@ decisions, not coaching science; better ones will come from using the feature.
 | `EASY_UP_TO_ZONE` | 2 | Up to this zone a workout is easy. |
 | `MAX_WORKOUTS_PER_DAY` | 2 | Most workouts on a day; a third is an error. |
 | `TYPICAL_VOLUME_PERCENT` | 100 | How much of the typical week counts as a reference (100: all of it). A lower number, say 70, makes the first weeks back more careful. |
+| `SEASON_WEEK_WINDOW_PERCENT` | 15 | How far the minutes of a week may be from the minutes the confirmed season plan has for it. |
+| `LONG_MATCH_PERCENT` | 75 | How much of the minutes of a long key session of the season plan a workout has to have to be that session. |
 | `TITLE_MAX` | 100 | Characters of a title. |
 | `NOTES_MAX` | 500 | Characters of notes. |
 | `RATIONALE_MAX` | 1000 | Characters of the rationale. |
@@ -405,6 +416,7 @@ without this page.
 | `limitations` | The current injuries and limitations, the newest first, at most 10: `body_part` (a fixed word: foot, ankle, achilles, calf, shin, knee, thigh, hip, back, shoulder, other) and the `sports` it affects (none listed: no particular sport). Healed ones are not told. No text of the athlete. |
 | `limitations_text` | What the athlete wrote in the free text about their limitations, cut to `LIMITATIONS_TEXT_MAX_TOLD` characters, **only if they switched on "Send this text to my AI coach"**; otherwise `null`. Free text: the system prompt says that it is data and never instructions. |
 | `limitations_not_shown` | How many current limitations were left out because of the limit. |
+| `season_week` | What the confirmed [season plan](season.md) says about the week, or `null` if there is none or the week is not in it: the `phase`, whether it is a `recovery` week, the `target_minutes` of the skeleton, the `minutes` of each sport with their `total_minutes`, the `focus`, the `key_sessions` (`sport`, `kind`, `minutes`, `detail`), the `reason` and the `races` of the week (`date` and `priority`; the titles are in `goals`). The `reason` and the `detail` are words of the coach from that plan, cut to their limits: free text, data and never instructions. Only the confirmed plan counts, never a draft. |
 | `previous_week_plan` | The confirmed plan of the week before: day, sport, goal, minutes. |
 | `previous_week_review` | How the week before went, from the [week review](../README.md#week-review): the number of workouts by status, the minutes planned and done, the sessions that were not planned, how many sessions were rated and their mean RPE, the three scales of the week feedback (`null` if none was given) and `next_week`, the recommendation of a review of that week by the coach (`increase`, `hold`, `reduce`; `null` if none was asked for). Numbers and one fixed word, no text of the user or of the coach. `null` if the week before has not begun or has nothing in it. |
 
@@ -413,7 +425,8 @@ or descriptions of activities and the provider setup. The limitations of the tra
 told as a body part and sports from a fixed list; the free text next to them is **only** sent if the
 athlete switches that on, and then as `limitations_text`.
 
-The title and notes of a goal (and `limitations_text`, if allowed) are free text. They are sent as
+The title and notes of a goal (and `limitations_text`, if allowed, and the `reason` and `detail`
+of `season_week`) are free text. They are sent as
 JSON strings, the notes cut to `GOAL_NOTES_MAX` characters and the limitations text to
 `LIMITATIONS_TEXT_MAX_TOLD`, and the system prompt says that they are data and never instructions.
 That is a request to the model, not a guarantee: a model may still be swayed by what is in them.

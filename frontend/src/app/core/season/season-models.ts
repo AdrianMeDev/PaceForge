@@ -155,3 +155,22 @@ export type ConfirmSeasonResult =
 
 export type DiscardSeasonResult =
   { kind: 'ok'; plan: SeasonPlan } | SeasonPlanNotFound | SeasonPlanNotADraft | Forbidden;
+
+/**
+ * What the confirmed season plan says about one week, as the week plan page gets it: the phase
+ * and the aim of the skeleton and what the coach filled in. `reason` and the details of the key
+ * sessions are the coach's own words, shown as text only. `minutes` has one entry per sport that
+ * has minutes; `total_minutes` is their sum.
+ */
+export interface SeasonWeekFacts {
+  phase: SeasonPhase;
+  recovery: boolean;
+  target_minutes: number;
+  minutes: { sport: Sport; minutes: number }[];
+  total_minutes: number;
+  focus: Focus;
+  key_sessions: KeySession[];
+  reason: string;
+  /** The races of the week, by day and priority (the titles are in the goals). */
+  races: { date: string; priority: RacePriority }[];
+}

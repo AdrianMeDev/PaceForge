@@ -2,6 +2,7 @@ import { HttpClient, HttpErrorResponse, HttpResponse } from '@angular/common/htt
 import { Injectable, inject } from '@angular/core';
 import { Observable, firstValueFrom } from 'rxjs';
 import { API_BASE } from '../api/api-providers';
+import { toSeasonWeekFacts } from '../season/season-api';
 import {
   Reply,
   UUID,
@@ -376,6 +377,7 @@ function toWeeks(raw: unknown, reply: Reply): PlannableWeek[] {
     }
     return {
       week_start: item['week_start'],
+      season: toSeasonWeekFacts(item['season'], reply),
       plans: plans.map((plan: unknown) => toVersion(plan, reply)),
     };
   });

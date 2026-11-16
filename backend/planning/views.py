@@ -17,8 +17,10 @@ from coach.views import provider_problem
 from integrations import services as integrations
 from integrations.intervals import IntervalsError
 from integrations.intervals import InvalidKeyError as IntervalsKeyError
+from season.weeks import confirmed_weeks
 
 from . import services
+from .briefing import season_week_data
 from .editing import PlanNotRestorable, PlanNotRevisable, check, restore, revise
 from .generation import NoTimeAvailable, PlanNotUsable, WeekNotPlannable, generate, plannable_weeks
 from .models import WeeklyPlan
@@ -112,7 +114,8 @@ def _push_problem(error: Exception) -> str:
 
 
 class WeeksView(APIView):
-    """The weeks that can be planned, each with the versions that exist of it."""
+    """The weeks that can be planned, each with the week of the confirmed season plan (``season``,
+    ``null`` if there is none) and the versions that exist of it."""
 
     http_method_names = ["get", "head", "options"]
 
@@ -128,8 +131,18 @@ class WeeksView(APIView):
         by_week: dict[date, list[dict[str, Any]]] = {week: [] for week in weeks}
         for plan in versions:
             by_week[plan.week_start].append(summary_data(plan, plan.workout_count))
+        seasons = confirmed_weeks(user, weeks)
         return Response(
-            {"weeks": [{"week_start": week.isoformat(), "plans": by_week[week]} for week in weeks]}
+            {
+                "weeks": [
+                    {
+                        "week_start": week.isoformat(),
+                        "season": season_week_data(seasons.get(week)),
+                        "plans": by_week[week],
+                    }
+                    for week in weeks
+                ]
+            }
         )
 
 

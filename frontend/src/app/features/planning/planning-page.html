@@ -30,6 +30,41 @@
         </select>
       </div>
 
+      @if (season(); as aim) {
+        <section class="season-week" data-testid="season-week" aria-label="The season plan">
+          <h2>What the season plan says about this week</h2>
+          <p data-testid="season-phase">
+            {{ phase[aim.phase] }}
+            @if (aim.recovery) {
+              <span class="badge" data-testid="season-recovery">Recovery</span>
+            }
+            · Focus: {{ focus[aim.focus] }}
+          </p>
+          <p data-testid="season-minutes">
+            {{ seasonMinutes(aim.minutes) }}
+            @if (aim.total_minutes > 0) {
+              · {{ minutes(aim.total_minutes) }} in all
+            }
+            (the skeleton aims for {{ minutes(aim.target_minutes) }})
+          </p>
+          @if (aim.key_sessions.length > 0) {
+            <ul class="key-sessions" aria-label="Key sessions of the week">
+              @for (item of aim.key_sessions; track $index) {
+                <li>{{ keySession(item) }}</li>
+              }
+            </ul>
+          }
+          @for (race of aim.races; track $index) {
+            <p data-testid="season-race">
+              Race on {{ day(race.date) }} (priority {{ letter[race.priority] }})
+            </p>
+          }
+          @if (aim.reason) {
+            <p class="hint" data-testid="season-reason">{{ aim.reason }}</p>
+          }
+        </section>
+      }
+
       @for (message of errors(); track $index) {
         <p class="alert" role="alert">{{ message }}</p>
       }

@@ -12,7 +12,9 @@ What is not in it: names, e-mail addresses, activity names or descriptions, ids 
 thresholds of sports without zones, the provider settings. The only free text is the title and
 notes of a goal, cut to ``GOAL_NOTES_MAX`` characters, and the athlete's text about their
 limitations, cut to ``LIMITATIONS_TEXT_MAX_TOLD`` characters and only if the athlete switched
-that on; the prompt says that they are data and not instructions. Size is bounded by construction
+that on, and the reason and the details of the week in the confirmed season plan (the coach's
+own words from that plan, cut to their limits); the prompt says that they are data and not
+instructions. Size is bounded by construction
 (``MAX_GOALS``, ``MAX_LIMITATIONS_TOLD``, the fixed zone tables) and checked in the tests against
 ``MAX_BYTES``.
 """
@@ -30,6 +32,8 @@ from athletes.zones import ZoneSet, heart_rate_zones, pace_zones, power_zones
 from goals.models import Goal
 from goals.services import today_of
 from reviews.services import WeekReview, week_summary
+from season.schema import DETAIL_MAX, REASON_MAX
+from season.weeks import SeasonWeekFacts
 
 from .context import PlanContext, build_context
 from .models import PlannedWorkout, WeeklyPlan
@@ -96,8 +100,40 @@ def build_briefing(user: User, monday: date) -> dict[str, Any]:
             if context.limitations_text
             else None
         ),
+        "season_week": season_week_data(context.season_week),
         "previous_week_plan": _previous_week(user, monday),
         "previous_week_review": _previous_week_review(user, monday),
+    }
+
+
+def season_week_data(facts: SeasonWeekFacts | None) -> dict[str, Any] | None:
+    """What the confirmed season plan says about the week: the phase and the minutes of the
+    skeleton, and what the coach filled in then. ``null`` if there is no confirmed plan or the
+    week is not in it. The reason and the detail of a key session are the coach's own words from
+    that plan, cut to their limits: data, never instructions. Races are told by day and priority
+    (the titles are in ``goals``)."""
+    if facts is None:
+        return None
+    return {
+        "phase": facts.phase.value,
+        "recovery": facts.recovery,
+        "target_minutes": facts.target_minutes,
+        "minutes": [{"sport": sport.value, "minutes": amount} for sport, amount in facts.minutes],
+        "total_minutes": facts.total_minutes,
+        "focus": facts.focus.value,
+        "key_sessions": [
+            {
+                "sport": session.sport.value,
+                "kind": session.kind.value,
+                "minutes": session.minutes,
+                "detail": session.detail[:DETAIL_MAX],
+            }
+            for session in facts.key_sessions
+        ],
+        "reason": facts.reason[:REASON_MAX],
+        "races": [
+            {"date": race.day.isoformat(), "priority": race.priority} for race in facts.races
+        ],
     }
 
 

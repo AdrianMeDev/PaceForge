@@ -14,7 +14,6 @@ from season import services
 from season.models import SeasonPlanVersion
 from season.rules import SeasonContext
 from season.schema import Focus, KeySession, PlanWeek, SeasonPlan, SessionKind, to_json
-from season.serializers import skeleton_data, skeleton_from_data
 from season.services import (
     PlanNotConfirmable,
     PlanNotFound,
@@ -28,6 +27,7 @@ from season.services import (
     validate,
 )
 from season.skeleton import Race, Skeleton, SkeletonInputs, build_skeleton
+from season.storage import skeleton_data, skeleton_from_data
 
 pytestmark = pytest.mark.django_db
 

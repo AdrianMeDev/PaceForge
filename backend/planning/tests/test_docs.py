@@ -186,8 +186,8 @@ class TestTheRules:
 
     def test_every_check_of_the_rules_is_covered_by_the_table(self) -> None:
         # the number of checks and of codes can only move together with the page
-        assert len(rules.ALL_CHECKS) == 26
-        assert len(self.in_the_code()) == 32
+        assert len(rules.ALL_CHECKS) == 29
+        assert len(self.in_the_code()) == 35
 
 
 class TestTheZoneSystems:
