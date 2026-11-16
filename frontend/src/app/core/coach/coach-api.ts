@@ -140,6 +140,7 @@ function toState(raw: unknown, reply: Reply): AiProviderState {
     typeof item['configured'] !== 'boolean' ||
     (provider !== null && !isOneOf<AiProviderKind>(provider, PROVIDERS)) ||
     typeof item['model'] !== 'string' ||
+    typeof item['season_model'] !== 'string' ||
     (baseUrl !== null && typeof baseUrl !== 'string') ||
     typeof item['has_key'] !== 'boolean' ||
     (status !== null && !isOneOf<AiStatus>(status, STATUSES)) ||
@@ -157,6 +158,7 @@ function toState(raw: unknown, reply: Reply): AiProviderState {
     configured: item['configured'],
     provider,
     model: item['model'],
+    season_model: item['season_model'],
     base_url: baseUrl,
     has_key: item['has_key'],
     status,

@@ -31,6 +31,8 @@ export interface AiProviderState {
   configured: boolean;
   provider: AiProviderKind | null;
   model: string;
+  /** The model for the season plan; empty: the normal model does it. */
+  season_model: string;
   base_url: string | null;
   has_key: boolean;
   status: AiStatus | null;
@@ -48,6 +50,8 @@ export interface AiProviderState {
 export interface AiProviderInput {
   provider: AiProviderKind;
   model: string;
+  /** Empty: the season plan uses the normal model. */
+  season_model?: string;
   base_url?: string;
   api_key?: string;
 }

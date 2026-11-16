@@ -28,6 +28,8 @@
             <dd data-testid="provider">{{ providerLabel[current.provider] }}</dd>
             <dt>Model</dt>
             <dd data-testid="model">{{ current.model }}</dd>
+            <dt>Model for the season plan</dt>
+            <dd data-testid="season-model">{{ current.season_model || 'The normal model' }}</dd>
             @if (current.base_url) {
               <dt>Address</dt>
               <dd data-testid="address">{{ current.base_url }}</dd>
@@ -123,6 +125,28 @@
             <p class="hint" id="ai-model-hint">
               The exact name of the model, as the provider writes it, for example
               <code>claude-sonnet-5-5</code> or <code>llama3.1:8b</code>.
+            </p>
+          </div>
+
+          <div class="field">
+            <label for="ai-season-model">Model for the season plan (optional)</label>
+            <input
+              id="ai-season-model"
+              type="text"
+              autocomplete="off"
+              autocapitalize="off"
+              spellcheck="false"
+              aria-describedby="ai-season-model-hint"
+              [value]="seasonModel()"
+              [attr.aria-invalid]="fieldErrors()['season_model'] ? true : null"
+              (input)="seasonModel.set(read($event))"
+            />
+            @if (fieldErrors()['season_model']; as message) {
+              <p class="field-error" role="alert">{{ message }}</p>
+            }
+            <p class="hint" id="ai-season-model-hint">
+              The season plan is the biggest thing your coach is asked, so a stronger model may be
+              worth it there. Leave it empty to use the model above. Same provider, same key.
             </p>
           </div>
 

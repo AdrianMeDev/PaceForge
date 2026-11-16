@@ -130,6 +130,7 @@ const PROVIDER: AiProviderState = {
   configured: true,
   provider: 'anthropic',
   model: 'claude-sonnet-5-5',
+  season_model: '',
   base_url: null,
   has_key: true,
   status: 'connected',

@@ -36,7 +36,7 @@ export const STATUS_TEXT: Record<AiStatus, string> = {
 };
 
 /** The names of the fields as the server knows them, for the messages next to them. */
-const FIELDS = ['provider', 'model', 'base_url', 'api_key'];
+const FIELDS = ['provider', 'model', 'season_model', 'base_url', 'api_key'];
 
 /**
  * Where users connect their own AI provider: Anthropic, or an OpenAI-compatible endpoint from the
@@ -62,6 +62,7 @@ export class AiProviderPanel implements OnInit {
 
   protected readonly provider = signal<AiProviderKind>('anthropic');
   protected readonly model = signal('');
+  protected readonly seasonModel = signal('');
   protected readonly baseUrl = signal('');
   protected readonly apiKey = signal('');
   protected readonly removeKey = signal(false);
@@ -123,6 +124,7 @@ export class AiProviderPanel implements OnInit {
     return (
       this.provider() !== state.provider ||
       this.model().trim() !== state.model ||
+      this.seasonModel().trim() !== state.season_model ||
       (this.provider() === 'openai_compatible' && this.baseUrl() !== state.base_url) ||
       this.apiKey() !== '' ||
       this.removeKey()
@@ -289,6 +291,13 @@ export class AiProviderPanel implements OnInit {
     } else if (model.length > MODEL_MAX || !MODEL_PATTERN.test(model)) {
       errors['model'] = MODEL_TEXT;
     }
+    const seasonModel = this.seasonModel().trim();
+    if (
+      seasonModel.length > MODEL_MAX ||
+      (seasonModel !== '' && !MODEL_PATTERN.test(seasonModel))
+    ) {
+      errors['season_model'] = MODEL_TEXT;
+    }
     if (compatible && this.baseUrl() === '') {
       errors['base_url'] = 'Choose the address of the endpoint.';
     }
@@ -304,7 +313,7 @@ export class AiProviderPanel implements OnInit {
       return null;
     }
 
-    const input: AiProviderInput = { provider, model };
+    const input: AiProviderInput = { provider, model, season_model: seasonModel };
     if (compatible) {
       input.base_url = this.baseUrl();
     }
@@ -321,6 +330,7 @@ export class AiProviderPanel implements OnInit {
     this.state.set(state);
     this.provider.set(state.provider ?? 'anthropic');
     this.model.set(state.model);
+    this.seasonModel.set(state.season_model);
     this.baseUrl.set(state.base_url ?? state.allowed_base_urls[0] ?? '');
     this.apiKey.set('');
     this.removeKey.set(false);
