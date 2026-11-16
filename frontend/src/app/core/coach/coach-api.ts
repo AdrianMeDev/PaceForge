@@ -170,17 +170,21 @@ function toState(raw: unknown, reply: Reply): AiProviderState {
 
 function toUsage(raw: unknown, reply: Reply): AiUsage {
   const item = asObject(raw, reply);
-  const { calls, input_tokens, output_tokens, days } = item;
+  const { calls, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, days } = item;
   if (
     !isCount(calls) ||
     !isCount(input_tokens) ||
     !isCount(output_tokens) ||
+    !isCount(cache_read_tokens) ||
+    !isCount(cache_write_tokens) ||
+    // the cached tokens are parts of the input
+    cache_read_tokens + cache_write_tokens > input_tokens ||
     !isCount(days) ||
     days < 1
   ) {
     throw unexpected(reply);
   }
-  return { calls, input_tokens, output_tokens, days };
+  return { calls, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, days };
 }
 
 function toCheck(raw: unknown, reply: Reply): CheckOutcome {

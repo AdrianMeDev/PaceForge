@@ -14,7 +14,14 @@ const KEY = 'sk-ant-replay-0123456789-notreal';
 const FAKE_ADDRESS = 'http://127.0.0.1:8031/v1';
 
 // The shapes are those of the real API (replayed with curl against a real Django).
-const USAGE_NONE = { calls: 0, input_tokens: 0, output_tokens: 0, days: 30 };
+const USAGE_NONE = {
+  calls: 0,
+  input_tokens: 0,
+  output_tokens: 0,
+  cache_read_tokens: 0,
+  cache_write_tokens: 0,
+  days: 30,
+};
 const NOT_SET_UP = {
   configured: false,
   provider: null,
@@ -41,7 +48,14 @@ const CONNECTED = {
   status: 'connected',
   last_checked_at: '2026-11-13T18:20:30.879214Z',
   last_success_at: '2026-11-13T18:20:30.879214Z',
-  usage: { calls: 1, input_tokens: 9, output_tokens: 2, days: 30 },
+  usage: {
+    calls: 1,
+    input_tokens: 9,
+    output_tokens: 2,
+    cache_read_tokens: 0,
+    cache_write_tokens: 0,
+    days: 30,
+  },
 };
 const COMPATIBLE = {
   ...NOT_SET_UP,
@@ -161,6 +175,15 @@ describe('CoachApi', () => {
     ['a text as calls', altered(ANTHROPIC, [['usage', 'calls'], '1'])],
     ['a fraction as input tokens', altered(ANTHROPIC, [['usage', 'input_tokens'], 1.5])],
     ['negative output tokens', altered(ANTHROPIC, [['usage', 'output_tokens'], -1])],
+    ['no cached read count', altered(ANTHROPIC, [['usage', 'cache_read_tokens'], REMOVE])],
+    ['no cached write count', altered(ANTHROPIC, [['usage', 'cache_write_tokens'], REMOVE])],
+    ['a fractional cached read count', altered(ANTHROPIC, [['usage', 'cache_read_tokens'], 1.5])],
+    ['negative cached writes', altered(ANTHROPIC, [['usage', 'cache_write_tokens'], -1])],
+    ['a text as cached reads', altered(ANTHROPIC, [['usage', 'cache_read_tokens'], '5'])],
+    [
+      'more cached tokens than input',
+      altered(ANTHROPIC, [['usage', 'cache_read_tokens'], 8], [['usage', 'cache_write_tokens'], 2]),
+    ],
     ['no days', altered(ANTHROPIC, [['usage', 'days'], REMOVE])],
     ['zero days', altered(ANTHROPIC, [['usage', 'days'], 0])],
     ['a setup without a provider', altered(ANTHROPIC, [['provider'], null])],
@@ -193,6 +216,34 @@ describe('CoachApi', () => {
 
       expect(request.request.body).toBeNull();
       expect(result).toEqual({ kind: 'ok', state: NOT_SET_UP as AiProviderState });
+    });
+
+    it('reads the cached tokens of the usage', async () => {
+      const cached = altered(
+        CONNECTED,
+        [['usage', 'input_tokens'], 3420],
+        [['usage', 'cache_read_tokens'], 3000],
+        [['usage', 'cache_write_tokens'], 400],
+      );
+
+      const { result } = await run(api.get(), 'GET', URL, cached as object, 200);
+
+      expect(result).toMatchObject({
+        state: { usage: { input_tokens: 3420, cache_read_tokens: 3000, cache_write_tokens: 400 } },
+      });
+    });
+
+    it('takes the cached tokens that make up the whole input', async () => {
+      const all = altered(
+        CONNECTED,
+        [['usage', 'input_tokens'], 10],
+        [['usage', 'cache_read_tokens'], 6],
+        [['usage', 'cache_write_tokens'], 4],
+      );
+
+      const { result } = await run(api.get(), 'GET', URL, all as object, 200);
+
+      expect(result).toMatchObject({ kind: 'ok' });
     });
 
     it('returns a setup with its status, times and usage', async () => {

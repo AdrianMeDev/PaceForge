@@ -32,7 +32,14 @@ const NOT_SET_UP: AiProviderState = {
   last_checked_at: null,
   last_success_at: null,
   allowed_base_urls: [],
-  usage: { calls: 0, input_tokens: 0, output_tokens: 0, days: 30 },
+  usage: {
+    calls: 0,
+    input_tokens: 0,
+    output_tokens: 0,
+    cache_read_tokens: 0,
+    cache_write_tokens: 0,
+    days: 30,
+  },
 };
 const ANTHROPIC: AiProviderState = {
   ...NOT_SET_UP,
@@ -47,7 +54,14 @@ const CONNECTED: AiProviderState = {
   status: 'connected',
   last_checked_at: '2026-11-13T12:00:00Z',
   last_success_at: '2026-11-13T12:00:00Z',
-  usage: { calls: 1234, input_tokens: 9000, output_tokens: 1, days: 30 },
+  usage: {
+    calls: 1234,
+    input_tokens: 9000,
+    output_tokens: 1,
+    cache_read_tokens: 0,
+    cache_write_tokens: 0,
+    days: 30,
+  },
 };
 const COMPATIBLE: AiProviderState = {
   ...NOT_SET_UP,
@@ -546,6 +560,30 @@ describe('AiProviderPanel', () => {
 
     it('does not show the address row for Anthropic', () => {
       expect(has('[data-testid="address"]')).toBe(false);
+    });
+
+    it('says nothing about the cache when nothing was cached', () => {
+      expect(has('[data-testid="cache"]')).toBe(false);
+    });
+
+    it('tells how much of the input came from the cache and how much was written to it', async () => {
+      await setup(
+        ok({
+          ...CONNECTED,
+          usage: { ...CONNECTED.usage, cache_read_tokens: 3000, cache_write_tokens: 400 },
+        }),
+      );
+
+      expect(testId('cache')).toBe(
+        'Of the input, 3,000 tokens were read from the cache and 400 written to it.',
+      );
+      expect(testId('usage')).toContain('9,000 input and 1 output tokens');
+    });
+
+    it('tells the cache when only something was written', async () => {
+      await setup(ok({ ...CONNECTED, usage: { ...CONNECTED.usage, cache_write_tokens: 12 } }));
+
+      expect(testId('cache')).toContain('0 tokens were read from the cache and 12 written to it');
     });
 
     it('shows the model and the usage as text, never as markup', async () => {
