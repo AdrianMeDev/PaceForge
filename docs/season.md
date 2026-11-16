@@ -294,4 +294,5 @@ far); every other week and version has `done: null`.
 
 The skeleton itself knows minutes only. The coach adds the split by sport, the key sessions and the
 reasons, and the Season page shows, drafts, confirms and discards them, with a timeline and a chart.
-There is no load measure (only minutes), and the realism check of a goal time (US-4.2) is not part of it.
+There is no load measure (only minutes). Whether a goal time is realistic is judged separately (see
+[goals](goals.md)); the coach is told it with every race.

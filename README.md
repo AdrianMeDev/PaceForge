@@ -527,8 +527,8 @@ and a status. The kind is chosen when the goal is added and cannot be changed af
   distance (the form offers the usual ones for running and triathlon, any other in km, up to
   1000 km) and a target time (`3:45:00`, from 1 minute to 100 hours) are optional.
 - **Threshold:** raise your FTP (watts, cycling) or your threshold pace (minutes and seconds per
-  kilometre, running) to a target value. The date is optional. The value is only a target: it
-  is not compared with your profile yet.
+  kilometre, running) to a target value. The date is optional. The value is compared with your
+  current value to say how realistic it is (see below).
 - **General:** a title and notes, optionally a date ("Build endurance"). Nothing else.
 
 **Priority.** Every goal is **A** (main goal), **B** (secondary goal, the default) or **C**
@@ -555,10 +555,22 @@ day it is **today** depends on the time zone in your [profile](#athlete-profile)
 with one this server does not know) the page uses UTC, so around midnight the count can be a day
 off until you set it.
 
+**How realistic is it?** Every active goal with a target gets a badge: **realistic**, **ambitious**
+or **unrealistic**, with a sentence, the numbers behind it and a target that can be reached by the
+date. A running race is judged through VDOT (the form of your best time that counts, which grows by
+0.2 VDOT a week up to 5), a threshold goal against your current FTP or threshold pace (0.5 % a
+week up to 15 %). A race with fewer weeks left than its distance asks for (4 for 5 km, 6 for 10 km,
+10 for a half marathon, 16 for a marathon) gets a warning. **Edit** a goal and **Use it** puts the
+suggested time or value into the field; nothing is saved until you save, and **your own target
+stays yours**: it is a hint and never changes anything. Cycling, swimming and triathlon races, and
+goals without a target, a date or a form to start from, say why they cannot be judged. Your coach
+is told the judgement in the briefing of the week and of the season. The rules, every number and
+what is not judged are in [`docs/goals.md`](docs/goals.md).
+
 **Limits.** At most 30 goals per user (finished ones included), so delete old ones when it is full.
 Titles and notes are shown as plain text, never as markup.
 
-Not there yet: training phases, and goals in the coach's context.
+Not there yet: training phases.
 
 ## Training time
 
