@@ -234,6 +234,6 @@ plan as a draft:
 ## Not there yet
 
 The skeleton itself knows minutes only. The coach adds the split by sport, the key sessions and the
-reasons, but the week plan does not read the filled season yet, the page does not show it, there is
-no timeline or chart, no change request with a preview and no restoring of an older version, and
-the realism check of a goal time (US-4.2) is not part of it.
+reasons, and the Season page shows, drafts, confirms and discards them. The week plan does not read
+the filled season yet, there is no timeline or chart, no change request with a preview and no
+restoring of an older version, and the realism check of a goal time (US-4.2) is not part of it.

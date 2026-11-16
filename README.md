@@ -233,7 +233,8 @@ Things to know before you allow one of them:
 2. Press **Check connection**. PaceForge sends one request with the fixed text `Reply with the
    single word: ok` (at most 16 tokens, no system prompt) and **nothing about you or your
    training**, and shows how it went.
-3. Optionally give a **model for the season plan** (same rules as the model name). The season is
+3. Optionally give a **model for the season plan**, in the field of that name (same rules as the
+   model name; leave it empty to use the normal one). The season is
    the biggest thing the coach is asked, so a stronger model may be worth it there; left empty,
    the normal model does it. It is the same provider and the same key, and only the season plan
    uses it.
@@ -737,7 +738,7 @@ Not there yet: time windows within a day, and different time per sport.
 The **Season** page (`/season`, also in the navigation) shows the skeleton of your season: one row
 for every week from this week to the week of your last **A or B race**, with the **phase** of the
 week (base, build, specific, taper), the minutes to aim for, the minutes the week offers and the
-races. It is the frame that the main plan will be filled into; the week plan does not read it yet.
+races. It is the frame that your coach fills with the main plan (see [below](#filling-the-season-with-your-coach)); the week plan does not read it yet.
 
 It is **worked out by the code, not by a coach**, every time you open the page, from your goals,
 your last four weeks of training (or your normal week, if that is more), your training time and
@@ -784,10 +785,19 @@ sessions (a long run, a threshold session, the race …) and a reason. The model
   confirmed version, which stays as **superseded**) or **discarded**. A confirmed plan is never
   changed. A plan keeps the skeleton and the sports it was made for, so it stays readable and is
   checked against them when goals, time or the week move on; it is **not updated** by that.
-- **Not there yet:** the page does not show the filled plan or ask for one (the API does), the
-  week plan does not read it, there is no timeline or chart and no change request with a preview.
-  Whether a model fills a whole year well within `SEASON_MAX_TOKENS` has not been tried against a
-  real provider.
+- **On the page:** under the skeleton note the page shows your versions (the confirmed one, else
+  the newest draft, opens on its own) and, for the one that is open, three more columns: the
+  **plan** (minutes of each sport and the total), the **focus** and the **key sessions**, with the
+  coach's reason under each week and its rationale above. The weeks are those of the skeleton the
+  version was made for; the page says so when today's skeleton has other weeks. **Draft the season
+  with my coach** (or **Draft a new version**) asks for a draft, and says before that what it
+  costs and that it takes a few minutes. A draft is shown with what the checks say, in order of
+  the week; **Confirm plan** is disabled while it has errors and says why, **Discard** always
+  works. Without an AI provider the page points to the Connections page. The coach's texts are
+  shown as text, never as markup.
+- **Not there yet:** the week plan does not read the filled season, there is no timeline or chart,
+  no change request with a preview and no restoring of an older version. Whether a model fills a
+  whole year well within `SEASON_MAX_TOKENS` has not been tried against a real provider.
 
 Every number and the rules are in [`docs/season.md`](docs/season.md). The API is `GET /api/season/`
 for the skeleton and, for the filled plans, `GET /api/season/plans/` (the versions),
