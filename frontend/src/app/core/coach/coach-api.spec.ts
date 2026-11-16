@@ -19,6 +19,7 @@ const NOT_SET_UP = {
   configured: false,
   provider: null,
   model: '',
+  season_model: '',
   base_url: null,
   has_key: false,
   status: null,
@@ -139,6 +140,8 @@ describe('CoachApi', () => {
     ['a number as provider', altered(ANTHROPIC, [['provider'], 5])],
     ['no model', altered(ANTHROPIC, [['model'], REMOVE])],
     ['null as model', altered(ANTHROPIC, [['model'], null])],
+    ['no season model', altered(ANTHROPIC, [['season_model'], REMOVE])],
+    ['null as season model', altered(ANTHROPIC, [['season_model'], null])],
     ['a number as address', altered(COMPATIBLE, [['base_url'], 5])],
     ['no key flag', altered(ANTHROPIC, [['has_key'], REMOVE])],
     ['a text as key flag', altered(ANTHROPIC, [['has_key'], 'true'])],
@@ -286,7 +289,11 @@ describe('CoachApi', () => {
     });
 
     it('leaves the key out to keep the stored one', async () => {
-      const input: AiProviderInput = { provider: 'anthropic', model: 'claude-opus-5-5' };
+      const input: AiProviderInput = {
+        provider: 'anthropic',
+        model: 'claude-opus-5-5',
+        season_model: '',
+      };
 
       const { request } = await run(api.save(input), 'PUT', URL, ANTHROPIC, 200);
 

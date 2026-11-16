@@ -1,5 +1,14 @@
-import { RacePriority, SeasonPhase, SeasonRace } from '../../core/season/season-models';
+import {
+  Focus,
+  KeySession,
+  RacePriority,
+  SeasonPhase,
+  SeasonRace,
+  SessionKind,
+  Sport,
+} from '../../core/season/season-models';
 import { formatGoalDistance } from '../goals/goal-format';
+import { SPORT_LABELS, minutesText, weekRange } from '../planning/plan-format';
 
 export const PHASE_LABELS: Record<SeasonPhase, string> = {
   base: 'Base',
@@ -37,4 +46,55 @@ export function raceText(race: SeasonRace): string {
 /** "70 %": the share of what the week offers that the skeleton plans; empty if it offers nothing. */
 export function usedShare(target: number, capacity: number): string {
   return capacity > 0 ? `${Math.round((target / capacity) * 100)} %` : '';
+}
+
+export const FOCUS_LABELS: Record<Focus, string> = {
+  recovery: 'Recovery',
+  endurance: 'Endurance',
+  tempo: 'Tempo',
+  threshold: 'Threshold',
+  vo2max: 'VO2max',
+  race_specific: 'Race specific',
+};
+
+export const KIND_LABELS: Record<SessionKind, string> = {
+  long: 'Long',
+  tempo: 'Tempo',
+  threshold: 'Threshold',
+  vo2max: 'VO2max',
+  race_pace: 'Race pace',
+  strength: 'Strength',
+  race: 'Race',
+};
+
+const SPORT_ORDER: Sport[] = ['running', 'cycling', 'swimming', 'strength'];
+
+/** "Running 3 h · Cycling 1 h 30 min": what a week plans of each sport, empty if nothing. */
+export function minutesBySport(minutes: Partial<Record<Sport, number>>): string {
+  return SPORT_ORDER.filter((sport) => (minutes[sport] ?? 0) > 0)
+    .map((sport) => `${SPORT_LABELS[sport]} ${minutesText(minutes[sport] as number)}`)
+    .join(' · ');
+}
+
+/** "Running · Long · 1 h 30 min · 3 x 10 min": a key session in a line; the detail only if given. */
+export function keySessionText(session: KeySession): string {
+  const parts = [
+    SPORT_LABELS[session.sport],
+    KIND_LABELS[session.kind],
+    minutesText(session.minutes),
+  ];
+  if (session.detail !== '') {
+    parts.push(session.detail);
+  }
+  return parts.join(' · ');
+}
+
+/**
+ * Where a finding of the checks points: "16 Nov – 22 Nov" for a path into a week (`weeks[3]…`, the
+ * weeks as they are shown) and "Season" for anything else.
+ */
+export function seasonFindingPlace(path: string, weekStarts: string[]): string {
+  const match = /^weeks\[(\d+)\]/.exec(path);
+  const start = match === null ? undefined : weekStarts[Number(match[1])];
+  return start === undefined ? 'Season' : weekRange(start);
 }

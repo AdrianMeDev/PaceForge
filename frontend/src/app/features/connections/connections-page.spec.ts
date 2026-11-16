@@ -28,6 +28,7 @@ const NO_AI: AiProviderState = {
   configured: false,
   provider: null,
   model: '',
+  season_model: '',
   base_url: null,
   has_key: false,
   status: null,

@@ -25,6 +25,7 @@ const NOT_SET_UP: AiProviderState = {
   configured: false,
   provider: null,
   model: '',
+  season_model: '',
   base_url: null,
   has_key: false,
   status: null,
@@ -240,6 +241,7 @@ describe('AiProviderPanel', () => {
       expect(api.save).toHaveBeenCalledExactlyOnceWith({
         provider: 'anthropic',
         model: 'claude-sonnet-5-5',
+        season_model: '',
         api_key: KEY,
       });
       expect(value('#ai-key')).toBe(''); // gone while the request is still running
@@ -553,6 +555,39 @@ describe('AiProviderPanel', () => {
       expect(panel.querySelector('img')).toBeNull();
     });
 
+    it('shows the season model, or that the normal model is used', async () => {
+      expect(testId('season-model')).toBe('The normal model');
+      await setup(ok({ ...CONNECTED, season_model: 'claude-opus-5-5' }));
+
+      expect(testId('season-model')).toBe('claude-opus-5-5');
+      expect(value('#ai-season-model')).toBe('claude-opus-5-5');
+    });
+
+    it('sends the season model, trimmed, and an empty one as an empty text', async () => {
+      api.save.mockResolvedValue(saved(ANTHROPIC));
+      await type('#ai-season-model', '  claude-opus-5-5 ');
+      await submit();
+      await type('#ai-season-model', '');
+      await submit();
+
+      expect(api.save.mock.calls.map(([input]) => input.season_model)).toEqual([
+        'claude-opus-5-5',
+        '',
+      ]);
+    });
+
+    it.each(['-gpt', 'a b', 'model<script>', 'm'.repeat(101)])(
+      'refuses "%s" as a season model and sends nothing',
+      async (model) => {
+        await type('#ai-season-model', model);
+
+        await submit();
+
+        expect(api.save).not.toHaveBeenCalled();
+        expect(query(panel, '#ai-season-model').getAttribute('aria-invalid')).toBe('true');
+      },
+    );
+
     it('keeps the stored key when only the model changes', async () => {
       api.save.mockResolvedValue(saved({ ...ANTHROPIC, model: 'claude-opus-5-5' }));
       await type('#ai-model', 'claude-opus-5-5');
@@ -562,6 +597,7 @@ describe('AiProviderPanel', () => {
       expect(api.save).toHaveBeenCalledExactlyOnceWith({
         provider: 'anthropic',
         model: 'claude-opus-5-5',
+        season_model: '',
       });
       expect(Object.keys(api.save.mock.calls[0][0])).not.toContain('api_key');
     });
@@ -575,6 +611,7 @@ describe('AiProviderPanel', () => {
       expect(api.save.mock.calls[0][0]).toEqual({
         provider: 'anthropic',
         model: 'claude-sonnet-5-5',
+        season_model: '',
         api_key: OTHER_KEY,
       });
     });
@@ -741,6 +778,12 @@ describe('AiProviderPanel', () => {
       expect(has('[data-testid="unsaved"]')).toBe(true);
     });
 
+    it('treats another season model as unsaved', async () => {
+      await type('#ai-season-model', 'claude-opus-5-5');
+
+      expect(has('[data-testid="unsaved"]')).toBe(true);
+    });
+
     it('does not call a model with spaces around it a change', async () => {
       await type('#ai-model', '  claude-sonnet-5-5 ');
 
@@ -897,6 +940,7 @@ describe('AiProviderPanel', () => {
       expect(api.save).toHaveBeenCalledExactlyOnceWith({
         provider: 'openai_compatible',
         model: 'deepseek-model',
+        season_model: '',
         base_url: DEEPSEEK,
         api_key: KEY,
       });
@@ -924,6 +968,7 @@ describe('AiProviderPanel', () => {
       expect(api.save).toHaveBeenCalledExactlyOnceWith({
         provider: 'openai_compatible',
         model: 'gpt-4o',
+        season_model: '',
         base_url: OPENAI,
       });
     });
@@ -940,6 +985,7 @@ describe('AiProviderPanel', () => {
       expect(api.save.mock.calls[0][0]).toEqual({
         provider: 'openai_compatible',
         model: 'llama3.1:8b',
+        season_model: '',
         base_url: LOCAL,
         api_key: KEY,
       });
@@ -957,7 +1003,7 @@ describe('AiProviderPanel', () => {
       await submit();
 
       expect(Object.keys(api.save.mock.calls[0][0]).sort()).toEqual(
-        ['api_key', 'model', 'provider'].sort(),
+        ['api_key', 'model', 'provider', 'season_model'].sort(),
       );
     });
 
@@ -1061,6 +1107,7 @@ describe('AiProviderPanel', () => {
       expect(api.save.mock.calls[0][0]).toEqual({
         provider: 'openai_compatible',
         model: 'llama3.1:8b',
+        season_model: '',
         base_url: LOCAL,
         api_key: '',
       });
@@ -1111,6 +1158,7 @@ describe('AiProviderPanel', () => {
       expect(api.save.mock.calls[0][0]).toEqual({
         provider: 'anthropic',
         model: 'claude-sonnet-5-5',
+        season_model: '',
         api_key: KEY,
       });
     });

@@ -3,32 +3,79 @@ import { Injectable, inject } from '@angular/core';
 import { Observable, firstValueFrom } from 'rxjs';
 import { API_BASE } from '../api/api-providers';
 import {
+  Reply,
+  UUID,
+  asObject,
+  codeOf,
+  isCount,
+  isOneOf,
+  isUuid,
+  toFindings,
+  toProblems,
+  toProviderProblem,
+  toRateLimit,
+  toReport,
+} from '../api/coach-replies';
+import {
+  ConfirmSeasonResult,
+  DiscardSeasonResult,
+  Focus,
+  GenerateSeasonResult,
+  GetSeasonPlanResult,
   GetSeasonResult,
+  KeySession,
+  ListSeasonPlansResult,
+  PlanStatus,
+  PlanWeek,
   RacePriority,
   Season,
   SeasonPhase,
+  SeasonPlan,
+  SeasonPlanVersion,
   SeasonRace,
   SeasonWeek,
+  SessionKind,
+  Sport,
 } from './season-models';
 
 const URL = `${API_BASE}/season/`;
-const HANDLED_ERRORS = [401, 403];
+const PLANS_URL = `${URL}plans/`;
+const HANDLED_ERRORS = [401, 403, 404, 409, 422, 429, 502, 503];
 const PHASES: readonly string[] = ['base', 'build', 'specific', 'taper', 'transition'];
 const PRIORITIES: readonly string[] = ['main', 'secondary', 'preparation'];
 const DISCIPLINES: readonly string[] = ['running', 'cycling', 'swimming', 'triathlon'];
+const SPORTS: readonly string[] = ['running', 'cycling', 'swimming', 'strength'];
+const FOCI: readonly string[] = [
+  'recovery',
+  'endurance',
+  'tempo',
+  'threshold',
+  'vo2max',
+  'race_specific',
+];
+const KINDS: readonly string[] = [
+  'long',
+  'tempo',
+  'threshold',
+  'vo2max',
+  'race_pace',
+  'strength',
+  'race',
+];
+const STATUSES: readonly string[] = ['draft', 'confirmed', 'superseded', 'discarded'];
 const CALENDAR_DATE = /^\d{4}-\d{2}-\d{2}$/;
 // The most the server sends: a year of weeks.
 const WEEKS_MAX = 52;
-
-interface Reply {
-  status: number;
-  body: unknown;
-}
+const KEY_SESSIONS_MAX = 3;
+const DETAIL_MAX = 60;
+const WEEK_MINUTES_MAX = 7 * 24 * 60;
+const SESSION_MINUTES_MAX = 24 * 60;
 
 /**
- * The skeleton of the signed-in user's season. It is read only: the server works it out from the
- * goals, the history and the availability of the user on every request. Anything unexpected
- * (network, other server errors, an answer of the wrong shape) rejects.
+ * The season of the signed-in user. The skeleton is read only: the server works it out from the
+ * goals, the history and the availability of the user on every request. The plans are what the
+ * user's coach filled into it, one version after the other. Anything unexpected (network, other
+ * server errors, an answer of the wrong shape) rejects.
  */
 @Injectable({ providedIn: 'root' })
 export class SeasonApi {
@@ -38,7 +85,122 @@ export class SeasonApi {
     const reply = await this.send(this.http.get(URL, { observe: 'response' }));
     switch (reply.status) {
       case 200:
-        return { kind: 'ok', season: toSeason(reply) };
+        return { kind: 'ok', season: toSeason(reply.body, reply) };
+      case 401:
+      case 403:
+        return { kind: 'forbidden' };
+      default:
+        throw unexpected(reply);
+    }
+  }
+
+  /** The versions of the season plan, the newest first. */
+  async plans(): Promise<ListSeasonPlansResult> {
+    const reply = await this.send(this.http.get(PLANS_URL, { observe: 'response' }));
+    switch (reply.status) {
+      case 200:
+        return { kind: 'ok', plans: toVersions(reply) };
+      case 401:
+      case 403:
+        return { kind: 'forbidden' };
+      default:
+        throw unexpected(reply);
+    }
+  }
+
+  /** One version with its weeks; a draft comes with its checks. */
+  async plan(id: string): Promise<GetSeasonPlanResult> {
+    if (!UUID.test(id)) {
+      return { kind: 'not_found' };
+    }
+    const reply = await this.send(this.http.get(`${PLANS_URL}${id}/`, { observe: 'response' }));
+    switch (reply.status) {
+      case 200:
+        return { kind: 'ok', plan: toPlan(reply.body, reply) };
+      case 404:
+        return { kind: 'not_found' };
+      case 401:
+      case 403:
+        return { kind: 'forbidden' };
+      default:
+        throw unexpected(reply);
+    }
+  }
+
+  /**
+   * Asks the user's own coach to fill the season. Synchronous: the answer can take minutes (up to
+   * three calls of the provider), and it costs the user's own money.
+   */
+  async generate(): Promise<GenerateSeasonResult> {
+    const reply = await this.send(
+      this.http.post(`${PLANS_URL}generate/`, {}, { observe: 'response' }),
+    );
+    switch (reply.status) {
+      case 201:
+        return { kind: 'ok', plan: toPlan(reply.body, reply) };
+      case 409:
+        // Two reasons share the status; the code tells them apart. Anything else (a proxy's page,
+        // an answer of another shape) keeps meaning what 409 meant first: no provider.
+        return codeOf(reply.body) === 'no_time' ? { kind: 'no_time' } : { kind: 'not_configured' };
+      case 422:
+        return { kind: 'not_usable', problems: toProblems(reply) };
+      case 429:
+        return toRateLimit(reply);
+      case 502:
+        return toProviderProblem(reply, 'unexpected');
+      case 503:
+        return toProviderProblem(reply, 'unavailable');
+      case 401:
+      case 403:
+        return { kind: 'forbidden' };
+      default:
+        throw unexpected(reply);
+    }
+  }
+
+  /** Confirms a draft; the confirmed version before it is replaced. */
+  async confirm(id: string): Promise<ConfirmSeasonResult> {
+    if (!UUID.test(id)) {
+      return { kind: 'not_found' };
+    }
+    const reply = await this.send(
+      this.http.post(`${PLANS_URL}${id}/confirm/`, {}, { observe: 'response' }),
+    );
+    switch (reply.status) {
+      case 200:
+        return { kind: 'ok', plan: toPlan(reply.body, reply) };
+      case 404:
+        return { kind: 'not_found' };
+      case 409:
+        return { kind: 'not_a_draft' };
+      case 422:
+        return {
+          kind: 'not_confirmable',
+          findings: toFindings(asObject(reply.body, reply), reply),
+        };
+      case 401:
+      case 403:
+        return { kind: 'forbidden' };
+      default:
+        throw unexpected(reply);
+    }
+  }
+
+  /** Discards a draft. The version stays in the list. */
+  async discard(id: string): Promise<DiscardSeasonResult> {
+    if (!UUID.test(id)) {
+      return { kind: 'not_found' };
+    }
+    const reply = await this.send(
+      this.http.post(`${PLANS_URL}${id}/discard/`, {}, { observe: 'response' }),
+    );
+    switch (reply.status) {
+      case 200:
+        return { kind: 'ok', plan: toPlan(reply.body, reply) };
+      case 404:
+        return { kind: 'not_found' };
+      case 409:
+        return { kind: 'not_a_draft' };
       case 401:
       case 403:
         return { kind: 'forbidden' };
@@ -61,8 +223,8 @@ export class SeasonApi {
 }
 
 /** Only the known fields are taken over, whatever else an answer might carry. */
-function toSeason(reply: Reply): Season {
-  const item = asObject(reply.body, reply);
+function toSeason(raw: unknown, reply: Reply): Season {
+  const item = asObject(raw, reply);
   const { rolling, truncated, peak_minutes, weeks } = item;
   const main = item['main_race'];
   if (
@@ -83,6 +245,135 @@ function toSeason(reply: Reply): Season {
     peak_minutes,
     weeks: weeks.map((week: unknown) => toWeek(week, reply)),
   };
+}
+
+function toVersions(reply: Reply): SeasonPlanVersion[] {
+  const plans = asObject(reply.body, reply)['plans'];
+  if (!Array.isArray(plans)) {
+    throw unexpected(reply);
+  }
+  return plans.map((raw: unknown) => {
+    const item = asObject(raw, reply);
+    const { id, version, status, reason, week_count, created_at, confirmed_at } = item;
+    if (
+      !isUuid(id) ||
+      !isVersion(version) ||
+      !isOneOf<PlanStatus>(status, STATUSES) ||
+      typeof reason !== 'string' ||
+      !isCount(week_count) ||
+      week_count > WEEKS_MAX ||
+      !isTimestamp(created_at) ||
+      !isConfirmedAt(confirmed_at, status)
+    ) {
+      throw unexpected(reply);
+    }
+    return { id, version, status, reason, week_count, created_at, confirmed_at };
+  });
+}
+
+/** Only the known fields are taken over; the weeks must be those of the skeleton they came with. */
+function toPlan(raw: unknown, reply: Reply): SeasonPlan {
+  const item = asObject(raw, reply);
+  const { id, version, status, reason, rationale, parent, created_at, confirmed_at, weeks } = item;
+  if (
+    !isUuid(id) ||
+    !isVersion(version) ||
+    !isOneOf<PlanStatus>(status, STATUSES) ||
+    typeof reason !== 'string' ||
+    typeof rationale !== 'string' ||
+    (parent !== null && !isUuid(parent)) ||
+    !isTimestamp(created_at) ||
+    !isConfirmedAt(confirmed_at, status) ||
+    !Array.isArray(weeks) ||
+    // only a draft is checked
+    (status === 'draft') !== (item['report'] !== null)
+  ) {
+    throw unexpected(reply);
+  }
+  const skeleton = toSeason(item['skeleton'], reply);
+  const parsed = weeks.map((week: unknown) => toPlanWeek(week, reply));
+  if (
+    parsed.length !== skeleton.weeks.length ||
+    parsed.some((week, index) => week.week_start !== skeleton.weeks[index].week_start)
+  ) {
+    throw unexpected(reply);
+  }
+  return {
+    id,
+    version,
+    status,
+    reason,
+    rationale,
+    parent,
+    created_at,
+    confirmed_at,
+    skeleton,
+    weeks: parsed,
+    report: item['report'] === null ? null : toReport(item['report'], reply),
+  };
+}
+
+function toPlanWeek(raw: unknown, reply: Reply): PlanWeek {
+  const item = asObject(raw, reply);
+  const { week_start, focus, reason, total_minutes } = item;
+  const minutes = asObject(item['minutes'], reply);
+  const sessions = item['key_sessions'];
+  const amounts = Object.entries(minutes);
+  if (
+    !isDate(week_start) ||
+    !isOneOf<Focus>(focus, FOCI) ||
+    typeof reason !== 'string' ||
+    !Array.isArray(sessions) ||
+    sessions.length > KEY_SESSIONS_MAX ||
+    amounts.some(([sport, amount]) => !isOneOf<Sport>(sport, SPORTS) || !isCount(amount)) ||
+    !isCount(total_minutes) ||
+    total_minutes > WEEK_MINUTES_MAX ||
+    // the total is the sum of what the week plans
+    total_minutes !== amounts.reduce((sum, [, amount]) => sum + (amount as number), 0)
+  ) {
+    throw unexpected(reply);
+  }
+  const taken: Partial<Record<Sport, number>> = {};
+  for (const [sport, amount] of amounts) {
+    taken[sport as Sport] = amount as number;
+  }
+  return {
+    week_start,
+    minutes: taken,
+    total_minutes,
+    focus,
+    key_sessions: sessions.map((session: unknown) => toKeySession(session, reply)),
+    reason,
+  };
+}
+
+function toKeySession(raw: unknown, reply: Reply): KeySession {
+  const { sport, kind, minutes, detail } = asObject(raw, reply);
+  if (
+    !isOneOf<Sport>(sport, SPORTS) ||
+    !isOneOf<SessionKind>(kind, KINDS) ||
+    !isCount(minutes) ||
+    minutes < 1 ||
+    minutes > SESSION_MINUTES_MAX ||
+    typeof detail !== 'string' ||
+    detail.length > DETAIL_MAX
+  ) {
+    throw unexpected(reply);
+  }
+  return { sport, kind, minutes, detail };
+}
+
+function isVersion(value: unknown): value is number {
+  return isCount(value) && value >= 1;
+}
+
+function isTimestamp(value: unknown): value is string {
+  return typeof value === 'string' && !Number.isNaN(Date.parse(value));
+}
+
+/** The time of confirming is kept for a confirmed plan and for one that was replaced since. */
+function isConfirmedAt(value: unknown, status: PlanStatus): value is string | null {
+  return status === 'confirmed' || status === 'superseded' ? isTimestamp(value) : value === null;
 }
 
 function toWeek(raw: unknown, reply: Reply): SeasonWeek {
@@ -124,21 +415,6 @@ function toRace(raw: unknown, reply: Reply): SeasonRace {
     throw unexpected(reply);
   }
   return { date, priority, discipline, distance_m, title };
-}
-
-function asObject(value: unknown, reply: Reply): Record<string, unknown> {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw unexpected(reply);
-  }
-  return value as Record<string, unknown>;
-}
-
-function isOneOf<T extends string>(value: unknown, allowed: readonly string[]): value is T {
-  return typeof value === 'string' && allowed.includes(value);
-}
-
-function isCount(value: unknown): value is number {
-  return typeof value === 'number' && Number.isInteger(value) && value >= 0;
 }
 
 function isDate(value: unknown): value is string {

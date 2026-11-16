@@ -14,12 +14,161 @@
       <p><a routerLink="/login">Go to sign in</a></p>
     }
     @case ('ready') {
-      @if (season(); as shown) {
+      @if (shown(); as shown) {
         <p class="hint">
           The skeleton of your season: the phases and the minutes to aim for in every week, worked
           out from your goals, your recent training and your training time. It is worked out again
           every time you open this page; nothing is saved. The numbers are a starting point.
         </p>
+
+        @if (problem() === 'list') {
+          <p class="alert" role="alert" data-testid="list-problem">
+            The plans of your coach could not be loaded.
+            <button type="button" class="link" (click)="load()">Try again</button>
+          </p>
+        }
+        @if (problem() === 'version') {
+          <p class="alert" role="alert" data-testid="version-problem">
+            This version could not be loaded.
+          </p>
+        }
+        @if (problem() === 'missing') {
+          <p class="alert" role="alert" data-testid="version-missing">
+            This version does not exist any more.
+          </p>
+        }
+
+        @for (message of errors(); track $index) {
+          <p class="alert" role="alert">{{ message }}</p>
+        }
+        @if (noTime()) {
+          <p class="hint" data-testid="no-time">
+            Enter the minutes you can train on the
+            <a routerLink="/availability">Training time</a> page, then draft the season again.
+          </p>
+        }
+        @if (problems().length > 0) {
+          <ul class="problems" aria-label="What was wrong with the answer">
+            @for (item of problems(); track $index) {
+              <li>{{ item.message }}</li>
+            }
+          </ul>
+        }
+        @if (notice(); as text) {
+          <p class="notice" role="status">{{ text }}</p>
+        }
+
+        @if (!configured()) {
+          <p class="hint" data-testid="no-provider">
+            To let your coach fill the season you need an AI provider.
+            <a routerLink="/settings/connections">Set one up</a>
+          </p>
+        } @else {
+          <p>
+            <button
+              type="button"
+              class="primary"
+              data-testid="generate"
+              [disabled]="busy()"
+              (click)="generate()"
+            >
+              {{
+                versions().length === 0 ? 'Draft the season with my coach' : 'Draft a new version'
+              }}
+            </button>
+          </p>
+          <p class="hint" data-testid="cost">
+            The season is the biggest thing your coach is asked: it costs several times as much as a
+            week, and the coach may need up to three tries, so it can take a few minutes. At most 3
+            requests a minute.
+          </p>
+        }
+        @if (work() === 'generating') {
+          <p role="status" data-testid="generating">
+            Your coach is working on the season. This can take a few minutes.
+          </p>
+        }
+
+        @if (versions().length > 0) {
+          <ul class="versions" aria-label="Versions of the season plan">
+            @for (version of versions(); track version.id) {
+              <li>
+                <button
+                  type="button"
+                  class="link"
+                  [disabled]="busy()"
+                  [attr.aria-current]="plan()?.id === version.id ? 'true' : null"
+                  [attr.data-testid]="'version-' + version.version"
+                  (click)="open(version.id)"
+                >
+                  Version {{ version.version }} · {{ status[version.status] }} ·
+                  {{ version.created_at | date: 'MMM d, HH:mm' }}
+                </button>
+              </li>
+            }
+          </ul>
+        }
+
+        @if (plan(); as filled) {
+          <p class="summary" data-testid="plan-status">
+            Showing version {{ filled.version }}: <strong>{{ status[filled.status] }}</strong>.
+          </p>
+          @if (differs()) {
+            <p class="notice" data-testid="differs">
+              This version was made for the weeks of an earlier skeleton. Your goals or your time
+              have changed since; the weeks below are the ones it was made for.
+            </p>
+          }
+          @if (filled.rationale) {
+            <p data-testid="rationale">{{ filled.rationale }}</p>
+          }
+          @if (filled.report; as report) {
+            @if (findings().length > 0) {
+              <ul class="findings" aria-label="What the checks say">
+                @for (finding of findings(); track $index) {
+                  <li [attr.data-severity]="finding.severity">
+                    <strong>{{ finding.severity === 'error' ? 'Error' : 'Note' }}</strong>
+                    · {{ place(finding.path) }}: {{ finding.message }}
+                  </li>
+                }
+              </ul>
+            } @else {
+              <p class="hint" data-testid="all-clear">The checks found nothing to point out.</p>
+            }
+          }
+          @if (filled.status === 'draft') {
+            @if (confirmed(); as before) {
+              <p class="hint" data-testid="replaces">
+                Confirming replaces version {{ before.version }}, which is confirmed now.
+              </p>
+            }
+            @if (!canConfirm()) {
+              <p class="hint" data-testid="cannot-confirm">
+                A plan with errors cannot be confirmed. Draft a new version or discard this one.
+              </p>
+            }
+            <div class="actions">
+              <button
+                type="button"
+                class="primary"
+                data-testid="confirm"
+                [disabled]="busy() || !canConfirm()"
+                (click)="confirm()"
+              >
+                Confirm plan
+              </button>
+              <button
+                type="button"
+                class="secondary"
+                data-testid="discard"
+                [disabled]="busy()"
+                (click)="discard()"
+              >
+                Discard
+              </button>
+            </div>
+          }
+        }
 
         @if (shown.main_race; as main) {
           <p class="summary" data-testid="main-race">
@@ -53,6 +202,11 @@
                 <th scope="col">Aim</th>
                 <th scope="col">Time on offer</th>
                 <th scope="col">Races</th>
+                @if (plan()) {
+                  <th scope="col">Plan</th>
+                  <th scope="col">Focus</th>
+                  <th scope="col">Key sessions</th>
+                }
               </tr>
             </thead>
             <tbody>
@@ -78,7 +232,28 @@
                       }}</span>
                     }
                   </td>
+                  @if (plan(); as filled) {
+                    @let filledWeek = filled.weeks[index];
+                    <td data-testid="plan-minutes">
+                      {{ bySport(filledWeek.minutes) }}
+                      @if (filledWeek.total_minutes > 0) {
+                        <span class="total">{{ minutes(filledWeek.total_minutes) }}</span>
+                      }
+                    </td>
+                    <td data-testid="plan-focus">{{ focusLabel[filledWeek.focus] }}</td>
+                    <td data-testid="plan-sessions">
+                      @for (item of filledWeek.key_sessions; track $index) {
+                        <span class="session">{{ session(item) }}</span>
+                      }
+                    </td>
+                  }
                 </tr>
+                @if (plan(); as filled) {
+                  <tr class="reason" [attr.data-testid]="'reason-' + index">
+                    <td></td>
+                    <td [attr.colspan]="7">{{ filled.weeks[index].reason }}</td>
+                  </tr>
+                }
               }
             </tbody>
           </table>

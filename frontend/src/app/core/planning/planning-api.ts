@@ -3,6 +3,22 @@ import { Injectable, inject } from '@angular/core';
 import { Observable, firstValueFrom } from 'rxjs';
 import { API_BASE } from '../api/api-providers';
 import {
+  Reply,
+  UUID,
+  asObject,
+  codeOf,
+  isCount,
+  isOneOf,
+  isTimestamp,
+  isUuid,
+  toFindings,
+  toProblems,
+  toProviderProblem,
+  toRateLimit,
+  toReport,
+  unexpected,
+} from '../api/coach-replies';
+import {
   CheckPlanResult,
   ConfirmPlanResult,
   DiscardPlanResult,
@@ -10,19 +26,15 @@ import {
   ExportError,
   ExportStatus,
   ExportSummary,
-  Finding,
   GenerateResult,
   GetPlanResult,
   ListWeeksResult,
-  PlanProblem,
   PlanStatus,
   PushOutcome,
   PushPlanResult,
   PushProblem,
   PlanVersion,
   PlannableWeek,
-  ProviderProblem,
-  Report,
   RestorePlanResult,
   RevisePlanResult,
   Exercise,
@@ -31,7 +43,6 @@ import {
   Segment,
   SegmentKind,
   TargetUnit,
-  Severity,
   Sport,
   WeekPlan,
   Workout,
@@ -45,7 +56,6 @@ import {
 const BASE = `${API_BASE}/planning`;
 const HANDLED_ERRORS = [401, 403, 404, 409, 422, 429, 502, 503];
 const PUSH_FALLBACK = 'The week could not be sent to Intervals.icu. Please try again later.';
-const FALLBACK_TEXT = 'The AI provider could not be used right now. Please try again later.';
 
 const SPORTS: readonly string[] = ['running', 'cycling', 'swimming', 'strength'];
 const GOALS: readonly string[] = [
@@ -61,14 +71,6 @@ const ZONE_SYSTEMS: readonly string[] = ['power', 'heart_rate', 'pace'];
 const SEGMENT_KINDS: readonly string[] = ['warmup', 'steady', 'work', 'recovery', 'cooldown'];
 const SLOTS: readonly string[] = ['morning', 'afternoon', 'evening'];
 const STATUSES: readonly string[] = ['draft', 'confirmed', 'superseded', 'discarded'];
-const SEVERITIES: readonly string[] = ['error', 'warning'];
-const PROBLEMS: readonly string[] = [
-  'invalid_key',
-  'rate_limited',
-  'unavailable',
-  'unexpected',
-  'not_allowed',
-];
 const TARGET_UNITS: readonly string[] = ['W', 'bpm', 's/km'];
 const EXPORT_STATUSES: readonly string[] = ['not_sent', 'synced', 'failed'];
 const EXPORT_ERRORS: readonly string[] = ['', 'rejected', 'unavailable', 'unexpected'];
@@ -86,13 +88,7 @@ const REPEAT_MAX = 50;
 const EXERCISES_MAX = 15;
 const REGIONS: readonly string[] = ['legs', 'core', 'upper_body', 'full_body'];
 const EQUIPMENT: readonly string[] = ['gym', 'dumbbells', 'bodyweight'];
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
-
-interface Reply {
-  status: number;
-  body: unknown;
-}
 
 /**
  * The signed-in user's week plans. Problems that people can act on are values; anything
@@ -656,96 +652,6 @@ function textOf(body: unknown, fallback: string): string {
   return typeof detail === 'string' && detail !== '' ? detail : fallback;
 }
 
-function toReport(raw: unknown, reply: Reply): Report {
-  const item = asObject(raw, reply);
-  const findings = toFindings(item, reply);
-  // A plan is valid exactly when none of the findings is an error.
-  if (
-    typeof item['valid'] !== 'boolean' ||
-    item['valid'] !== findings.every((finding) => finding.severity !== 'error')
-  ) {
-    throw unexpected(reply);
-  }
-  return { valid: item['valid'], findings };
-}
-
-function toFindings(item: Record<string, unknown>, reply: Reply): Finding[] {
-  const findings = item['findings'];
-  if (!Array.isArray(findings)) {
-    throw unexpected(reply);
-  }
-  return findings.map((raw: unknown) => {
-    const finding = asObject(raw, reply);
-    const { severity, code, message, path } = finding;
-    if (
-      !isOneOf<Severity>(severity, SEVERITIES) ||
-      typeof code !== 'string' ||
-      typeof message !== 'string' ||
-      typeof path !== 'string'
-    ) {
-      throw unexpected(reply);
-    }
-    return { severity, code, message, path };
-  });
-}
-
-/** The `code` of an error answer, `null` if the body is no object with a text there. */
-function codeOf(body: unknown): string | null {
-  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
-    return null;
-  }
-  const code = (body as Record<string, unknown>)['code'];
-  return typeof code === 'string' ? code : null;
-}
-
-function toProblems(reply: Reply): PlanProblem[] {
-  const problems = asObject(reply.body, reply)['problems'];
-  if (!Array.isArray(problems)) {
-    throw unexpected(reply);
-  }
-  return problems.map((raw: unknown) => {
-    const { path, message } = asObject(raw, reply);
-    if (typeof path !== 'string' || typeof message !== 'string') {
-      throw unexpected(reply);
-    }
-    return { path, message };
-  });
-}
-
-/**
- * 429 comes from two places: the provider asking to slow down (the body has a code and the
- * server's text) and this server's own limit (a plain throttling answer without a code).
- */
-function toRateLimit(reply: Reply): GenerateResult {
-  const body = reply.body;
-  if (typeof body === 'object' && body !== null && (body as Record<string, unknown>)['code']) {
-    return toProviderProblem(reply, 'rate_limited');
-  }
-  return { kind: 'rate_limited' };
-}
-
-/**
- * The answer of the server names the problem and brings a text for users. A proxy in front of
- * the server may replace it with a page of its own: the status alone still says what kind of
- * problem it is (`fallback`) and the text is then a fixed one.
- */
-function toProviderProblem(reply: Reply, fallback: ProviderProblem): GenerateResult {
-  const body =
-    typeof reply.body === 'object' && reply.body !== null && !Array.isArray(reply.body)
-      ? (reply.body as Record<string, unknown>)
-      : {};
-  const code = body['code'];
-  const message = body['detail'];
-  const retryAfter = body['retry_after'];
-  const known = isOneOf<ProviderProblem>(code, PROBLEMS);
-  return {
-    kind: 'provider_problem',
-    problem: known ? code : fallback,
-    message: known && typeof message === 'string' && message !== '' ? message : FALLBACK_TEXT,
-    retry_after: known && isCount(retryAfter) ? retryAfter : null,
-  };
-}
-
 /** The target of a workout or a segment: a zone system with a zone of it, or neither. */
 function toTarget(
   system: unknown,
@@ -785,21 +691,6 @@ function isConfirmedAt(value: unknown, status: PlanStatus): value is string | nu
   return status === 'confirmed' || status === 'superseded' ? isTimestamp(value) : value === null;
 }
 
-function asObject(raw: unknown, reply: Reply): Record<string, unknown> {
-  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
-    throw unexpected(reply);
-  }
-  return raw as Record<string, unknown>;
-}
-
-function isCount(value: unknown): value is number {
-  return typeof value === 'number' && Number.isInteger(value) && value >= 0;
-}
-
-function isUuid(value: unknown): value is string {
-  return typeof value === 'string' && UUID.test(value);
-}
-
 function isDate(value: unknown): value is string {
   if (typeof value !== 'string' || !DATE.test(value)) {
     return false;
@@ -811,16 +702,4 @@ function isDate(value: unknown): value is string {
 
 function isMonday(value: unknown): value is string {
   return isDate(value) && new Date(`${value}T00:00:00Z`).getUTCDay() === 1;
-}
-
-function isTimestamp(value: unknown): value is string {
-  return typeof value === 'string' && !Number.isNaN(Date.parse(value));
-}
-
-function isOneOf<T extends string>(value: unknown, allowed: readonly string[]): value is T {
-  return typeof value === 'string' && allowed.includes(value);
-}
-
-function unexpected(reply: Reply): Error {
-  return new Error(`Unexpected response with status ${reply.status}`);
 }
