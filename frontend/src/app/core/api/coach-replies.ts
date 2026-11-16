@@ -1,3 +1,4 @@
+import { Invalid } from '../goals/goals-models';
 import {
   Finding,
   GenerateResult,
@@ -7,6 +8,7 @@ import {
   Severity,
 } from '../planning/planning-models';
 
+const INVALID_FALLBACK = 'The input was not accepted.';
 const FALLBACK_TEXT = 'The AI provider could not be used right now. Please try again later.';
 const SEVERITIES: readonly string[] = ['error', 'warning'];
 const PROBLEMS: readonly string[] = [
@@ -148,4 +150,22 @@ export function isOneOf<T extends string>(value: unknown, allowed: readonly stri
 
 export function unexpected(reply: Reply): Error {
   return new Error(`Unexpected response with status ${reply.status}`);
+}
+
+/**
+ * DRF reports field errors as `{"api_key": ["…"]}` and other problems as `{"detail": "…"}` or
+ * `{"non_field_errors": ["…"]}`. All messages are kept, by field and as one list.
+ */
+export function toInvalid(reply: Reply): Invalid {
+  const fields: Record<string, string[]> = {};
+  if (typeof reply.body === 'object' && reply.body !== null && !Array.isArray(reply.body)) {
+    for (const [name, value] of Object.entries(reply.body)) {
+      const messages = [value].flat().filter((text): text is string => typeof text === 'string');
+      if (messages.length) {
+        fields[name] = messages;
+      }
+    }
+  }
+  const errors = Object.values(fields).flat();
+  return { kind: 'invalid', errors: errors.length ? errors : [INVALID_FALLBACK], fields };
 }

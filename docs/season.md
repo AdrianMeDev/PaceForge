@@ -165,6 +165,15 @@ same rules as there. A test fails if a key is added without being listed here.
 | `limits`, `limitations`, `limitations_not_shown` | As in the week plan: the limits of the intensity level and the current limitations (body part and sports, no text). |
 | `typical_weekly_minutes`, `recent_weeks_minutes`, `weekly_budget_minutes` | The normal week, the recent weeks and the weekly budget. |
 
+**A change request** (a version that is made from another on the athlete's wish) is told with the
+same briefing, but with the sports the old version was made for, and two more keys: `current_plan`
+(the season as it is now, in the format of the answer) and `change_request` (the wish, a JSON
+string). The system prompt is the same: it says that then the season is not filled from scratch,
+that the answer has exactly the same weeks, changed as the wish asks and as little else as possible,
+that every rule still applies, and that the wish is data and never an instruction about the rules,
+the format or the task. Like a title of a race it is a request to the model, not a guarantee; what
+it cannot do is get a plan past the parser and the checks.
+
 What is **never** sent: the name, the e-mail address, ids, the notes of goals, the activities, the
 free text about limitations and anything of other users.
 
@@ -178,6 +187,7 @@ that is cut off is not used.
 | `RACE_TITLE_TOLD_MAX` | 60 | Characters of the title of a race that are told. |
 | `MAX_BYTES` | 24000 | The most the JSON of a briefing may take (UTF-8, every free-text character at six bytes). A test builds the worst case. |
 | `SEASON_MAX_TOKENS` | 16000 | The most the coach may write for a season. |
+| `CHANGE_MAX_BYTES` | 200000 | The most the message that asks for a change may take (UTF-8, a year of weeks at every limit, four bytes to a character, the longest wish). A test builds the worst case. |
 
 ## The checks
 
@@ -219,6 +229,16 @@ plan as a draft:
 - **Status.** `draft`, `confirmed`, `superseded` or `discarded`; at most one confirmed plan per
   user. Confirming a draft with errors is refused. The content of a plan that is not a draft is
   never changed.
+- **Changing on request.** `change` asks the coach to change a `confirmed` version or a draft as
+  the athlete wishes (`request`, at most `REQUEST_MAX` characters, plain text with line breaks,
+  checked before anything is sent) and stores the answer as the next version, a draft: `parent` the
+  version it comes from, the reason `Changed on request from version N`, the wish in `request`, and
+  **the skeleton and sports of the old version**. It asks like drafting (the same loop, up to
+  `ATTEMPTS` answers, the best wins) and refuses a version that was replaced or discarded
+  (`PlanNotChangeable`). An answer equal to the old plan is not stored (`PlanUnchanged`); the calls
+  count as usage all the same. The old version is not touched. The Season page compares the new
+  version with its `parent` (`compareSeasons`, a pure function): minutes of each sport, the total,
+  the focus, key sessions added and dropped and the reason, week by week, and the rationale.
 - **Restoring.** `restore` brings back a `superseded` or `discarded` version as the next version, a
   draft: the same weeks and rationale, **its own skeleton and sports** (not today's), `parent` the
   version it comes from and the reason `Restored from version N`. The old version is not touched,
@@ -228,6 +248,7 @@ plan as a draft:
 | Constant | Value | Meaning |
 | -------- | ----- | ------- |
 | `ATTEMPTS` | 3 | Answers of the coach for one season: one try and two repairs. |
+| `REQUEST_MAX` | 500 | Characters of a change request. |
 
 ## The week plan follows the season
 
@@ -263,7 +284,7 @@ far); every other week and version has `done: null`.
 
 ## The API
 
-`GET /api/season/` answers the skeleton of the signed-in user and writes nothing. The filled plans are at `/api/season/plans/`: `GET` lists the versions (`id`, `version`, `status`, `reason`, `week_count`, `created_at`, `confirmed_at`), `POST generate/` drafts one (`201` with the plan, limited to 3 a minute), `GET <id>/` reads one and `POST <id>/confirm/` and `POST <id>/discard/` decide on a draft and `POST <id>/restore/` brings back a replaced or discarded version as a new draft (`201` with the plan; `409` `not_restorable` for any other). A plan has `rationale`, `parent`, the `skeleton` it was made for, its `weeks` (the format with a `total_minutes` and `done`: for the **confirmed** version and the weeks that have begun the minutes the athlete trained by sport, `[{sport, minutes}]`, `other` for activities of no sport of the plan, `[]` for a week without any; `null` for every other week and version) and, for a draft, a `report` of `valid` and `findings`. Errors have a fixed text, a `code` and, where it helps, `problems` or `findings`. The answer has
+`GET /api/season/` answers the skeleton of the signed-in user and writes nothing. The filled plans are at `/api/season/plans/`: `GET` lists the versions (`id`, `version`, `status`, `reason`, `week_count`, `created_at`, `confirmed_at`), `POST generate/` drafts one (`201` with the plan, limited to 3 a minute), `GET <id>/` reads one and `POST <id>/confirm/` and `POST <id>/discard/` decide on a draft and `POST <id>/change/` with `{"request": "…"}` asks the coach to change a version as the athlete wishes (`201` with the new draft; `400` with the messages of the field `request`; `404`; `409` `not_changeable` or `not_configured`; `422` `unchanged` or `not_usable`; the codes of the provider; limited to 3 a minute together with drafting), and `POST <id>/restore/` brings back a replaced or discarded version as a new draft (`201` with the plan; `409` `not_restorable` for any other). A plan has `rationale`, `parent`, the `skeleton` it was made for, its `weeks` (the format with a `total_minutes` and `done`: for the **confirmed** version and the weeks that have begun the minutes the athlete trained by sport, `[{sport, minutes}]`, `other` for activities of no sport of the plan, `[]` for a week without any; `null` for every other week and version) and, for a draft, a `report` of `valid` and `findings`. Errors have a fixed text, a `code` and, where it helps, `problems` or `findings`. The answer has
 `rolling`, `truncated`, `main_race` (or `null`), `peak_minutes` and `weeks`. A **week** has
 `week_start` (a Monday), `phase` (`base`, `build`, `specific`, `taper` or `transition`), `recovery`,
 `target_minutes`, `capacity_minutes` and `races`. A **race** has `date`, `priority` (`main`,
@@ -273,5 +294,4 @@ far); every other week and version has `done: null`.
 
 The skeleton itself knows minutes only. The coach adds the split by sport, the key sessions and the
 reasons, and the Season page shows, drafts, confirms and discards them, with a timeline and a chart.
-There is no change request with a preview and no load measure
-(only minutes), and the realism check of a goal time (US-4.2) is not part of it.
+There is no load measure (only minutes), and the realism check of a goal time (US-4.2) is not part of it.

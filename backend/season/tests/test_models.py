@@ -6,7 +6,7 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 
 from accounts.models import User
-from season.models import REASON_MAX, SeasonPlanVersion
+from season.models import REASON_MAX, REQUEST_MAX, SeasonPlanVersion
 
 pytestmark = pytest.mark.django_db
 
@@ -54,8 +54,12 @@ class TestTheDefaults:
             SeasonPlanVersion.objects.for_user(alice).values_list("version", flat=True)
         ) == [3, 2, 1]
 
+    def test_a_new_plan_has_no_request_and_the_limit_is_five_hundred(self, alice: User) -> None:
+        assert make(alice).request == ""
+        assert REQUEST_MAX == 500
+
     def test_the_text_names_the_user_and_the_version_only(self, alice: User) -> None:
-        plan = make(alice, 4, reason="SECRET reason", rationale="SECRET rationale")
+        plan = make(alice, 4, reason="SECRET reason", request="SECRET request", rationale="SECRET")
 
         assert str(plan) == f"Season plan of user {alice.pk} (v4)"
 
@@ -200,7 +204,9 @@ class TestAPlanThatIsNoDraftAnyMore:
         assert (plan.weeks, plan.reason) == ([{"x": 1}], "Changed")
 
     @pytest.mark.parametrize("status", [Status.CONFIRMED, Status.SUPERSEDED])
-    @pytest.mark.parametrize("field", ["weeks", "skeleton", "sports", "reason", "rationale"])
+    @pytest.mark.parametrize(
+        "field", ["weeks", "skeleton", "sports", "reason", "request", "rationale"]
+    )
     def test_its_content_cannot_be_changed(self, alice: User, status: str, field: str) -> None:
         plan = make(alice, status=status, confirmed_at=NOW)
         value: Any = (

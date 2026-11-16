@@ -47,6 +47,7 @@ def plan_detail(
         "version": plan.version,
         "status": plan.status,
         "reason": plan.reason,
+        "request": plan.request,
         "rationale": data["rationale"],
         "parent": str(plan.parent_id) if plan.parent_id else None,
         "created_at": _time(plan.created_at),

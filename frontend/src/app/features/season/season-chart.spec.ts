@@ -39,6 +39,7 @@ function planOf(minutes: Record<string, number>[]): SeasonPlan {
     version: 1,
     status: 'confirmed',
     reason: '',
+    request: '',
     rationale: '',
     parent: null,
     created_at: '2026-11-16T10:00:00Z',

@@ -1,7 +1,8 @@
 from typing import Any
 from uuid import UUID
 
-from rest_framework import status
+from django.core.exceptions import ValidationError as DjangoValidationError
+from rest_framework import serializers, status
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -16,7 +17,14 @@ from planning.validation import Report
 
 from . import services
 from .done import done_minutes
-from .generation import NothingToPlan, PlanNotUsable, generate
+from .generation import (
+    NothingToPlan,
+    PlanNotChangeable,
+    PlanNotUsable,
+    PlanUnchanged,
+    change,
+    generate,
+)
 from .inputs import skeleton_for
 from .models import SeasonPlanVersion
 from .serializers import plan_detail, plan_summary
@@ -32,6 +40,10 @@ NO_TIME = (
 NOT_FOUND = "There is no such season plan."
 NOT_A_DRAFT = "Only a draft can be confirmed or discarded."
 NOT_RESTORABLE = "Only a version that was replaced or discarded can be restored."
+NOT_CHANGEABLE = (
+    "Only the confirmed version and a draft can be changed. Restore an older version first."
+)
+UNCHANGED = "The coach gave the season back as it was. Say more clearly what you want changed."
 NOT_CONFIRMABLE = "The plan has errors and cannot be confirmed."
 NOT_USABLE = "The coach did not give a plan that can be used. Please try again."
 
@@ -108,6 +120,58 @@ class GenerateView(APIView):
         except ProviderError as error:
             return provider_problem(error)
         response = _detail(user, generated.plan, generated.report)
+        response.status_code = status.HTTP_201_CREATED
+        return response
+
+
+class _Text(serializers.CharField):
+    """Text and nothing else: DRF would turn the number 5 into "5"."""
+
+    def to_internal_value(self, data: Any) -> str:
+        if not isinstance(data, str):
+            self.fail("invalid")
+        return super().to_internal_value(data)
+
+
+class ChangeBody(serializers.Serializer[Any]):
+    # The limits and the plain text are checked by the service; this only keeps absurd bodies out.
+    request = _Text(max_length=4000, allow_blank=True, trim_whitespace=False)
+
+
+class ChangeView(APIView):
+    """Asks the user's own coach to change a version as the athlete wishes. Synchronous: the answer
+    can take minutes. The answer is the new draft with its checks; the version in the address is
+    not touched. Nothing of the request is repeated in an error but the fixed texts of its field."""
+
+    throttle_classes = [SeasonGenerateThrottle]
+    http_method_names = ["post", "options"]
+
+    def post(self, request: Request, plan_id: UUID) -> Response:
+        user = _user(request)
+        body = ChangeBody(data=request.data)
+        body.is_valid(raise_exception=True)
+        try:
+            changed = change(user, plan_id, body.validated_data["request"])
+        except DjangoValidationError as error:
+            raise serializers.ValidationError(error.message_dict) from None
+        except services.PlanNotFound:
+            return _error(status.HTTP_404_NOT_FOUND, "not_found", NOT_FOUND)
+        except PlanNotChangeable:
+            return _error(status.HTTP_409_CONFLICT, "not_changeable", NOT_CHANGEABLE)
+        except NotConfiguredError:
+            return _error(status.HTTP_409_CONFLICT, "not_configured", NOT_CONFIGURED)
+        except PlanUnchanged:
+            return _error(status.HTTP_422_UNPROCESSABLE_ENTITY, "unchanged", UNCHANGED)
+        except PlanNotUsable as error:
+            return _error(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                "not_usable",
+                NOT_USABLE,
+                problems=[{"path": p.path, "message": p.message} for p in error.problems],
+            )
+        except ProviderError as error:
+            return provider_problem(error)
+        response = _detail(user, changed.plan, changed.report)
         response.status_code = status.HTTP_201_CREATED
         return response
 

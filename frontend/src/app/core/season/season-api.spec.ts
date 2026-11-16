@@ -239,6 +239,7 @@ const PLAN = {
   version: 2,
   status: 'confirmed',
   reason: 'Drafted by the coach',
+  request: '',
   rationale: 'Base first, then the race.',
   parent: OTHER_ID,
   created_at: STAMP,
@@ -430,6 +431,21 @@ describe('SeasonApi season plans', () => {
       });
     });
 
+    it('reads the request a version was made from, as it is', async () => {
+      const text = '<img src=x onerror=alert(1)>\nless cycling';
+      const action = api.plan(ID);
+      await answer(url, altered(PLAN, [['request'], text]) as object, 200);
+
+      expect(await action).toMatchObject({ plan: { request: text } });
+    });
+
+    it('takes a request of 500 characters, counted as the server counts them', async () => {
+      const action = api.plan(ID);
+      await answer(url, altered(PLAN, [['request'], '\u{1F600}'.repeat(500)]) as object, 200);
+
+      expect(await action).toMatchObject({ kind: 'ok' });
+    });
+
     it('takes over only the known fields', async () => {
       const crowded = altered(
         PLAN,
@@ -534,6 +550,9 @@ describe('SeasonApi season plans', () => {
         'no minutes done',
         altered(PLAN, [['weeks', 0, 'done'], [{ sport: 'running', minutes: 0 }]]),
       ],
+      ['no request', altered(PLAN, [['request'], REMOVE])],
+      ['a number as request', altered(PLAN, [['request'], 5])],
+      ['a request of 501 characters', altered(PLAN, [['request'], 'x'.repeat(501)])],
       ['no key sessions', altered(PLAN, [['weeks', 0, 'key_sessions'], REMOVE])],
       [
         'four key sessions',
@@ -886,6 +905,138 @@ describe('SeasonApi acting on season plans', () => {
 
     it.each([200, 422, 429, 500, 502])('rejects the unexpected status %i', async (status) => {
       await postFailing(api.restore(ID), url, 'oops', status);
+    });
+  });
+
+  describe('change', () => {
+    const url = `${PLANS_URL}${ID}/change/`;
+    const changed = { ...DRAFT, parent: ID, request: 'Less cycling in January' };
+
+    it('posts the request and returns the new draft', async () => {
+      const { result, request } = await post(
+        api.change(ID, 'Less cycling in January'),
+        url,
+        changed,
+        201,
+      );
+
+      expect(request.request.body).toEqual({ request: 'Less cycling in January' });
+      expect(result).toMatchObject({
+        kind: 'ok',
+        plan: { status: 'draft', parent: ID, request: 'Less cycling in January' },
+      });
+    });
+
+    it('returns the messages of a request that was not accepted, by field and as a list', async () => {
+      const { result } = await post(
+        api.change(ID, ''),
+        url,
+        { request: ['Say what you want changed.'] },
+        400,
+      );
+
+      expect(result).toEqual({
+        kind: 'invalid',
+        errors: ['Say what you want changed.'],
+        fields: { request: ['Say what you want changed.'] },
+      });
+    });
+
+    it('says that a version does not exist', async () => {
+      const { result } = await post(api.change(ID, 'x'), url, { code: 'not_found' }, 404);
+
+      expect(result).toEqual({ kind: 'not_found' });
+    });
+
+    it('says that only the confirmed version and a draft can be changed', async () => {
+      const { result } = await post(api.change(ID, 'x'), url, { code: 'not_changeable' }, 409);
+
+      expect(result).toEqual({ kind: 'not_changeable' });
+    });
+
+    it.each([
+      ['the code of the provider', { code: 'not_configured' }],
+      ['no body', null],
+      ['a page of a proxy', PROXY_PAGE],
+      ['an unknown code', { code: 'weird' }],
+    ])('keeps a 409 with %s as "no provider"', async (_name, body) => {
+      const { result } = await post(api.change(ID, 'x'), url, body as object | null, 409);
+
+      expect(result).toEqual({ kind: 'not_configured' });
+    });
+
+    it('says when the coach gave the season back as it was', async () => {
+      const { result } = await post(api.change(ID, 'x'), url, { code: 'unchanged' }, 422);
+
+      expect(result).toEqual({ kind: 'unchanged' });
+    });
+
+    it('says when the coach gave nothing usable, and what was wrong', async () => {
+      const problems = [{ path: '', message: 'The answer is not one JSON object.' }];
+
+      const { result } = await post(
+        api.change(ID, 'x'),
+        url,
+        { code: 'not_usable', problems },
+        422,
+      );
+
+      expect(result).toEqual({ kind: 'not_usable', problems });
+    });
+
+    it('rejects an unusable-plan answer without problems', async () => {
+      await postFailing(api.change(ID, 'x'), url, { code: 'not_usable' }, 422);
+    });
+
+    it('says when this server limits the requests', async () => {
+      const { result } = await post(api.change(ID, 'x'), url, THROTTLED, 429);
+
+      expect(result).toEqual({ kind: 'rate_limited' });
+    });
+
+    it.each([
+      [502, 'invalid_key'],
+      [503, 'unavailable'],
+    ])('returns the problem %i %s with the text of the server', async (status, code) => {
+      const { result } = await post(
+        api.change(ID, 'x'),
+        url,
+        { detail: PROVIDER_TEXT, code },
+        status,
+      );
+
+      expect(result).toEqual({
+        kind: 'provider_problem',
+        problem: code,
+        message: PROVIDER_TEXT,
+        retry_after: null,
+      });
+    });
+
+    it.each(['1', 'not-an-id', '../season', `${ID}/x`])(
+      'does not send %j, which is no id',
+      async (id) => {
+        expect(await api.change(id, 'x')).toEqual({ kind: 'not_found' });
+        backend.expectNone(() => true);
+      },
+    );
+
+    it.each([401, 403])('says when the session is gone (%i)', async (status) => {
+      const { result } = await post(api.change(ID, 'x'), url, NO_SESSION, status);
+
+      expect(result).toEqual({ kind: 'forbidden' });
+    });
+
+    it.each([
+      ['a draft without a report', altered(changed, [['report'], null])],
+      ['a broken week', altered(changed, [['weeks', 0, 'focus'], 'rest'])],
+      ['no body', null],
+    ])('rejects a draft with %s', async (_name, bad) => {
+      await postFailing(api.change(ID, 'x'), url, bad as object | null, 201);
+    });
+
+    it.each([200, 500])('rejects the unexpected status %i', async (status) => {
+      await postFailing(api.change(ID, 'x'), url, 'oops', status);
     });
   });
 });

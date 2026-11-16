@@ -19,7 +19,7 @@ from accounts.models import User
 from planning.schema import Sport
 from planning.validation import Report
 
-from .models import REASON_MAX, SeasonPlanVersion
+from .models import REASON_MAX, REQUEST_MAX, SeasonPlanVersion
 from .rules import SeasonContext, validate_season
 from .schema import SeasonPlan, parse_season_plan, to_json
 from .storage import skeleton_data, skeleton_from_data
@@ -65,20 +65,24 @@ def save_draft(
     context: SeasonContext,
     reason: str = "",
     parent: UUID | None = None,
+    request: str = "",
 ) -> SeasonPlanVersion:
     """Store ``plan`` as the next version of the season plan of ``user``, as a draft, with the
     skeleton and the sports it was made for.
 
-    ``parent`` is the version it replaces; ``reason`` is a short plain line saying why. Nothing is
+    ``parent`` is the version it replaces; ``reason`` is a short plain line saying why; ``request``
+    is what the athlete asked for if this version was made on request (plain text, line breaks
+    allowed, at most ``REQUEST_MAX`` characters). Nothing is
     stored if anything goes wrong. The plan is stored as it is, even if the checks have things to
     say about it."""
     reason = _clean_reason(reason)
+    request = clean_request(request)
     if parent is not None:
         get(user, parent)  # it must be one of the user's own
     for attempt in (1, 2):
         try:
             with transaction.atomic():
-                return _store(user, plan, context, reason, parent)
+                return _store(user, plan, context, reason, parent, request)
         except IntegrityError:
             # Another request took the version number first; the next round counts again.
             if attempt == 2:
@@ -185,6 +189,7 @@ def _store(
     context: SeasonContext,
     reason: str,
     parent: UUID | None,
+    request: str = "",
 ) -> SeasonPlanVersion:
     last = (
         SeasonPlanVersion.objects.for_user(user)
@@ -198,11 +203,24 @@ def _store(
         version=(last or 0) + 1,
         parent_id=parent,
         reason=reason,
+        request=request,
         rationale=data["rationale"],
         weeks=data["weeks"],
         skeleton=skeleton_data(context.skeleton),
         sports=[sport.value for sport in Sport if sport in context.sports],
     )
+
+
+def clean_request(request: str) -> str:
+    """The change request as it is stored: line ends as ``\\n``, trimmed. Plain text with line
+    breaks; any other control character, or more than ``REQUEST_MAX`` characters, is refused
+    (``ValidationError`` with the field ``request``; nothing of the text in the message)."""
+    text = request.replace("\r\n", "\n").replace("\r", "\n").strip()
+    if len(text) > REQUEST_MAX:
+        raise ValidationError({"request": f"Use at most {REQUEST_MAX} characters."})
+    if not all(char == "\n" or char.isprintable() for char in text):
+        raise ValidationError({"request": "A request is plain text."})
+    return text
 
 
 def _clean_reason(reason: str) -> str:

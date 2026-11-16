@@ -12,6 +12,9 @@ confirmed. What is stored of a call is the usage record of ``coach.services`` (f
 """
 
 from dataclasses import dataclass
+from uuid import UUID
+
+from django.core.exceptions import ValidationError
 
 from accounts.models import User
 from coach import services as coach
@@ -26,13 +29,20 @@ from . import services
 from .briefing import build_briefing
 from .inputs import skeleton_for
 from .models import SeasonPlanVersion
-from .prompt import SEASON_MAX_TOKENS, SYSTEM_PROMPT, extract_plan, first_message
+from .prompt import (
+    SEASON_MAX_TOKENS,
+    SYSTEM_PROMPT,
+    change_message,
+    extract_plan,
+    first_message,
+)
 from .rules import SeasonContext, validate_season
 from .schema import SeasonPlan
 
 # The answers the coach may give for one season: one try and two repairs.
 ATTEMPTS = 3
 REASON = "Drafted by the coach"
+CHANGE_REASON = "Changed on request from version {version}"
 
 
 class NothingToPlan(Exception):
@@ -47,6 +57,16 @@ class PlanNotUsable(Exception):
     def __init__(self, problems: tuple[Problem, ...]) -> None:
         super().__init__("The coach did not give a usable plan.")
         self.problems = problems
+
+
+class PlanNotChangeable(Exception):
+    """Only the confirmed version and a draft can be changed: a version that was replaced or
+    discarded is restored first."""
+
+
+class PlanUnchanged(Exception):
+    """The coach gave the season back as it was (the same weeks, the same words), so there is no new
+    version to show. The calls are counted as usage all the same."""
 
 
 @dataclass(frozen=True)
@@ -87,7 +107,61 @@ def generate(user: User) -> Generated:
         raise NothingToPlan
     briefing = build_briefing(user, today_of(user), skeleton)
     context = SeasonContext(skeleton, frozenset(Sport(sport) for sport in briefing["sports"]))
-    messages = [first_message(briefing)]
+    best = _ask(user, context, first_message(briefing))
+    stored = services.save_draft(user, best.plan, context, reason=REASON)
+    return Generated(stored, best.report)
+
+
+def change(user: User, plan_id: UUID, request: str) -> Generated:
+    """Change the version ``plan_id`` as the athlete asks, with their coach, and store the answer
+    as the next version, a draft (``parent`` the version it was made from, ``request`` what was
+    asked). The new version has the skeleton and the sports of the old one; the old one is not
+    touched, and a confirmed one stays confirmed until the new one is.
+
+    Raises ``django.core.exceptions.ValidationError`` for a request that is empty, too long or not
+    plain text (checked before anything is sent), ``season.services.PlanNotFound``,
+    ``PlanNotChangeable`` (also before anything is sent), ``coach.services.NotConfiguredError``,
+    the errors of the provider, ``PlanNotUsable`` and ``PlanUnchanged``.
+    """
+    request = services.clean_request(request)
+    if request == "":
+        raise ValidationError({"request": "Say what you want changed."})
+    base = services.get(user, plan_id)
+    if base.status not in (SeasonPlanVersion.Status.CONFIRMED, SeasonPlanVersion.Status.DRAFT):
+        raise PlanNotChangeable
+    loaded = services.read(base)
+    briefing = build_briefing(user, today_of(user), loaded.context.skeleton, loaded.context.sports)
+    best = _ask(user, loaded.context, change_message(briefing, loaded.plan, request))
+    if best.plan == loaded.plan:
+        raise PlanUnchanged
+    stored = services.save_draft(
+        user,
+        best.plan,
+        loaded.context,
+        reason=CHANGE_REASON.format(version=base.version),
+        parent=base.pk,
+        request=request,
+    )
+    return Generated(stored, best.report)
+
+
+@dataclass(frozen=True)
+class _Answer:
+    """The best answer of a conversation: a plan that was read, with what the checks say."""
+
+    plan: SeasonPlan
+    report: Report
+
+
+def _ask(user: User, context: SeasonContext, first: Message) -> _Answer:
+    """Ask the coach with ``first`` and, if the answer cannot be read or has errors, tell it what
+    was wrong and let it try again, ``ATTEMPTS`` answers at most. The best answer wins: a readable
+    plan beats an unreadable one, fewer errors beat more and a tie goes to the later answer (which
+    has been told what was wrong). A provider that fails after a readable answer loses nothing.
+
+    Raises the errors of the provider if no readable plan came before them, and ``PlanNotUsable``
+    if no answer could be read."""
+    messages = [first]
     best: _Attempt | None = None
     for attempt_number in range(1, ATTEMPTS + 1):
         try:
@@ -104,23 +178,20 @@ def generate(user: User) -> Generated:
                 raise
             break  # keep what an earlier answer gave rather than lose it
         attempt = _assess(context, completion.text, completion.truncated)
-        # A readable plan beats an unreadable one and fewer errors beat more; a tie goes to the
-        # later answer, which has been told what was wrong.
         if best is None or best.plan is None or _no_worse(attempt, best):
             best = attempt
         if attempt.sound or attempt_number == ATTEMPTS:
             break
         errors = attempt.report.errors if attempt.report else ()
         messages = [
-            messages[0],
+            first,
             Message("assistant", attempt.answer if attempt.answer.strip() else "(no answer)"),
             repair_message(attempt.problems, errors),
         ]
     assert best is not None
     if best.plan is None or best.report is None:
         raise PlanNotUsable(best.problems)
-    stored = services.save_draft(user, best.plan, context, reason=REASON)
-    return Generated(stored, best.report)
+    return _Answer(best.plan, best.report)
 
 
 def _assess(context: SeasonContext, text: str, truncated: bool) -> _Attempt:

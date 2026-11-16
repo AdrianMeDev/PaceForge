@@ -17,6 +17,7 @@ from availability.models import (
 )
 from goals import services as goal_services
 from goals.models import Goal
+from planning.schema import Sport
 from season.briefing import (
     MAX_BYTES,
     MAX_RACES_TOLD,
@@ -351,6 +352,34 @@ class TestTheLimits:
 
         assert len(skeleton.weeks) <= MAX_WEEKS
         assert size < MAX_BYTES, f"{size} bytes against a limit of {MAX_BYTES}"
+
+
+class TestTheSportsOfAChange:
+    def test_a_briefing_can_tell_the_sports_a_plan_was_made_for(self, alice: User) -> None:
+        skeleton = skeleton_for(alice)
+
+        told = build_briefing(
+            alice, NOW.date(), skeleton, frozenset({Sport.CYCLING, Sport.RUNNING})
+        )
+
+        assert told["sports"] == ["running", "cycling"]
+
+    def test_without_them_it_tells_the_sports_the_athlete_has_chosen_now(self, alice: User) -> None:
+        AvailabilitySettings.objects.create(owner=alice, sports=["swimming"])
+
+        told = build_briefing(alice, NOW.date(), skeleton_for(alice))
+
+        assert told["sports"] == ["swimming"]
+
+    def test_the_other_keys_are_the_same(self, alice: User) -> None:
+        skeleton = skeleton_for(alice)
+
+        plain = build_briefing(alice, NOW.date(), skeleton)
+        told = build_briefing(alice, NOW.date(), skeleton, frozenset({Sport.CYCLING}))
+
+        assert {k: v for k, v in told.items() if k != "sports"} == {
+            k: v for k, v in plain.items() if k != "sports"
+        }
 
 
 class TestTheQueries:

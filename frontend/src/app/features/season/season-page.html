@@ -83,6 +83,11 @@
             requests a minute.
           </p>
         }
+        @if (work() === 'changing') {
+          <p role="status" data-testid="changing">
+            Your coach is changing the season. This can take a few minutes.
+          </p>
+        }
         @if (work() === 'restoring') {
           <p role="status" data-testid="restoring">Restoring the version…</p>
         }
@@ -124,6 +129,64 @@
           }
           @if (filled.rationale) {
             <p data-testid="rationale">{{ filled.rationale }}</p>
+          }
+          @if (filled.request) {
+            <p data-testid="request">
+              Made on your request: <q>{{ filled.request }}</q>
+            </p>
+            @if (differences(); as changes) {
+              <section class="changes" data-testid="changes">
+                <h3>What changed since version {{ parent()?.version }}</h3>
+                @if (changes.weeks.length === 0 && !changes.rationale) {
+                  <p class="hint" data-testid="no-changes">
+                    Nothing is different in the weeks. Only the words may have changed.
+                  </p>
+                }
+                @for (item of changes.weeks; track item.week_start) {
+                  <h4>{{ range(item.week_start) }}</h4>
+                  <ul data-testid="week-change">
+                    @for (entry of item.minutes; track entry.sport) {
+                      <li>
+                        {{ sportLabel[entry.sport] }}: {{ minutes(entry.before) }} →
+                        {{ minutes(entry.after) }}
+                      </li>
+                    }
+                    @if (item.total; as total) {
+                      <li>
+                        All together: {{ minutes(total.before) }} → {{ minutes(total.after) }}
+                      </li>
+                    }
+                    @if (item.focus; as change) {
+                      <li>
+                        Focus: {{ focusLabel[change.before] }} → {{ focusLabel[change.after] }}
+                      </li>
+                    }
+                    @for (added of item.sessions_added; track $index) {
+                      <li class="added">Key session added: {{ session(added) }}</li>
+                    }
+                    @for (removed of item.sessions_removed; track $index) {
+                      <li class="removed">Key session dropped: {{ session(removed) }}</li>
+                    }
+                    @if (item.reason; as reason) {
+                      <li>New reason: {{ reason.after }}</li>
+                    }
+                  </ul>
+                }
+                <p class="hint" data-testid="unchanged-count">
+                  {{ changes.unchanged }}
+                  {{ changes.unchanged === 1 ? 'week is' : 'weeks are' }} the same.
+                </p>
+                @if (changes.rationale; as rationale) {
+                  <p data-testid="rationale-change">
+                    The rationale was rewritten: {{ rationale.after }}
+                  </p>
+                }
+              </section>
+            } @else if (parentMissing()) {
+              <p class="hint" data-testid="parent-missing">
+                The version it was made from cannot be shown, so what changed cannot be told.
+              </p>
+            }
           }
           @if (filled.report; as report) {
             @if (findings().length > 0) {
@@ -188,6 +251,50 @@
               </button>
             </div>
           }
+        }
+
+        @if (canChange()) {
+          <section class="change" data-testid="change" aria-label="Ask for a change">
+            <h3>Ask for a change</h3>
+            @if (configured()) {
+              <label for="season-request">What should be different?</label>
+              <textarea
+                id="season-request"
+                rows="3"
+                autocomplete="off"
+                aria-describedby="season-request-hint season-request-count"
+                [value]="requestText()"
+                [disabled]="busy()"
+                [attr.aria-invalid]="requestError() ? true : null"
+                (input)="requestText.set($any($event.target).value)"
+              ></textarea>
+              @if (requestError(); as message) {
+                <p class="field-error" role="alert" data-testid="request-error">{{ message }}</p>
+              }
+              <p class="hint" id="season-request-hint">
+                For example: less cycling in January. Your coach changes this version into a new
+                draft, and you see what is different before you confirm it. It costs as much as
+                drafting the season.
+              </p>
+              <p class="hint" id="season-request-count" data-testid="request-count">
+                {{ requestLength() }} / {{ requestMax }}
+              </p>
+              <button
+                type="button"
+                class="secondary"
+                data-testid="change-submit"
+                [disabled]="busy() || !requestFilled()"
+                (click)="change()"
+              >
+                Ask my coach for a change
+              </button>
+            } @else {
+              <p class="hint" data-testid="change-no-provider">
+                To let your coach change the season you need an AI provider.
+                <a routerLink="/settings/connections">Set one up</a>
+              </p>
+            }
+          </section>
         }
 
         @if (shown.main_race; as main) {

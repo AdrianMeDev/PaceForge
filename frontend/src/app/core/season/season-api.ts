@@ -11,12 +11,14 @@ import {
   isOneOf,
   isUuid,
   toFindings,
+  toInvalid,
   toProblems,
   toProviderProblem,
   toRateLimit,
   toReport,
 } from '../api/coach-replies';
 import {
+  ChangeSeasonResult,
   ConfirmSeasonResult,
   DoneMinutes,
   DiscardSeasonResult,
@@ -43,7 +45,7 @@ import {
 
 const URL = `${API_BASE}/season/`;
 const PLANS_URL = `${URL}plans/`;
-const HANDLED_ERRORS = [401, 403, 404, 409, 422, 429, 502, 503];
+const HANDLED_ERRORS = [400, 401, 403, 404, 409, 422, 429, 502, 503];
 const PHASES: readonly string[] = ['base', 'build', 'specific', 'taper', 'transition'];
 const PRIORITIES: readonly string[] = ['main', 'secondary', 'preparation'];
 const DISCIPLINES: readonly string[] = ['running', 'cycling', 'swimming', 'triathlon'];
@@ -71,6 +73,8 @@ const CALENDAR_DATE = /^\d{4}-\d{2}-\d{2}$/;
 // The most the server sends: a year of weeks.
 const WEEKS_MAX = 52;
 const KEY_SESSIONS_MAX = 3;
+// The longest change request the server keeps.
+const REQUEST_MAX = 500;
 const DETAIL_MAX = 60;
 const WEEK_MINUTES_MAX = 7 * 24 * 60;
 const SESSION_MINUTES_MAX = 24 * 60;
@@ -148,6 +152,48 @@ export class SeasonApi {
         return codeOf(reply.body) === 'no_time' ? { kind: 'no_time' } : { kind: 'not_configured' };
       case 422:
         return { kind: 'not_usable', problems: toProblems(reply) };
+      case 429:
+        return toRateLimit(reply);
+      case 502:
+        return toProviderProblem(reply, 'unexpected');
+      case 503:
+        return toProviderProblem(reply, 'unavailable');
+      case 401:
+      case 403:
+        return { kind: 'forbidden' };
+      default:
+        throw unexpected(reply);
+    }
+  }
+
+  /**
+   * Asks the user's own coach to change a version as `request` wishes. This takes a while: up to
+   * a few minutes. The result is a new draft; the version that was changed is not touched.
+   */
+  async change(id: string, request: string): Promise<ChangeSeasonResult> {
+    if (!UUID.test(id)) {
+      return { kind: 'not_found' };
+    }
+    const reply = await this.send(
+      this.http.post(`${PLANS_URL}${id}/change/`, { request }, { observe: 'response' }),
+    );
+    switch (reply.status) {
+      case 201:
+        return { kind: 'ok', plan: toPlan(reply.body, reply) };
+      case 400:
+        return toInvalid(reply);
+      case 404:
+        return { kind: 'not_found' };
+      case 409:
+        // Two reasons share the status; the code tells them apart. Anything else keeps meaning
+        // what 409 meant first: no provider.
+        return codeOf(reply.body) === 'not_changeable'
+          ? { kind: 'not_changeable' }
+          : { kind: 'not_configured' };
+      case 422:
+        return codeOf(reply.body) === 'unchanged'
+          ? { kind: 'unchanged' }
+          : { kind: 'not_usable', problems: toProblems(reply) };
       case 429:
         return toRateLimit(reply);
       case 502:
@@ -301,12 +347,16 @@ function toVersions(reply: Reply): SeasonPlanVersion[] {
 /** Only the known fields are taken over; the weeks must be those of the skeleton they came with. */
 function toPlan(raw: unknown, reply: Reply): SeasonPlan {
   const item = asObject(raw, reply);
-  const { id, version, status, reason, rationale, parent, created_at, confirmed_at, weeks } = item;
+  const { id, version, status, reason, request, rationale, parent, created_at, confirmed_at } =
+    item;
+  const weeks = item['weeks'];
   if (
     !isUuid(id) ||
     !isVersion(version) ||
     !isOneOf<PlanStatus>(status, STATUSES) ||
     typeof reason !== 'string' ||
+    typeof request !== 'string' ||
+    [...request].length > REQUEST_MAX ||
     typeof rationale !== 'string' ||
     (parent !== null && !isUuid(parent)) ||
     !isTimestamp(created_at) ||
@@ -330,6 +380,7 @@ function toPlan(raw: unknown, reply: Reply): SeasonPlan {
     version,
     status,
     reason,
+    request,
     rationale,
     parent,
     created_at,
