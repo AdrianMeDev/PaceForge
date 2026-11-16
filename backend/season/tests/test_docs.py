@@ -1,9 +1,15 @@
 """The page ``docs/season.md`` is compared with the code, so that it cannot drift."""
 
 import re
+from datetime import date
 from pathlib import Path
 
-from season import rules, schema, skeleton
+import pytest
+
+from accounts.models import User
+from season import briefing, prompt, rules, schema, skeleton
+from season.briefing import build_briefing
+from season.inputs import skeleton_for
 from season.skeleton import Phase
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -173,3 +179,30 @@ class TestTheChecks:
         documented = {row[0]: int(row[1]) for row in table_after(section("The checks"), "Constant")}
 
         assert documented == {"WINDOW_PERCENT": rules.WINDOW_PERCENT}
+
+
+class TestWhatTheCoachIsTold:
+    @pytest.mark.django_db
+    def test_every_key_of_the_briefing_is_documented_and_every_documented_key_is_there(
+        self,
+    ) -> None:
+        user = User.objects.create_user("docs@example.com")
+        told = set(build_briefing(user, date(2026, 11, 19), skeleton_for(user)))
+        text = section("What the coach is told")
+
+        documented = {
+            cell for row in table_after(text, "Key") for cell in re.split(r",\s*", row[0])
+        }
+
+        assert documented == told
+
+    def test_the_limits_are_those_of_the_code(self) -> None:
+        text = section("What the coach is told")
+        documented = {row[0]: int(row[1]) for row in table_after(text, "Constant")}
+
+        assert documented == {
+            "MAX_RACES_TOLD": briefing.MAX_RACES_TOLD,
+            "RACE_TITLE_TOLD_MAX": briefing.RACE_TITLE_TOLD_MAX,
+            "MAX_BYTES": briefing.MAX_BYTES,
+            "SEASON_MAX_TOKENS": prompt.SEASON_MAX_TOKENS,
+        }

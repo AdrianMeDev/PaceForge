@@ -145,6 +145,39 @@ A **key session**:
 | `WEEK_MINUTES_MAX` | 10080 | Minutes of one sport in a week: all of them. |
 | `KEY_SESSION_MINUTES_MAX` | 1440 | Minutes of a key session: a day. |
 
+## What the coach is told
+
+The coach gets a **briefing** (`season/briefing.py`): a fixed set of keys, as JSON, built from the
+skeleton and from the briefing of the [week plan](weekly-plan.md#what-the-coach-is-told), so the
+sports, the facts, the best times and the limitations are told in the same words and under the
+same rules as there. A test fails if a key is added without being listed here.
+
+| Key | What it holds |
+| --- | ------------- |
+| `today` | The day it is for the athlete. |
+| `rolling`, `truncated` | There is no race to work towards (twelve weeks of base and build), or the last race lies beyond a year and the skeleton stops. |
+| `peak_minutes` | The highest target of all weeks. |
+| `weeks` | The skeleton: for every week `week_start`, `phase`, `recovery`, `target_minutes`, `capacity_minutes` and `race_dates`. |
+| `races`, `races_not_shown` | The races in the weeks, by day, at most `MAX_RACES_TOLD`: `date`, `priority`, `discipline`, `distance_m` and the `title`, cut to `RACE_TITLE_TOLD_MAX` characters. The title is the athlete's own text and is data, never instructions. |
+| `sports`, `sport_preferences`, `strength_focus` | As in the week plan. |
+| `athlete`, `best_times`, `vdot` | As in the week plan: the age (never the birth year), the facts of the athlete, the running form. |
+| `limits`, `limitations`, `limitations_not_shown` | As in the week plan: the limits of the intensity level and the current limitations (body part and sports, no text). |
+| `typical_weekly_minutes`, `recent_weeks_minutes`, `weekly_budget_minutes` | The normal week, the recent weeks and the weekly budget. |
+
+What is **never** sent: the name, the e-mail address, ids, the notes of goals, the activities, the
+free text about limitations and anything of other users.
+
+The system prompt is the same for every athlete: it names the format and the checks with their
+constants and says how to read the phases. The answer may take `SEASON_MAX_TOKENS` tokens; one
+that is cut off is not used.
+
+| Constant | Value | Meaning |
+| -------- | ----- | ------- |
+| `MAX_RACES_TOLD` | 20 | Races told to the coach, the earliest first; the rest is counted. |
+| `RACE_TITLE_TOLD_MAX` | 60 | Characters of the title of a race that are told. |
+| `MAX_BYTES` | 24000 | The most the JSON of a briefing may take (UTF-8, every free-text character at six bytes). A test builds the worst case. |
+| `SEASON_MAX_TOKENS` | 16000 | The most the coach may write for a season. |
+
 ## The checks
 
 The coach may ignore the skeleton it is given, so every filled season is checked by code
