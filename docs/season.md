@@ -179,7 +179,9 @@ free text about limitations and anything of other users.
 
 The system prompt is the same for every athlete: it names the format and the checks with their
 constants and says how to read the phases. The answer may take `SEASON_MAX_TOKENS` tokens; one
-that is cut off is not used.
+that is cut off is not used. The prompt holds no date, no name and no number of the moment, so
+that Anthropic's [prompt cache](../README.md#ai-coach-bring-your-own-key) can read it; a test keeps
+it that way.
 
 | Constant | Value | Meaning |
 | -------- | ----- | ------- |
