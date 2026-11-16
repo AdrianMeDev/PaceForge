@@ -1,0 +1,153 @@
+<div class="panel">
+  <h2>About you</h2>
+  <p class="hint">
+    All optional. Your AI coach is told your age (worked out from the year, which is not sent), sex,
+    weight, resting heart rate, years of training, strength experience and equipment with every plan
+    request, as numbers and fixed words and without any text of yours. Where they go:
+    {{ provider() }}. An empty field removes what was saved.
+  </p>
+
+  @for (message of errors(); track $index) {
+    <p class="alert" role="alert">{{ message }}</p>
+  }
+  @if (notice(); as text) {
+    <p class="notice" role="status">{{ text }}</p>
+  }
+
+  <form class="form" novalidate (submit)="save($event)">
+    <div class="grid">
+      <div class="field">
+        <label for="body-birth-year">Year of birth</label>
+        <input
+          id="body-birth-year"
+          type="text"
+          inputmode="numeric"
+          autocomplete="off"
+          [value]="draft().birthYear"
+          [attr.aria-invalid]="fieldErrors()['birth_year'] ? true : null"
+          (input)="set('birthYear', readValue($event))"
+        />
+        @if (fieldErrors()['birth_year']; as message) {
+          <p class="field-error" role="alert">{{ message }}</p>
+        }
+      </div>
+
+      <div class="field">
+        <label for="body-sex">Sex</label>
+        <select
+          id="body-sex"
+          [attr.aria-invalid]="fieldErrors()['sex'] ? true : null"
+          (change)="set('sex', $any(readValue($event)))"
+        >
+          <option value="" [selected]="draft().sex === ''">Not said</option>
+          @for (entry of sexes; track entry[0]) {
+            <option [value]="entry[0]" [selected]="draft().sex === entry[0]">
+              {{ entry[1] }}
+            </option>
+          }
+        </select>
+        @if (fieldErrors()['sex']; as message) {
+          <p class="field-error" role="alert">{{ message }}</p>
+        }
+      </div>
+
+      <div class="field">
+        <label for="body-weight">Weight (kg)</label>
+        <input
+          id="body-weight"
+          type="text"
+          inputmode="decimal"
+          autocomplete="off"
+          [value]="draft().weight"
+          [attr.aria-invalid]="fieldErrors()['weight_kg'] ? true : null"
+          (input)="set('weight', readValue($event))"
+        />
+        @if (fieldErrors()['weight_kg']; as message) {
+          <p class="field-error" role="alert">{{ message }}</p>
+        }
+      </div>
+
+      <div class="field">
+        <label for="body-resting-hr">Resting heart rate (bpm)</label>
+        <input
+          id="body-resting-hr"
+          type="text"
+          inputmode="numeric"
+          autocomplete="off"
+          [value]="draft().restingHr"
+          [attr.aria-invalid]="fieldErrors()['resting_hr'] ? true : null"
+          (input)="set('restingHr', readValue($event))"
+        />
+        @if (fieldErrors()['resting_hr']; as message) {
+          <p class="field-error" role="alert">{{ message }}</p>
+        }
+      </div>
+    </div>
+
+    <fieldset class="group">
+      <legend>Years of training</legend>
+      <div class="grid">
+        @for (entry of sports; track entry[0]) {
+          <div class="field">
+            <label [for]="'body-years-' + entry[0]">{{ entry[1] }}</label>
+            <input
+              [id]="'body-years-' + entry[0]"
+              type="text"
+              inputmode="numeric"
+              autocomplete="off"
+              [value]="draft().years[entry[0]]"
+              [attr.aria-invalid]="fieldErrors()['training_years'] ? true : null"
+              (input)="setYears(entry[0], readValue($event))"
+            />
+          </div>
+        }
+      </div>
+      @if (fieldErrors()['training_years']; as message) {
+        <p class="field-error" role="alert">{{ message }}</p>
+      }
+    </fieldset>
+
+    <div class="field">
+      <label for="body-experience">Strength training experience</label>
+      <select
+        id="body-experience"
+        [attr.aria-invalid]="fieldErrors()['strength_experience'] ? true : null"
+        (change)="set('experience', $any(readValue($event)))"
+      >
+        <option value="" [selected]="draft().experience === ''">Not said</option>
+        @for (entry of experiences; track entry[0]) {
+          <option [value]="entry[0]" [selected]="draft().experience === entry[0]">
+            {{ entry[1] }}
+          </option>
+        }
+      </select>
+      @if (fieldErrors()['strength_experience']; as message) {
+        <p class="field-error" role="alert">{{ message }}</p>
+      }
+    </div>
+
+    <fieldset class="group">
+      <legend>Equipment for strength training (none ticked: not said)</legend>
+      @for (entry of equipment; track entry[0]) {
+        <div class="check">
+          <input
+            type="checkbox"
+            [id]="'body-equipment-' + entry[0]"
+            [checked]="draft().equipment.includes(entry[0])"
+            (change)="setEquipment(entry[0], isChecked($event))"
+          />
+          <label [for]="'body-equipment-' + entry[0]">{{ entry[1] }}</label>
+        </div>
+      }
+      @if (fieldErrors()['strength_equipment']; as message) {
+        <p class="field-error" role="alert">{{ message }}</p>
+      }
+    </fieldset>
+
+    <div class="actions">
+      <button type="submit" class="primary" [disabled]="busy()">
+        {{ busy() ? 'Saving…' : 'Save' }}
+      </button>
+    </div>
+  </form>
+</div>
