@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from accounts.models import User
-from season import briefing, prompt, rules, schema, skeleton
+from season import briefing, generation, prompt, rules, schema, skeleton
 from season.briefing import build_briefing
 from season.inputs import skeleton_for
 from season.skeleton import Phase
@@ -206,3 +206,36 @@ class TestWhatTheCoachIsTold:
             "MAX_BYTES": briefing.MAX_BYTES,
             "SEASON_MAX_TOKENS": prompt.SEASON_MAX_TOKENS,
         }
+
+
+class TestTheFilledPlans:
+    def test_the_attempts_are_the_ones_of_the_code(self) -> None:
+        documented = {
+            row[0]: int(row[1]) for row in table_after(section("The filled plans"), "Constant")
+        }
+
+        assert documented == {"ATTEMPTS": generation.ATTEMPTS}
+
+    def test_the_statuses_are_named(self) -> None:
+        from season.models import SeasonPlanVersion
+
+        text = section("The filled plans")
+
+        for status in SeasonPlanVersion.Status:
+            assert f"`{status.value}`" in text, status
+
+    def test_the_api_names_the_endpoints_and_the_fields_of_a_summary(self) -> None:
+        text = section("The API")
+
+        for name in ("/api/season/plans/", "generate/", "confirm/", "discard/"):
+            assert name in text, name
+        for field in (
+            "id",
+            "version",
+            "status",
+            "reason",
+            "week_count",
+            "created_at",
+            "confirmed_at",
+        ):
+            assert f"`{field}`" in text, field

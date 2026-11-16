@@ -233,10 +233,14 @@ Things to know before you allow one of them:
 2. Press **Check connection**. PaceForge sends one request with the fixed text `Reply with the
    single word: ok` (at most 16 tokens, no system prompt) and **nothing about you or your
    training**, and shows how it went.
-3. Change anything later by saving again. Any change of provider, model, address or key sets the
-   status back to **Not checked yet**; saving the very same setup again changes nothing. The check
+3. Optionally give a **model for the season plan** (same rules as the model name). The season is
+   the biggest thing the coach is asked, so a stronger model may be worth it there; left empty,
+   the normal model does it. It is the same provider and the same key, and only the season plan
+   uses it.
+4. Change anything later by saving again. Any change of provider, model, season model, address or
+   key sets the status back to **Not checked yet**; saving the very same setup again changes nothing. The check
    always uses the **saved** setup (the page says when you have unsaved changes).
-4. **Remove** deletes the setup and the stored key after a question. PaceForge cannot revoke the key
+5. **Remove** deletes the setup and the stored key after a question. PaceForge cannot revoke the key
    at your provider; delete it there if it should stop working.
 
 **The status** shows what was learned at the last call:
@@ -266,7 +270,7 @@ fixed text on the page; nothing the provider says is shown or stored.
   check marks the key as refused (without asking the provider) and you enter the key again.
 
 **What is stored about your calls.** One record per request that reached the provider: provider,
-model, purpose, how it ended (success, key refused, rate limited, unavailable, unexpected), the
+the model that was used (the season model for the season plan, else the normal one), purpose, how it ended (success, key refused, rate limited, unavailable, unexpected), the
 tokens the provider counted (if it said) and the time. **Never** the prompt, the answer or an error
 text. The page shows the sum of the last 30 days: calls (failed ones included), input and output
 tokens. A request that was refused before it was sent (the address is no longer allowed) is not
@@ -754,8 +758,43 @@ the next time you look. The numbers are a starting point, not coaching science.
   and build, and says what to add. A race more than a year away cuts the skeleton off after 52
   weeks.
 
+### Filling the season with your coach
+
+The skeleton is only the frame. With an [AI provider](#ai-coach-bring-your-own-key) set up your own
+coach **fills the weeks**: for every week the minutes of each sport, a focus, up to three key
+sessions (a long run, a threshold session, the race …) and a reason. The model that does it is the
+**model for the season plan** if you gave one, else your normal model.
+
+- **What the coach is told:** the skeleton, your races (the title cut to 60 characters, as data and
+  never as instructions), your sports and their roles, the strength focus, your age (not your birth
+  year), your best times and VDOT, your limits and your current limitations (a body part and the
+  sports, no text) and your recent training. **Not** your name, e-mail address, the notes of your
+  goals, your activities or the free text about your limitations.
+- **What is checked:** the plan must have exactly the weeks of the skeleton, in their order. The
+  minutes of a week add up to its target, give or take ten percent, and never to more than the
+  week offers (a week of vacation has none). Only the sports you ticked, key sessions only in a
+  sport that has minutes that week and not longer than those minutes. A week with a race should have
+  a key session for it (a warning).
+- **Up to three answers:** if the answer cannot be read or breaks a rule, the coach is told what was
+  wrong (fixed texts, never its own words) and tries again, three answers at most. The best one is
+  kept; a plan with errors is still saved as a draft, so you see what is wrong, but it cannot be
+  confirmed. **This costs several times what a week does**, and up to three calls; the limit is 3
+  requests a minute.
+- **Versions:** every drafting is a new version. A draft can be **confirmed** (it replaces the
+  confirmed version, which stays as **superseded**) or **discarded**. A confirmed plan is never
+  changed. A plan keeps the skeleton and the sports it was made for, so it stays readable and is
+  checked against them when goals, time or the week move on; it is **not updated** by that.
+- **Not there yet:** the page does not show the filled plan or ask for one (the API does), the
+  week plan does not read it, there is no timeline or chart and no change request with a preview.
+  Whether a model fills a whole year well within `SEASON_MAX_TOKENS` has not been tried against a
+  real provider.
+
 Every number and the rules are in [`docs/season.md`](docs/season.md). The API is `GET /api/season/`
-(read only).
+for the skeleton and, for the filled plans, `GET /api/season/plans/` (the versions),
+`POST /api/season/plans/generate/` (draft one), `GET /api/season/plans/<id>/` and
+`POST /api/season/plans/<id>/confirm/` and `…/discard/`. Errors have a fixed text and a `code`:
+`not_configured`, `no_time`, `not_usable` (with the `problems`), `not_found`, `not_a_draft`,
+`not_confirmable` (with the `findings`), and the codes of a provider that did not answer.
 
 ## Week plan
 
