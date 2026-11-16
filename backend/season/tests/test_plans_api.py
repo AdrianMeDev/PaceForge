@@ -43,6 +43,7 @@ DETAIL_FIELDS = {
     "version",
     "status",
     "reason",
+    "request",
     "rationale",
     "parent",
     "created_at",

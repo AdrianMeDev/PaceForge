@@ -11,7 +11,7 @@ from availability.models import UnavailablePeriod
 from goals.models import Goal
 from planning.schema import Sport
 from season import services
-from season.models import SeasonPlanVersion
+from season.models import REQUEST_MAX, SeasonPlanVersion
 from season.rules import SeasonContext
 from season.schema import Focus, KeySession, PlanWeek, SeasonPlan, SessionKind, to_json
 from season.services import (
@@ -150,6 +150,28 @@ class TestSavingADraft:
         with pytest.raises(PlanNotFound):
             draft(alice, parent=theirs.pk)
         assert not SeasonPlanVersion.objects.filter(owner=alice).exists()
+
+    def test_a_change_request_is_stored_trimmed_with_its_line_breaks(self, alice: User) -> None:
+        plan = draft(alice, request="  less cycling\r\nin January \n")
+
+        assert plan.request == "less cycling\nin January"
+
+    def test_without_a_request_it_is_empty(self, alice: User) -> None:
+        assert draft(alice).request == ""
+
+    def test_a_request_of_the_longest_size_is_stored(self, alice: User) -> None:
+        assert draft(alice, request="é" * REQUEST_MAX).request == "é" * REQUEST_MAX
+
+    @pytest.mark.parametrize("request_text", ["x" * 501, "bell\x07", "tab\there", "null\x00"])
+    def test_a_request_that_is_too_long_or_not_plain_stores_nothing(
+        self, alice: User, request_text: str
+    ) -> None:
+        with pytest.raises(ValidationError) as raised:
+            draft(alice, request=request_text)
+
+        assert "request" in raised.value.message_dict
+        assert request_text not in str(raised.value)
+        assert SeasonPlanVersion.objects.count() == 0
 
     @pytest.mark.parametrize("reason", ["x" * 201, "two\nlines", "bell\x07"])
     def test_a_reason_that_is_not_one_plain_line_stores_nothing(

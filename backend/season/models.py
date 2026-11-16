@@ -10,6 +10,8 @@ from core.models import OwnedModel
 from .schema import RATIONALE_MAX
 
 REASON_MAX = 200
+# The change request of the athlete that a version was made from: their own words, as text.
+REQUEST_MAX = 500
 
 
 class SeasonPlanVersion(OwnedModel):
@@ -41,6 +43,9 @@ class SeasonPlanVersion(OwnedModel):
         "self", null=True, blank=True, on_delete=models.SET_NULL, related_name="revisions"
     )
     reason = models.CharField(max_length=REASON_MAX, blank=True)
+    # What the athlete asked for if the coach made this version of another one; free text, shown as
+    # text and only ever sent to the coach as data.
+    request = models.CharField(max_length=REQUEST_MAX, blank=True)
     rationale = models.CharField(max_length=RATIONALE_MAX, blank=True)
     weeks = models.JSONField(default=list, blank=True)
     skeleton = models.JSONField(default=dict, blank=True)
@@ -98,10 +103,19 @@ class SeasonPlanVersion(OwnedModel):
             stored = (
                 type(self)
                 .objects.filter(pk=self.pk)
-                .values_list("status", "reason", "rationale", "weeks", "skeleton", "sports")
+                .values_list(
+                    "status", "reason", "request", "rationale", "weeks", "skeleton", "sports"
+                )
                 .first()
             )
-            now = (self.reason, self.rationale, self.weeks, self.skeleton, self.sports)
+            now = (
+                self.reason,
+                self.request,
+                self.rationale,
+                self.weeks,
+                self.skeleton,
+                self.sports,
+            )
             if stored is not None and stored[0] != self.Status.DRAFT and stored[1:] != now:
                 raise ValidationError(
                     "The content of a plan that is not a draft cannot be changed."
