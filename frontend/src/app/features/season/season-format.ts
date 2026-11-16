@@ -8,7 +8,7 @@ import {
   Sport,
 } from '../../core/season/season-models';
 import { formatGoalDistance } from '../goals/goal-format';
-import { SPORT_LABELS, minutesText } from '../planning/plan-format';
+import { SPORT_LABELS, minutesText, weekRange } from '../planning/plan-format';
 
 export const PHASE_LABELS: Record<SeasonPhase, string> = {
   base: 'Base',
@@ -87,4 +87,14 @@ export function keySessionText(session: KeySession): string {
     parts.push(session.detail);
   }
   return parts.join(' · ');
+}
+
+/**
+ * Where a finding of the checks points: "16 Nov – 22 Nov" for a path into a week (`weeks[3]…`, the
+ * weeks as they are shown) and "Season" for anything else.
+ */
+export function seasonFindingPlace(path: string, weekStarts: string[]): string {
+  const match = /^weeks\[(\d+)\]/.exec(path);
+  const start = match === null ? undefined : weekStarts[Number(match[1])];
+  return start === undefined ? 'Season' : weekRange(start);
 }

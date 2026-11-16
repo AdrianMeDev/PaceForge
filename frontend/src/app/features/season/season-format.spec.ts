@@ -7,6 +7,7 @@ import {
   PRIORITY_LETTERS,
   keySessionText,
   minutesBySport,
+  seasonFindingPlace,
   raceText,
   usedShare,
 } from './season-format';
@@ -103,4 +104,20 @@ describe('the words of a filled season', () => {
       keySessionText({ sport: 'cycling', kind: 'threshold', minutes: 60, detail: '3 x 10 min' }),
     ).toBe('Cycling · Threshold · 1 h · 3 x 10 min');
   });
+});
+
+describe('seasonFindingPlace', () => {
+  const STARTS = ['2026-11-16', '2026-11-23'];
+
+  it('names the week a finding points into', () => {
+    expect(seasonFindingPlace('weeks[1].minutes', STARTS)).toBe('23 Nov – 29 Nov');
+    expect(seasonFindingPlace('weeks[0]', STARTS)).toBe('16 Nov – 22 Nov');
+  });
+
+  it.each(['', 'weeks', 'weeks[5].minutes', 'rationale', 'xweeks[0]'])(
+    'calls "%s" the season',
+    (path) => {
+      expect(seasonFindingPlace(path, STARTS)).toBe('Season');
+    },
+  );
 });

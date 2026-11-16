@@ -1,7 +1,12 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
+import { CoachApi } from '../../core/coach/coach-api';
+import { AiProviderState, GetProviderResult } from '../../core/coach/coach-models';
 import { SeasonApi } from '../../core/season/season-api';
 import {
+  ConfirmSeasonResult,
+  DiscardSeasonResult,
+  GenerateSeasonResult,
   GetSeasonPlanResult,
   GetSeasonResult,
   ListSeasonPlansResult,
@@ -58,6 +63,15 @@ const ROLLING: Season = {
   weeks: [week(), week({ week_start: '2026-11-23', phase: 'build' })],
 };
 
+const CONFIGURED: GetProviderResult = {
+  kind: 'ok',
+  state: { configured: true } as AiProviderState,
+};
+const NOT_CONFIGURED: GetProviderResult = {
+  kind: 'ok',
+  state: { configured: false } as AiProviderState,
+};
+
 function version(changes: Partial<SeasonPlanVersion> = {}): SeasonPlanVersion {
   return {
     id: '0195f3a0-0000-7000-8000-000000000001',
@@ -99,6 +113,22 @@ describe('SeasonPage', () => {
   let get: ReturnType<typeof vi.fn<() => Promise<GetSeasonResult>>>;
   let plans: ReturnType<typeof vi.fn<() => Promise<ListSeasonPlansResult>>>;
   let open: ReturnType<typeof vi.fn<(id: string) => Promise<GetSeasonPlanResult>>>;
+  let generate: ReturnType<typeof vi.fn<() => Promise<GenerateSeasonResult>>>;
+  let confirm: ReturnType<typeof vi.fn<(id: string) => Promise<ConfirmSeasonResult>>>;
+  let discard: ReturnType<typeof vi.fn<(id: string) => Promise<DiscardSeasonResult>>>;
+  let provider: ReturnType<typeof vi.fn<() => Promise<GetProviderResult>>>;
+
+  /** The stubs of the two APIs the page uses; `provider` says whether a coach is set up. */
+  function providers() {
+    return [
+      provideRouter([]),
+      {
+        provide: SeasonApi,
+        useValue: { get, plans, plan: open, generate, confirm, discard },
+      },
+      { provide: CoachApi, useValue: { get: provider } },
+    ];
+  }
 
   async function setup(first: GetSeasonResult | Error = { kind: 'ok', season: SEASON }) {
     get = vi.fn<() => Promise<GetSeasonResult>>();
@@ -106,6 +136,10 @@ describe('SeasonPage', () => {
       .fn<() => Promise<ListSeasonPlansResult>>()
       .mockResolvedValue({ kind: 'ok', plans: [] });
     open = vi.fn<(id: string) => Promise<GetSeasonPlanResult>>();
+    generate = vi.fn<() => Promise<GenerateSeasonResult>>();
+    confirm = vi.fn<(id: string) => Promise<ConfirmSeasonResult>>();
+    discard = vi.fn<(id: string) => Promise<DiscardSeasonResult>>();
+    provider = vi.fn<() => Promise<GetProviderResult>>().mockResolvedValue(CONFIGURED);
     if (first instanceof Error) {
       get.mockRejectedValueOnce(first);
       get.mockResolvedValue({ kind: 'ok', season: SEASON });
@@ -114,12 +148,23 @@ describe('SeasonPage', () => {
     }
     TestBed.configureTestingModule({
       imports: [SeasonPage],
-      providers: [provideRouter([]), { provide: SeasonApi, useValue: { get, plans, plan: open } }],
+      providers: providers(),
     });
     fixture = TestBed.createComponent(SeasonPage);
     page = fixture.nativeElement as HTMLElement;
     await settle(fixture);
   }
+
+  beforeEach(() => {
+    plans = vi
+      .fn<() => Promise<ListSeasonPlansResult>>()
+      .mockResolvedValue({ kind: 'ok', plans: [] });
+    open = vi.fn<(id: string) => Promise<GetSeasonPlanResult>>();
+    generate = vi.fn<() => Promise<GenerateSeasonResult>>();
+    confirm = vi.fn<(id: string) => Promise<ConfirmSeasonResult>>();
+    discard = vi.fn<(id: string) => Promise<DiscardSeasonResult>>();
+    provider = vi.fn<() => Promise<GetProviderResult>>().mockResolvedValue(CONFIGURED);
+  });
 
   const rows = () => Array.from(page.querySelectorAll('tbody tr:not(.reason)'));
   const cells = (index: number) =>
@@ -135,10 +180,7 @@ describe('SeasonPage', () => {
         .mockReturnValue(new Promise<never>(() => undefined));
       TestBed.configureTestingModule({
         imports: [SeasonPage],
-        providers: [
-          provideRouter([]),
-          { provide: SeasonApi, useValue: { get, plans, plan: open } },
-        ],
+        providers: providers(),
       });
       fixture = TestBed.createComponent(SeasonPage);
       fixture.detectChanges();
@@ -296,10 +338,7 @@ describe('SeasonPage', () => {
         .mockResolvedValue({ kind: 'ok', plan: shown });
       TestBed.configureTestingModule({
         imports: [SeasonPage],
-        providers: [
-          provideRouter([]),
-          { provide: SeasonApi, useValue: { get, plans, plan: open } },
-        ],
+        providers: providers(),
       });
       fixture = TestBed.createComponent(SeasonPage);
       page = fixture.nativeElement as HTMLElement;
@@ -498,6 +537,375 @@ describe('SeasonPage', () => {
       await settle(fixture);
 
       expect(text()).toContain('Your session has ended.');
+    });
+
+    describe('drafting', () => {
+      const alerts = () =>
+        Array.from(page.querySelectorAll('[role="alert"]')).map((alert) =>
+          alert.textContent?.replace(/\s+/g, ' ').trim(),
+        );
+      const click = async (testId: string) => {
+        query<HTMLButtonElement>(page, `[data-testid="${testId}"]`).click();
+        await settle(fixture);
+      };
+      const DRAFT_PLAN = () =>
+        plan({
+          id: '0195f3a0-0000-7000-8000-000000000003',
+          version: 3,
+          status: 'draft',
+          confirmed_at: null,
+          report: { valid: true, findings: [] },
+        });
+
+      it('offers to draft the first version, and says what it costs', async () => {
+        await load([]);
+
+        expect(query(page, '[data-testid="generate"]').textContent?.trim()).toBe(
+          'Draft the season with my coach',
+        );
+        expect(query(page, '[data-testid="cost"]').textContent).toContain('several times');
+        expect(query(page, '[data-testid="cost"]').textContent).toContain('three tries');
+      });
+
+      it('offers a new version when there is one already', async () => {
+        await load([CONFIRMED]);
+
+        expect(query(page, '[data-testid="generate"]').textContent?.trim()).toBe(
+          'Draft a new version',
+        );
+      });
+
+      it('sends the user to the connections without a provider', async () => {
+        provider = vi.fn<() => Promise<GetProviderResult>>().mockResolvedValue(NOT_CONFIGURED);
+        await load([]);
+        provider.mockResolvedValue(NOT_CONFIGURED);
+
+        expect(page.querySelector('[data-testid="generate"]')).toBeNull();
+        expect(query(query(page, '[data-testid="no-provider"]'), 'a').getAttribute('href')).toBe(
+          '/settings/connections',
+        );
+      });
+
+      it('shows the draft with its checks and refreshes the versions', async () => {
+        await load([CONFIRMED], plan({ id: CONFIRMED.id, version: 2 }));
+        const draft = {
+          ...DRAFT_PLAN(),
+          report: {
+            valid: false,
+            findings: [
+              {
+                severity: 'error' as const,
+                code: 'minutes_outside_target',
+                message: 'The week has 10 minutes; the skeleton aims for 240.',
+                path: 'weeks[1].minutes',
+              },
+              { severity: 'warning' as const, code: 'race_week', message: 'No race.', path: '' },
+            ],
+          },
+        };
+        generate.mockResolvedValue({ kind: 'ok', plan: draft });
+        plans.mockResolvedValue({ kind: 'ok', plans: [DRAFT, CONFIRMED] });
+
+        await click('generate');
+
+        expect(query(page, '.notice').textContent).toContain('A draft was made.');
+        expect(page.querySelectorAll('.versions li')).toHaveLength(2);
+        const findings = Array.from(page.querySelectorAll('.findings li')).map((item) =>
+          item.textContent?.replace(/\s+/g, ' ').trim(),
+        );
+        expect(findings).toEqual([
+          'Error · 23 Nov – 29 Nov: The week has 10 minutes; the skeleton aims for 240.',
+          'Note · Season: No race.',
+        ]);
+      });
+
+      it('says that the working takes a while, and allows nothing else meanwhile', async () => {
+        await load([DRAFT, CONFIRMED], plan({ id: CONFIRMED.id, version: 2 }));
+        let finish: (value: GenerateSeasonResult) => void = () => undefined;
+        generate.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+
+        query<HTMLButtonElement>(page, '[data-testid="generate"]').click();
+        fixture.detectChanges();
+
+        expect(query(page, '[data-testid="generating"]').textContent).toContain('a few minutes');
+        expect(query<HTMLButtonElement>(page, '[data-testid="generate"]').disabled).toBe(true);
+        expect(query<HTMLButtonElement>(page, '[data-testid="version-3"]').disabled).toBe(true);
+        finish({ kind: 'forbidden' });
+        await settle(fixture);
+      });
+
+      it('asks only once while it works', async () => {
+        await load([CONFIRMED]);
+        generate.mockReturnValue(new Promise(() => undefined));
+
+        const button = query<HTMLButtonElement>(page, '[data-testid="generate"]');
+        button.click();
+        button.click();
+        await settle(fixture);
+
+        expect(generate).toHaveBeenCalledTimes(1);
+      });
+
+      it('says when no week offers training time, and where to enter it', async () => {
+        await load([]);
+        generate.mockResolvedValue({ kind: 'no_time' });
+
+        await click('generate');
+
+        expect(alerts()).toEqual(['You have no training time in the weeks of your season.']);
+        expect(query(query(page, '[data-testid="no-time"]'), 'a').getAttribute('href')).toBe(
+          '/availability',
+        );
+      });
+
+      it('says what was wrong when the coach gave nothing usable', async () => {
+        await load([]);
+        generate.mockResolvedValue({
+          kind: 'not_usable',
+          problems: [{ path: '', message: 'The answer is not one JSON object.' }],
+        });
+
+        await click('generate');
+
+        expect(alerts()).toEqual([
+          'The coach did not give a plan that could be used. Please try again.',
+        ]);
+        expect(query(page, '.problems').textContent).toContain(
+          'The answer is not one JSON object.',
+        );
+      });
+
+      it.each([
+        [
+          'the text of the provider with the time to wait',
+          {
+            kind: 'provider_problem',
+            problem: 'rate_limited',
+            message: 'Slow down.',
+            retry_after: 17,
+          },
+          'Slow down. Try again in 17 seconds.',
+        ],
+        [
+          'the text of the provider',
+          { kind: 'provider_problem', problem: 'unavailable', message: 'Down.', retry_after: null },
+          'Down.',
+        ],
+        [
+          'a limit of this server',
+          { kind: 'rate_limited' },
+          'Too many requests. Please wait a minute and try again.',
+        ],
+      ] as [string, GenerateSeasonResult, string][])(
+        'shows %s',
+        async (_name, result, expected) => {
+          await load([CONFIRMED]);
+          generate.mockResolvedValue(result);
+
+          await click('generate');
+
+          expect(alerts()).toEqual([expected]);
+          expect(query<HTMLButtonElement>(page, '[data-testid="generate"]').disabled).toBe(false);
+        },
+      );
+
+      it('goes back to the hint when the provider is gone meanwhile', async () => {
+        await load([CONFIRMED]);
+        generate.mockResolvedValue({ kind: 'not_configured' });
+
+        await click('generate');
+
+        expect(page.querySelector('[data-testid="generate"]')).toBeNull();
+        expect(page.querySelector('[data-testid="no-provider"]')).not.toBeNull();
+      });
+
+      it('says when the request fails, and stays usable', async () => {
+        await load([CONFIRMED]);
+        generate.mockRejectedValue(new Error('offline'));
+
+        await click('generate');
+
+        expect(alerts()).toEqual(['Something went wrong. Please try again.']);
+        expect(rows()).toHaveLength(4);
+        expect(query<HTMLButtonElement>(page, '[data-testid="generate"]').disabled).toBe(false);
+      });
+
+      it('says when the session is gone', async () => {
+        await load([CONFIRMED]);
+        generate.mockResolvedValue({ kind: 'forbidden' });
+
+        await click('generate');
+
+        expect(text()).toContain('Your session has ended.');
+      });
+    });
+
+    describe('deciding', () => {
+      const DRAFT_ID = '0195f3a0-0000-7000-8000-000000000003';
+      const draft = (valid = true) =>
+        plan({
+          id: DRAFT_ID,
+          version: 3,
+          status: 'draft',
+          confirmed_at: null,
+          report: {
+            valid,
+            findings: valid
+              ? []
+              : [{ severity: 'error', code: 'x', message: 'Too much.', path: 'weeks[0].minutes' }],
+          },
+        });
+      const DRAFT_VERSION = version({
+        id: DRAFT_ID,
+        version: 3,
+        status: 'draft',
+        confirmed_at: null,
+      });
+      const alerts = () =>
+        Array.from(page.querySelectorAll('[role="alert"]')).map((alert) =>
+          alert.textContent?.replace(/\s+/g, ' ').trim(),
+        );
+      const click = async (testId: string) => {
+        query<HTMLButtonElement>(page, `[data-testid="${testId}"]`).click();
+        await settle(fixture);
+      };
+
+      it('confirms a draft that the checks passed, and says what it replaces', async () => {
+        await load([DRAFT_VERSION, CONFIRMED], draft());
+        expect(query(page, '[data-testid="replaces"]').textContent).toContain('replaces version 2');
+        confirm.mockResolvedValue({
+          kind: 'ok',
+          plan: {
+            ...draft(),
+            status: 'confirmed',
+            report: null,
+            confirmed_at: '2026-11-16T10:05:00Z',
+          },
+        });
+        plans.mockResolvedValue({
+          kind: 'ok',
+          plans: [
+            { ...DRAFT_VERSION, status: 'confirmed' },
+            { ...CONFIRMED, status: 'superseded' },
+          ],
+        });
+
+        await click('confirm');
+
+        expect(confirm).toHaveBeenCalledExactlyOnceWith(DRAFT_ID);
+        expect(query(page, '.notice').textContent).toContain('The plan is confirmed.');
+        expect(page.querySelector('[data-testid="confirm"]')).toBeNull();
+        expect(query(page, '[data-testid="plan-status"]').textContent).toContain('Confirmed');
+        const labels = Array.from(page.querySelectorAll('.versions button')).map(
+          (item) => item.textContent?.replace(/\s+/g, ' ').trim().split(' · ')[1],
+        );
+        expect(labels).toEqual(['Confirmed', 'Replaced']);
+      });
+
+      it('does not let a draft with errors be confirmed, and says why', async () => {
+        await load([DRAFT_VERSION], draft(false));
+
+        expect(query<HTMLButtonElement>(page, '[data-testid="confirm"]').disabled).toBe(true);
+        expect(query(page, '[data-testid="cannot-confirm"]').textContent).toContain(
+          'with errors cannot be confirmed',
+        );
+        expect(query(page, '.findings').textContent).toContain('Too much.');
+        expect(query<HTMLButtonElement>(page, '[data-testid="discard"]').disabled).toBe(false);
+      });
+
+      it('shows what the server found when it refuses to confirm', async () => {
+        await load([DRAFT_VERSION], draft());
+        confirm.mockResolvedValue({
+          kind: 'not_confirmable',
+          findings: [{ severity: 'error', code: 'x', message: 'Not good.', path: '' }],
+        });
+
+        await click('confirm');
+
+        expect(alerts()).toEqual(['The plan has errors and cannot be confirmed.']);
+        expect(query(page, '.findings').textContent).toContain('Not good.');
+        expect(query<HTMLButtonElement>(page, '[data-testid="confirm"]').disabled).toBe(true);
+      });
+
+      it('discards a draft and keeps the version in the list', async () => {
+        await load([DRAFT_VERSION, CONFIRMED], draft());
+        discard.mockResolvedValue({
+          kind: 'ok',
+          plan: { ...draft(), status: 'discarded', report: null },
+        });
+        plans.mockResolvedValue({
+          kind: 'ok',
+          plans: [{ ...DRAFT_VERSION, status: 'discarded' }, CONFIRMED],
+        });
+
+        await click('discard');
+
+        expect(discard).toHaveBeenCalledExactlyOnceWith(DRAFT_ID);
+        expect(query(page, '.notice').textContent).toContain('The draft was discarded.');
+        expect(page.querySelector('[data-testid="discard"]')).toBeNull();
+        expect(page.querySelectorAll('.versions li')).toHaveLength(2);
+      });
+
+      it.each(['confirm', 'discard'])('says when the draft is gone (%s)', async (action) => {
+        await load([DRAFT_VERSION], draft());
+        const gone = { kind: 'not_found' } as const;
+        confirm.mockResolvedValue(gone);
+        discard.mockResolvedValue(gone);
+        plans.mockResolvedValue({ kind: 'ok', plans: [] });
+
+        await click(action);
+
+        expect(alerts()).toEqual(['That plan does not exist any more.']);
+        expect(page.querySelector('[data-testid="plan-status"]')).toBeNull();
+      });
+
+      it.each(['confirm', 'discard'])(
+        'reloads the plan when it is no draft any more (%s)',
+        async (action) => {
+          await load([DRAFT_VERSION], draft());
+          const stale = { kind: 'not_a_draft' } as const;
+          confirm.mockResolvedValue(stale);
+          discard.mockResolvedValue(stale);
+          open.mockResolvedValue({
+            kind: 'ok',
+            plan: { ...draft(), status: 'discarded', report: null },
+          });
+
+          await click(action);
+
+          expect(alerts()).toEqual(['That plan is not a draft any more.']);
+          expect(query(page, '[data-testid="plan-status"]').textContent).toContain('Discarded');
+          expect(page.querySelector('[data-testid="confirm"]')).toBeNull();
+        },
+      );
+
+      it.each(['confirm', 'discard'])('says when the request fails (%s)', async (action) => {
+        await load([DRAFT_VERSION], draft());
+        confirm.mockRejectedValue(new Error('offline'));
+        discard.mockRejectedValue(new Error('offline'));
+
+        await click(action);
+
+        expect(alerts()).toEqual(['Something went wrong. Please try again.']);
+        expect(query<HTMLButtonElement>(page, '[data-testid="discard"]').disabled).toBe(false);
+      });
+
+      it.each(['confirm', 'discard'])('says when the session is gone (%s)', async (action) => {
+        await load([DRAFT_VERSION], draft());
+        confirm.mockResolvedValue({ kind: 'forbidden' });
+        discard.mockResolvedValue({ kind: 'forbidden' });
+
+        await click(action);
+
+        expect(text()).toContain('Your session has ended.');
+      });
+
+      it('has nothing to decide on a plan that is not a draft', async () => {
+        await load([CONFIRMED], plan({ id: CONFIRMED.id, version: 2 }));
+
+        expect(page.querySelector('[data-testid="confirm"]')).toBeNull();
+        expect(page.querySelector('[data-testid="discard"]')).toBeNull();
+      });
     });
   });
 });
