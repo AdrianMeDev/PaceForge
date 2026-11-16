@@ -52,6 +52,7 @@ class ProviderView(APIView):
                 user,
                 provider=data["provider"],
                 model=data["model"],
+                season_model=data.get("season_model", ""),
                 base_url=data.get("base_url", ""),
                 api_key=data.get("api_key"),
             )

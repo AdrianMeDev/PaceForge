@@ -184,6 +184,115 @@ class TestASuccessfulCall:
         assert (record.input_tokens, record.output_tokens) == (3, 1)
 
 
+SEASON = AIUsageRecord.Purpose.SEASON_PLAN
+WEEKLY = AIUsageRecord.Purpose.WEEKLY_PLAN
+
+
+class TestTheModelOfAPurpose:
+    def ask_for(self, user: User, purpose: AIUsageRecord.Purpose) -> Completion:
+        return services.call(user, purpose, "system", [Message("user", PROMPT)], 50)
+
+    def test_the_season_plan_uses_the_season_model_if_there_is_one(
+        self, fake: FakeProvider, alice: User
+    ) -> None:
+        configure(alice, season_model="claude-opus-5-5")
+        fake.reply(ANSWER)
+
+        self.ask_for(alice, SEASON)
+
+        assert fake.requests[0]["json"]["model"] == "claude-opus-5-5"
+        (record,) = records(alice)
+        assert (record.model, record.purpose) == ("claude-opus-5-5", "season_plan")
+
+    def test_without_a_season_model_the_normal_model_does_it(
+        self, fake: FakeProvider, alice: User
+    ) -> None:
+        configure(alice)
+        fake.reply(ANSWER)
+
+        self.ask_for(alice, SEASON)
+
+        assert fake.requests[0]["json"]["model"] == "claude-sonnet-5-5"
+        assert records(alice)[0].model == "claude-sonnet-5-5"
+
+    @pytest.mark.parametrize("purpose", [CHECK, WEEKLY, AIUsageRecord.Purpose.WEEK_REVIEW])
+    def test_every_other_purpose_keeps_the_normal_model(
+        self, fake: FakeProvider, alice: User, purpose: AIUsageRecord.Purpose
+    ) -> None:
+        configure(alice, season_model="claude-opus-5-5")
+        fake.reply(ANSWER)
+
+        self.ask_for(alice, purpose)
+
+        assert fake.requests[0]["json"]["model"] == "claude-sonnet-5-5"
+        assert records(alice)[0].model == "claude-sonnet-5-5"
+
+    def test_the_failed_call_is_recorded_with_the_model_that_was_asked(
+        self, fake: FakeProvider, alice: User
+    ) -> None:
+        configure(alice, season_model="claude-opus-5-5")
+        fake.reply({"error": {"message": "x"}}, 500)
+
+        with pytest.raises(ProviderUnavailableError):
+            self.ask_for(alice, SEASON)
+
+        assert records(alice)[0].model == "claude-opus-5-5"
+        assert records(alice)[0].outcome == "unavailable"
+
+    def test_the_model_for_is_the_one_of_the_configuration(self, alice: User) -> None:
+        config = configure(alice, season_model="m2")
+
+        assert config.model_for(SEASON) == "m2"
+        assert config.model_for(WEEKLY) == "claude-sonnet-5-5"
+
+
+class TestTheSeasonModelInTheSetup:
+    def save(self, user: User, **fields: Any) -> AIProviderConfiguration:
+        data: dict[str, Any] = {
+            "provider": "anthropic",
+            "model": "claude-sonnet-5-5",
+            "base_url": "",
+            "api_key": KEY,
+        }
+        return services.save_configuration(user, **(data | fields))
+
+    def test_it_is_stored_and_empty_by_default(self, alice: User) -> None:
+        assert self.save(alice).season_model == ""
+        assert self.save(alice, season_model="claude-opus-5-5").season_model == "claude-opus-5-5"
+
+    def test_it_can_be_taken_away_again(self, alice: User) -> None:
+        self.save(alice, season_model="claude-opus-5-5")
+
+        assert self.save(alice, season_model="").season_model == ""
+
+    def test_a_change_of_it_sets_the_status_back(self, alice: User) -> None:
+        config = self.save(alice)
+        AIProviderConfiguration.objects.filter(pk=config.pk).update(
+            status="connected", last_success_at=NOW
+        )
+
+        changed = self.save(alice, season_model="claude-opus-5-5")
+
+        assert (changed.status, changed.last_success_at) == ("untested", None)
+
+    def test_the_same_setup_again_keeps_the_status(self, alice: User) -> None:
+        config = self.save(alice, season_model="claude-opus-5-5")
+        AIProviderConfiguration.objects.filter(pk=config.pk).update(status="connected")
+
+        # no key sent: the stored one is kept, so nothing changes
+        again = self.save(alice, season_model="claude-opus-5-5", api_key=None)
+
+        assert again.status == "connected"
+
+    @pytest.mark.parametrize("name", ["-bad", "has space", "x" * 101, "ü"])
+    def test_a_name_that_cannot_be_a_model_is_refused(self, alice: User, name: str) -> None:
+        with pytest.raises(ValidationError) as raised:
+            self.save(alice, season_model=name)
+
+        assert "season_model" in raised.value.message_dict
+        assert not AIProviderConfiguration.objects.exists()
+
+
 class TestJsonOutput:
     class Recorder:
         def __init__(self) -> None:
@@ -197,7 +306,7 @@ class TestJsonOutput:
 
     def use(self, monkeypatch: pytest.MonkeyPatch) -> TestJsonOutput.Recorder:
         recorder = self.Recorder()
-        monkeypatch.setattr(services, "provider_for", lambda configuration: recorder)
+        monkeypatch.setattr(services, "provider_for", lambda configuration, model=None: recorder)
         return recorder
 
     def test_a_call_does_not_ask_for_json_unless_told_to(

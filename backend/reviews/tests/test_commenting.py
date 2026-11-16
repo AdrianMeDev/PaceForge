@@ -283,7 +283,7 @@ class TestWhenTheProviderFails:
     def test_an_address_that_is_not_allowed_sends_nothing(
         self, alice: User, provide: Callable[..., Scripted], monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        def refuse(configuration: Any) -> Any:
+        def refuse(configuration: Any, model: str | None = None) -> Any:
             raise EndpointNotAllowedError("not allowed")
 
         monkeypatch.setattr(coach_services, "provider_for", refuse)

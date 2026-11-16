@@ -10,16 +10,16 @@ if TYPE_CHECKING:
     from coach.models import AIProviderConfiguration
 
 
-def provider_for(configuration: AIProviderConfiguration) -> CoachProvider:
-    """The adapter for a user's configuration. Raises ``EndpointNotAllowedError`` before any
-    network call if an OpenAI-compatible address is no longer on the operator's list."""
+def provider_for(configuration: AIProviderConfiguration, model: str | None = None) -> CoachProvider:
+    """The adapter for a user's configuration, for ``model`` if one is given and else for the
+    normal model. Raises ``EndpointNotAllowedError`` before any network call if an
+    OpenAI-compatible address is no longer on the operator's list."""
     from coach.models import AIProviderConfiguration
 
     kind = AIProviderConfiguration.Provider
+    model = model or configuration.model
     if configuration.provider == kind.ANTHROPIC:
-        return AnthropicProvider(configuration.api_key, configuration.model)
+        return AnthropicProvider(configuration.api_key, model)
     if configuration.provider == kind.OPENAI_COMPATIBLE:
-        return OpenAICompatibleProvider(
-            configuration.base_url, configuration.model, configuration.api_key
-        )
+        return OpenAICompatibleProvider(configuration.base_url, model, configuration.api_key)
     raise ValueError("Unknown provider.")
