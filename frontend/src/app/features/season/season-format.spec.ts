@@ -1,5 +1,15 @@
 import { SeasonRace } from '../../core/season/season-models';
-import { PHASE_HINTS, PHASE_LABELS, PRIORITY_LETTERS, raceText, usedShare } from './season-format';
+import {
+  FOCUS_LABELS,
+  KIND_LABELS,
+  PHASE_HINTS,
+  PHASE_LABELS,
+  PRIORITY_LETTERS,
+  keySessionText,
+  minutesBySport,
+  raceText,
+  usedShare,
+} from './season-format';
 
 const RACE: SeasonRace = {
   date: '2027-02-28',
@@ -54,5 +64,43 @@ describe('usedShare', () => {
 
   it('is empty for a week that offers nothing', () => {
     expect(usedShare(0, 0)).toBe('');
+  });
+});
+
+describe('the words of a filled season', () => {
+  it('name every focus and kind of session', () => {
+    expect(Object.keys(FOCUS_LABELS)).toEqual([
+      'recovery',
+      'endurance',
+      'tempo',
+      'threshold',
+      'vo2max',
+      'race_specific',
+    ]);
+    expect(Object.keys(KIND_LABELS)).toEqual([
+      'long',
+      'tempo',
+      'threshold',
+      'vo2max',
+      'race_pace',
+      'strength',
+      'race',
+    ]);
+  });
+
+  it('tell the minutes of each sport in a fixed order and leave out what is not planned', () => {
+    expect(minutesBySport({ cycling: 90, running: 180, swimming: 0 })).toBe(
+      'Running 3 h · Cycling 1 h 30 min',
+    );
+    expect(minutesBySport({})).toBe('');
+  });
+
+  it('tell a key session in a line, with its detail only if there is one', () => {
+    expect(keySessionText({ sport: 'running', kind: 'long', minutes: 90, detail: '' })).toBe(
+      'Running · Long · 1 h 30 min',
+    );
+    expect(
+      keySessionText({ sport: 'cycling', kind: 'threshold', minutes: 60, detail: '3 x 10 min' }),
+    ).toBe('Cycling · Threshold · 1 h · 3 x 10 min');
   });
 });

@@ -14,12 +14,64 @@
       <p><a routerLink="/login">Go to sign in</a></p>
     }
     @case ('ready') {
-      @if (season(); as shown) {
+      @if (shown(); as shown) {
         <p class="hint">
           The skeleton of your season: the phases and the minutes to aim for in every week, worked
           out from your goals, your recent training and your training time. It is worked out again
           every time you open this page; nothing is saved. The numbers are a starting point.
         </p>
+
+        @if (problem() === 'list') {
+          <p class="alert" role="alert" data-testid="list-problem">
+            The plans of your coach could not be loaded.
+            <button type="button" class="link" (click)="load()">Try again</button>
+          </p>
+        }
+        @if (problem() === 'version') {
+          <p class="alert" role="alert" data-testid="version-problem">
+            This version could not be loaded.
+          </p>
+        }
+        @if (problem() === 'missing') {
+          <p class="alert" role="alert" data-testid="version-missing">
+            This version does not exist any more.
+          </p>
+        }
+
+        @if (versions().length > 0) {
+          <ul class="versions" aria-label="Versions of the season plan">
+            @for (version of versions(); track version.id) {
+              <li>
+                <button
+                  type="button"
+                  class="link"
+                  [disabled]="busy()"
+                  [attr.aria-current]="plan()?.id === version.id ? 'true' : null"
+                  [attr.data-testid]="'version-' + version.version"
+                  (click)="open(version.id)"
+                >
+                  Version {{ version.version }} · {{ status[version.status] }} ·
+                  {{ version.created_at | date: 'MMM d, HH:mm' }}
+                </button>
+              </li>
+            }
+          </ul>
+        }
+
+        @if (plan(); as filled) {
+          <p class="summary" data-testid="plan-status">
+            Showing version {{ filled.version }}: <strong>{{ status[filled.status] }}</strong>.
+          </p>
+          @if (differs()) {
+            <p class="notice" data-testid="differs">
+              This version was made for the weeks of an earlier skeleton. Your goals or your time
+              have changed since; the weeks below are the ones it was made for.
+            </p>
+          }
+          @if (filled.rationale) {
+            <p data-testid="rationale">{{ filled.rationale }}</p>
+          }
+        }
 
         @if (shown.main_race; as main) {
           <p class="summary" data-testid="main-race">
@@ -53,6 +105,11 @@
                 <th scope="col">Aim</th>
                 <th scope="col">Time on offer</th>
                 <th scope="col">Races</th>
+                @if (plan()) {
+                  <th scope="col">Plan</th>
+                  <th scope="col">Focus</th>
+                  <th scope="col">Key sessions</th>
+                }
               </tr>
             </thead>
             <tbody>
@@ -78,7 +135,28 @@
                       }}</span>
                     }
                   </td>
+                  @if (plan(); as filled) {
+                    @let filledWeek = filled.weeks[index];
+                    <td data-testid="plan-minutes">
+                      {{ bySport(filledWeek.minutes) }}
+                      @if (filledWeek.total_minutes > 0) {
+                        <span class="total">{{ minutes(filledWeek.total_minutes) }}</span>
+                      }
+                    </td>
+                    <td data-testid="plan-focus">{{ focusLabel[filledWeek.focus] }}</td>
+                    <td data-testid="plan-sessions">
+                      @for (item of filledWeek.key_sessions; track $index) {
+                        <span class="session">{{ session(item) }}</span>
+                      }
+                    </td>
+                  }
                 </tr>
+                @if (plan(); as filled) {
+                  <tr class="reason" [attr.data-testid]="'reason-' + index">
+                    <td></td>
+                    <td [attr.colspan]="7">{{ filled.weeks[index].reason }}</td>
+                  </tr>
+                }
               }
             </tbody>
           </table>
