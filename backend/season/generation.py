@@ -87,7 +87,28 @@ def generate(user: User) -> Generated:
         raise NothingToPlan
     briefing = build_briefing(user, today_of(user), skeleton)
     context = SeasonContext(skeleton, frozenset(Sport(sport) for sport in briefing["sports"]))
-    messages = [first_message(briefing)]
+    best = _ask(user, context, first_message(briefing))
+    stored = services.save_draft(user, best.plan, context, reason=REASON)
+    return Generated(stored, best.report)
+
+
+@dataclass(frozen=True)
+class _Answer:
+    """The best answer of a conversation: a plan that was read, with what the checks say."""
+
+    plan: SeasonPlan
+    report: Report
+
+
+def _ask(user: User, context: SeasonContext, first: Message) -> _Answer:
+    """Ask the coach with ``first`` and, if the answer cannot be read or has errors, tell it what
+    was wrong and let it try again, ``ATTEMPTS`` answers at most. The best answer wins: a readable
+    plan beats an unreadable one, fewer errors beat more and a tie goes to the later answer (which
+    has been told what was wrong). A provider that fails after a readable answer loses nothing.
+
+    Raises the errors of the provider if no readable plan came before them, and ``PlanNotUsable``
+    if no answer could be read."""
+    messages = [first]
     best: _Attempt | None = None
     for attempt_number in range(1, ATTEMPTS + 1):
         try:
@@ -104,23 +125,20 @@ def generate(user: User) -> Generated:
                 raise
             break  # keep what an earlier answer gave rather than lose it
         attempt = _assess(context, completion.text, completion.truncated)
-        # A readable plan beats an unreadable one and fewer errors beat more; a tie goes to the
-        # later answer, which has been told what was wrong.
         if best is None or best.plan is None or _no_worse(attempt, best):
             best = attempt
         if attempt.sound or attempt_number == ATTEMPTS:
             break
         errors = attempt.report.errors if attempt.report else ()
         messages = [
-            messages[0],
+            first,
             Message("assistant", attempt.answer if attempt.answer.strip() else "(no answer)"),
             repair_message(attempt.problems, errors),
         ]
     assert best is not None
     if best.plan is None or best.report is None:
         raise PlanNotUsable(best.problems)
-    stored = services.save_draft(user, best.plan, context, reason=REASON)
-    return Generated(stored, best.report)
+    return _Answer(best.plan, best.report)
 
 
 def _assess(context: SeasonContext, text: str, truncated: bool) -> _Attempt:
