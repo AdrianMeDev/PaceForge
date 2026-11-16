@@ -94,6 +94,38 @@ class TestASuccessfulCall:
         )
         assert (record.input_tokens, record.output_tokens) == (12, 5)
 
+    def test_the_cached_tokens_of_the_answer_are_recorded(
+        self, fake: FakeProvider, alice: User
+    ) -> None:
+        usage = {
+            "input_tokens": 20,
+            "output_tokens": 5,
+            "cache_read_input_tokens": 3000,
+            "cache_creation_input_tokens": 400,
+        }
+        fake.reply({**ANSWER, "usage": usage})
+        configure(alice)
+
+        ask(alice)
+
+        (record,) = records(alice)
+        assert (record.input_tokens, record.cache_read_tokens, record.cache_write_tokens) == (
+            3420,
+            3000,
+            400,
+        )
+
+    def test_a_call_without_cache_counts_records_none(
+        self, fake: FakeProvider, alice: User
+    ) -> None:
+        configure(alice)
+        fake.reply(ANSWER)
+
+        ask(alice)
+
+        (record,) = records(alice)
+        assert (record.cache_read_tokens, record.cache_write_tokens) == (None, None)
+
     def test_the_status_becomes_connected_and_the_times_are_set(
         self, fake: FakeProvider, alice: User
     ) -> None:
@@ -678,6 +710,26 @@ class TestTheUsageSummary:
         self.add(alice, 5, input_tokens=100, output_tokens=40)
 
         assert services.usage_summary(alice) == UsageSummary(2, 110, 44, 30)
+
+    def test_the_cached_tokens_are_added_up_and_unknown_ones_count_as_zero(
+        self, alice: User
+    ) -> None:
+        self.add(alice, 1, cache_read_tokens=3000, cache_write_tokens=400)
+        self.add(alice, 2, cache_read_tokens=500)
+        self.add(alice, 3)
+
+        found = services.usage_summary(alice)
+
+        assert (found.cache_read_tokens, found.cache_write_tokens) == (3500, 400)
+        assert found.input_tokens == 30  # the cached part is part of the input, not on top
+
+    def test_the_cached_tokens_of_others_and_of_old_calls_do_not_count(
+        self, alice: User, bob: User
+    ) -> None:
+        self.add(bob, 1, cache_read_tokens=999)
+        self.add(alice, 40, cache_read_tokens=999)
+
+        assert services.usage_summary(alice).cache_read_tokens == 0
 
     def test_failed_calls_count_as_calls_without_tokens(self, alice: User) -> None:
         self.add(alice, 1)

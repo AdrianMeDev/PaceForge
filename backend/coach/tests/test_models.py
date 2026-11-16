@@ -289,6 +289,8 @@ class TestUsageRecords:
             "outcome",
             "input_tokens",
             "output_tokens",
+            "cache_read_tokens",
+            "cache_write_tokens",
             "created_at",
         }
 
@@ -296,6 +298,22 @@ class TestUsageRecords:
         record = self.record(alice)
 
         assert (record.input_tokens, record.output_tokens) == (None, None)
+
+    def test_the_cached_tokens_may_be_unknown_too(self, alice: User) -> None:
+        record = self.record(alice)
+
+        assert (record.cache_read_tokens, record.cache_write_tokens) == (None, None)
+
+    def test_the_cached_tokens_are_kept(self, alice: User) -> None:
+        record = self.record(alice, cache_read_tokens=3000, cache_write_tokens=400)
+        record.refresh_from_db()
+
+        assert (record.cache_read_tokens, record.cache_write_tokens) == (3000, 400)
+
+    @pytest.mark.parametrize("field", ["cache_read_tokens", "cache_write_tokens"])
+    def test_the_cached_tokens_cannot_be_negative(self, alice: User, field: str) -> None:
+        with pytest.raises(IntegrityError), transaction.atomic():
+            self.record(alice, **{field: -1})
 
     def test_tokens_cannot_be_negative(self, alice: User) -> None:
         with pytest.raises(IntegrityError), transaction.atomic():

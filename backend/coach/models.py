@@ -134,6 +134,10 @@ class AIUsageRecord(OwnedModel):
     # Counted by the provider; ``None`` where it did not say.
     input_tokens = models.PositiveIntegerField(null=True, blank=True)
     output_tokens = models.PositiveIntegerField(null=True, blank=True)
+    # The parts of the input that were read from and written to the provider's prompt cache (part
+    # of ``input_tokens``, not on top of it); ``None`` where the provider did not say.
+    cache_read_tokens = models.PositiveIntegerField(null=True, blank=True)
+    cache_write_tokens = models.PositiveIntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
