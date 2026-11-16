@@ -239,6 +239,23 @@ What the week plan does with it is in [the weekly plan](weekly-plan.md): the coa
 `season`. The text of the coach in it (`reason`, `detail`) goes back to the coach as data, and only
 ever to the page as text.
 
+## The timeline, the chart and the minutes done
+
+The Season page draws the skeleton it shows (the one of the open version, else today's) as a
+**timeline** (one cell a week: phase colour and two letters, `R` for a recovery week, the letter of
+each race, the current week outlined) and as a **chart** of stacked bars (the plan's minutes by
+sport, else the aim of the skeleton), with hours on a round axis of at most six steps. The geometry
+is in pure functions (`timelineCells`, `chartLayout`) that the specs test; the SVG is drawn by hand
+without a library.
+
+`season/done.py` counts the minutes done for the chart. `done_minutes(user, mondays)` adds up the
+activities of each calendar week (Monday to Sunday) in the **time zone of the athlete**, by sport
+(`other` for any sport the plan does not have), the timer time and else the elapsed time, an
+activity with neither not at all; it adds the seconds first and rounds the minutes half up. It takes
+two queries, the time zone and the activities, however many weeks. `plan_detail` gives it only to the
+**confirmed** version and only for the weeks that have begun (the current one with what is done so
+far); every other week and version has `done: null`.
+
 ## The API
 
 `GET /api/season/` answers the skeleton of the signed-in user and writes nothing. The filled plans are at `/api/season/plans/`: `GET` lists the versions (`id`, `version`, `status`, `reason`, `week_count`, `created_at`, `confirmed_at`), `POST generate/` drafts one (`201` with the plan, limited to 3 a minute), `GET <id>/` reads one and `POST <id>/confirm/` and `POST <id>/discard/` decide on a draft. A plan has `rationale`, `parent`, the `skeleton` it was made for, its `weeks` (the format with a `total_minutes` and `done`: for the **confirmed** version and the weeks that have begun the minutes the athlete trained by sport, `[{sport, minutes}]`, `other` for activities of no sport of the plan, `[]` for a week without any; `null` for every other week and version) and, for a draft, a `report` of `valid` and `findings`. Errors have a fixed text, a `code` and, where it helps, `problems` or `findings`. The answer has
@@ -250,6 +267,6 @@ ever to the page as text.
 ## Not there yet
 
 The skeleton itself knows minutes only. The coach adds the split by sport, the key sessions and the
-reasons, and the Season page shows, drafts, confirms and discards them. There is no timeline or
-chart, no change request with a preview and no restoring of an older version, and the realism check
-of a goal time (US-4.2) is not part of it.
+reasons, and the Season page shows, drafts, confirms and discards them, with a timeline and a chart.
+There is no change request with a preview, no restoring of an older version and no load measure
+(only minutes), and the realism check of a goal time (US-4.2) is not part of it.
