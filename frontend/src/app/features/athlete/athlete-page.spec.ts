@@ -74,6 +74,8 @@ interface Parts {
 function profile(parts: Parts = {}): AthleteProfile {
   const zones = parts.zones ?? {};
   return {
+    best_times: { '5k': null, '10k': null, half_marathon: null, marathon: null },
+    vdot: null,
     birth_year: null,
     sex: null,
     weight_kg: null,

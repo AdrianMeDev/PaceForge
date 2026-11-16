@@ -92,7 +92,41 @@ export interface BodyChanges {
   strength_equipment?: Equipment[];
 }
 
+/** The distances of the best times, shortest first. */
+export type BestTimeDistance = '5k' | '10k' | 'half_marathon' | 'marathon';
+
+/**
+ * A best time with the VDOT it is worth. `recent`: the race is less than a year old, so it can
+ * count; `counts`: the threshold pace comes from this one.
+ */
+export interface BestTime {
+  seconds: number;
+  /** The day of the race, `YYYY-MM-DD`. */
+  date: string;
+  vdot: number;
+  recent: boolean;
+  counts: boolean;
+}
+
+/** The VDOT that counts, with the race it comes from. */
+export interface CountingVdot {
+  value: number;
+  distance: BestTimeDistance;
+  date: string;
+}
+
+/** What is sent to set the best time over a distance. */
+export interface BestTimeInput {
+  seconds: number;
+  /** The day of the race, `YYYY-MM-DD`. */
+  date: string;
+}
+
 export interface AthleteProfile extends BodyAndTraining {
+  /** Every distance, `null` where the user has not entered a time. */
+  best_times: Record<BestTimeDistance, BestTime | null>;
+  /** The VDOT of the best time that counts, `null` if none does. */
+  vdot: CountingVdot | null;
   /** An IANA name such as `Europe/Berlin`; empty if the user has not set one. */
   timezone: string;
   intervals: {
@@ -136,6 +170,9 @@ export interface RateLimited {
 export type GetAthleteResult = { kind: 'ok'; profile: AthleteProfile } | Forbidden;
 export type SetTimezoneResult = { kind: 'ok'; profile: AthleteProfile } | Invalid | Forbidden;
 export type SaveBodyResult = { kind: 'ok'; profile: AthleteProfile } | InvalidFields | Forbidden;
+export type SetBestTimeResult =
+  { kind: 'ok'; profile: AthleteProfile } | InvalidFields | NotFound | Forbidden;
+export type ClearBestTimeResult = { kind: 'ok'; profile: AthleteProfile } | NotFound | Forbidden;
 export type SetThresholdResult =
   { kind: 'ok'; profile: AthleteProfile } | Invalid | NotFound | Forbidden;
 export type ClearThresholdResult = { kind: 'ok'; profile: AthleteProfile } | NotFound | Forbidden;
