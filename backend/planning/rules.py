@@ -52,6 +52,10 @@ MAX_WORKOUTS_PER_DAY = 2
 # break is not held to the few weeks since. 100 takes the athlete at their word; a lower number
 # (70, say) makes the first weeks back more careful.
 TYPICAL_VOLUME_PERCENT = 100
+# How far the minutes of a week may be from the minutes the confirmed season plan has for it before
+# a warning. Wider than the season's own window (``season.rules.WINDOW_PERCENT``), because the week
+# is planned with the real days in view.
+SEASON_WEEK_WINDOW_PERCENT = 15
 
 # The sports whose minutes make up the share of easy training; strength counts neither way.
 ENDURANCE_SPORTS = frozenset({Sport.RUNNING, Sport.CYCLING, Sport.SWIMMING})
@@ -908,6 +912,58 @@ def check_times_of_day(plan: WeekPlan, context: PlanContext) -> list[Finding]:
     return found
 
 
+def check_season_minutes(plan: WeekPlan, context: PlanContext) -> list[Finding]:
+    """The minutes of the week are close to the minutes the confirmed season plan has for it (a
+    warning). Without a season week nothing is checked. Exactly: more than
+    ``SEASON_WEEK_WINDOW_PERCENT`` percent away is a warning, so a season week of 0 minutes warns
+    for any minute."""
+    _same_week(plan, context)
+    season = context.season_week
+    if season is None:
+        return []
+    planned = sum(
+        workout.duration_minutes
+        for workout in plan.workouts
+        if context.offset(workout.day) is not None
+    )
+    aimed = season.total_minutes
+    if abs(planned - aimed) * 100 <= SEASON_WEEK_WINDOW_PERCENT * aimed:
+        return []
+    return [
+        Finding(
+            Severity.WARNING,
+            "season_minutes_off",
+            f"The week adds up to {planned} minutes; the season plan has {aimed} minutes for it "
+            f"(more than {SEASON_WEEK_WINDOW_PERCENT} % apart).",
+            "workouts",
+        )
+    ]
+
+
+def check_season_sports(plan: WeekPlan, context: PlanContext) -> list[Finding]:
+    """A sport the season plan has minutes for in this week has no workout in it (a warning, once
+    per sport, in the order of the season plan). A sport the athlete does not want any more is not
+    named: ``sport_not_selected`` is for that. Without a season week nothing is checked."""
+    _same_week(plan, context)
+    season = context.season_week
+    if season is None:
+        return []
+    planned = {
+        workout.sport for workout in plan.workouts if context.offset(workout.day) is not None
+    }
+    return [
+        Finding(
+            Severity.WARNING,
+            "season_sport_missing",
+            f"The season plan has {amount} minutes of {sport.value} for this week; the plan has "
+            f"no {sport.value} workout.",
+            "workouts",
+        )
+        for sport, amount in season.minutes
+        if amount > 0 and sport in context.sports and sport not in planned
+    ]
+
+
 # The checks of structure, zones and capacity, in the order their findings are listed.
 BASIC_CHECKS: tuple[Check, ...] = (
     check_inside_week,
@@ -943,7 +999,13 @@ RHYTHM_CHECKS: tuple[Check, ...] = (
     check_exercises,
 )
 
-ALL_CHECKS: tuple[Check, ...] = BASIC_CHECKS + RHYTHM_CHECKS
+# The checks against the season week (only warnings, and only if there is one), listed last.
+SEASON_CHECKS: tuple[Check, ...] = (
+    check_season_minutes,
+    check_season_sports,
+)
+
+ALL_CHECKS: tuple[Check, ...] = BASIC_CHECKS + RHYTHM_CHECKS + SEASON_CHECKS
 
 
 def basic_checks(plan: WeekPlan, context: PlanContext) -> list[Finding]:

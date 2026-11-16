@@ -256,6 +256,8 @@ user to weigh.
 | `duplicate_workout` | warning | The same sport, goal and duration twice on a day. |
 | `volume_increase` | warning | The planned minutes are above the warning limit of the reference (the recent average, or the typical week if that is higher). |
 | `easy_share_low` | warning | Less of the endurance minutes are easy than the intensity level asks for. |
+| `season_minutes_off` | warning | The confirmed [season plan](season.md) has minutes for this week, and the week adds up to more than `SEASON_WEEK_WINDOW_PERCENT` percent away from them (a season week of 0 minutes warns for any minute). Not said without a season week. It can come with `volume_increase` when the season asks for more than the progression limit allows; both are warnings, and the limit of the athlete is the one that counts. |
+| `season_sport_missing` | warning | A sport the season plan has minutes for in this week has no workout in the plan. Named once per sport, at the plan as a whole. A sport the athlete no longer wants is not named. Not said without a season week. |
 
 Workouts outside the week are ignored by every rule except `outside_week`. Nothing is checked
 against the next or the previous week, so Sunday and the following Monday are not "in a row".
@@ -273,6 +275,7 @@ decisions, not coaching science; better ones will come from using the feature.
 | `EASY_UP_TO_ZONE` | 2 | Up to this zone a workout is easy. |
 | `MAX_WORKOUTS_PER_DAY` | 2 | Most workouts on a day; a third is an error. |
 | `TYPICAL_VOLUME_PERCENT` | 100 | How much of the typical week counts as a reference (100: all of it). A lower number, say 70, makes the first weeks back more careful. |
+| `SEASON_WEEK_WINDOW_PERCENT` | 15 | How far the minutes of a week may be from the minutes the confirmed season plan has for it. |
 | `TITLE_MAX` | 100 | Characters of a title. |
 | `NOTES_MAX` | 500 | Characters of notes. |
 | `RATIONALE_MAX` | 1000 | Characters of the rationale. |

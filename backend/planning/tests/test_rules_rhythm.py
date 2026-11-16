@@ -17,6 +17,7 @@ from planning.rules import (
     HARD_FROM_ZONE,
     MAX_WORKOUTS_PER_DAY,
     RHYTHM_CHECKS,
+    SEASON_CHECKS,
     Finding,
     Intensity,
     Severity,
@@ -1764,7 +1765,7 @@ class TestTheTimesOfDay:
 
 class TestTheLists:
     def test_the_rhythm_checks_come_after_the_basic_ones(self) -> None:
-        assert ALL_CHECKS == BASIC_CHECKS + RHYTHM_CHECKS
+        assert ALL_CHECKS == BASIC_CHECKS + RHYTHM_CHECKS + SEASON_CHECKS
         assert RHYTHM_CHECKS == (
             check_hard_days,
             check_hard_days_in_a_row,
