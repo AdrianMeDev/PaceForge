@@ -174,6 +174,9 @@ Each plan is checked against the facts of its user for that week, collected when
   want to train in a week, and the weekday of the long run and of the long ride. Each is optional
   and a missing one is never checked. They only produce warnings (`too_many_training_days`,
   `below_minimum_minutes`, `long_session_elsewhere`), never an error.
+- **Body and training data.** Age, sex, weight, resting heart rate, years of training per sport,
+  strength experience and equipment, as the athlete entered them. They are for the coach only: no
+  rule checks anything against them.
 - **Fixed appointments.** Sessions that happen every week: weekday, sport, minutes and optionally
   a part of the day. The coach is told to plan them; a plan without one is a warning
   (`fixed_session_missing`), not an error.

@@ -396,8 +396,8 @@ are two constants in `backend/activities/duplicates.py`.
 ## Athlete profile
 
 The **Profile** page (`/settings/profile`, also in the navigation) holds what PaceForge needs to
-know about you as an athlete: your time zone, your thresholds and the training zones that follow
-from them. Cycling has FTP, lactate threshold heart rate (LTHR) and maximum heart rate; running has
+know about you as an athlete: your time zone, some data about you and your training, your
+thresholds and the training zones that follow from them. Cycling has FTP, lactate threshold heart rate (LTHR) and maximum heart rate; running has
 threshold pace, LTHR and maximum heart rate. Swimming and strength training have none yet.
 
 **Where a value comes from, and which one counts.** Every threshold shows its source: **You**,
@@ -465,8 +465,29 @@ the others are listed as "Also known". A value you type in therefore always coun
    is stored for the day-based planning that follows; the activities list still shows times in your
    browser's time zone.
 
-Thresholds are personal data: every user sees and changes only their own, administrators included,
-and no answer contains another user's values.
+6. **About you.** A panel below the time zone for data that helps the coach size your training. All
+   of it is optional and an empty field removes what was saved:
+   - **Year of birth** (1900 to ten years ago), **sex** (female, male or other), **weight** (25 to
+     300 kg, one decimal) and **resting heart rate** (25 to 120 bpm).
+   - **Years of training** in running, cycling, swimming and strength (0 to 80 whole years each).
+   - **Strength training experience** (beginner or advanced) and the **equipment** you have (gym,
+     at home, dumbbells; none ticked: not said).
+
+   These go to your AI coach with every plan request, as numbers and fixed words and without any
+   text of yours, and the panel names the provider. **The year of birth is not sent**, only the age
+   worked out from it for the week to plan (it can be one year too high before your birthday). The
+   coach uses it to size the load; no rule checks it. **Save** sends the whole panel at once, the
+   page checks the ranges first and a message from the server appears at its field.
+
+Thresholds and the data about you are personal: every user sees and changes only their own,
+administrators included, and no answer contains another user's values.
+
+The API is `GET` and `PATCH` on `/api/athlete/`. `PATCH` takes any of `timezone`, `birth_year`,
+`sex`, `weight_kg`, `resting_hr`, `training_years` (an object with any of `running`, `cycling`,
+`swimming`, `strength`), `strength_experience` and `strength_equipment`; a field that is left out
+stays as it is, `null` clears one, and at least one has to be there. Nothing is saved unless every
+field is usable. The thresholds are `PUT` and `DELETE` on `/api/athlete/thresholds/<sport>/<metric>/`
+and `POST /api/athlete/sync/` reads Intervals.icu.
 
 ## Goals
 
