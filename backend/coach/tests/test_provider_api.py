@@ -26,6 +26,7 @@ STATE_FIELDS = {
     "configured",
     "provider",
     "model",
+    "season_model",
     "base_url",
     "has_key",
     "status",
@@ -144,6 +145,7 @@ class TestReading:
             "configured": False,
             "provider": None,
             "model": "",
+            "season_model": "",
             "base_url": None,
             "has_key": False,
             "status": None,
@@ -443,6 +445,36 @@ class TestRefusals:
             "api_key": ["A key has no spaces or special characters and at most 500 characters."]
         }
         assert "my secret key" not in response.content.decode()
+
+
+class TestTheSeasonModel:
+    def test_it_is_saved_and_shown(self, alice: User) -> None:
+        state = body(save(signed_in(alice), anthropic(season_model="claude-opus-5-5")))
+
+        assert state["season_model"] == "claude-opus-5-5"
+        assert stored(alice).season_model == "claude-opus-5-5"
+        assert body(signed_in(alice).call("GET", URL))["season_model"] == "claude-opus-5-5"
+
+    def test_it_is_empty_when_it_is_left_out(self, alice: User) -> None:
+        state = body(save(signed_in(alice), anthropic()))
+
+        assert state["season_model"] == ""
+
+    def test_leaving_it_out_when_saving_again_takes_it_away(self, alice: User) -> None:
+        api = signed_in(alice)
+        save(api, anthropic(season_model="claude-opus-5-5"))
+
+        state = body(save(api, {"provider": "anthropic", "model": MODEL}))
+
+        assert state["season_model"] == ""
+
+    @pytest.mark.parametrize("name", ["-bad", "has space", "x" * 101, 5, ["m"], None])
+    def test_a_name_that_is_not_one_is_refused_at_its_field(self, alice: User, name: Any) -> None:
+        response = save(signed_in(alice), anthropic(season_model=name))
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert set(body(response)) == {"season_model"}
+        assert not AIProviderConfiguration.objects.exists()
 
 
 class TestChangingTheSetup:

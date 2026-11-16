@@ -1,4 +1,5 @@
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+from typing import Any
 
 import pytest
 from allauth.account.models import EmailAddress
@@ -6,6 +7,8 @@ from django.core.cache import cache
 
 from accounts.models import User
 from accounts.tests.conftest import PASSWORD, AuthApi
+from coach import services as coach_services
+from planning.tests.scripted import Scripted
 
 
 @pytest.fixture(autouse=True)
@@ -26,3 +29,17 @@ def signed_in(user: User) -> AuthApi:
     api = AuthApi()
     assert api.login(user.email).status_code == 200
     return api
+
+
+@pytest.fixture
+def provide(monkeypatch: pytest.MonkeyPatch) -> Callable[..., Scripted]:
+    """Install a provider that answers from a list, in place of the user's real one."""
+
+    def install(*replies: Any) -> Scripted:
+        scripted = Scripted(*replies)
+        monkeypatch.setattr(
+            coach_services, "provider_for", lambda configuration, model=None: scripted
+        )
+        return scripted
+
+    return install

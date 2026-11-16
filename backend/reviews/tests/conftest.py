@@ -37,7 +37,9 @@ def provide(monkeypatch: pytest.MonkeyPatch) -> Callable[..., Scripted]:
 
     def install(*replies: Any) -> Scripted:
         scripted = Scripted(*replies)
-        monkeypatch.setattr(coach_services, "provider_for", lambda configuration: scripted)
+        monkeypatch.setattr(
+            coach_services, "provider_for", lambda configuration, model=None: scripted
+        )
         return scripted
 
     return install

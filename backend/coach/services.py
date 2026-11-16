@@ -63,7 +63,13 @@ def get_configuration(user: User) -> AIProviderConfiguration | None:
 
 
 def save_configuration(
-    user: User, *, provider: str, model: str, base_url: str, api_key: str | None
+    user: User,
+    *,
+    provider: str,
+    model: str,
+    base_url: str,
+    api_key: str | None,
+    season_model: str = "",
 ) -> AIProviderConfiguration:
     """Create or change the user's configuration.
 
@@ -77,7 +83,7 @@ def save_configuration(
     for attempt in (1, 2):
         try:
             with transaction.atomic():
-                return _save(user, provider, model, base_url, api_key)
+                return _save(user, provider, model, base_url, api_key, season_model)
         except IntegrityError:
             # A second request created the row first; the next round changes that one.
             if attempt == 2:
@@ -86,7 +92,12 @@ def save_configuration(
 
 
 def _save(
-    user: User, provider: str, model: str, base_url: str, api_key: str | None
+    user: User,
+    provider: str,
+    model: str,
+    base_url: str,
+    api_key: str | None,
+    season_model: str = "",
 ) -> AIProviderConfiguration:
     existing = _own(user).select_for_update().first()
     configuration = existing or AIProviderConfiguration(owner=user)
@@ -110,9 +121,11 @@ def _save(
         existing is None
         or key_written
         or (existing.provider, existing.model, existing.base_url) != (provider, model, base_url)
+        or existing.season_model != season_model
     )
     configuration.provider = provider
     configuration.model = model
+    configuration.season_model = season_model
     configuration.base_url = base_url
     # Not ``full_clean``: its constraint check would repeat every message of ``clean``.
     errors = _problems(configuration)
@@ -126,7 +139,7 @@ def _save(
     if existing is None:
         configuration.save()
     else:
-        fields = ["provider", "model", "base_url"]
+        fields = ["provider", "model", "season_model", "base_url"]
         if key_written:
             fields.append("api_key")
         if changed:
@@ -183,7 +196,8 @@ def call(
     if configuration is None:
         raise NotConfiguredError
     try:
-        provider = provider_for(configuration)
+        model = configuration.model_for(purpose)
+        provider = provider_for(configuration, model)
     except DecryptionError:
         _finish(user, configuration, purpose, Outcome.INVALID_KEY, None, Status.INVALID)
         raise InvalidKeyError("The stored key is not usable.") from None
@@ -253,7 +267,7 @@ def _finish(
         AIUsageRecord.objects.create(
             owner=user,
             provider=configuration.provider,
-            model=configuration.model,
+            model=configuration.model_for(purpose),
             purpose=purpose,
             outcome=outcome,
             input_tokens=completion.input_tokens if completion else None,

@@ -45,6 +45,13 @@ class AIProviderConfiguration(OwnedModel):
     model = models.CharField(
         max_length=MODEL_MAX, validators=[RegexValidator(MODEL_PATTERN, "Enter a model name.")]
     )
+    # The model for the plan of the whole season, a task that may call for a stronger one. Empty:
+    # the normal model. Same provider, same key.
+    season_model = models.CharField(
+        max_length=MODEL_MAX,
+        blank=True,
+        validators=[RegexValidator(MODEL_PATTERN, "Enter a model name.")],
+    )
     api_key = EncryptedTextField(editable=False)
     base_url = models.CharField(max_length=BASE_URL_MAX, blank=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.UNTESTED)
@@ -67,6 +74,13 @@ class AIProviderConfiguration(OwnedModel):
 
     def __str__(self) -> str:
         return f"{self.get_provider_display()} configuration of user {self.owner_id}"
+
+    def model_for(self, purpose: str) -> str:
+        """The model that does ``purpose``: the season model for the season plan if one is set, the
+        normal model for everything else."""
+        if purpose == AIUsageRecord.Purpose.SEASON_PLAN and self.season_model:
+            return self.season_model
+        return self.model
 
     def clean(self) -> None:
         super().clean()
@@ -103,6 +117,7 @@ class AIUsageRecord(OwnedModel):
         CHECK = "check", "Connection check"
         WEEKLY_PLAN = "weekly_plan", "Weekly plan"
         WEEK_REVIEW = "week_review", "Week review"
+        SEASON_PLAN = "season_plan", "Season plan"
 
     class Outcome(models.TextChoices):
         SUCCESS = "success", "Success"
