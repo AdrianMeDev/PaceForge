@@ -1,5 +1,6 @@
 import math
 import time
+from datetime import date
 from typing import Any
 
 import pytest
@@ -9,7 +10,20 @@ from django.db import IntegrityError, transaction
 
 from accounts.models import User
 from athletes import models
-from athletes.models import RULES, AthleteProfile, ThresholdValue
+from athletes.models import (
+    BIRTH_YEAR_MIN,
+    MIN_AGE,
+    RESTING_HR_MAX,
+    RESTING_HR_MIN,
+    RULES,
+    TRAINING_YEARS_MAX,
+    WEIGHT_MAX,
+    WEIGHT_MIN,
+    YEARS_SPORTS,
+    AthleteProfile,
+    Equipment,
+    ThresholdValue,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -152,6 +166,143 @@ class TestProfile:
             AthleteProfile(owner=alice, timezone="Nowhere").full_clean(exclude=["owner"])
 
         assert "Europe/Berlin" in raised.value.message_dict["timezone"][0]
+
+
+def refused(owner: User, field: str, **fields: Any) -> None:
+    with pytest.raises(ValidationError) as raised:
+        AthleteProfile(owner=owner, **fields).full_clean(exclude=["owner"])
+    assert field in raised.value.message_dict, raised.value.message_dict
+
+
+def rejected_by_database(owner: User, **fields: Any) -> str:
+    with pytest.raises(IntegrityError) as raised, transaction.atomic():
+        AthleteProfile.objects.create(owner=owner, **fields)
+    return str(raised.value)
+
+
+class TestBodyAndTrainingData:
+    LATEST = date.today().year - MIN_AGE
+
+    def test_a_new_profile_has_none_of_it(self, alice: User) -> None:
+        profile = AthleteProfile.objects.create(owner=alice)
+
+        assert profile.birth_year is None
+        assert profile.weight_kg is None
+        assert profile.resting_hr is None
+        assert [getattr(profile, f"years_{sport}") for sport in YEARS_SPORTS] == [None] * 4
+        assert (profile.sex, profile.strength_experience) == ("", "")
+        assert profile.strength_equipment == []
+        assert profile.equipment == []
+
+    def test_a_full_set_is_valid(self, alice: User) -> None:
+        AthleteProfile(
+            owner=alice,
+            birth_year=1985,
+            sex="female",
+            weight_kg=61.5,
+            resting_hr=48,
+            years_running=12,
+            years_cycling=3,
+            years_swimming=0,
+            years_strength=1,
+            strength_experience="beginner",
+            strength_equipment=["gym", "dumbbells"],
+        ).full_clean(exclude=["owner"])
+
+    @pytest.mark.parametrize("year", [BIRTH_YEAR_MIN, 1985, LATEST])
+    def test_plausible_birth_years_are_valid(self, alice: User, year: int) -> None:
+        AthleteProfile(owner=alice, birth_year=year).full_clean(exclude=["owner"])
+
+    @pytest.mark.parametrize("year", [BIRTH_YEAR_MIN - 1, 0, LATEST + 1, 3000])
+    def test_other_birth_years_are_refused(self, alice: User, year: int) -> None:
+        refused(alice, "birth_year", birth_year=year)
+
+    @pytest.mark.parametrize("sex", ["female", "male", "other", ""])
+    def test_the_known_values_for_sex_are_valid(self, alice: User, sex: str) -> None:
+        AthleteProfile(owner=alice, sex=sex).full_clean(exclude=["owner"])
+
+    @pytest.mark.parametrize("sex", ["f", "Female", "unknown", " male"])
+    def test_other_values_for_sex_are_refused(self, alice: User, sex: str) -> None:
+        refused(alice, "sex", sex=sex)
+
+    @pytest.mark.parametrize("weight", [WEIGHT_MIN, 61.5, WEIGHT_MAX])
+    def test_plausible_weights_are_valid(self, alice: User, weight: float) -> None:
+        AthleteProfile(owner=alice, weight_kg=weight).full_clean(exclude=["owner"])
+
+    @pytest.mark.parametrize(
+        "weight", [0, WEIGHT_MIN - 0.1, WEIGHT_MAX + 0.1, -60, math.nan, math.inf, True]
+    )
+    def test_other_weights_are_refused(self, alice: User, weight: Any) -> None:
+        refused(alice, "weight_kg", weight_kg=weight)
+
+    @pytest.mark.parametrize("rate", [RESTING_HR_MIN, 48, RESTING_HR_MAX])
+    def test_plausible_resting_heart_rates_are_valid(self, alice: User, rate: int) -> None:
+        AthleteProfile(owner=alice, resting_hr=rate).full_clean(exclude=["owner"])
+
+    @pytest.mark.parametrize("rate", [0, RESTING_HR_MIN - 1, RESTING_HR_MAX + 1, 250])
+    def test_other_resting_heart_rates_are_refused(self, alice: User, rate: int) -> None:
+        refused(alice, "resting_hr", resting_hr=rate)
+
+    @pytest.mark.parametrize("sport", YEARS_SPORTS)
+    @pytest.mark.parametrize("years", [0, 5, TRAINING_YEARS_MAX])
+    def test_years_inside_the_range_are_valid(self, alice: User, sport: str, years: int) -> None:
+        AthleteProfile(owner=alice, **{f"years_{sport}": years}).full_clean(exclude=["owner"])
+
+    @pytest.mark.parametrize("sport", YEARS_SPORTS)
+    def test_years_above_the_range_are_refused(self, alice: User, sport: str) -> None:
+        refused(alice, f"years_{sport}", **{f"years_{sport}": TRAINING_YEARS_MAX + 1})
+
+    @pytest.mark.parametrize("value", ["beginner", "advanced", ""])
+    def test_the_known_strength_experience_is_valid(self, alice: User, value: str) -> None:
+        AthleteProfile(owner=alice, strength_experience=value).full_clean(exclude=["owner"])
+
+    @pytest.mark.parametrize("value", ["expert", "Beginner", "none"])
+    def test_other_strength_experience_is_refused(self, alice: User, value: str) -> None:
+        refused(alice, "strength_experience", strength_experience=value)
+
+    @pytest.mark.parametrize(
+        "equipment", [[], ["gym"], ["dumbbells", "home"], ["gym", "home", "dumbbells"]]
+    )
+    def test_the_known_equipment_is_valid(self, alice: User, equipment: list[str]) -> None:
+        AthleteProfile(owner=alice, strength_equipment=equipment).full_clean(exclude=["owner"])
+
+    @pytest.mark.parametrize(
+        "equipment",
+        [["barbell"], ["gym", "gym"], ["Gym"], "gym", {"gym": True}, [1], [None], None, 5],
+    )
+    def test_other_equipment_is_refused(self, alice: User, equipment: Any) -> None:
+        refused(alice, "strength_equipment", strength_equipment=equipment)
+
+    def test_the_equipment_comes_in_the_order_of_the_choices(self, alice: User) -> None:
+        profile = AthleteProfile.objects.create(
+            owner=alice, strength_equipment=["dumbbells", "gym"]
+        )
+
+        assert profile.equipment == [Equipment.GYM, Equipment.DUMBBELLS]
+
+    def test_unusable_stored_equipment_counts_as_none(self, alice: User) -> None:
+        assert AthleteProfile(owner=alice, strength_equipment="gym").equipment == []
+
+    @pytest.mark.parametrize(
+        ("fields", "name"),
+        [
+            ({"birth_year": 1899}, "athletes_birth_year_plausible"),
+            ({"sex": "x"}, "athletes_sex_known"),
+            ({"weight_kg": 24.9}, "athletes_weight_in_range"),
+            ({"weight_kg": 300.1}, "athletes_weight_in_range"),
+            ({"resting_hr": 24}, "athletes_resting_hr_in_range"),
+            ({"resting_hr": 121}, "athletes_resting_hr_in_range"),
+            ({"years_running": 81}, "athletes_years_running_in_range"),
+            ({"years_cycling": 81}, "athletes_years_cycling_in_range"),
+            ({"years_swimming": 81}, "athletes_years_swimming_in_range"),
+            ({"years_strength": 81}, "athletes_years_strength_in_range"),
+            ({"strength_experience": "x"}, "athletes_strength_experience_known"),
+        ],
+    )
+    def test_the_database_refuses_what_is_out_of_range(
+        self, alice: User, fields: dict[str, Any], name: str
+    ) -> None:
+        assert name in rejected_by_database(alice, **fields)
 
 
 class TestOwnership:
