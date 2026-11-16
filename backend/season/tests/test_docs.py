@@ -3,7 +3,7 @@
 import re
 from pathlib import Path
 
-from season import schema, skeleton
+from season import rules, schema, skeleton
 from season.skeleton import Phase
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -149,3 +149,27 @@ class TestTheFormat:
 
     def test_the_most_weeks_is_that_of_the_skeleton(self) -> None:
         assert "`MAX_WEEKS`" in section("The format of a filled season")
+
+
+class TestTheChecks:
+    def in_the_code(self) -> set[tuple[str, str]]:
+        source = Path(rules.__file__).read_text()
+        return {
+            (code, severity.lower())
+            for severity, code in re.findall(r'Severity\.(ERROR|WARNING),\s*"([a-z_]+)"', source)
+        }
+
+    def test_the_table_lists_every_finding_with_its_severity(self) -> None:
+        documented = {(row[0], row[1]) for row in table_after(section("The checks"), "Code")}
+
+        assert documented == self.in_the_code()
+
+    def test_every_check_is_covered_by_the_table(self) -> None:
+        # the number of checks and of codes can only move together with the page
+        assert len(rules.ALL_CHECKS) == 6
+        assert len(self.in_the_code()) == 7
+
+    def test_the_window_is_the_one_of_the_code(self) -> None:
+        documented = {row[0]: int(row[1]) for row in table_after(section("The checks"), "Constant")}
+
+        assert documented == {"WINDOW_PERCENT": rules.WINDOW_PERCENT}

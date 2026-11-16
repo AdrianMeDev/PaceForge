@@ -145,6 +145,28 @@ A **key session**:
 | `WEEK_MINUTES_MAX` | 10080 | Minutes of one sport in a week: all of them. |
 | `KEY_SESSION_MINUTES_MAX` | 1440 | Minutes of a key session: a day. |
 
+## The checks
+
+The coach may ignore the skeleton it is given, so every filled season is checked by code
+(`season/rules.py`). A finding has a stable `code`, a `path` into the plan and a fixed text made
+from numbers, dates and the words of the format; nothing the coach wrote is repeated in one. An
+**error** makes the plan unfit to confirm, a **warning** is for the athlete to weigh. The
+findings and the report are those of the [week plan](weekly-plan.md).
+
+| Code | Severity | What it says |
+| ---- | -------- | ------------ |
+| `weeks_mismatch` | error | The plan does not have exactly the weeks of the skeleton, in its order: once for the number of weeks (at `weeks`) and once at the first week that is not the one asked for. |
+| `sport_not_selected` | error | A week has minutes in a sport that the athlete did not choose. Once per sport and week, at the minutes of that sport. |
+| `minutes_outside_target` | error | The minutes of all sports of a week add up to less or more than the target of the skeleton allows (`WINDOW_PERCENT` percent either way). A week with a target of 0 has no minutes. |
+| `minutes_above_capacity` | error | A week has more minutes than it offers (an absence offers nothing, the weekly budget caps it). |
+| `key_session_sport_missing` | error | A key session in a sport that has no minutes that week. At the session. |
+| `key_sessions_too_long` | error | The key sessions of one sport add up to more than the minutes of that sport in the week. Once per sport and week. |
+| `race_week_without_race` | warning | A week with a race (of any priority) has no key session of the kind `race`. |
+
+| Constant | Value | Meaning |
+| -------- | ----- | ------- |
+| `WINDOW_PERCENT` | 10 | How far the minutes of a week may differ from its target, in percent, either way (rounded towards the target). |
+
 ## The API
 
 `GET /api/season/` answers the skeleton of the signed-in user and writes nothing. The answer has
