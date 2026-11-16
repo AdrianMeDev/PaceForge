@@ -152,7 +152,14 @@ class TestReading:
             "last_checked_at": None,
             "last_success_at": None,
             "allowed_base_urls": [],
-            "usage": {"calls": 0, "input_tokens": 0, "output_tokens": 0, "days": 30},
+            "usage": {
+                "calls": 0,
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "cache_read_tokens": 0,
+                "cache_write_tokens": 0,
+                "days": 30,
+            },
         }
 
     def test_reading_writes_nothing(self, alice: User) -> None:
@@ -228,8 +235,31 @@ class TestReading:
             "calls": 2,
             "input_tokens": 30,
             "output_tokens": 2,
+            "cache_read_tokens": 0,
+            "cache_write_tokens": 0,
             "days": 30,
         }
+
+    def test_the_usage_tells_how_much_of_the_input_came_from_the_cache(
+        self, alice: User, bob: User
+    ) -> None:
+        for owner, read_tokens, written in ((alice, 3000, 0), (alice, 0, 400), (bob, 999, 999)):
+            AIUsageRecord.objects.create(
+                owner=owner,
+                provider="anthropic",
+                model=MODEL,
+                purpose="weekly_plan",
+                outcome="success",
+                input_tokens=read_tokens + written + 10,
+                output_tokens=1,
+                cache_read_tokens=read_tokens,
+                cache_write_tokens=written,
+            )
+
+        usage = read(signed_in(alice))["usage"]
+
+        assert (usage["cache_read_tokens"], usage["cache_write_tokens"]) == (3000, 400)
+        assert usage["input_tokens"] == 3420  # the cached parts are part of it
 
     def test_a_key_that_cannot_be_read_counts_as_no_key(self, alice: User) -> None:
         config = make_connected(alice)
