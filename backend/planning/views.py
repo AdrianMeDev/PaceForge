@@ -3,6 +3,7 @@ from datetime import date
 from typing import Any
 from uuid import UUID
 
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Count
 from rest_framework import serializers, status
 from rest_framework.request import Request
@@ -146,9 +147,24 @@ class WeeksView(APIView):
         )
 
 
+class _Text(serializers.CharField):
+    """Text and nothing else: DRF would turn the number 5 into "5"."""
+
+    def to_internal_value(self, data: Any) -> str:
+        if not isinstance(data, str):
+            self.fail("invalid")
+        return super().to_internal_value(data)
+
+
+class GenerateBody(serializers.Serializer[Any]):
+    # The limit and the plain text are checked by the service; this only keeps absurd bodies out.
+    note = _Text(max_length=4000, required=False, allow_blank=True, trim_whitespace=False)
+
+
 class GenerateView(APIView):
     """Asks the user's own coach for a draft of a week. Synchronous: the answer can take up to
-    a minute or two."""
+    a minute or two. The body may hold a ``note``: what the athlete wants the coach to know about
+    the week. Nothing of it is repeated in an error but the fixed texts of its field."""
 
     throttle_classes = [PlanGenerateThrottle]
     http_method_names = ["post", "options"]
@@ -158,8 +174,12 @@ class GenerateView(APIView):
         monday = _monday(week)
         if monday is None:
             return _error(status.HTTP_404_NOT_FOUND, "week_not_plannable", NOT_PLANNABLE)
+        body = GenerateBody(data=request.data)
+        body.is_valid(raise_exception=True)
         try:
-            generated = generate(user, monday)
+            generated = generate(user, monday, body.validated_data.get("note", ""))
+        except DjangoValidationError as error:
+            raise serializers.ValidationError(error.message_dict) from None
         except WeekNotPlannable:
             return _error(status.HTTP_404_NOT_FOUND, "week_not_plannable", NOT_PLANNABLE)
         except NoTimeAvailable:

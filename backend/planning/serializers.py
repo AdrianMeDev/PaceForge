@@ -50,6 +50,7 @@ def plan_data(
         "version": plan.version,
         "status": plan.status,
         "reason": plan.reason,
+        "note": plan.note,
         "rationale": week_plan.rationale,
         "parent": str(plan.parent_id) if plan.parent_id else None,
         "created_at": _time(plan.created_at),

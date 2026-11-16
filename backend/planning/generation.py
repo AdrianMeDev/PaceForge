@@ -89,17 +89,24 @@ def plannable_weeks(user: User) -> tuple[date, ...]:
     return tuple(this_week + timedelta(weeks=n) for n in range(WEEKS_AHEAD + 1))
 
 
-def generate(user: User, monday: date) -> Generated:
+def generate(user: User, monday: date, note: str = "") -> Generated:
     """Draft the week that starts on ``monday`` with the coach of ``user``.
 
-    Raises ``WeekNotPlannable``, ``NoTimeAvailable`` (checked before anything is sent, so before
-    the provider is even looked at), ``coach.services.NotConfiguredError`` (no provider chosen),
+    ``note`` is what the athlete wants the coach to know about the week (a trip, a day without
+    time, a niggle): at most ``NOTE_MAX`` characters of plain text. It is stored with the draft
+    and told to the coach as data, a wish and never an instruction.
+
+    Raises ``django.core.exceptions.ValidationError`` for a note that is too long or not plain
+    text (before anything else is looked at), ``WeekNotPlannable``, ``NoTimeAvailable`` (checked
+    before anything is sent, so before the provider is even looked at),
+    ``coach.services.NotConfiguredError`` (no provider chosen),
     the errors of the provider (``coach.providers.base.ProviderError``) if it could not be
     reached or refused, and ``PlanNotUsable`` if no readable plan came of it.
     """
+    note = services.clean_note(note)
     if monday not in plannable_weeks(user):
         raise WeekNotPlannable
-    briefing = build_briefing(user, monday)
+    briefing = build_briefing(user, monday, note)
     if briefing["weekly_minutes_available"] == 0:
         raise NoTimeAvailable
     messages = [first_message(briefing)]
@@ -134,7 +141,7 @@ def generate(user: User, monday: date) -> Generated:
     assert best is not None
     if best.plan is None or best.report is None:
         raise PlanNotUsable(best.problems)
-    stored = services.save_draft(user, best.plan, reason=REASON)
+    stored = services.save_draft(user, best.plan, reason=REASON, note=note)
     return Generated(stored, best.report)
 
 

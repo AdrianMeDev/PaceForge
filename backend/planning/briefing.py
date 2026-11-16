@@ -59,11 +59,12 @@ MAX_BYTES = 28_000
 _THRESHOLD_SPORT = {Sport.CYCLING: "ride", Sport.RUNNING: "run"}
 
 
-def build_briefing(user: User, monday: date) -> dict[str, Any]:
+def build_briefing(user: User, monday: date, note: str = "") -> dict[str, Any]:
     """The briefing for the week that starts on ``monday``, as JSON-compatible data.
 
-    The same data gives the same briefing. The number of queries does not depend on how much
-    data there is.
+    ``note`` is what the athlete wrote about this week (already cleaned by
+    ``services.clean_note``): told as it is, as data. The same data gives the same briefing. The
+    number of queries does not depend on how much data there is.
     """
     context = build_context(user, monday)  # raises ValueError unless it is a Monday
     today = today_of(user)
@@ -106,6 +107,7 @@ def build_briefing(user: User, monday: date) -> dict[str, Any]:
         "season_week": season_week_data(context.season_week),
         "previous_week_plan": _previous_week(user, monday),
         "previous_week_review": _previous_week_review(user, monday),
+        "athlete_note": note or None,
     }
 
 
