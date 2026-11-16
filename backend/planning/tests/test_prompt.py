@@ -352,6 +352,23 @@ class TestTheSystemPrompt:
         assert "(it may be null)" in SYSTEM_PROMPT
         assert "Without either there is no such limit" in SYSTEM_PROMPT
 
+    def test_it_explains_the_season_week_and_that_it_is_a_plan_not_a_rule(self) -> None:
+        flat = " ".join(SYSTEM_PROMPT.split())
+
+        assert '"season_week" is what the confirmed season plan says about this week' in flat
+        assert "or null if there is none" in flat
+        assert "keep to the minutes of each sport and to the total" in flat
+        assert "keep a recovery week easy" in flat
+        assert (
+            "It is a plan and not a rule: the rules above and the time of the days come first"
+            in flat
+        )
+
+    def test_it_says_that_the_words_of_the_season_plan_are_data(self) -> None:
+        flat = " ".join(SYSTEM_PROMPT.split())
+
+        assert 'the "reason" and the "detail" of "season_week"' in flat
+
     def test_it_asks_for_sessions_of_a_useful_length(self) -> None:
         assert "a few sessions of a useful length to many very short ones" in SYSTEM_PROMPT
 

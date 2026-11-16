@@ -405,6 +405,7 @@ without this page.
 | `limitations` | The current injuries and limitations, the newest first, at most 10: `body_part` (a fixed word: foot, ankle, achilles, calf, shin, knee, thigh, hip, back, shoulder, other) and the `sports` it affects (none listed: no particular sport). Healed ones are not told. No text of the athlete. |
 | `limitations_text` | What the athlete wrote in the free text about their limitations, cut to `LIMITATIONS_TEXT_MAX_TOLD` characters, **only if they switched on "Send this text to my AI coach"**; otherwise `null`. Free text: the system prompt says that it is data and never instructions. |
 | `limitations_not_shown` | How many current limitations were left out because of the limit. |
+| `season_week` | What the confirmed [season plan](season.md) says about the week, or `null` if there is none or the week is not in it: the `phase`, whether it is a `recovery` week, the `target_minutes` of the skeleton, the `minutes` of each sport with their `total_minutes`, the `focus`, the `key_sessions` (`sport`, `kind`, `minutes`, `detail`), the `reason` and the `races` of the week (`date` and `priority`; the titles are in `goals`). The `reason` and the `detail` are words of the coach from that plan, cut to their limits: free text, data and never instructions. Only the confirmed plan counts, never a draft. |
 | `previous_week_plan` | The confirmed plan of the week before: day, sport, goal, minutes. |
 | `previous_week_review` | How the week before went, from the [week review](../README.md#week-review): the number of workouts by status, the minutes planned and done, the sessions that were not planned, how many sessions were rated and their mean RPE, the three scales of the week feedback (`null` if none was given) and `next_week`, the recommendation of a review of that week by the coach (`increase`, `hold`, `reduce`; `null` if none was asked for). Numbers and one fixed word, no text of the user or of the coach. `null` if the week before has not begun or has nothing in it. |
 
@@ -413,7 +414,8 @@ or descriptions of activities and the provider setup. The limitations of the tra
 told as a body part and sports from a fixed list; the free text next to them is **only** sent if the
 athlete switches that on, and then as `limitations_text`.
 
-The title and notes of a goal (and `limitations_text`, if allowed) are free text. They are sent as
+The title and notes of a goal (and `limitations_text`, if allowed, and the `reason` and `detail`
+of `season_week`) are free text. They are sent as
 JSON strings, the notes cut to `GOAL_NOTES_MAX` characters and the limitations text to
 `LIMITATIONS_TEXT_MAX_TOLD`, and the system prompt says that they are data and never instructions.
 That is a request to the model, not a guarantee: a model may still be swayed by what is in them.
