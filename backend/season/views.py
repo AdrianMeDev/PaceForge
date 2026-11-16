@@ -17,7 +17,8 @@ from . import services
 from .generation import NothingToPlan, PlanNotUsable, generate
 from .inputs import skeleton_for
 from .models import SeasonPlanVersion
-from .serializers import plan_detail, plan_summary, skeleton_data
+from .serializers import plan_detail, plan_summary
+from .storage import skeleton_data
 from .throttles import SeasonGenerateThrottle
 
 # Fixed texts, with a code the client can act on: nothing the provider said and nothing of the

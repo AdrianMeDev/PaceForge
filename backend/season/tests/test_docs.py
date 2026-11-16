@@ -109,8 +109,8 @@ class TestTheWords:
     def test_the_api_names_every_field_of_a_week_and_of_a_race(self) -> None:
         from datetime import date
 
-        from season.serializers import skeleton_data
         from season.skeleton import Race, Skeleton, SkeletonWeek
+        from season.storage import skeleton_data
 
         race = Race(date(2027, 1, 3), "main", "running", 5000, "x")
         week = SkeletonWeek(date(2026, 12, 28), Phase.BASE, False, 1, 2, (race,))

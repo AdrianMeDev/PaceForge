@@ -22,7 +22,7 @@ from planning.validation import Report
 from .models import REASON_MAX, SeasonPlanVersion
 from .rules import SeasonContext, validate_season
 from .schema import SeasonPlan, parse_season_plan, to_json
-from .serializers import skeleton_data, skeleton_from_data
+from .storage import skeleton_data, skeleton_from_data
 
 Status = SeasonPlanVersion.Status
 
