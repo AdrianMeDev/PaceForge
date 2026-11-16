@@ -31,6 +31,7 @@ NO_TIME = (
 )
 NOT_FOUND = "There is no such season plan."
 NOT_A_DRAFT = "Only a draft can be confirmed or discarded."
+NOT_RESTORABLE = "Only a version that was replaced or discarded can be restored."
 NOT_CONFIRMABLE = "The plan has errors and cannot be confirmed."
 NOT_USABLE = "The coach did not give a plan that can be used. Please try again."
 
@@ -140,6 +141,25 @@ class ConfirmView(APIView):
                 NOT_CONFIRMABLE,
                 findings=[finding_data(finding) for finding in error.report.findings],
             )
+
+
+class RestoreView(APIView):
+    """Brings back a version that was replaced or discarded, as a new draft (the version in the
+    address is not touched). The answer is the new draft with its checks."""
+
+    http_method_names = ["post", "options"]
+
+    def post(self, request: Request, plan_id: UUID) -> Response:
+        user = _user(request)
+        try:
+            plan = services.restore(user, plan_id)
+        except services.PlanNotFound:
+            return _error(status.HTTP_404_NOT_FOUND, "not_found", NOT_FOUND)
+        except services.PlanNotRestorable:
+            return _error(status.HTTP_409_CONFLICT, "not_restorable", NOT_RESTORABLE)
+        response = _detail(user, plan)
+        response.status_code = status.HTTP_201_CREATED
+        return response
 
 
 class DiscardView(APIView):
