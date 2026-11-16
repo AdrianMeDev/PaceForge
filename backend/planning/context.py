@@ -12,6 +12,7 @@ from datetime import UTC, date, datetime, time, timedelta, tzinfo
 
 from accounts.models import User
 from activities.models import Activity
+from athletes import best_times
 from athletes.facts import body_and_training
 from athletes.thresholds import all_candidates
 from availability.capacity import week_capacity
@@ -119,6 +120,9 @@ class PlanContext:
     athlete: AthleteFacts = AthleteFacts()
     # The sessions that happen every week, by weekday and part of the day.
     fixed_sessions: tuple[FixedFacts, ...] = ()
+    # The athlete's best times, in the order of the distances, with their VDOT. The one that counts
+    # for the threshold pace is found with ``best_times.counting``.
+    best_times: tuple[best_times.Entry, ...] = ()
 
     def offset(self, day: date) -> int | None:
         """The place of ``day`` in the week (Monday is 0), ``None`` if it lies outside."""
@@ -131,7 +135,8 @@ def build_context(user: User, monday: date) -> PlanContext:
     data."""
     capacity = week_capacity(user, monday)  # raises ValueError unless it is a Monday
     body = body_and_training(user)
-    held = set(all_candidates(user))
+    races = best_times.entries(user)
+    held = set(all_candidates(user, races))
     zone = time_zone_of(user)
     return PlanContext(
         week_start=monday,
@@ -151,6 +156,7 @@ def build_context(user: User, monday: date) -> PlanContext:
         ),
         limitations_text=capacity.shared_limitations_text,
         strength_focus=capacity.strength_focus,
+        best_times=tuple(races),
         athlete=AthleteFacts(
             age=None if body.birth_year is None else max(monday.year - body.birth_year, 0),
             sex=body.sex,

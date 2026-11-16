@@ -144,6 +144,13 @@ and the "strength_equipment" they have ("gym", "home", "dumbbells"; an empty lis
 it to size the load: a beginner, a long break or few years of training call for a gentler build \
 and shorter sessions, and strength sessions have to fit the equipment. It is information and no \
 rule; none of it is a reason to leave a goal out.
+- "best_times" lists the athlete's running best times (the "distance" "5k", "10k", \
+"half_marathon" or "marathon", the time in "seconds", the "date" of the race) with the "vdot" \
+each is worth. "recent" says that the race is less than a year old; only then it can count, and \
+"counts" marks the one the threshold pace comes from. "vdot" is the VDOT of that one, null if \
+none counts: a measure of the athlete's running form. Use it to judge the paces of the goals and \
+the load, not to set paces of your own: the zones in "zone_systems" already follow from it. A \
+goal time far above that form is unrealistic: plan carefully towards it and do not promise it.
 - "fixed_sessions" lists the sessions that happen every week at a fixed time (a running club, a \
 class): the "date" in the week to plan, the "sport", the "minutes" and the "slot" (null: no part \
 of the day named). Plan each of them on its date, in that sport, about that long and, if there is \
