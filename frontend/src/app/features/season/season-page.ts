@@ -10,7 +10,14 @@ import {
   SeasonPlan,
   SeasonPlanVersion,
 } from '../../core/season/season-models';
-import { STATUS_LABELS, dayLabel, minutesText, weekRange } from '../planning/plan-format';
+import {
+  SPORT_LABELS,
+  STATUS_LABELS,
+  dayLabel,
+  minutesText,
+  weekRange,
+} from '../planning/plan-format';
+import { compareSeasons } from './season-compare';
 import { SeasonChart } from './season-chart';
 import { SeasonTimeline } from './season-timeline';
 import {
@@ -35,7 +42,7 @@ const HINTED: SeasonPhase[] = ['base', 'build', 'specific', 'taper', 'transition
 /** What went wrong with the plans (the skeleton itself loads on its own). */
 type Problem = 'list' | 'version' | 'missing' | null;
 /** What the page is waiting for; one thing at a time. */
-type Work = 'generating' | 'deciding' | 'opening' | 'restoring';
+type Work = 'generating' | 'deciding' | 'opening' | 'restoring' | 'changing';
 
 const FALLBACK = 'Something went wrong. Please try again.';
 const GONE = 'That plan does not exist any more.';
@@ -44,6 +51,12 @@ const NOT_USABLE = 'The coach did not give a plan that could be used. Please try
 const TOO_MANY = 'Too many requests. Please wait a minute and try again.';
 const NOT_A_DRAFT = 'That plan is not a draft any more.';
 const NOT_RESTORABLE = 'Only a version that was replaced or discarded can be restored.';
+const NOT_CHANGEABLE =
+  'Only the confirmed version and a draft can be changed. Restore an older version first.';
+const UNCHANGED =
+  'The coach gave the season back as it was. Say more clearly what you want changed.';
+/** The longest request the server keeps (characters, as the server counts them). */
+const REQUEST_MAX = 500;
 const HAS_ERRORS = 'The plan has errors and cannot be confirmed.';
 const REFRESH_FAILED = 'The list of plans could not be refreshed. Please try again.';
 
@@ -74,6 +87,12 @@ export class SeasonPage implements OnInit {
   /** The version that is shown, with its weeks. */
   protected readonly plan = signal<SeasonPlan | null>(null);
   protected readonly problem = signal<Problem>(null);
+  /** The version the shown one was made from on request, to say what is different. */
+  protected readonly parent = signal<SeasonPlan | null>(null);
+  protected readonly parentMissing = signal(false);
+  /** What the athlete is writing for a change, and what the server said about it. */
+  protected readonly requestText = signal('');
+  protected readonly requestError = signal<string | null>(null);
   protected readonly work = signal<Work | null>(null);
   protected readonly busy = computed(() => this.work() !== null);
   /** Whether an AI provider is set up; without one there is nothing to ask. */
@@ -97,6 +116,21 @@ export class SeasonPage implements OnInit {
   protected readonly canRestore = computed(
     () => this.plan()?.status === 'superseded' || this.plan()?.status === 'discarded',
   );
+  /** The confirmed version and a draft can be changed on request. */
+  protected readonly canChange = computed(
+    () => this.plan()?.status === 'confirmed' || this.plan()?.status === 'draft',
+  );
+  protected readonly requestMax = REQUEST_MAX;
+  protected readonly requestLength = computed(() => [...this.requestText()].length);
+  protected readonly requestFilled = computed(() => this.requestText().trim() !== '');
+  /** What differs between the shown version and the one it was made from. */
+  protected readonly differences = computed(() => {
+    const plan = this.plan();
+    const parent = this.parent();
+    return plan !== null && parent !== null && plan.parent === parent.id
+      ? compareSeasons(parent, plan)
+      : null;
+  });
   protected readonly canConfirm = computed(
     () => this.plan()?.status === 'draft' && this.plan()?.report?.valid === true,
   );
@@ -130,6 +164,7 @@ export class SeasonPage implements OnInit {
   protected readonly phaseLabel = PHASE_LABELS;
   protected readonly focusLabel = FOCUS_LABELS;
   protected readonly status = STATUS_LABELS;
+  protected readonly sportLabel = SPORT_LABELS;
   protected readonly bySport = minutesBySport;
   protected readonly done = doneText;
   protected readonly session = keySessionText;
@@ -188,7 +223,7 @@ export class SeasonPage implements OnInit {
       const result = await this.api.generate();
       switch (result.kind) {
         case 'ok':
-          this.plan.set(result.plan);
+          await this.setPlan(result.plan);
           this.notice.set('A draft was made. Please read it before you confirm it.');
           await this.refresh();
           break;
@@ -235,7 +270,7 @@ export class SeasonPage implements OnInit {
       const result = await this.api.confirm(current.id);
       switch (result.kind) {
         case 'ok':
-          this.plan.set(result.plan);
+          await this.setPlan(result.plan);
           this.notice.set('The plan is confirmed.');
           await this.refresh();
           break;
@@ -245,6 +280,77 @@ export class SeasonPage implements OnInit {
           break;
         default:
           await this.decided(result.kind, current.id);
+      }
+    } catch {
+      this.errors.set([FALLBACK]);
+    } finally {
+      this.work.set(null);
+    }
+  }
+
+  /** Asks the coach to change the version on the screen as the athlete wishes. */
+  protected async change(): Promise<void> {
+    const current = this.plan();
+    if (this.busy() || current === null || !this.canChange() || !this.configured()) {
+      return;
+    }
+    if (!this.requestFilled()) {
+      return;
+    }
+    this.clearMessages();
+    this.work.set('changing');
+    try {
+      const result = await this.api.change(current.id, this.requestText());
+      switch (result.kind) {
+        case 'ok':
+          await this.setPlan(result.plan);
+          this.requestText.set('');
+          this.notice.set(
+            `A changed draft was made from version ${current.version} (version ${result.plan.version}). ` +
+              (result.plan.report?.valid === false
+                ? 'It has errors and cannot be confirmed yet.'
+                : 'Read what changed, then confirm it to make it the plan.'),
+          );
+          await this.refresh();
+          break;
+        case 'invalid':
+          // the text stays, so that it can be corrected
+          this.requestError.set((result.fields['request'] ?? result.errors).join(' '));
+          break;
+        case 'not_found':
+          this.plan.set(null);
+          this.errors.set([GONE]);
+          await this.refresh();
+          break;
+        case 'not_changeable':
+          // it has been decided on meanwhile: show it as it is now
+          this.errors.set([NOT_CHANGEABLE]);
+          await this.show(current.id, false);
+          await this.refresh();
+          break;
+        case 'not_configured':
+          this.configured.set(false);
+          break;
+        case 'unchanged':
+          this.errors.set([UNCHANGED]);
+          break;
+        case 'not_usable':
+          this.errors.set([NOT_USABLE]);
+          this.problems.set(result.problems);
+          break;
+        case 'provider_problem':
+          this.errors.set([
+            result.retry_after === null
+              ? result.message
+              : `${result.message} Try again in ${result.retry_after} seconds.`,
+          ]);
+          break;
+        case 'rate_limited':
+          this.errors.set([TOO_MANY]);
+          break;
+        case 'forbidden':
+          this.view.set('signed_out');
+          break;
       }
     } catch {
       this.errors.set([FALLBACK]);
@@ -265,7 +371,7 @@ export class SeasonPage implements OnInit {
       const result = await this.api.restore(current.id);
       switch (result.kind) {
         case 'ok':
-          this.plan.set(result.plan);
+          await this.setPlan(result.plan);
           this.notice.set(
             `Version ${current.version} was restored as a new draft (version ${result.plan.version}).` +
               (result.plan.report?.valid === false
@@ -306,7 +412,7 @@ export class SeasonPage implements OnInit {
     try {
       const result = await this.api.discard(current.id);
       if (result.kind === 'ok') {
-        this.plan.set(result.plan);
+        await this.setPlan(result.plan);
         this.notice.set('The draft was discarded.');
         await this.refresh();
       } else {
@@ -344,7 +450,7 @@ export class SeasonPage implements OnInit {
       const result = await this.api.plan(id);
       switch (result.kind) {
         case 'ok':
-          this.plan.set(result.plan);
+          await this.setPlan(result.plan);
           break;
         case 'not_found':
           if (announce) {
@@ -361,6 +467,33 @@ export class SeasonPage implements OnInit {
       }
     } finally {
       this.work.set(null);
+    }
+  }
+
+  /**
+   * Puts a version on the screen. One that was made on request also gets the version it was made
+   * from, to say what is different; if that cannot be loaded the page says so and shows the rest.
+   */
+  private async setPlan(plan: SeasonPlan): Promise<void> {
+    this.plan.set(plan);
+    this.parent.set(null);
+    this.parentMissing.set(false);
+    if (plan.request === '' || plan.parent === null) {
+      return;
+    }
+    try {
+      const result = await this.api.plan(plan.parent);
+      if (result.kind === 'ok') {
+        if (this.plan()?.id === plan.id) {
+          this.parent.set(result.plan);
+        }
+      } else if (result.kind === 'forbidden') {
+        this.view.set('signed_out');
+      } else {
+        this.parentMissing.set(true);
+      }
+    } catch {
+      this.parentMissing.set(true);
     }
   }
 
@@ -383,6 +516,7 @@ export class SeasonPage implements OnInit {
     this.notice.set(null);
     this.problems.set([]);
     this.noTime.set(false);
+    this.requestError.set(null);
     this.problem.set(null);
   }
 

@@ -4,6 +4,7 @@ import { CoachApi } from '../../core/coach/coach-api';
 import { AiProviderState, GetProviderResult } from '../../core/coach/coach-models';
 import { SeasonApi } from '../../core/season/season-api';
 import {
+  ChangeSeasonResult,
   ConfirmSeasonResult,
   DiscardSeasonResult,
   GenerateSeasonResult,
@@ -118,6 +119,9 @@ describe('SeasonPage', () => {
   let open: ReturnType<typeof vi.fn<(id: string) => Promise<GetSeasonPlanResult>>>;
   let generate: ReturnType<typeof vi.fn<() => Promise<GenerateSeasonResult>>>;
   let confirm: ReturnType<typeof vi.fn<(id: string) => Promise<ConfirmSeasonResult>>>;
+  let change: ReturnType<
+    typeof vi.fn<(id: string, request: string) => Promise<ChangeSeasonResult>>
+  >;
   let restore: ReturnType<typeof vi.fn<(id: string) => Promise<RestoreSeasonResult>>>;
   let discard: ReturnType<typeof vi.fn<(id: string) => Promise<DiscardSeasonResult>>>;
   let provider: ReturnType<typeof vi.fn<() => Promise<GetProviderResult>>>;
@@ -128,7 +132,7 @@ describe('SeasonPage', () => {
       provideRouter([]),
       {
         provide: SeasonApi,
-        useValue: { get, plans, plan: open, generate, confirm, discard, restore },
+        useValue: { get, plans, plan: open, generate, confirm, discard, restore, change },
       },
       { provide: CoachApi, useValue: { get: provider } },
     ];
@@ -144,6 +148,7 @@ describe('SeasonPage', () => {
     confirm = vi.fn<(id: string) => Promise<ConfirmSeasonResult>>();
     discard = vi.fn<(id: string) => Promise<DiscardSeasonResult>>();
     restore = vi.fn<(id: string) => Promise<RestoreSeasonResult>>();
+    change = vi.fn<(id: string, request: string) => Promise<ChangeSeasonResult>>();
     provider = vi.fn<() => Promise<GetProviderResult>>().mockResolvedValue(CONFIGURED);
     if (first instanceof Error) {
       get.mockRejectedValueOnce(first);
@@ -1122,6 +1127,388 @@ describe('SeasonPage', () => {
         await click('restore');
 
         expect(text()).toContain('Your session has ended.');
+      });
+    });
+
+    describe('changing on request', () => {
+      const BASE_ID = '0195f3a0-0000-7000-8000-000000000002';
+      const NEW_ID = '0195f3a0-0000-7000-8000-000000000011';
+      const BASE = version({ id: BASE_ID, version: 2 });
+      const WISH = 'Less cycling in January';
+      const alerts = () =>
+        Array.from(page.querySelectorAll('[role="alert"]')).map((alert) =>
+          alert.textContent?.replace(/\s+/g, ' ').trim(),
+        );
+      const area = () => query<HTMLTextAreaElement>(page, '#season-request');
+      const submit = () => query<HTMLButtonElement>(page, '[data-testid="change-submit"]');
+      async function typeWish(text = WISH) {
+        area().value = text;
+        area().dispatchEvent(new Event('input'));
+        await settle(fixture);
+      }
+      async function ask(text = WISH) {
+        await typeWish(text);
+        submit().click();
+        await settle(fixture);
+      }
+
+      /** The new draft: the base with the cycling of the first week cut. */
+      function changed(valid = true): SeasonPlan {
+        const draft = plan({
+          id: NEW_ID,
+          version: 3,
+          status: 'draft',
+          confirmed_at: null,
+          request: WISH,
+          parent: BASE_ID,
+          report: {
+            valid,
+            findings: valid
+              ? []
+              : [{ severity: 'error', code: 'x', message: 'Too much.', path: 'weeks[0].minutes' }],
+          },
+        });
+        draft.weeks[0] = {
+          ...draft.weeks[0],
+          minutes: { running: 120 },
+          total_minutes: 120,
+          focus: 'tempo',
+          key_sessions: [{ sport: 'running', kind: 'tempo', minutes: 40, detail: 'on the hills' }],
+          reason: 'Less cycling, more running.',
+        };
+        return draft;
+      }
+
+      async function withBase() {
+        await load([BASE], plan({ id: BASE_ID, version: 2 }));
+        open.mockImplementation(async (id) =>
+          id === BASE_ID
+            ? { kind: 'ok', plan: plan({ id: BASE_ID, version: 2 }) }
+            : { kind: 'not_found' },
+        );
+      }
+
+      it('has a form for the confirmed version and for a draft', async () => {
+        await withBase();
+
+        expect(query(page, '[data-testid="change"] h3').textContent).toBe('Ask for a change');
+        expect(submit().disabled).toBe(true);
+        expect(query(page, '#season-request-hint').textContent).toContain(
+          'less cycling in January',
+        );
+        expect(query(page, '[data-testid="request-count"]').textContent?.trim()).toBe('0 / 500');
+      });
+
+      it('has no form for a version that was replaced or discarded', async () => {
+        await load([version({ status: 'superseded' })], plan({ status: 'superseded' }));
+
+        expect(page.querySelector('[data-testid="change"]')).toBeNull();
+      });
+
+      it('has no form without a version on the screen', async () => {
+        await load([]);
+
+        expect(page.querySelector('[data-testid="change"]')).toBeNull();
+      });
+
+      it('sends the user to the connections without a provider', async () => {
+        provider = vi.fn<() => Promise<GetProviderResult>>().mockResolvedValue(NOT_CONFIGURED);
+        await load([BASE], plan({ id: BASE_ID, version: 2 }));
+        provider.mockResolvedValue(NOT_CONFIGURED);
+
+        expect(page.querySelector('#season-request')).toBeNull();
+        expect(
+          query(query(page, '[data-testid="change-no-provider"]'), 'a').getAttribute('href'),
+        ).toBe('/settings/connections');
+      });
+
+      it('counts the characters as the server counts them, and enables the button for text', async () => {
+        await withBase();
+
+        await typeWish('\u{1F600}\u{1F600}');
+
+        expect(query(page, '[data-testid="request-count"]').textContent?.trim()).toBe('2 / 500');
+        expect(submit().disabled).toBe(false);
+      });
+
+      it('keeps the button off for a request of spaces only', async () => {
+        await withBase();
+
+        await typeWish('   \n ');
+
+        expect(submit().disabled).toBe(true);
+      });
+
+      it('sends the request and shows the new draft with what changed', async () => {
+        await withBase();
+        change.mockResolvedValue({ kind: 'ok', plan: changed() });
+        open.mockImplementation(async (id) =>
+          id === BASE_ID
+            ? { kind: 'ok', plan: plan({ id: BASE_ID, version: 2 }) }
+            : { kind: 'not_found' },
+        );
+        plans.mockResolvedValue({
+          kind: 'ok',
+          plans: [version({ id: NEW_ID, version: 3, status: 'draft', confirmed_at: null }), BASE],
+        });
+
+        await ask();
+
+        expect(change).toHaveBeenCalledExactlyOnceWith(BASE_ID, WISH);
+        expect(query(page, '.notice').textContent).toContain(
+          'A changed draft was made from version 2 (version 3). Read what changed',
+        );
+        expect(query(page, '[data-testid="plan-status"]').textContent).toContain('Draft');
+        expect(query(page, '[data-testid="request"]').textContent).toContain(WISH);
+        expect(page.querySelectorAll('.versions li')).toHaveLength(2);
+        expect(area().value).toBe('');
+        const changes = query(page, '[data-testid="changes"]');
+        expect(query(changes, 'h3').textContent).toBe('What changed since version 2');
+        expect(
+          Array.from(changes.querySelectorAll('li')).map((li) =>
+            li.textContent?.replace(/\s+/g, ' ').trim(),
+          ),
+        ).toEqual([
+          'Cycling: 1 h 30 min → 0 min',
+          'All together: 3 h 30 min → 2 h',
+          'Focus: Endurance → Tempo',
+          'Key session added: Running · Tempo · 40 min · on the hills',
+          'Key session dropped: Running · Long · 1 h 30 min · 3 x 10 min at tempo',
+          'New reason: Less cycling, more running.',
+        ]);
+        expect(
+          query(changes, '[data-testid="unchanged-count"]')
+            .textContent?.replace(/\s+/g, ' ')
+            .trim(),
+        ).toBe('3 weeks are the same.');
+      });
+
+      it('shows the texts of the coach and of the athlete as text, never as markup', async () => {
+        await withBase();
+        const hostile = '<img src=x onerror=alert(1)>';
+        const draft = changed();
+        draft.request = hostile;
+        draft.weeks[0] = { ...draft.weeks[0], reason: hostile };
+        change.mockResolvedValue({ kind: 'ok', plan: draft });
+
+        await ask(hostile);
+
+        expect(page.querySelector('img')).toBeNull();
+        expect(query(page, '[data-testid="request"] q').textContent).toBe(hostile);
+        expect(query(page, '[data-testid="changes"]').textContent).toContain(hostile);
+      });
+
+      it('says when the new draft has errors', async () => {
+        await withBase();
+        change.mockResolvedValue({ kind: 'ok', plan: changed(false) });
+
+        await ask();
+
+        expect(query(page, '.notice').textContent).toContain(
+          'It has errors and cannot be confirmed',
+        );
+        expect(query<HTMLButtonElement>(page, '[data-testid="confirm"]').disabled).toBe(true);
+      });
+
+      it('says that nothing is different when only words changed', async () => {
+        await withBase();
+        const same = plan({
+          id: NEW_ID,
+          version: 3,
+          status: 'draft',
+          confirmed_at: null,
+          request: WISH,
+          parent: BASE_ID,
+          rationale: 'Base first, then the race.',
+          report: { valid: true, findings: [] },
+        });
+        change.mockResolvedValue({ kind: 'ok', plan: same });
+
+        await ask();
+
+        expect(query(page, '[data-testid="no-changes"]').textContent).toContain(
+          'Nothing is different',
+        );
+        expect(query(page, '[data-testid="unchanged-count"]').textContent).toContain(
+          '4 weeks are the same',
+        );
+      });
+
+      it('says when the version it was made from cannot be shown', async () => {
+        await withBase();
+        change.mockResolvedValue({ kind: 'ok', plan: changed() });
+        open.mockResolvedValue({ kind: 'not_found' });
+
+        await ask();
+
+        expect(page.querySelector('[data-testid="changes"]')).toBeNull();
+        expect(query(page, '[data-testid="parent-missing"]').textContent).toContain(
+          'cannot be shown',
+        );
+        expect(query(page, '[data-testid="request"]').textContent).toContain(WISH);
+      });
+
+      it('says that it works while it works and allows nothing else meanwhile', async () => {
+        await withBase();
+        let finish: (value: ChangeSeasonResult) => void = () => undefined;
+        change.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+        await typeWish();
+
+        submit().click();
+        fixture.detectChanges();
+
+        expect(query(page, '[data-testid="changing"]').textContent).toContain('a few minutes');
+        expect(submit().disabled).toBe(true);
+        expect(area().disabled).toBe(true);
+        expect(query<HTMLButtonElement>(page, '[data-testid="generate"]').disabled).toBe(true);
+        finish({ kind: 'forbidden' });
+        await settle(fixture);
+      });
+
+      it('asks only once while it works', async () => {
+        await withBase();
+        change.mockReturnValue(new Promise(() => undefined));
+        await typeWish();
+
+        submit().click();
+        submit().click();
+        await settle(fixture);
+
+        expect(change).toHaveBeenCalledTimes(1);
+      });
+
+      it('shows what the server said about the request, and keeps the text', async () => {
+        await withBase();
+        change.mockResolvedValue({
+          kind: 'invalid',
+          errors: ['Use at most 500 characters.'],
+          fields: { request: ['Use at most 500 characters.'] },
+        });
+
+        await ask('too long');
+
+        expect(query(page, '[data-testid="request-error"]').textContent).toBe(
+          'Use at most 500 characters.',
+        );
+        expect(area().value).toBe('too long');
+        expect(area().getAttribute('aria-invalid')).toBe('true');
+      });
+
+      it.each([
+        [
+          'the coach gave the season back as it was',
+          { kind: 'unchanged' },
+          'The coach gave the season back as it was. Say more clearly what you want changed.',
+        ],
+        [
+          'a limit of this server',
+          { kind: 'rate_limited' },
+          'Too many requests. Please wait a minute and try again.',
+        ],
+        [
+          'a provider that asks to slow down',
+          {
+            kind: 'provider_problem',
+            problem: 'rate_limited',
+            message: 'Slow down.',
+            retry_after: 17,
+          },
+          'Slow down. Try again in 17 seconds.',
+        ],
+        [
+          'no usable answer',
+          {
+            kind: 'not_usable',
+            problems: [{ path: '', message: 'The answer is not one JSON object.' }],
+          },
+          'The coach did not give a plan that could be used. Please try again.',
+        ],
+      ] as [string, ChangeSeasonResult, string][])(
+        'says %s, and keeps the text',
+        async (_name, result, expected) => {
+          await withBase();
+          change.mockResolvedValue(result);
+
+          await ask();
+
+          expect(alerts()).toEqual([expected]);
+          expect(area().value).toBe(WISH);
+          expect(submit().disabled).toBe(false);
+        },
+      );
+
+      it('lists what was wrong with an answer that could not be used', async () => {
+        await withBase();
+        change.mockResolvedValue({
+          kind: 'not_usable',
+          problems: [{ path: '', message: 'The answer is not one JSON object.' }],
+        });
+
+        await ask();
+
+        expect(query(page, '.problems').textContent).toContain(
+          'The answer is not one JSON object.',
+        );
+      });
+
+      it('goes back to the hint when the provider is gone meanwhile', async () => {
+        await withBase();
+        change.mockResolvedValue({ kind: 'not_configured' });
+
+        await ask();
+
+        expect(page.querySelector('#season-request')).toBeNull();
+        expect(page.querySelector('[data-testid="change-no-provider"]')).not.toBeNull();
+      });
+
+      it('says when the version cannot be changed any more and shows it as it is', async () => {
+        await withBase();
+        change.mockResolvedValue({ kind: 'not_changeable' });
+
+        await ask();
+
+        expect(alerts()).toEqual([
+          'Only the confirmed version and a draft can be changed. Restore an older version first.',
+        ]);
+        expect(open).toHaveBeenLastCalledWith(BASE_ID);
+      });
+
+      it('says when the version is gone', async () => {
+        await withBase();
+        change.mockResolvedValue({ kind: 'not_found' });
+        plans.mockResolvedValue({ kind: 'ok', plans: [] });
+
+        await ask();
+
+        expect(alerts()).toEqual(['That plan does not exist any more.']);
+        expect(page.querySelector('[data-testid="plan-status"]')).toBeNull();
+      });
+
+      it('says when the request fails, and stays usable', async () => {
+        await withBase();
+        change.mockRejectedValue(new Error('offline'));
+
+        await ask();
+
+        expect(alerts()).toEqual(['Something went wrong. Please try again.']);
+        expect(area().value).toBe(WISH);
+        expect(rows()).toHaveLength(4);
+      });
+
+      it('says when the session is gone', async () => {
+        await withBase();
+        change.mockResolvedValue({ kind: 'forbidden' });
+
+        await ask();
+
+        expect(text()).toContain('Your session has ended.');
+      });
+
+      it('shows no comparison for a version that was not made on request', async () => {
+        await withBase();
+
+        expect(page.querySelector('[data-testid="changes"]')).toBeNull();
+        expect(page.querySelector('[data-testid="request"]')).toBeNull();
       });
     });
   });
