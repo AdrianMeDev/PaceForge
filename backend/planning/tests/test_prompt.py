@@ -414,6 +414,21 @@ class TestTheSystemPrompt:
         assert "Put the harder running, cycling or swimming session of a day first" in flat
         assert "and the easier one after it. (warning)" in flat
 
+    def test_it_asks_for_exercises_that_fit_the_equipment(self) -> None:
+        flat = " ".join(SYSTEM_PROMPT.split())
+
+        assert 'Give every strength workout its "exercises"' in flat
+        assert '"home" means body weight only' in flat
+        assert '"dumbbells" allows "dumbbells" and "bodyweight"' in flat
+        assert '"gym" allows everything' in flat
+        assert "exercises on a workout of another sport are an error" in flat
+
+    def test_the_format_shows_an_exercise(self) -> None:
+        assert '"exercises": [' in SYSTEM_PROMPT
+        assert 'one of "legs", "core", "upper_body", "full_body"' in SYSTEM_PROMPT
+        assert 'one of "gym", "dumbbells", "bodyweight"' in SYSTEM_PROMPT
+        assert '"reps" or "seconds", never both' in SYSTEM_PROMPT
+
     def test_it_explains_the_best_times(self) -> None:
         flat = " ".join(SYSTEM_PROMPT.split())
 
@@ -454,7 +469,7 @@ class TestTheSystemPrompt:
         assert '"sessions_min" and "sessions_max"' in flat
         assert "fewer or more sessions of a sport than that is a warning" in flat
         assert '"strength_focus" is what strength training is for' in flat
-        assert 'If "strength_focus" is "legs" or "full_body", strength training counts' in flat
+        assert "such a workout on the day before the longest run" in flat
         assert "the day before the longest run of the week or before a hard run. (warning)" in flat
 
     def test_it_explains_the_wishes_for_a_week(self) -> None:

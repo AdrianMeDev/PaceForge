@@ -67,7 +67,7 @@ class Equipment(models.TextChoices):
     """What an athlete has for strength training, in the order it is listed and stored."""
 
     GYM = "gym", "Gym"
-    HOME = "home", "At home"
+    HOME = "home", "Bodyweight only"
     DUMBBELLS = "dumbbells", "Dumbbells"
 
 

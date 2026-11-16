@@ -32,7 +32,7 @@ export const EXPERIENCE_LABELS: Record<StrengthExperience, string> = {
 /** In the order the server stores them. */
 export const EQUIPMENT_LABELS: Record<Equipment, string> = {
   gym: 'Gym',
-  home: 'At home',
+  home: 'Bodyweight only',
   dumbbells: 'Dumbbells',
 };
 

@@ -471,7 +471,7 @@ there are several, the first one in that order counts and the others are listed 
      300 kg, one decimal) and **resting heart rate** (25 to 120 bpm).
    - **Years of training** in running, cycling, swimming and strength (0 to 80 whole years each).
    - **Strength training experience** (beginner or advanced) and the **equipment** you have (gym,
-     at home, dumbbells; none ticked: not said).
+     bodyweight only, dumbbells; none ticked: not said).
 
    These go to your AI coach with every plan request, as numbers and fixed words and without any
    text of yours, and the panel names the provider. **The year of birth is not sent**, only the age

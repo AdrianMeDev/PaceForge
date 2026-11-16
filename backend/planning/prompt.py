@@ -29,14 +29,24 @@ from .rules import (
     Finding,
 )
 from .schema import (
+    EXERCISE_NAME_MAX,
+    HOLD_SECONDS_MAX,
+    HOLD_SECONDS_MIN,
+    MAX_EXERCISES,
     MAX_SEGMENTS,
     MAX_WORKOUTS,
     NOTES_MAX,
     RATIONALE_MAX,
     REPEAT_MAX,
+    REPS_MAX,
+    REST_SECONDS_MAX,
+    RPE_MAX,
+    SETS_MAX,
     STRETCHING_MAX,
     TITLE_MAX,
     ZONE_COUNT,
+    ExerciseEquipment,
+    ExerciseRegion,
     Goal,
     PlanFormatError,
     Problem,
@@ -91,6 +101,18 @@ Format (fields marked optional may be left out):
           "repeat": whole number, 1 to {REPEAT_MAX},   // optional, default 1
           "zone_system": ..., "zone": ...                // optional, both or neither
         }}
+      ],
+      "exercises": [             // optional, strength workouts only, at most {MAX_EXERCISES}
+        {{
+          "name": "...",         // at most {EXERCISE_NAME_MAX} characters
+          "region": one of {_words(ExerciseRegion)},
+          "equipment": one of {_words(ExerciseEquipment)},
+          "sets": whole number, 1 to {SETS_MAX},
+          "reps": whole number, 1 to {REPS_MAX},   // "reps" or "seconds", never both
+          "seconds": whole number, {HOLD_SECONDS_MIN} to {HOLD_SECONDS_MAX},   // a hold: a plank
+          "rpe": whole number, 1 to {RPE_MAX},       // optional
+          "rest_seconds": whole number, 0 to {REST_SECONDS_MAX}   // optional, between sets
+        }}
       ]
     }}
   ]
@@ -130,8 +152,18 @@ first when time is short; null: no role) and the least and the most sessions a w
 it ("sessions_min" and "sessions_max", null: no wish; a sport that is not listed has no wish at \
 all); fewer or more sessions of a sport than that is a warning. "strength_focus" is what \
 strength training is for ("legs", "core", "upper_body" or "full_body"; null: not said).
-- If "strength_focus" is "legs" or "full_body", strength training counts as training the legs: do \
-not put it on the day before the longest run of the week or before a hard run. (warning)
+- Give every strength workout its "exercises", in the order they are done: a "name" of your own, \
+the "region" it trains and the "equipment" it needs, the "sets" and either "reps" or, for a hold, \
+"seconds", and if you like the "rpe" and the "rest_seconds" between sets. Choose them for the \
+"strength_focus", the "strength_experience" and the "strength_equipment" in "athlete": "home" \
+means body weight only, so every exercise has the equipment "bodyweight"; "dumbbells" allows \
+"dumbbells" and "bodyweight"; "gym" allows everything; several entries allow all of what they \
+allow; an empty list says nothing, so keep to "bodyweight" and "dumbbells". An exercise that \
+needs equipment the athlete did not list is a warning (warning), and exercises on a workout of \
+another sport are an error. (error)
+- A strength workout trains the legs if one of its exercises has the region "legs" or \
+"full_body"; without exercises it does if "strength_focus" is "legs" or "full_body". Do not put \
+such a workout on the day before the longest run of the week or before a hard run. (warning)
 - "training_days" is on how many days of the week the athlete wants to train at most, and \
 "min_weekly_minutes" the least they want to train in the week, as far as the days and the budget \
 allow it (both null: no wish); more days than "training_days" or fewer minutes than that is a \
