@@ -14,9 +14,10 @@ from integrations.throttles import ProviderConnectionThrottle
 from integrations.views import failure_response
 
 from . import thresholds
-from .models import RULES, AthleteProfile
-from .serializers import AthleteInput, ThresholdInput, athlete_data
+from .models import RULES, AthleteProfile, BestTime
+from .serializers import AthleteInput, BestTimeInput, ThresholdInput, athlete_data
 from .sync import sync_from_intervals
+from .vdot import DISTANCES
 
 KEY_NOT_ACCEPTED = (
     "Intervals.icu did not accept the stored API key. Enter it again on the Connections page."
@@ -81,6 +82,34 @@ class ThresholdView(APIView):
         return _answer(user)
 
 
+class BestTimeView(APIView):
+    """The best time of the user over one distance; a new one replaces the old one."""
+
+    def put(self, request: Request, distance: str) -> Response:
+        _require_distance(distance)
+        serializer = BestTimeInput(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = _user(request)
+        candidate = BestTime(owner=user, distance=distance, **serializer.validated_data)
+        try:
+            candidate.clean()
+        except DjangoValidationError as error:
+            raise serializers.ValidationError(_messages(error)) from None
+        BestTime.objects.update_or_create(
+            owner=user,
+            distance=distance,
+            defaults={"seconds": candidate.seconds, "date": candidate.date},
+        )
+        return _answer(user)
+
+    def delete(self, request: Request, distance: str) -> Response:
+        """Removes the time. Removing one that is not there is fine."""
+        _require_distance(distance)
+        user = _user(request)
+        BestTime.objects.for_user(user).filter(distance=distance).delete()
+        return _answer(user)
+
+
 class SyncView(APIView):
     """Read the thresholds from the user's own Intervals.icu connection."""
 
@@ -127,6 +156,11 @@ def _athlete_messages(error: DjangoValidationError) -> dict[str, Any]:
         name = "training_years" if column.startswith("years_") else column
         messages.setdefault(name, []).extend(texts)
     return messages
+
+
+def _require_distance(distance: str) -> None:
+    if distance not in DISTANCES:
+        raise Http404
 
 
 def _require_known(sport: str, metric: str) -> None:

@@ -177,6 +177,10 @@ Each plan is checked against the facts of its user for that week, collected when
 - **Body and training data.** Age, sex, weight, resting heart rate, years of training per sport,
   strength experience and equipment, as the athlete entered them. They are for the coach only: no
   rule checks anything against them.
+- **Best times and VDOT.** The running best times of the athlete and the VDOT of the one that
+  counts, for the coach only; no rule checks a plan against them. They move the running pace zones
+  (a recent best time gives the threshold pace after a typed-in value), and the zones are checked
+  as before.
 - **Fixed appointments.** Sessions that happen every week: weekday, sport, minutes and optionally
   a part of the day. The coach is told to plan them; a plan without one is a warning
   (`fixed_session_missing`), not an error.
@@ -370,6 +374,8 @@ without this page.
 | `min_weekly_minutes` | The least the athlete wants to train in a week, in minutes (never above the weekly budget); `null` if they have no wish. |
 | `long_days` | For running and cycling, if the athlete named a weekday for the long session: the `sport` and the `date` of that day in the week to plan. Empty if there is none. |
 | `athlete` | What the athlete told about their body and training ([athlete page](../README.md)): the `age` in years (the year of the week minus the birth year, so it can be one too high before the birthday; the birth year itself is **not** sent), `sex` (`female`, `male`, `other`), `weight_kg`, `resting_hr`, `training_years` (the `sport` and the whole `years` of each sport they named), `strength_experience` (`beginner`, `advanced`) and `strength_equipment` (`gym`, `home`, `dumbbells`). `null` or an empty list for what was not said. Numbers and fixed words, no text of the athlete. |
+| `best_times` | The athlete's running best times, in the order 5 km, 10 km, half marathon, marathon (only the ones they entered): the `distance` (`5k`, `10k`, `half_marathon`, `marathon`), the time in `seconds`, the `date` of the race, the `vdot` it is worth, `recent` (the race is less than a year old, so it can count) and `counts` (the threshold pace comes from this one). |
+| `vdot` | The VDOT of the best time that counts, or `null` if none does: a measure of the athlete's running form (see the [athlete profile](../README.md)). |
 | `fixed_sessions` | The sessions that happen every week at a fixed time ([training time page](../README.md)), by day and part of the day: the `date` of the day in the week to plan, the `sport`, the `minutes` and the `slot` (`morning`, `afternoon`, `evening`; `null` if none was named). Fixed words and numbers, no name. Empty if there are none. |
 | `limits` | The limits of the rules that follow from the athlete's [intensity level](#the-intensity-levels): `max_hard_days`, `progression_warning_percent`, `progression_error_percent`, `easy_share_percent`. They are here and not in the system prompt, so that the prompt is the same for every athlete. |
 | `limitations` | The current injuries and limitations, the newest first, at most 10: `body_part` (a fixed word: foot, ankle, achilles, calf, shin, knee, thigh, hip, back, shoulder, other) and the `sports` it affects (none listed: no particular sport). Healed ones are not told. No text of the athlete. |

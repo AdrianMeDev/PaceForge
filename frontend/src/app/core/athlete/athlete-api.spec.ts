@@ -12,6 +12,7 @@ const URL = '/api/athlete/';
 const SYNC = `${URL}sync/`;
 const FTP = `${URL}thresholds/ride/ftp/`;
 const PACE = `${URL}thresholds/run/threshold_pace/`;
+const BEST_5K = `${URL}best-times/5k/`;
 
 // The shapes are those of the real API (replayed with curl against a real Django).
 const stamp = (n: number) => `2026-11-13T10:18:41.${n}Z`;
@@ -48,6 +49,20 @@ const BODY = {
   strength_experience: 'beginner',
   strength_equipment: ['gym', 'dumbbells'],
 };
+const RACES = {
+  best_times: {
+    '5k': { seconds: 1197, date: '2026-10-03', vdot: 50, recent: true, counts: true },
+    '10k': { seconds: 2700, date: '2024-05-01', vdot: 45.8, recent: false, counts: false },
+    half_marathon: null,
+    marathon: null,
+  },
+  vdot: { value: 50, distance: '5k', date: '2026-10-03' },
+};
+const NO_RACES = {
+  best_times: { '5k': null, '10k': null, half_marathon: null, marathon: null },
+  vdot: null,
+};
+
 const NO_BODY = {
   birth_year: null,
   sex: null,
@@ -60,6 +75,7 @@ const NO_BODY = {
 
 const RAW = {
   ...BODY,
+  ...RACES,
   timezone: 'Europe/Berlin',
   intervals: { connected: false, synced_at: null },
   sports: {
@@ -107,6 +123,7 @@ const PROFILE = RAW as unknown as AthleteProfile;
 
 const EMPTY = {
   ...NO_BODY,
+  ...NO_RACES,
   timezone: '',
   intervals: { connected: false, synced_at: null },
   sports: {
@@ -269,6 +286,31 @@ describe('AthleteApi', () => {
         'intervals',
         'estimated',
       ]);
+    });
+
+    it('reads a value that comes from a best time', async () => {
+      const effective = RAW.sports.run.thresholds.threshold_pace.effective;
+      const reply = altered([
+        ['sports', 'run', 'thresholds', 'threshold_pace', 'candidates'],
+        [{ value: 255, source: 'best_time', basis: 'VDOT 50.0', updated_at: stamp(1) }, effective],
+      ]);
+
+      const { result } = await run(api.get(), 'GET', URL, reply as object, 200);
+
+      const profile = (result as { profile: AthleteProfile }).profile;
+      expect(profile.sports.run.thresholds.threshold_pace.candidates.map((c) => c.source)).toEqual([
+        'best_time',
+        'manual',
+      ]);
+    });
+
+    it('rejects a source it does not know', async () => {
+      const bad = altered([
+        ['sports', 'run', 'thresholds', 'threshold_pace', 'candidates', 0, 'source'],
+        'guess',
+      ]);
+
+      await runFailing(api.get(), 'GET', URL, bad as object, 200);
     });
 
     it('treats a missing zone set or limit as null', async () => {
@@ -435,6 +477,169 @@ describe('AthleteApi', () => {
       ['no equipment', altered([['strength_equipment'], REMOVE])],
     ])('rejects an answer with %s', async (_name, bad) => {
       await runFailing(api.get(), 'GET', URL, bad as object, 200);
+    });
+  });
+
+  describe('the best times', () => {
+    it('reads every distance and the VDOT that counts', async () => {
+      const { result } = await run(api.get(), 'GET', URL, RAW, 200);
+
+      expect(result).toMatchObject({ kind: 'ok', profile: RACES });
+    });
+
+    it('reads no times as null', async () => {
+      const { result } = await run(api.get(), 'GET', URL, EMPTY, 200);
+
+      expect(result).toMatchObject({ kind: 'ok', profile: NO_RACES });
+    });
+
+    it.each([
+      ['no best times', altered([['best_times'], REMOVE])],
+      ['a list as best times', altered([['best_times'], []])],
+      ['no entry for a distance', altered([['best_times', '10k'], REMOVE])],
+      ['fractional seconds', altered([['best_times', '5k', 'seconds'], 1197.5])],
+      ['zero seconds', altered([['best_times', '5k', 'seconds'], 0])],
+      ['a text as seconds', altered([['best_times', '5k', 'seconds'], '1197'])],
+      ['a date that is no day', altered([['best_times', '5k', 'date'], 'soon'])],
+      ['a date with a time', altered([['best_times', '5k', 'date'], '2026-10-03T10:00:00Z'])],
+      ['no VDOT', altered([['best_times', '5k', 'vdot'], REMOVE])],
+      ['a text as VDOT', altered([['best_times', '5k', 'vdot'], '50'])],
+      ['no flag for recent', altered([['best_times', '5k', 'recent'], REMOVE])],
+      ['a number as counts', altered([['best_times', '5k', 'counts'], 1])],
+      ['no vdot', altered([['vdot'], REMOVE])],
+      ['a number as vdot', altered([['vdot'], 50])],
+      ['an unknown distance in vdot', altered([['vdot', 'distance'], '3k'])],
+      ['a text as the value of vdot', altered([['vdot', 'value'], '50'])],
+      ['a date that is no day in vdot', altered([['vdot', 'date'], 'x'])],
+    ])('rejects an answer with %s', async (_name, bad) => {
+      await runFailing(api.get(), 'GET', URL, bad as object, 200);
+    });
+
+    describe('setBestTime', () => {
+      const INPUT = { seconds: 1197, date: '2026-10-03' };
+
+      it('sends the time and the day and returns the profile', async () => {
+        const { result, request } = await run(
+          api.setBestTime('5k', INPUT),
+          'PUT',
+          BEST_5K,
+          RAW,
+          200,
+        );
+
+        expect(request.request.body).toEqual(INPUT);
+        expect(result).toEqual({ kind: 'ok', profile: PROFILE });
+      });
+
+      it('writes the distance into the address', async () => {
+        const { request } = await run(
+          api.setBestTime('half_marathon', INPUT),
+          'PUT',
+          `${URL}best-times/half_marathon/`,
+          RAW,
+          200,
+        );
+
+        expect(request.request.url).toBe(`${URL}best-times/half_marathon/`);
+      });
+
+      it('returns the messages by field and as one list', async () => {
+        const refusal = {
+          seconds: ['That time is not plausible for this distance. Check it.'],
+          date: ['Enter the day of the race: not in the future, not before 1900.'],
+        };
+
+        const { result } = await run(api.setBestTime('5k', INPUT), 'PUT', BEST_5K, refusal, 400);
+
+        expect(result).toEqual({
+          kind: 'invalid',
+          errors: [...refusal.seconds, ...refusal.date],
+          fields: refusal,
+        });
+      });
+
+      it.each([
+        ['no body', null],
+        ['a text', 'Bad Request'],
+        ['an empty object', {}],
+      ])('uses a fixed message and no fields for a refusal with %s', async (_name, reply) => {
+        const { result } = await run(api.setBestTime('5k', INPUT), 'PUT', BEST_5K, reply, 400);
+
+        expect(result).toEqual({
+          kind: 'invalid',
+          errors: ['The input was not accepted.'],
+          fields: {},
+        });
+      });
+
+      it('says when the distance does not exist', async () => {
+        const { result } = await run(
+          api.setBestTime('5k', INPUT),
+          'PUT',
+          BEST_5K,
+          'Not found',
+          404,
+        );
+
+        expect(result).toEqual({ kind: 'not_found' });
+      });
+
+      it.each([401, 403])('says when the session is gone (%i)', async (status) => {
+        const { result } = await run(
+          api.setBestTime('5k', INPUT),
+          'PUT',
+          BEST_5K,
+          NO_SESSION,
+          status,
+        );
+
+        expect(result).toEqual({ kind: 'forbidden' });
+      });
+
+      it('rejects an answer of the wrong shape', async () => {
+        await runFailing(api.setBestTime('5k', INPUT), 'PUT', BEST_5K, { timezone: 'UTC' }, 200);
+      });
+
+      it.each([201, 500])('rejects the unexpected status %i', async (status) => {
+        await runFailing(api.setBestTime('5k', INPUT), 'PUT', BEST_5K, 'oops', status);
+      });
+    });
+
+    describe('clearBestTime', () => {
+      it('removes the time and returns the profile', async () => {
+        const { result, request } = await run(
+          api.clearBestTime('5k'),
+          'DELETE',
+          BEST_5K,
+          EMPTY,
+          200,
+        );
+
+        expect(request.request.body).toBeNull();
+        expect(result.kind).toBe('ok');
+      });
+
+      it('says when the distance does not exist', async () => {
+        const { result } = await run(api.clearBestTime('5k'), 'DELETE', BEST_5K, 'Not found', 404);
+
+        expect(result).toEqual({ kind: 'not_found' });
+      });
+
+      it.each([401, 403])('says when the session is gone (%i)', async (status) => {
+        const { result } = await run(
+          api.clearBestTime('5k'),
+          'DELETE',
+          BEST_5K,
+          NO_SESSION,
+          status,
+        );
+
+        expect(result).toEqual({ kind: 'forbidden' });
+      });
+
+      it.each([204, 400, 500])('rejects the unexpected status %i', async (status) => {
+        await runFailing(api.clearBestTime('5k'), 'DELETE', BEST_5K, 'oops', status);
+      });
     });
   });
 

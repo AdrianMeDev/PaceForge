@@ -11,6 +11,11 @@ from django.db.models import Q
 
 from core.models import OwnedModel
 
+from .vdot import DISTANCES, VDOT_MAX, VDOT_MIN, vdot
+
+# The earliest date of a best time.
+BEST_TIME_FROM = date(1900, 1, 1)
+
 # What is plausible for the body and training data of an athlete (US-3.1).
 BIRTH_YEAR_MIN = 1900
 # The youngest athlete: the birth year cannot be later than this many years ago.
@@ -261,3 +266,59 @@ RULES: dict[tuple[str, str], ValueRange] = {
     ("run", "lthr"): ValueRange(30, 250, "bpm"),
     ("run", "max_hr"): ValueRange(30, 250, "bpm"),
 }
+
+
+class BestTime(OwnedModel):
+    """The best time of a user over one of the distances of ``DISTANCES``, and the day of the race.
+
+    One per user and distance: a new time replaces the old one. The VDOT and the threshold pace
+    that follow from it are computed where they are used (see ``athletes/best_times.py``), not
+    stored.
+    """
+
+    class Distance(models.TextChoices):
+        FIVE_K = "5k", "5 km"
+        TEN_K = "10k", "10 km"
+        HALF_MARATHON = "half_marathon", "Half marathon"
+        MARATHON = "marathon", "Marathon"
+
+    distance = models.CharField(max_length=20, choices=Distance.choices)
+    # Whole seconds.
+    seconds = models.PositiveIntegerField()
+    date = models.DateField()
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["owner", "distance"], name="athletes_one_best_time_per_distance"
+            ),
+            models.CheckConstraint(
+                condition=Q(distance__in=list(DISTANCES)), name="athletes_best_time_distance_known"
+            ),
+            models.CheckConstraint(
+                condition=Q(seconds__gt=0), name="athletes_best_time_seconds_positive"
+            ),
+            models.CheckConstraint(
+                condition=Q(date__gte=BEST_TIME_FROM), name="athletes_best_time_date_plausible"
+            ),
+        ]
+
+    def __str__(self) -> str:
+        # No time: it is personal data and has no business in logs and admin lists.
+        return f"{self.distance} best time of user {self.owner_id}"
+
+    def clean(self) -> None:
+        super().clean()
+        if self.distance not in DISTANCES:
+            return  # the choices check of the fields reports that
+        errors: dict[str, str] = {}
+        if self.seconds is not None:
+            found = vdot(DISTANCES[self.distance], self.seconds)
+            if found is None or not VDOT_MIN <= found <= VDOT_MAX:
+                errors["seconds"] = "That time is not plausible for this distance. Check it."
+        day = self.date
+        if day is not None and (day < BEST_TIME_FROM or day > date.today()):
+            errors["date"] = "Enter the day of the race: not in the future, not before 1900."
+        if errors:
+            raise ValidationError(errors)

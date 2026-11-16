@@ -78,6 +78,10 @@ td p.hint {
   color: var(--accent);
 }
 
+.source[data-source='best_time'] {
+  color: var(--info);
+}
+
 .source[data-source='intervals'] {
   color: var(--info);
 }

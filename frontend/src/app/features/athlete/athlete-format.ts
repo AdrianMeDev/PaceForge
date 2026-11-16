@@ -20,6 +20,7 @@ export const METRIC_LABELS: Record<Metric, string> = {
 
 export const SOURCE_LABELS: Record<ThresholdSource, string> = {
   manual: 'You',
+  best_time: 'Best time',
   intervals: 'Intervals.icu',
   estimated: 'Estimated',
 };

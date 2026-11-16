@@ -17,6 +17,8 @@ const NOTHING = {
 function profile(body: Partial<AthleteProfile> = {}): AthleteProfile {
   return {
     ...NOTHING,
+    best_times: { '5k': null, '10k': null, half_marathon: null, marathon: null },
+    vdot: null,
     ...body,
     timezone: 'UTC',
     intervals: { connected: false, synced_at: null },

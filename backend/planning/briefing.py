@@ -24,6 +24,7 @@ from typing import Any
 from django.db.models import Case, F, IntegerField, Value, When
 
 from accounts.models import User
+from athletes import best_times
 from athletes.thresholds import all_candidates
 from athletes.zones import ZoneSet, heart_rate_zones, pace_zones, power_zones
 from goals.models import Goal
@@ -59,7 +60,7 @@ def build_briefing(user: User, monday: date) -> dict[str, Any]:
     """
     context = build_context(user, monday)  # raises ValueError unless it is a Monday
     today = today_of(user)
-    held = all_candidates(user)
+    held = all_candidates(user, list(context.best_times))
     goals, goals_not_shown = _goals(user, today)
     return {
         "week_start": monday.isoformat(),
@@ -84,6 +85,8 @@ def build_briefing(user: User, monday: date) -> dict[str, Any]:
         "sport_preferences": _sport_preferences(context),
         "strength_focus": context.strength_focus,
         "athlete": _athlete(context),
+        "best_times": _best_times(context),
+        "vdot": _vdot(context),
         "fixed_sessions": _fixed_sessions(context),
         "limits": _limits(context),
         "limitations": _limitations(context),
@@ -137,6 +140,30 @@ def _athlete(context: PlanContext) -> dict[str, Any]:
         "strength_experience": facts.strength_experience,
         "strength_equipment": list(facts.strength_equipment),
     }
+
+
+def _best_times(context: PlanContext) -> list[dict[str, Any]]:
+    """The athlete's running best times in the order of the distances: the distance (a fixed
+    word), the time in seconds, the day of the race, the VDOT, whether the race is recent enough to
+    count and whether this is the one that the threshold pace comes from."""
+    counted = best_times.counting(list(context.best_times))
+    return [
+        {
+            "distance": entry.distance,
+            "seconds": entry.seconds,
+            "date": entry.date.isoformat(),
+            "vdot": round(entry.vdot, 1),
+            "recent": entry.recent,
+            "counts": entry == counted,
+        }
+        for entry in context.best_times
+    ]
+
+
+def _vdot(context: PlanContext) -> float | None:
+    """The VDOT of the best time that counts; ``null`` if none does."""
+    counted = best_times.counting(list(context.best_times))
+    return None if counted is None else round(counted.vdot, 1)
 
 
 def _fixed_sessions(context: PlanContext) -> list[dict[str, Any]]:

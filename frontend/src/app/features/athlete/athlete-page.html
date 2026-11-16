@@ -67,7 +67,7 @@
         <app-body-data-panel
           [profile]="current"
           [provider]="provider()"
-          (saved)="onBodySaved($event)"
+          (saved)="onProfileChanged($event)"
           (signedOut)="endSession()"
         />
       }
@@ -103,7 +103,8 @@
           <h2>{{ section.title }}</h2>
           <p class="hint">
             A value you enter always counts. Without one, the value from Intervals.icu counts, then
-            an estimate from your activities.
+            an estimate from your activities. The running pace also follows from a recent best time
+            (below), which counts before both.
           </p>
           <div class="table-wrap">
             <table>
@@ -255,6 +256,13 @@
             }
           }
         </div>
+        @if (section.sport === 'run' && profile(); as current) {
+          <app-best-times-panel
+            [profile]="current"
+            (changed)="onProfileChanged($event)"
+            (signedOut)="endSession()"
+          />
+        }
       }
     }
   }

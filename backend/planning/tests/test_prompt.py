@@ -414,6 +414,14 @@ class TestTheSystemPrompt:
         assert "Put the harder running, cycling or swimming session of a day first" in flat
         assert "and the easier one after it. (warning)" in flat
 
+    def test_it_explains_the_best_times(self) -> None:
+        flat = " ".join(SYSTEM_PROMPT.split())
+
+        assert '"best_times" lists the athlete\'s running best times' in flat
+        assert '"recent" says that the race is less than a year old' in flat
+        assert "not to set paces of your own" in flat
+        assert "A goal time far above that form is unrealistic" in flat
+
     def test_it_explains_the_athlete(self) -> None:
         flat = " ".join(SYSTEM_PROMPT.split())
 

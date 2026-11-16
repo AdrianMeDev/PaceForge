@@ -160,6 +160,7 @@ class TestNoTarget:
 
 
 def test_the_thresholds_are_loaded_once(alice: User) -> None:
+    # two queries: the stored thresholds and the best times, whatever the number of zones asked for
     hold(alice, "ride", "ftp", 250)
     hold(alice, "ride", "lthr", 160)
     hold(alice, "run", "threshold_pace", 300)
@@ -170,4 +171,4 @@ def test_the_thresholds_are_loaded_once(alice: User) -> None:
             targets.target(Sport.CYCLING, ZoneSystem.POWER, zone)
             targets.target(Sport.RUNNING, ZoneSystem.PACE, zone)
 
-    assert len(queries) == 1
+    assert len(queries) == 2

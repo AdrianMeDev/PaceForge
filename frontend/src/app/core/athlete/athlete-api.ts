@@ -4,9 +4,14 @@ import { Observable, firstValueFrom } from 'rxjs';
 import { API_BASE } from '../api/api-providers';
 import {
   AthleteProfile,
+  BestTime,
+  BestTimeDistance,
+  BestTimeInput,
   BodyAndTraining,
   BodyChanges,
+  ClearBestTimeResult,
   ClearThresholdResult,
+  CountingVdot,
   Equipment,
   GetAthleteResult,
   Metric,
@@ -14,6 +19,7 @@ import {
   RideProfile,
   RunProfile,
   SaveBodyResult,
+  SetBestTimeResult,
   SetThresholdResult,
   SetTimezoneResult,
   Sex,
@@ -37,9 +43,10 @@ const KEY_REFUSED_FALLBACK =
   'Intervals.icu did not accept the stored API key. Enter it again on the Connections page.';
 const UNAVAILABLE_FALLBACK = 'Intervals.icu cannot be reached right now. Please try again later.';
 const HANDLED_ERRORS = [400, 401, 403, 404, 409, 429, 502, 503];
-const SOURCES: readonly string[] = ['manual', 'intervals', 'estimated'];
+const SOURCES: readonly string[] = ['manual', 'best_time', 'intervals', 'estimated'];
 const METRICS: readonly string[] = ['ftp', 'lthr', 'max_hr', 'threshold_pace'];
 const UNITS: readonly string[] = ['W', 'bpm', 's/km'];
+const DISTANCES: readonly BestTimeDistance[] = ['5k', '10k', 'half_marathon', 'marathon'];
 const SEXES: readonly string[] = ['female', 'male', 'other'];
 const EXPERIENCES: readonly string[] = ['beginner', 'advanced'];
 const EQUIPMENT: readonly string[] = ['gym', 'home', 'dumbbells'];
@@ -97,6 +104,42 @@ export class AthleteApi {
         return { kind: 'ok', profile: toProfile(reply) };
       case 400:
         return { kind: 'invalid', errors: messagesOf(reply.body), fields: fieldsOf(reply.body) };
+      case 401:
+      case 403:
+        return { kind: 'forbidden' };
+      default:
+        throw unexpected(reply);
+    }
+  }
+
+  /** Sets the best time over a distance; a new one replaces the old one. */
+  async setBestTime(distance: BestTimeDistance, input: BestTimeInput): Promise<SetBestTimeResult> {
+    const reply = await this.send(
+      this.http.put(bestTimeUrl(distance), input, { observe: 'response' }),
+    );
+    switch (reply.status) {
+      case 200:
+        return { kind: 'ok', profile: toProfile(reply) };
+      case 400:
+        return { kind: 'invalid', errors: messagesOf(reply.body), fields: fieldsOf(reply.body) };
+      case 404:
+        return { kind: 'not_found' };
+      case 401:
+      case 403:
+        return { kind: 'forbidden' };
+      default:
+        throw unexpected(reply);
+    }
+  }
+
+  /** Removes the best time over a distance. Removing one that is not there is fine. */
+  async clearBestTime(distance: BestTimeDistance): Promise<ClearBestTimeResult> {
+    const reply = await this.send(this.http.delete(bestTimeUrl(distance), { observe: 'response' }));
+    switch (reply.status) {
+      case 200:
+        return { kind: 'ok', profile: toProfile(reply) };
+      case 404:
+        return { kind: 'not_found' };
       case 401:
       case 403:
         return { kind: 'forbidden' };
@@ -189,6 +232,10 @@ export class AthleteApi {
   }
 }
 
+function bestTimeUrl(distance: BestTimeDistance): string {
+  return `${URL}best-times/${encodeURIComponent(distance)}/`;
+}
+
 function thresholdUrl(sport: string, metric: string): string {
   return `${URL}thresholds/${encodeURIComponent(sport)}/${encodeURIComponent(metric)}/`;
 }
@@ -208,6 +255,7 @@ function toProfile(reply: Reply): AthleteProfile {
   }
   return {
     ...toBody(body, reply),
+    ...toRaces(body, reply),
     timezone: body['timezone'],
     intervals: { connected: intervals['connected'], synced_at: synced },
     sports: {
@@ -215,6 +263,64 @@ function toProfile(reply: Reply): AthleteProfile {
       run: toRun(sports['run'], reply),
     },
   };
+}
+
+/** The best times of every distance and the VDOT that counts; a missing key is the wrong shape. */
+function toRaces(
+  body: Record<string, unknown>,
+  reply: Reply,
+): { best_times: Record<BestTimeDistance, BestTime | null>; vdot: CountingVdot | null } {
+  const times = asObject(body['best_times'], reply);
+  const counting = body['vdot'];
+  return {
+    best_times: Object.fromEntries(
+      DISTANCES.map((distance) => [distance, toBestTime(times[distance], reply)]),
+    ) as Record<BestTimeDistance, BestTime | null>,
+    vdot: counting === null ? null : toCountingVdot(counting, reply),
+  };
+}
+
+function toBestTime(raw: unknown, reply: Reply): BestTime | null {
+  if (raw === null) {
+    return null;
+  }
+  const item = asObject(raw, reply);
+  if (
+    typeof item['seconds'] !== 'number' ||
+    !Number.isInteger(item['seconds']) ||
+    item['seconds'] < 1 ||
+    !isDay(item['date']) ||
+    typeof item['vdot'] !== 'number' ||
+    !Number.isFinite(item['vdot']) ||
+    typeof item['recent'] !== 'boolean' ||
+    typeof item['counts'] !== 'boolean'
+  ) {
+    throw unexpected(reply);
+  }
+  return {
+    seconds: item['seconds'],
+    date: item['date'],
+    vdot: item['vdot'],
+    recent: item['recent'],
+    counts: item['counts'],
+  };
+}
+
+function toCountingVdot(raw: unknown, reply: Reply): CountingVdot {
+  const item = asObject(raw, reply);
+  if (
+    typeof item['value'] !== 'number' ||
+    !Number.isFinite(item['value']) ||
+    !isOneOf<BestTimeDistance>(item['distance'], DISTANCES) ||
+    !isDay(item['date'])
+  ) {
+    throw unexpected(reply);
+  }
+  return { value: item['value'], distance: item['distance'], date: item['date'] };
+}
+
+function isDay(value: unknown): value is string {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
 
 /** The body and training data; every field has to be there, `null` where nothing was said. */

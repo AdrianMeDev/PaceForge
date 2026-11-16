@@ -10,7 +10,8 @@ from django.test.utils import CaptureQueriesContext
 
 from accounts.models import User
 from activities.models import Activity
-from athletes.models import AthleteProfile, ThresholdValue
+from athletes import best_times as best_times_module
+from athletes.models import AthleteProfile, BestTime, ThresholdValue
 from availability.intensity import LEVEL_LIMITS, IntensityLevel, Limits
 from availability.models import (
     AvailabilitySettings,
@@ -94,6 +95,12 @@ ALLOWED_KEYS = {
     "sessions_max",
     "strength_focus",
     "athlete",
+    "best_times",
+    "distance",
+    "seconds",
+    "vdot",
+    "recent",
+    "counts",
     "age",
     "sex",
     "weight_kg",
@@ -235,6 +242,8 @@ class TestTheBriefingOfAUserWithNothing:
                 "strength_experience": None,
                 "strength_equipment": [],
             },
+            "best_times": [],
+            "vdot": None,
             "fixed_sessions": [],
             "limits": {
                 "max_hard_days": 2,
@@ -554,6 +563,8 @@ class TestTheGoals:
             "sport_preferences",
             "strength_focus",
             "athlete",
+            "best_times",
+            "vdot",
             "fixed_sessions",
             "limits",
             "limitations",
@@ -923,6 +934,88 @@ class TestTheAthlete:
         assert '"strength_equipment":["home"]' in text
 
 
+class TestTheBestTimes:
+    TODAY = date(2027, 7, 18)  # the Sunday before the week of the briefing
+
+    @pytest.fixture(autouse=True)
+    def _fixed_day(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(best_times_module, "_today", lambda: self.TODAY)
+
+    def run(self, owner: User, distance: str, seconds: int, days_ago: int) -> None:
+        BestTime.objects.create(
+            owner=owner,
+            distance=distance,
+            seconds=seconds,
+            date=self.TODAY - timedelta(days=days_ago),
+        )
+
+    def told(self, user: User) -> dict[str, Any]:
+        briefing = build_briefing(user, MONDAY)
+        return {"best_times": briefing["best_times"], "vdot": briefing["vdot"]}
+
+    def test_a_user_without_times_has_nothing_told(self, alice: User) -> None:
+        assert self.told(alice) == {"best_times": [], "vdot": None}
+
+    def test_the_times_come_in_the_order_of_the_distances_with_their_vdot(
+        self, alice: User
+    ) -> None:
+        self.run(alice, "marathon", 11449, 90)
+        self.run(alice, "5k", 1197, 10)
+
+        told = self.told(alice)
+
+        assert told["best_times"] == [
+            {
+                "distance": "5k",
+                "seconds": 1197,
+                "date": "2027-07-08",
+                "vdot": 50.0,
+                "recent": True,
+                "counts": True,
+            },
+            {
+                "distance": "marathon",
+                "seconds": 11449,
+                "date": "2027-04-19",
+                "vdot": 50.0,
+                "recent": True,
+                "counts": False,
+            },
+        ]
+        assert told["vdot"] == 50.0
+
+    def test_an_old_time_is_told_but_does_not_count(self, alice: User) -> None:
+        self.run(alice, "10k", 2481, 500)
+
+        told = self.told(alice)
+
+        assert told["best_times"][0]["recent"] is False
+        assert told["best_times"][0]["counts"] is False
+        assert told["vdot"] is None
+
+    def test_the_zones_follow_from_it(self, alice: User) -> None:
+        self.run(alice, "5k", 1197, 10)
+
+        systems = build_briefing(alice, MONDAY)["zone_systems"]
+
+        pace = next(s for s in systems if s["sport"] == "running" and s["system"] == "pace")
+        assert pace["threshold"]["metric"] == "threshold_pace"
+        assert divmod(round(pace["threshold"]["value"]), 60) == (4, 15)
+
+    def test_the_time_of_another_user_is_not_told(self, alice: User, bob: User) -> None:
+        self.run(bob, "5k", 1197, 10)
+
+        assert self.told(alice) == {"best_times": [], "vdot": None}
+
+    def test_it_is_in_the_text_the_coach_gets(self, alice: User) -> None:
+        self.run(alice, "5k", 1197, 10)
+
+        text = to_json(build_briefing(alice, MONDAY))
+
+        assert '"best_times":[{"counts":true,"date":"2027-07-08","distance":"5k"' in text
+        assert '"vdot":50.0' in text
+
+
 class TestTheFixedSessions:
     def told(self, user: User) -> Any:
         return build_briefing(user, MONDAY)["fixed_sessions"]
@@ -1172,6 +1265,15 @@ class TestWhatIsSent:
             strength_experience="advanced",
             strength_equipment=["gym", "home", "dumbbells"],
         )
+        for distance, seconds in (
+            ("5k", 1197),
+            ("10k", 2481),
+            ("half_marathon", 5555),
+            ("marathon", 11449),
+        ):
+            BestTime.objects.create(
+                owner=alice, distance=distance, seconds=seconds, date=date(2027, 7, 1)
+            )
         FixedSession.objects.bulk_create(
             FixedSession(
                 owner=alice,
@@ -1202,7 +1304,7 @@ class TestWhatIsSent:
             build_briefing(alice, MONDAY)
 
         # 13 of the briefing and 8 of the review of the week before
-        assert len(empty) == len(full) == 23
+        assert len(empty) == len(full) == 24
 
 
 class TestHowTheWeekBeforeWent:

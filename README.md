@@ -401,8 +401,8 @@ thresholds and the training zones that follow from them. Cycling has FTP, lactat
 threshold pace, LTHR and maximum heart rate. Swimming and strength training have none yet.
 
 **Where a value comes from, and which one counts.** Every threshold shows its source: **You**,
-**Intervals.icu** or **Estimated**. If there are several, the first one in that order counts and
-the others are listed as "Also known". A value you type in therefore always counts, until you press
+**Best time** (the running threshold pace only, see below), **Intervals.icu** or **Estimated**. If
+there are several, the first one in that order counts and the others are listed as "Also known". A value you type in therefore always counts, until you press
 **Use automatic value**, which removes only your own value; nothing else is deleted.
 
 1. **Type a value.** Press **Edit** on a row, enter the number and press **Save** (or Enter). Watts
@@ -479,10 +479,30 @@ the others are listed as "Also known". A value you type in therefore always coun
    coach uses it to size the load; no rule checks it. **Save** sends the whole panel at once, the
    page checks the ranges first and a message from the server appears at its field.
 
+7. **Best times and VDOT.** Below the running thresholds you can enter your best time over 5 km,
+   10 km, the half marathon and the marathon, with the day of the race (one per distance; a new one
+   replaces the old one). The time is `19:57` or `1:35:00`; the day is not in the future and not
+   before 1900, and a time that no runner has (a VDOT below 20 or above 90) is refused as a typo.
+   - **VDOT** is the "effective VO2max" of Jack Daniels and Jimmy Gilbert, worked out from the
+     distance and the time. The **threshold pace** is the speed at 88 percent of it (VDOT 50 gives
+     about 4:15 per km), rounded to whole seconds like every threshold.
+   - **Which time counts:** only races of the **last 365 days**, the **newest** first, on the same
+     day the higher VDOT. Older times stay in the list, marked "too old to count", and give
+     nothing. With a time that counts, the running threshold pace comes from it **after a pace you
+     typed in and before Intervals.icu and the estimate**, so the pace zones follow your race form.
+     Removing the time, or the year running out, brings the next source back; nothing else is
+     deleted.
+   - **It is a model.** A short race can give a pace that many runners cannot hold for an hour; the
+     zones stay a starting point, and a pace you type in always wins.
+   - **The coach** is told your best times (distance, time, day, VDOT, whether the race is recent
+     and whether it counts) and the VDOT that counts, as numbers and fixed words.
+
 Thresholds and the data about you are personal: every user sees and changes only their own,
 administrators included, and no answer contains another user's values.
 
-The API is `GET` and `PATCH` on `/api/athlete/`. `PATCH` takes any of `timezone`, `birth_year`,
+The API is `GET` and `PATCH` on `/api/athlete/`. The best times are `PUT` (`seconds` and `date`, `YYYY-MM-DD`) and `DELETE` on
+`/api/athlete/best-times/<distance>/` (`5k`, `10k`, `half_marathon`, `marathon`); the answer has
+`best_times` for every distance and `vdot`. `PATCH` takes any of `timezone`, `birth_year`,
 `sex`, `weight_kg`, `resting_hr`, `training_years` (an object with any of `running`, `cycling`,
 `swimming`, `strength`), `strength_experience` and `strength_equipment`; a field that is left out
 stays as it is, `null` clears one, and at least one has to be there. Nothing is saved unless every
