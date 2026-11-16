@@ -15,7 +15,7 @@ from integrations.views import failure_response
 
 from . import thresholds
 from .models import RULES, AthleteProfile
-from .serializers import ThresholdInput, TimezoneInput, athlete_data
+from .serializers import AthleteInput, ThresholdInput, athlete_data
 from .sync import sync_from_intervals
 
 KEY_NOT_ACCEPTED = (
@@ -41,12 +41,21 @@ class AthleteView(APIView):
         return _answer(_user(request))
 
     def patch(self, request: Request) -> Response:
+        """Changes the fields that are sent; ``null`` clears one. Nothing is saved unless every
+        field is usable."""
         user = _user(request)
-        serializer = TimezoneInput(data=request.data)
+        serializer = AthleteInput(data=request.data)
         serializer.is_valid(raise_exception=True)
-        profile, _ = AthleteProfile.objects.get_or_create(owner=user)
-        profile.timezone = serializer.validated_data["timezone"]
-        profile.save(update_fields=["timezone"])
+        profile = AthleteProfile.objects.for_user(user).first() or AthleteProfile(owner=user)
+        changed = _apply(profile, serializer.validated_data)
+        try:
+            profile.clean()
+        except DjangoValidationError as error:
+            raise serializers.ValidationError(_athlete_messages(error)) from None
+        if profile.pk is None:
+            profile.save()
+        else:
+            profile.save(update_fields=changed)
         return _answer(user)
 
 
@@ -89,6 +98,35 @@ class SyncView(APIView):
         except IntervalsError as error:
             return failure_response(error)
         return _answer(user)
+
+
+def _apply(profile: AthleteProfile, changes: dict[str, Any]) -> list[str]:
+    """Puts the changes on the profile (not saved) and names the columns that were touched. What
+    is not said is an empty text or list in the database and ``None`` in a number."""
+    touched: list[str] = []
+
+    def put(column: str, value: Any) -> None:
+        setattr(profile, column, value)
+        touched.append(column)
+
+    for name, value in changes.items():
+        if name == "training_years":
+            for sport, years in value.items():
+                put(f"years_{sport}", years)
+        elif name in ("sex", "strength_experience"):
+            put(name, value or "")
+        else:
+            put(name, value)
+    return touched
+
+
+def _athlete_messages(error: DjangoValidationError) -> dict[str, Any]:
+    """The messages by field of the API: the years of every sport are one field there."""
+    messages: dict[str, list[str]] = {}
+    for column, texts in error.message_dict.items():
+        name = "training_years" if column.startswith("years_") else column
+        messages.setdefault(name, []).extend(texts)
+    return messages
 
 
 def _require_known(sport: str, metric: str) -> None:

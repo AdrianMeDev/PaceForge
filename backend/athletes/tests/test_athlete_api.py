@@ -1,7 +1,7 @@
 import base64
 import json
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from http import HTTPStatus
 from typing import Any
 
@@ -11,7 +11,8 @@ from django.utils import timezone
 
 from accounts.models import User
 from accounts.tests.conftest import AuthApi
-from athletes.models import AthleteProfile, ThresholdValue
+from athletes.models import MIN_AGE, TRAINING_YEARS_MAX, AthleteProfile, ThresholdValue
+from athletes.serializers import EQUIPMENT_CHOICE, NOTHING_TO_CHANGE, TRAINING_YEARS
 from integrations.models import ProviderConnection
 from integrations.tests.fake_intervals import FakeIntervals
 
@@ -20,6 +21,10 @@ from .conftest import make_user, signed_in
 pytestmark = pytest.mark.django_db
 
 URL = "/api/athlete/"
+BODY_FIELDS = (
+    "birth_year", "sex", "weight_kg", "resting_hr", "training_years", "strength_experience",
+    "strength_equipment",
+)  # fmt: skip
 FTP = f"{URL}thresholds/ride/ftp/"
 SYNC = f"{URL}sync/"
 SETTINGS_PATH = "/api/v1/athlete/0/sport-settings"
@@ -124,6 +129,24 @@ class TestNewUser:
             assert all(zones is None for zones in sport["zones"].values())
         assert set(data["sports"]["ride"]["zones"]) == {"power", "heart_rate"}
         assert set(data["sports"]["run"]["zones"]) == {"pace", "heart_rate"}
+
+    def test_the_body_and_training_data_is_empty(self, alice: User) -> None:
+        data = body(signed_in(alice).call("GET", URL))
+
+        assert {name: data[name] for name in BODY_FIELDS} == {
+            "birth_year": None,
+            "sex": None,
+            "weight_kg": None,
+            "resting_hr": None,
+            "training_years": {
+                "running": None,
+                "cycling": None,
+                "swimming": None,
+                "strength": None,
+            },
+            "strength_experience": None,
+            "strength_equipment": [],
+        }
 
     def test_reading_writes_nothing(self, alice: User) -> None:
         signed_in(alice).call("GET", URL)
@@ -447,6 +470,196 @@ class TestTimezone:
         )
 
         assert AthleteProfile.objects.get().intervals_synced_at is None
+
+
+class TestBodyAndTrainingData:
+    LATEST = date.today().year - MIN_AGE
+
+    def patch(self, owner: User, data: Any) -> Any:
+        return signed_in(owner).call("PATCH", URL, data)
+
+    def test_every_field_is_saved_and_shown(self, alice: User) -> None:
+        api = signed_in(alice)
+        data = {
+            "birth_year": 1985,
+            "sex": "female",
+            "weight_kg": 61.5,
+            "resting_hr": 48,
+            "training_years": {"running": 12, "cycling": 3, "swimming": 0, "strength": 1},
+            "strength_experience": "beginner",
+            "strength_equipment": ["dumbbells", "gym"],
+        }
+
+        response = api.call("PATCH", URL, data)
+
+        assert response.status_code == HTTPStatus.OK
+        shown = {name: body(response)[name] for name in BODY_FIELDS}
+        assert shown == data | {"strength_equipment": ["gym", "dumbbells"]}
+        assert {name: body(api.call("GET", URL))[name] for name in BODY_FIELDS} == shown
+
+    def test_only_the_fields_sent_change(self, alice: User) -> None:
+        api = signed_in(alice)
+        api.call("PATCH", URL, {"timezone": "UTC", "birth_year": 1985, "resting_hr": 48})
+
+        response = api.call("PATCH", URL, {"weight_kg": 70})
+
+        data = body(response)
+        assert (data["timezone"], data["birth_year"], data["resting_hr"]) == ("UTC", 1985, 48)
+        assert data["weight_kg"] == 70
+
+    def test_null_clears_a_field(self, alice: User) -> None:
+        api = signed_in(alice)
+        api.call(
+            "PATCH",
+            URL,
+            {
+                "birth_year": 1985,
+                "sex": "male",
+                "weight_kg": 70,
+                "resting_hr": 50,
+                "strength_experience": "advanced",
+            },
+        )
+
+        response = api.call(
+            "PATCH",
+            URL,
+            {
+                "birth_year": None,
+                "sex": None,
+                "weight_kg": None,
+                "resting_hr": None,
+                "strength_experience": None,
+            },
+        )
+
+        data = body(response)
+        cleared = ("birth_year", "sex", "weight_kg", "resting_hr", "strength_experience")
+        assert [data[name] for name in cleared] == [None] * 5
+        profile = AthleteProfile.objects.get()
+        assert (profile.sex, profile.strength_experience) == ("", "")
+
+    def test_the_years_of_one_sport_change_and_the_others_stay(self, alice: User) -> None:
+        api = signed_in(alice)
+        api.call("PATCH", URL, {"training_years": {"running": 12, "cycling": 3}})
+
+        response = api.call("PATCH", URL, {"training_years": {"cycling": None, "swimming": 2}})
+
+        assert body(response)["training_years"] == {
+            "running": 12,
+            "cycling": None,
+            "swimming": 2,
+            "strength": None,
+        }
+
+    def test_the_equipment_can_be_emptied(self, alice: User) -> None:
+        api = signed_in(alice)
+        api.call("PATCH", URL, {"strength_equipment": ["gym"]})
+
+        response = api.call("PATCH", URL, {"strength_equipment": []})
+
+        assert body(response)["strength_equipment"] == []
+
+    def test_a_field_can_be_saved_without_a_time_zone(self, alice: User) -> None:
+        response = self.patch(alice, {"birth_year": 1985})
+
+        assert response.status_code == HTTPStatus.OK
+        assert body(response)["timezone"] == ""
+        assert AthleteProfile.objects.count() == 1
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("birth_year", 1899),
+            ("birth_year", LATEST + 1),
+            ("birth_year", "1985"),
+            ("birth_year", 1985.5),
+            ("birth_year", True),
+            ("sex", "x"),
+            ("sex", "Female"),
+            ("sex", 5),
+            ("weight_kg", 24),
+            ("weight_kg", 301),
+            ("weight_kg", "70"),
+            ("weight_kg", True),
+            ("resting_hr", 24),
+            ("resting_hr", 121),
+            ("resting_hr", 48.5),
+            ("resting_hr", "48"),
+            ("strength_experience", "expert"),
+            ("strength_experience", 1),
+            ("training_years", {"running": TRAINING_YEARS_MAX + 1}),
+            ("training_years", {"running": -1}),
+            ("training_years", {"running": "5"}),
+            ("training_years", {"running": 1.5}),
+            ("training_years", {"running": True}),
+            ("training_years", {"golf": 5}),
+            ("training_years", [5]),
+            ("training_years", 5),
+            ("training_years", None),
+            ("strength_equipment", ["barbell"]),
+            ("strength_equipment", ["gym", "gym"]),
+            ("strength_equipment", "gym"),
+            ("strength_equipment", None),
+        ],
+    )
+    def test_a_field_that_is_not_usable_is_refused_and_changes_nothing(
+        self, alice: User, field: str, value: Any
+    ) -> None:
+        api = signed_in(alice)
+        api.call("PATCH", URL, {"birth_year": 1985})
+        # a valid field next to it, which must not be saved either
+        other = "weight_kg" if field == "resting_hr" else "resting_hr"
+
+        response = api.call("PATCH", URL, {field: value, other: 70 if other == "weight_kg" else 50})
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert set(body(response)) == {field}
+        profile = AthleteProfile.objects.get()
+        assert (profile.birth_year, profile.resting_hr, profile.weight_kg) == (1985, None, None)
+
+    def test_a_refusal_for_a_new_user_leaves_no_profile(self, alice: User) -> None:
+        self.patch(alice, {"weight_kg": 5})
+
+        assert not AthleteProfile.objects.exists()
+
+    def test_the_messages_say_what_is_allowed(self, alice: User) -> None:
+        assert body(self.patch(alice, {"weight_kg": 5})) == {
+            "weight_kg": ["Enter a weight between 25 and 300 kg."]
+        }
+        assert body(self.patch(alice, {"resting_hr": 5})) == {
+            "resting_hr": ["Enter a resting heart rate between 25 and 120 bpm."]
+        }
+        assert body(self.patch(alice, {"training_years": {"golf": 1}})) == {
+            "training_years": [TRAINING_YEARS]
+        }
+        assert body(self.patch(alice, {"strength_equipment": ["x"]})) == {
+            "strength_equipment": [EQUIPMENT_CHOICE]
+        }
+        assert EQUIPMENT_CHOICE == "Choose any of: gym, home, dumbbells, or none."
+
+    def test_every_problem_of_a_kind_is_named_at_once(self, alice: User) -> None:
+        wrong_type = self.patch(alice, {"sex": "x", "birth_year": "1985", "weight_kg": 5})
+        out_of_range = self.patch(alice, {"weight_kg": 5, "resting_hr": 5, "birth_year": 1800})
+
+        assert set(body(wrong_type)) == {"sex", "birth_year"}
+        assert set(body(out_of_range)) == {"weight_kg", "resting_hr", "birth_year"}
+
+    def test_a_body_with_nothing_to_change_is_refused(self, alice: User) -> None:
+        response = self.patch(alice, {})
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert body(response) == {"non_field_errors": [NOTHING_TO_CHANGE]}
+        assert not AthleteProfile.objects.exists()
+
+    def test_the_data_of_another_user_is_not_shown_or_changed(self, alice: User, bob: User) -> None:
+        self.patch(bob, {"birth_year": 1970, "weight_kg": 88.5, "resting_hr": 61})
+
+        self.patch(alice, {"resting_hr": 45})
+
+        shown = body(signed_in(alice).call("GET", URL))
+        assert (shown["birth_year"], shown["weight_kg"], shown["resting_hr"]) == (None, None, 45)
+        assert AthleteProfile.objects.get(owner=bob).resting_hr == 61
 
 
 class TestIntervals:
