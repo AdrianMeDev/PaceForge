@@ -90,6 +90,7 @@ A **workout**:
 | `slot` | no | When on the day: `morning`, `afternoon` or `evening`. Only the order is meant, not a clock time. |
 | `stretching_minutes` | no | Stretching added to this workout, 0 to 60 minutes (0 or left out: none). Never a workout of its own, and not part of the training time. |
 | `segments` | no | The interval structure: a list of at most 40 segments. |
+| `exercises` | no | The exercises of a **strength** workout, in the order they are done: a list of at most 15 exercises. Any other sport with exercises is an error. |
 
 A **segment**:
 
@@ -99,6 +100,18 @@ A **segment**:
 | `seconds` | yes | 1 to 86400. |
 | `repeat` | no | How often the segment is done in a row, 1 to 50, default 1. |
 | `zone_system`, `zone` | no | The target. Both or neither. |
+
+An **exercise**:
+
+| Field | Required | Meaning |
+| ----- | -------- | ------- |
+| `name` | yes | One line of 1 to 60 characters, free text ("Goblet squat"). The checks never read it. |
+| `region` | yes | What it trains: `legs`, `core`, `upper_body` or `full_body`. |
+| `equipment` | yes | What it needs: `gym`, `dumbbells` or `bodyweight`. |
+| `sets` | yes | 1 to 10. |
+| `reps`, `seconds` | one of them | Repetitions per set (1 to 100) **or** the length of a hold in seconds (5 to 600), such as a plank. Exactly one of the two. |
+| `rpe` | no | How hard, 1 to 10. |
+| `rest_seconds` | no | The rest between sets, 0 to 600 seconds. |
 
 **Text.** Text is trimmed and the length is counted after trimming. A title is one line. Control
 characters are refused everywhere (line breaks are allowed in `notes` and `rationale` only), and so
@@ -266,6 +279,14 @@ decisions, not coaching science; better ones will come from using the feature.
 | `SEGMENT_SECONDS_MAX` | 86400 | Seconds of a segment. |
 | `REPEAT_MAX` | 50 | Repeats of a segment. |
 | `STRETCHING_MAX` | 60 | Minutes of stretching added to one workout. |
+| `MAX_EXERCISES` | 15 | Exercises of a strength workout. |
+| `EXERCISE_NAME_MAX` | 60 | Characters of the name of an exercise. |
+| `SETS_MAX` | 10 | Sets of an exercise. |
+| `REPS_MAX` | 100 | Repetitions per set. |
+| `HOLD_SECONDS_MIN` | 5 | Shortest hold of an exercise, in seconds. |
+| `HOLD_SECONDS_MAX` | 600 | Longest hold of an exercise, in seconds. |
+| `RPE_MAX` | 10 | Highest RPE of an exercise. |
+| `REST_SECONDS_MAX` | 600 | Longest rest between sets, in seconds. |
 
 The progression rule compares without rounding the reference: with the weeks 100 and 101 (average
 100.5) a limit of 130 percent is 130.65, so 130 planned minutes pass and 131 do not. A week exactly at a limit

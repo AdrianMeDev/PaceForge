@@ -87,6 +87,7 @@ WORKOUT_FIELDS = {
     "lineage",
     "target",
     "export",
+    "exercises",
 }
 
 
