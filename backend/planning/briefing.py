@@ -40,13 +40,12 @@ MAX_GOALS = 5
 GOAL_NOTES_MAX = 300
 # At most this many current limitations are told, the newest first; the rest is only counted.
 MAX_LIMITATIONS_TOLD = 10
-# The free text about limitations is cut here, and only told if the athlete allowed it. More does
-# not fit: with ``MAX_GOALS`` goals and ``MAX_LIMITATIONS_TOLD`` limitations at their limits the
-# briefing needs about 18 900 bytes, which leaves room for about 185 characters of free text.
+# The free text about limitations is cut here, and only told if the athlete allowed it.
 LIMITATIONS_TEXT_MAX_TOLD = 150
 # The most the JSON of a briefing may take, measured in UTF-8 bytes with every free-text
-# character as a six-byte escape (a control character), the worst a character can cost.
-MAX_BYTES = 20_000
+# character as a six-byte escape (a control character), the worst a character can cost. It was
+# 20 000 until the wishes for a week left 54 bytes of room; 24 000 is still a few thousand tokens.
+MAX_BYTES = 24_000
 
 # The sport groups of the athlete's thresholds.
 _THRESHOLD_SPORT = {Sport.CYCLING: "ride", Sport.RUNNING: "run"}
@@ -82,6 +81,8 @@ def build_briefing(user: User, monday: date) -> dict[str, Any]:
         "training_days": context.training_days,
         "min_weekly_minutes": context.min_weekly_minutes,
         "long_days": _long_days(context),
+        "sport_preferences": _sport_preferences(context),
+        "strength_focus": context.strength_focus,
         "limits": _limits(context),
         "limitations": _limitations(context),
         "limitations_not_shown": max(0, len(context.limitations) - MAX_LIMITATIONS_TOLD),
@@ -100,6 +101,20 @@ def _long_days(context: PlanContext) -> list[dict[str, str]]:
     return [
         {"sport": sport.value, "date": (context.week_start + timedelta(days=offset)).isoformat()}
         for sport, offset in context.long_days
+    ]
+
+
+def _sport_preferences(context: PlanContext) -> list[dict[str, Any]]:
+    """What the athlete said about each sport they said something about: its role and the least
+    and the most sessions a week they want of it (``null`` for what they did not say)."""
+    return [
+        {
+            "sport": facts.sport.value,
+            "role": facts.role,
+            "sessions_min": facts.sessions_min,
+            "sessions_max": facts.sessions_max,
+        }
+        for facts in context.sport_preferences
     ]
 
 

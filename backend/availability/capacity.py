@@ -58,6 +58,8 @@ class WeekCapacity:
     min_weekly_minutes: int | None = None
     long_run_day: int | None = None
     long_ride_day: int | None = None
+    # What strength training is for (``None``: not said). Not time either.
+    strength_focus: str | None = None
     # Per day, Monday first: whether two sessions are allowed, and the parts of the day that are
     # open (in the order of the day). Choices, not time: they change nothing about the minutes.
     double_days: tuple[bool, ...] = (True,) * 7
@@ -79,6 +81,7 @@ def week_capacity(user: User, monday: date) -> WeekCapacity:
             "stretching",
             "limitations",
             "share_limitations_text",
+            "strength_focus",
             "training_days",
             "min_weekly_minutes",
             "long_run_day",
@@ -89,11 +92,12 @@ def week_capacity(user: User, monday: date) -> WeekCapacity:
         .first()
     )
     if row is None:
-        budget, typical, chosen, stretching, text = None, None, [], False, None
+        budget, typical, chosen, stretching, text, focus = None, None, [], False, None, None
         wishes: tuple[int | None, ...] = (None, None, None, None)
         limits = LEVEL_LIMITS[DEFAULT_LEVEL]
     else:
-        budget, typical, chosen, stretching, written, share, *rest = row
+        budget, typical, chosen, stretching, written, share, focus_text, *rest = row
+        focus = focus_text or None
         wishes, (level, *own) = tuple(rest[:4]), rest[4:]
         text = written.strip() if share and written.strip() else None
         limits = effective_limits(level, dict(zip(LIMIT_NAMES, own, strict=True)))
@@ -112,6 +116,7 @@ def week_capacity(user: User, monday: date) -> WeekCapacity:
         min_weekly_minutes=wishes[1],
         long_run_day=wishes[2],
         long_ride_day=wishes[3],
+        strength_focus=focus,
         double_days=tuple(day.double_allowed for day in days),
         time_windows=tuple(day.slots for day in days),
     )

@@ -6,7 +6,13 @@ import {
 import { TestBed } from '@angular/core/testing';
 import { provideApiClient } from '../api/api-providers';
 import { AvailabilityApi } from './availability-api';
-import { Availability, Limitation, Period, PeriodInput } from './availability-models';
+import {
+  Availability,
+  Limitation,
+  Period,
+  PeriodInput,
+  SportPreferences,
+} from './availability-models';
 
 const URL = '/api/availability/';
 const PERIODS = '/api/availability/periods/';
@@ -34,7 +40,16 @@ const LEVEL_LIMITS = {
   },
 };
 const EVERY_PART = ['morning', 'afternoon', 'evening'];
+const NO_PREFERENCE = { role: null, sessions_min: null, sessions_max: null };
+const PREFERENCES = {
+  running: { role: 'goal', sessions_min: 3, sessions_max: 5 },
+  cycling: { role: 'secondary', sessions_min: 1, sessions_max: null },
+  swimming: NO_PREFERENCE,
+  strength: { role: 'supplementary', sessions_min: null, sessions_max: 2 },
+};
 const AVAILABILITY = {
+  sport_preferences: PREFERENCES,
+  strength_focus: 'legs',
   weekdays: [60, 0, 90, 0, 0, 120, 180],
   double_days: [true, false, true, true, false, true, true],
   time_windows: [
@@ -64,6 +79,13 @@ const AVAILABILITY = {
   level_limits: LEVEL_LIMITS,
 };
 const NOTHING_SAVED = {
+  sport_preferences: {
+    running: NO_PREFERENCE,
+    cycling: NO_PREFERENCE,
+    swimming: NO_PREFERENCE,
+    strength: NO_PREFERENCE,
+  },
+  strength_focus: null,
   weekdays: [0, 0, 0, 0, 0, 0, 0],
   double_days: [true, true, true, true, true, true, true],
   time_windows: [
@@ -237,6 +259,34 @@ describe('AvailabilityApi', () => {
     ],
     ['a number as a part', altered(AVAILABILITY, [['time_windows', 2], [1]])],
     ['null as the windows of a day', altered(AVAILABILITY, [['time_windows', 2], null])],
+    ['no sport preferences', altered(AVAILABILITY, [['sport_preferences'], REMOVE])],
+    ['a list as sport preferences', altered(AVAILABILITY, [['sport_preferences'], []])],
+    [
+      'no preference for a sport',
+      altered(AVAILABILITY, [['sport_preferences', 'swimming'], REMOVE]),
+    ],
+    ['null as a preference', altered(AVAILABILITY, [['sport_preferences', 'running'], null])],
+    ['an unknown role', altered(AVAILABILITY, [['sport_preferences', 'running', 'role'], 'main'])],
+    ['no role', altered(AVAILABILITY, [['sport_preferences', 'running', 'role'], REMOVE])],
+    [
+      'a text as sessions',
+      altered(AVAILABILITY, [['sport_preferences', 'running', 'sessions_min'], '3']),
+    ],
+    [
+      'too many sessions',
+      altered(AVAILABILITY, [['sport_preferences', 'running', 'sessions_max'], 15]),
+    ],
+    [
+      'negative sessions',
+      altered(AVAILABILITY, [['sport_preferences', 'running', 'sessions_min'], -1]),
+    ],
+    [
+      'a fraction as sessions',
+      altered(AVAILABILITY, [['sport_preferences', 'cycling', 'sessions_min'], 1.5]),
+    ],
+    ['no strength focus', altered(AVAILABILITY, [['strength_focus'], REMOVE])],
+    ['an unknown strength focus', altered(AVAILABILITY, [['strength_focus'], 'arms'])],
+    ['a number as strength focus', altered(AVAILABILITY, [['strength_focus'], 1])],
     ['no minimum', altered(AVAILABILITY, [['min_weekly_minutes'], REMOVE])],
     ['a text as minimum', altered(AVAILABILITY, [['min_weekly_minutes'], '200'])],
     ['a negative minimum', altered(AVAILABILITY, [['min_weekly_minutes'], -1])],
@@ -360,6 +410,37 @@ describe('AvailabilityApi', () => {
       const { result } = await run(api.get(), 'GET', URL, NOTHING_SAVED, 200);
 
       expect(result).toEqual({ kind: 'ok', availability: NOTHING_SAVED });
+    });
+
+    it('takes over what was said about each sport and the strength focus', async () => {
+      const given = await run(api.get(), 'GET', URL, AVAILABILITY, 200);
+      const nothing = await run(api.get(), 'GET', URL, NOTHING_SAVED, 200);
+
+      expect(given.result).toMatchObject({
+        availability: { sport_preferences: PREFERENCES, strength_focus: 'legs' },
+      });
+      expect(nothing.result).toMatchObject({
+        availability: { strength_focus: null },
+      });
+      if (nothing.result.kind !== 'ok') {
+        throw new Error('expected the availability');
+      }
+      expect(nothing.result.availability.sport_preferences.strength).toEqual(NO_PREFERENCE);
+    });
+
+    it('takes over only the known fields of a preference, as a copy', async () => {
+      const body = altered(AVAILABILITY, [['sport_preferences', 'running', 'extra'], 'x']);
+
+      const { result } = await run(api.get(), 'GET', URL, body as object, 200);
+
+      expect(result).toMatchObject({ availability: { sport_preferences: PREFERENCES } });
+      if (result.kind !== 'ok') {
+        throw new Error('expected the availability');
+      }
+      expect(result.availability.sport_preferences.running).not.toHaveProperty('extra');
+      expect(result.availability.sport_preferences.running).not.toBe(
+        (body as { sport_preferences: { running: object } }).sport_preferences.running,
+      );
     });
 
     it('takes over the wishes for a week, a missing one as null', async () => {
@@ -520,6 +601,49 @@ describe('AvailabilityApi', () => {
       expect(stretching.request.request.body).toEqual({ stretching: true });
       expect(sports.result).toMatchObject({ availability: { sports: ['running'] } });
       expect(stretching.result).toMatchObject({ availability: { stretching: true } });
+    });
+
+    it('patches the sport preferences as a whole and the focus, a removed focus as null', async () => {
+      const changes = {
+        sport_preferences: {
+          ...PREFERENCES,
+          running: { role: null, sessions_min: null, sessions_max: 4 },
+        } as SportPreferences,
+        strength_focus: null,
+      };
+      const answer = altered(
+        AVAILABILITY,
+        [['sport_preferences', 'running'], changes.sport_preferences.running],
+        [['strength_focus'], null],
+      );
+
+      const { result, request } = await run(api.save(changes), 'PATCH', URL, answer as object, 200);
+
+      expect(request.request.body).toEqual(changes);
+      expect(result).toMatchObject({
+        availability: {
+          strength_focus: null,
+          sport_preferences: { running: { role: null, sessions_max: 4 } },
+        },
+      });
+    });
+
+    it('returns the message about a wrong preference at its field', async () => {
+      const refusal = { sport_preferences: ['Send an object with running, cycling.'] };
+
+      const { result } = await run(
+        api.save({ strength_focus: 'legs' }),
+        'PATCH',
+        URL,
+        refusal,
+        400,
+      );
+
+      expect(result).toEqual({
+        kind: 'invalid',
+        errors: refusal.sport_preferences,
+        fields: refusal,
+      });
     });
 
     it('patches the wishes for a week, a removed one as null', async () => {

@@ -14,7 +14,7 @@ from django.urls import get_resolver
 
 from accounts.models import User
 from availability.intensity import LEVEL_LIMITS
-from availability.models import SPORTS, BodyPart
+from availability.models import SESSIONS_PER_WEEK_MAX, SPORTS, BodyPart
 from availability.serializers import MAX_LIMITATIONS, availability_data
 from coach import views as coach_views
 from coach.endpoints import parse_base_urls
@@ -186,8 +186,8 @@ class TestTheRules:
 
     def test_every_check_of_the_rules_is_covered_by_the_table(self) -> None:
         # the number of checks and of codes can only move together with the page
-        assert len(rules.ALL_CHECKS) == 22
-        assert len(self.in_the_code()) == 27
+        assert len(rules.ALL_CHECKS) == 24
+        assert len(self.in_the_code()) == 29
 
 
 class TestTheZoneSystems:
@@ -424,6 +424,29 @@ class TestTheReadmeOnTheTypicalWeek:
         assert f"the newest {briefing.MAX_LIMITATIONS_TOLD}" in FLAT_README
         for part in BodyPart:
             assert part.label.lower().split()[0] in FLAT_README.lower(), part
+
+
+class TestTheReadmeOnSportPreferences:
+    PAGE = (ROOT / "frontend/src/app/features/availability/sport-preferences.html").read_text()
+    SCRIPT = (ROOT / "frontend/src/app/features/availability/sport-preferences.ts").read_text()
+
+    def test_the_words_of_the_page_are_the_words_of_the_readme(self) -> None:
+        assert "What strength training is for" in self.PAGE
+        assert "**What strength training is for**" in FLAT_README
+        for label in ("Goal sport", "Secondary sport", "Supplementary"):
+            assert f"label: '{label}'" in self.SCRIPT, label
+            assert f"**{label}**" in FLAT_README, label
+        for label in ("Legs", "Core", "Upper body", "Full body"):
+            assert f"label: '{label}'" in self.SCRIPT, label
+            assert f"**{label}**" in FLAT_README, label
+
+    def test_the_number_of_sessions_is_the_one_of_the_code(self) -> None:
+        assert f"SESSIONS_MAX = {SESSIONS_PER_WEEK_MAX};" in self.SCRIPT
+        assert f"from 0 to {SESSIONS_PER_WEEK_MAX}" in FLAT_README
+
+    def test_the_two_warnings_are_named_in_the_checks_page(self) -> None:
+        for code in ("sessions_out_of_range", "legs_before_key_run"):
+            assert f"`{code}`" in DOC, code
 
 
 class TestTheReadmeOnTheWishesForAWeek:

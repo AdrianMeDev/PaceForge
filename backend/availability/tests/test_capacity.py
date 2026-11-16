@@ -537,6 +537,28 @@ class TestTheWishesForAWeek:
         assert len(queries) == 3
 
 
+class TestTheStrengthFocus:
+    def test_it_is_not_said_for_a_user_who_said_nothing(self, alice: User) -> None:
+        assert week_capacity(alice, MONDAY).strength_focus is None
+
+    def test_it_is_read_as_given_and_none_is_none(self, alice: User) -> None:
+        AvailabilitySettings.objects.create(owner=alice, strength_focus="legs")
+
+        assert week_capacity(alice, MONDAY).strength_focus == "legs"
+
+        AvailabilitySettings.objects.filter(owner=alice).update(strength_focus="")
+
+        assert week_capacity(alice, MONDAY).strength_focus is None
+
+    def test_it_still_takes_three_queries(self, alice: User) -> None:
+        AvailabilitySettings.objects.create(owner=alice, strength_focus="core")
+
+        with CaptureQueriesContext(connection) as queries:
+            week_capacity(alice, MONDAY)
+
+        assert len(queries) == 3
+
+
 class TestTheWholeWeek:
     def test_nothing_declared_offers_nothing(self, alice: User) -> None:
         assert week_capacity(alice, MONDAY) == WeekCapacity((0,) * 7, (None,) * 7, None, 0)

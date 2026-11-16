@@ -13,7 +13,13 @@ from core.views import OwnedModelViewSet
 from goals.services import today_of
 
 from .intensity import LIMIT_NAMES
-from .models import AvailabilitySettings, Limitation, UnavailablePeriod, WeekdayMinutes
+from .models import (
+    AvailabilitySettings,
+    Limitation,
+    SportPreference,
+    UnavailablePeriod,
+    WeekdayMinutes,
+)
 from .serializers import (
     AvailabilityInput,
     LimitationSerializer,
@@ -30,7 +36,8 @@ def _user(request: Request) -> User:
 def _answer(user: User) -> Response:
     settings = AvailabilitySettings.objects.for_user(user).first()
     weekdays = list(WeekdayMinutes.objects.for_user(user))
-    return Response(availability_data(settings, weekdays))
+    preferences = list(SportPreference.objects.for_user(user))
+    return Response(availability_data(settings, weekdays, preferences))
 
 
 class AvailabilityView(APIView):
@@ -74,6 +81,15 @@ class AvailabilityView(APIView):
                     unique_fields=["owner", "weekday"],
                     update_fields=list(day_fields),
                 )
+            if "sport_preferences" in data:
+                for sport, values in data["sport_preferences"].items():
+                    if not any(value not in ("", None) for value in values.values()):
+                        # nothing is said about the sport: no row
+                        SportPreference.objects.filter(owner=user, sport=sport).delete()
+                        continue
+                    SportPreference.objects.update_or_create(
+                        owner=user, sport=sport, defaults=values
+                    )
             settings_fields = [
                 name
                 for name in (
@@ -87,6 +103,7 @@ class AvailabilityView(APIView):
                     "stretching",
                     "limitations",
                     "share_limitations_text",
+                    "strength_focus",
                     "intensity_level",
                     *LIMIT_NAMES,
                 )
@@ -95,7 +112,9 @@ class AvailabilityView(APIView):
             if settings_fields:
                 settings, _ = AvailabilitySettings.objects.get_or_create(owner=user)
                 for name in settings_fields:
-                    setattr(settings, name, data[name])
+                    value = data[name]
+                    # "no focus" is stored as an empty text
+                    setattr(settings, name, (value or "") if name == "strength_focus" else value)
                 settings.save(update_fields=settings_fields)
         return _answer(user)
 

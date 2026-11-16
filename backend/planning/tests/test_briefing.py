@@ -15,6 +15,7 @@ from availability.intensity import LEVEL_LIMITS, IntensityLevel, Limits
 from availability.models import (
     AvailabilitySettings,
     Limitation,
+    SportPreference,
     UnavailablePeriod,
     WeekdayMinutes,
 )
@@ -85,6 +86,11 @@ ALLOWED_KEYS = {
     "training_days",
     "min_weekly_minutes",
     "long_days",
+    "sport_preferences",
+    "role",
+    "sessions_min",
+    "sessions_max",
+    "strength_focus",
     "limits",
     "limitations",
     "body_part",
@@ -205,6 +211,8 @@ class TestTheBriefingOfAUserWithNothing:
             "training_days": None,
             "min_weekly_minutes": None,
             "long_days": [],
+            "sport_preferences": [],
+            "strength_focus": None,
             "limits": {
                 "max_hard_days": 2,
                 "progression_warning_percent": 120,
@@ -502,6 +510,8 @@ class TestTheGoals:
             "training_days",
             "min_weekly_minutes",
             "long_days",
+            "sport_preferences",
+            "strength_focus",
             "limits",
             "limitations",
             "limitations_not_shown",
@@ -801,6 +811,63 @@ class TestTheWishesForAWeek:
         assert '"long_days":[{"date":"2027-07-24","sport":"running"}]' in text
 
 
+class TestTheSportPreferences:
+    def told(self, user: User) -> dict[str, Any]:
+        briefing = build_briefing(user, MONDAY)
+        return {name: briefing[name] for name in ("sport_preferences", "strength_focus")}
+
+    def test_a_user_who_said_nothing_has_nothing_told(self, alice: User) -> None:
+        assert self.told(alice) == {"sport_preferences": [], "strength_focus": None}
+
+    def test_the_sports_that_have_something_are_told_in_the_order_of_the_format(
+        self, alice: User
+    ) -> None:
+        SportPreference.objects.create(
+            owner=alice, sport="strength", role="supplementary", sessions_max=2
+        )
+        SportPreference.objects.create(
+            owner=alice, sport="running", role="goal", sessions_min=3, sessions_max=5
+        )
+
+        assert self.told(alice)["sport_preferences"] == [
+            {"sport": "running", "role": "goal", "sessions_min": 3, "sessions_max": 5},
+            {"sport": "strength", "role": "supplementary", "sessions_min": None, "sessions_max": 2},
+        ]
+
+    def test_what_is_not_said_is_null(self, alice: User) -> None:
+        SportPreference.objects.create(owner=alice, sport="cycling", sessions_min=0)
+
+        assert self.told(alice)["sport_preferences"] == [
+            {"sport": "cycling", "role": None, "sessions_min": 0, "sessions_max": None}
+        ]
+
+    def test_a_row_with_nothing_in_it_is_not_told(self, alice: User) -> None:
+        SportPreference.objects.create(owner=alice, sport="swimming")
+
+        assert self.told(alice)["sport_preferences"] == []
+
+    def test_the_focus_is_told_and_none_is_null(self, alice: User) -> None:
+        AvailabilitySettings.objects.create(owner=alice, strength_focus="legs")
+
+        assert self.told(alice)["strength_focus"] == "legs"
+        AvailabilitySettings.objects.filter(owner=alice).update(strength_focus="")
+        assert self.told(alice)["strength_focus"] is None
+
+    def test_the_choice_of_another_user_is_not_told(self, alice: User, bob: User) -> None:
+        SportPreference.objects.create(owner=bob, sport="running", role="goal")
+        AvailabilitySettings.objects.create(owner=bob, strength_focus="core")
+
+        assert self.told(alice) == {"sport_preferences": [], "strength_focus": None}
+
+    def test_it_is_in_the_text_the_coach_gets(self, alice: User) -> None:
+        SportPreference.objects.create(owner=alice, sport="running", role="goal")
+
+        text = to_json(build_briefing(alice, MONDAY))
+
+        assert '"role":"goal"' in text
+        assert '"strength_focus":null' in text
+
+
 class TestTheRecentWeeks:
     def test_the_minutes_done_come_from_the_activities(self, alice: User, bob: User) -> None:
         for owner, day, seconds in ((alice, 12, 3600), (alice, 5, 1800), (bob, 13, 9000)):
@@ -916,7 +983,12 @@ class TestWhatIsSent:
             min_weekly_minutes=10080,
             long_run_day=6,
             long_ride_day=6,
+            strength_focus="full_body",
         )
+        for sport in ("running", "cycling", "swimming", "strength"):
+            SportPreference.objects.create(
+                owner=alice, sport=sport, role="supplementary", sessions_min=14, sessions_max=14
+            )
 
         size = len(to_json(build_briefing(alice, MONDAY)).encode())
 
@@ -930,12 +1002,14 @@ class TestWhatIsSent:
             goal(alice, title=f"Goal {number}")
         for _ in range(MAX_LIMITATIONS_TOLD + 5):
             Limitation.objects.create(owner=alice, body_part="knee", sports=["running"])
+        for sport in ("running", "cycling", "swimming", "strength"):
+            SportPreference.objects.create(owner=alice, sport=sport, role="goal", sessions_min=1)
 
         with CaptureQueriesContext(connection) as full:
             build_briefing(alice, MONDAY)
 
-        # 12 of the briefing and 8 of the review of the week before
-        assert len(empty) == len(full) == 20
+        # 13 of the briefing and 8 of the review of the week before
+        assert len(empty) == len(full) == 21
 
 
 class TestHowTheWeekBeforeWent:

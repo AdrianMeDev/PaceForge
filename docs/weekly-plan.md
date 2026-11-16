@@ -165,6 +165,11 @@ Each plan is checked against the facts of its user for that week, collected when
 - **Double days and parts of the day.** For each weekday whether two workouts are allowed and which
   parts of the day (morning, afternoon, evening) are open. Without a choice two workouts are allowed
   and every part is open. A day of absence keeps the choice of its weekday.
+- **Sports.** What the athlete said about each sport: a role (goal, secondary, supplementary) and
+  the least and the most sessions a week. Only the sessions are checked (`sessions_out_of_range`,
+  a warning); the role is for the coach. The strength focus (legs, core, upper body, full body)
+  makes every strength workout count as leg training for legs and full body, and a strength
+  workout on the day before a key run is a warning (`legs_before_key_run`).
 - **The wishes for a week.** On how many days the athlete wants to train at most, the least they
   want to train in a week, and the weekday of the long run and of the long ride. Each is optional
   and a missing one is never checked. They only produce warnings (`too_many_training_days`,
@@ -215,6 +220,8 @@ user to weigh.
 | `too_many_training_days` | warning | More days with a workout than the athlete wants to train on. Fewer days are fine. |
 | `below_minimum_minutes` | warning | Fewer minutes than the least the athlete wants to train in a week, as far as the week offers it (the bar is the lower of that minimum and what the week offers). |
 | `long_session_elsewhere` | warning | For running and cycling, if the athlete named a day for the long session: the longest workout of that sport is on another day (with a tie one of the longest on that day is enough). Named at the `day` of the longest workout. Not said if the week has no workout of the sport or if that day is an absence or offers no minutes. |
+| `sessions_out_of_range` | warning | A sport has fewer sessions in the week than the least the athlete wants of it, or more than the most. Only sports with such a wish are looked at. Named once per sport, at the plan as a whole. |
+| `legs_before_key_run` | warning | With the strength focus legs or full body: a strength workout on the day before a key run, that is a hard run or the longest run of the week (with a tie, each of the longest). Named at the strength workout, once. Only days of the week are compared. |
 | `hard_days_in_a_row` | warning | A hard day directly after a hard day. |
 | `no_free_day` | warning | Every day of the week has a workout. |
 | `many_workouts_in_a_day` | error | More workouts on a day than the limit (two). Named once per day, at the first one too many. |
@@ -350,6 +357,8 @@ without this page.
 | `typical_weekly_minutes` | What the athlete calls a normal week, in minutes; `null` if not given (or 0). The progression rule's reference is the higher of this and the recent average. |
 | `sports` | The sports the athlete wants in a plan (all four if none was chosen), in the order of the format. |
 | `stretching` | Whether stretching may be added to sessions (`stretching_minutes`), never as a session. |
+| `sport_preferences` | For every sport the athlete said something about: the `sport`, its `role` (`goal`, `secondary` or `supplementary`, `null` for none) and the least and the most sessions a week they want of it (`sessions_min`, `sessions_max`, `null` for no wish). A sport they said nothing about is not listed. |
+| `strength_focus` | What strength training is for: `legs`, `core`, `upper_body` or `full_body`; `null` if not said. |
 | `training_days` | On how many days of the week the athlete wants to train at most; `null` if they have no wish. |
 | `min_weekly_minutes` | The least the athlete wants to train in a week, in minutes (never above the weekly budget); `null` if they have no wish. |
 | `long_days` | For running and cycling, if the athlete named a weekday for the long session: the `sport` and the `date` of that day in the week to plan. Empty if there is none. |
@@ -384,7 +393,7 @@ What it cannot do is get a plan past the parser and the rules.
 | `GOAL_NOTES_MAX` | 300 | Characters of the notes of a goal that are sent. |
 | `LIMITATIONS_TEXT_MAX_TOLD` | 150 | Characters of the free text about limitations that are sent, if the athlete allows it. |
 | `MAX_LIMITATIONS_TOLD` | 10 | Current limitations told to the coach (the newest first); the rest is counted. |
-| `MAX_BYTES` | 20000 | The most the briefing may take (UTF-8), checked in the tests. |
+| `MAX_BYTES` | 24000 | The most the briefing may take (UTF-8), checked in the tests. |
 
 ### Time and the web server
 

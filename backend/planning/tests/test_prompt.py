@@ -414,6 +414,17 @@ class TestTheSystemPrompt:
         assert "Put the harder running, cycling or swimming session of a day first" in flat
         assert "and the easier one after it. (warning)" in flat
 
+    def test_it_explains_the_sport_preferences(self) -> None:
+        flat = " ".join(SYSTEM_PROMPT.split())
+
+        assert '"sport_preferences" says what a sport is for the athlete' in flat
+        assert '"supplementary": it supports the others, cut it first when time is short' in flat
+        assert '"sessions_min" and "sessions_max"' in flat
+        assert "fewer or more sessions of a sport than that is a warning" in flat
+        assert '"strength_focus" is what strength training is for' in flat
+        assert 'If "strength_focus" is "legs" or "full_body", strength training counts' in flat
+        assert "the day before the longest run of the week or before a hard run. (warning)" in flat
+
     def test_it_explains_the_wishes_for_a_week(self) -> None:
         flat = " ".join(SYSTEM_PROMPT.split())
 

@@ -13,6 +13,7 @@ from availability.models import (
     LIMITATIONS_MAX,
     NOTE_MAX,
     PERIOD_MAX_DAYS,
+    SESSIONS_PER_WEEK_MAX,
     SLOTS,
     SPORTS,
     WEEK_MINUTES_MAX,
@@ -20,6 +21,9 @@ from availability.models import (
     BodyPart,
     Limitation,
     LimitationStatus,
+    SportPreference,
+    SportRole,
+    StrengthFocus,
     UnavailablePeriod,
     WeekdayMinutes,
     effective_slots,
@@ -210,6 +214,114 @@ class TestSports:
     )
     def test_the_effective_sports(self, stored: Any, expected: list[str]) -> None:
         assert effective_sports(stored) == expected
+
+
+class TestSportPreferences:
+    def test_nothing_is_set_by_default(self, alice: User) -> None:
+        row = SportPreference.objects.create(owner=alice, sport="running")
+
+        assert (row.role, row.sessions_min, row.sessions_max) == ("", None, None)
+
+    def test_the_roles_and_the_focuses_are_the_agreed_ones(self) -> None:
+        assert SportRole.values == ["goal", "secondary", "supplementary"]
+        assert StrengthFocus.values == ["legs", "core", "upper_body", "full_body"]
+        assert SESSIONS_PER_WEEK_MAX == 14
+
+    @pytest.mark.parametrize("sport", list(SPORTS))
+    @pytest.mark.parametrize("role", ["", *SportRole.values])
+    def test_every_sport_and_role_is_valid(self, alice: User, sport: str, role: str) -> None:
+        check(SportPreference, alice, sport=sport, role=role)
+
+    @pytest.mark.parametrize("sport", ["", "golf", "Running"])
+    def test_an_unknown_sport_is_refused(self, alice: User, sport: str) -> None:
+        refused(SportPreference, alice, "sport", sport=sport)
+
+    @pytest.mark.parametrize("role", ["main", "Goal", "goal "])
+    def test_an_unknown_role_is_refused(self, alice: User, role: str) -> None:
+        refused(SportPreference, alice, "role", sport="running", role=role)
+
+    @pytest.mark.parametrize(
+        "fields",
+        [
+            {"sessions_min": 0},
+            {"sessions_max": 14},
+            {"sessions_min": 2, "sessions_max": 2},
+            {"sessions_min": 1, "sessions_max": 14},
+            {"sessions_max": 0},
+        ],
+    )
+    def test_valid_ranges(self, alice: User, fields: dict[str, Any]) -> None:
+        check(SportPreference, alice, sport="running", **fields)
+
+    @pytest.mark.parametrize(
+        ("field", "fields"),
+        [
+            ("sessions_min", {"sessions_min": 15}),
+            ("sessions_max", {"sessions_max": 15}),
+            ("sessions_min", {"sessions_min": 3, "sessions_max": 2}),
+        ],
+    )
+    def test_a_range_out_of_bounds_or_upside_down_is_refused(
+        self, alice: User, field: str, fields: dict[str, Any]
+    ) -> None:
+        refused(SportPreference, alice, field, sport="running", **fields)
+
+    def test_one_row_per_user_and_sport(self, alice: User, bob: User) -> None:
+        SportPreference.objects.create(owner=alice, sport="running")
+        SportPreference.objects.create(owner=bob, sport="running")
+        SportPreference.objects.create(owner=alice, sport="cycling")
+
+        message = rejected_by_database(SportPreference, owner=alice, sport="running")
+
+        assert "availability_one_per_sport" in message
+
+    @pytest.mark.parametrize(
+        ("fields", "constraint"),
+        [
+            ({"sport": "golf"}, "availability_preference_sport_known"),
+            ({"sport": "running", "role": "main"}, "availability_preference_role_known"),
+            ({"sport": "running", "sessions_min": 15}, "availability_sessions_min_in_range"),
+            ({"sport": "running", "sessions_max": 15}, "availability_sessions_max_in_range"),
+            (
+                {"sport": "running", "sessions_min": 3, "sessions_max": 2},
+                "availability_sessions_min_within_max",
+            ),
+        ],
+    )
+    def test_the_database_refuses_what_is_out_of_range(
+        self, alice: User, fields: dict[str, Any], constraint: str
+    ) -> None:
+        assert constraint in rejected_by_database(SportPreference, owner=alice, **fields)
+
+    def test_the_text_names_the_sport_and_the_user_only(self, alice: User) -> None:
+        text = str(SportPreference(owner=alice, sport="cycling", role="goal"))
+
+        assert text == f"cycling preference of user {alice.pk}"
+
+    def test_a_row_belongs_to_its_user(self, alice: User, bob: User) -> None:
+        mine = SportPreference.objects.create(owner=alice, sport="running")
+        SportPreference.objects.create(owner=bob, sport="running")
+
+        assert list(SportPreference.objects.for_user(alice)) == [mine]
+        assert not SportPreference.objects.for_user(AnonymousUser()).exists()
+
+
+class TestTheStrengthFocus:
+    def test_there_is_none_by_default(self, alice: User) -> None:
+        assert AvailabilitySettings.objects.create(owner=alice).strength_focus == ""
+
+    @pytest.mark.parametrize("focus", ["", *StrengthFocus.values])
+    def test_every_focus_is_valid(self, alice: User, focus: str) -> None:
+        check(AvailabilitySettings, alice, strength_focus=focus)
+
+    @pytest.mark.parametrize("focus", ["arms", "Legs", "legs "])
+    def test_an_unknown_focus_is_refused(self, alice: User, focus: str) -> None:
+        refused(AvailabilitySettings, alice, "strength_focus", strength_focus=focus)
+
+    def test_the_database_refuses_an_unknown_focus(self, alice: User) -> None:
+        message = rejected_by_database(AvailabilitySettings, owner=alice, strength_focus="arms")
+
+        assert "availability_strength_focus_known" in message
 
 
 class TestTheWishesForAWeek:

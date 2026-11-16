@@ -43,6 +43,26 @@ class Sport(models.TextChoices):
 
 SPORTS: tuple[str, ...] = tuple(Sport.values)
 
+
+# What a sport is for the athlete: the sport of their goal, a second one, or one that supports.
+class SportRole(models.TextChoices):
+    GOAL = "goal", "Goal sport"
+    SECONDARY = "secondary", "Secondary sport"
+    SUPPLEMENTARY = "supplementary", "Supplementary"
+
+
+class StrengthFocus(models.TextChoices):
+    """What strength training is for: legs (runner strength), the core, the upper body or all."""
+
+    LEGS = "legs", "Legs"
+    CORE = "core", "Core"
+    UPPER_BODY = "upper_body", "Upper body"
+    FULL_BODY = "full_body", "Full body"
+
+
+# Sessions of one sport in a week: at most two a day.
+SESSIONS_PER_WEEK_MAX = 14
+
 # The parts of the day a session can be in, earliest first. The same values as
 # ``planning.schema.Slot`` (a test keeps the two in step).
 SLOTS: tuple[str, ...] = ("morning", "afternoon", "evening")
@@ -85,6 +105,10 @@ class AvailabilitySettings(OwnedModel):
     progression_warning_percent = models.PositiveSmallIntegerField(null=True, blank=True)
     progression_error_percent = models.PositiveSmallIntegerField(null=True, blank=True)
     easy_share_percent = models.PositiveSmallIntegerField(null=True, blank=True)
+    # "" means no focus (the API says ``null``).
+    strength_focus = models.CharField(
+        max_length=20, choices=StrengthFocus.choices, blank=True, default=""
+    )
     training_days = models.PositiveSmallIntegerField(null=True, blank=True)
     min_weekly_minutes = models.PositiveIntegerField(null=True, blank=True)
     long_run_day = models.PositiveSmallIntegerField(null=True, blank=True)
@@ -92,6 +116,10 @@ class AvailabilitySettings(OwnedModel):
 
     class Meta:
         constraints = [
+            models.CheckConstraint(
+                condition=Q(strength_focus__in=["", *StrengthFocus.values]),
+                name="availability_strength_focus_known",
+            ),
             models.CheckConstraint(
                 condition=Q(training_days__isnull=True)
                 | Q(training_days__gte=TRAINING_DAYS_MIN, training_days__lte=TRAINING_DAYS_MAX),
@@ -266,6 +294,61 @@ class WeekdayMinutes(OwnedModel):
     def open_slots(self) -> list[str]:
         """The parts of the day open on this weekday, in the order of ``SLOTS``."""
         return effective_slots(self.slots)
+
+
+class SportPreference(OwnedModel):
+    """What one sport is for the athlete: its role and how many sessions a week they want of it.
+
+    One row per user and sport; no row means nothing is said about that sport. Every value is
+    optional. The sessions are a range: at least ``sessions_min`` and at most ``sessions_max``."""
+
+    sport = models.CharField(max_length=20, choices=Sport.choices)
+    # "" means no role (the API says ``null``).
+    role = models.CharField(max_length=20, choices=SportRole.choices, blank=True, default="")
+    sessions_min = models.PositiveSmallIntegerField(null=True, blank=True)
+    sessions_max = models.PositiveSmallIntegerField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["owner", "sport"], name="availability_one_per_sport"),
+            models.CheckConstraint(
+                condition=Q(sport__in=Sport.values), name="availability_preference_sport_known"
+            ),
+            models.CheckConstraint(
+                condition=Q(role__in=["", *SportRole.values]),
+                name="availability_preference_role_known",
+            ),
+            models.CheckConstraint(
+                condition=Q(sessions_min__isnull=True) | Q(sessions_min__lte=SESSIONS_PER_WEEK_MAX),
+                name="availability_sessions_min_in_range",
+            ),
+            models.CheckConstraint(
+                condition=Q(sessions_max__isnull=True) | Q(sessions_max__lte=SESSIONS_PER_WEEK_MAX),
+                name="availability_sessions_max_in_range",
+            ),
+            models.CheckConstraint(
+                condition=Q(sessions_min__isnull=True)
+                | Q(sessions_max__isnull=True)
+                | Q(sessions_min__lte=F("sessions_max")),
+                name="availability_sessions_min_within_max",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.sport} preference of user {self.owner_id}"
+
+    def clean(self) -> None:
+        super().clean()
+        errors = {}
+        for name in ("sessions_min", "sessions_max"):
+            value = getattr(self, name)
+            if value is not None and not 0 <= value <= SESSIONS_PER_WEEK_MAX:
+                errors[name] = f"Enter a whole number between 0 and {SESSIONS_PER_WEEK_MAX}."
+        low, high = self.sessions_min, self.sessions_max
+        if not errors and low is not None and high is not None and low > high:
+            errors["sessions_min"] = "The least cannot be above the most."
+        if errors:
+            raise ValidationError(errors)
 
 
 class UnavailablePeriod(OwnedModel):

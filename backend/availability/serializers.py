@@ -28,6 +28,7 @@ from .models import (
     LIMITATIONS_MAX,
     MINIMUM_ABOVE_BUDGET,
     NOTE_MAX,
+    SESSIONS_PER_WEEK_MAX,
     SLOTS,
     SPORTS,
     TRAINING_DAYS_MAX,
@@ -38,6 +39,9 @@ from .models import (
     BodyPart,
     Limitation,
     LimitationStatus,
+    SportPreference,
+    SportRole,
+    StrengthFocus,
     UnavailablePeriod,
     WeekdayMinutes,
     effective_sports,
@@ -54,6 +58,15 @@ TIME_WINDOWS = (
     f"{', '.join(SLOTS)}."
 )
 SHARE_CHOICE = "Send true or false."
+SPORT_PREFERENCES = (
+    f"Send an object with {', '.join(SPORTS)}, each holding role, sessions_min and sessions_max "
+    f"(role is one of {', '.join(SportRole.values)} or null)."
+)
+SESSIONS_RANGE = (
+    f"Enter a whole number of sessions between 0 and {SESSIONS_PER_WEEK_MAX}, "
+    "the least not above the most."
+)
+STRENGTH_FOCUS_CHOICE = f"Choose one of: {', '.join(StrengthFocus.values)}."
 TRAINING_DAYS_RANGE = (
     f"Enter a whole number of days between {TRAINING_DAYS_MIN} and {TRAINING_DAYS_MAX}."
 )
@@ -143,6 +156,42 @@ class TimeWindowsField(serializers.Field[list[list[str]], list[list[str]], list[
         return windows
 
     def to_representation(self, value: list[list[str]]) -> list[list[str]]:
+        return value
+
+
+class SportPreferencesField(serializers.Field[Any, Any, Any, Any]):
+    """What each sport is for the user: all four sports, each with a role (or ``null``) and the
+    least and the most sessions a week (or ``null``). Sent as a whole: a missing sport, an unknown
+    key, a role that does not exist or a count out of range is refused with one flat message."""
+
+    KEYS = {"role", "sessions_min", "sessions_max"}
+
+    def to_internal_value(self, data: Any) -> dict[str, dict[str, Any]]:
+        if not isinstance(data, dict) or set(data) != set(SPORTS):
+            raise serializers.ValidationError(SPORT_PREFERENCES)
+        result: dict[str, dict[str, Any]] = {}
+        for sport in SPORTS:
+            item = data[sport]
+            if not isinstance(item, dict) or set(item) != self.KEYS:
+                raise serializers.ValidationError(SPORT_PREFERENCES)
+            role = item["role"]
+            if role is not None and (not isinstance(role, str) or role not in SportRole.values):
+                raise serializers.ValidationError(SPORT_PREFERENCES)
+            counts = [item["sessions_min"], item["sessions_max"]]
+            for count in counts:
+                if count is not None and (
+                    isinstance(count, bool)
+                    or not isinstance(count, int)
+                    or not 0 <= count <= SESSIONS_PER_WEEK_MAX
+                ):
+                    raise serializers.ValidationError(SESSIONS_RANGE)
+            low, high = counts
+            if low is not None and high is not None and low > high:
+                raise serializers.ValidationError(SESSIONS_RANGE)
+            result[sport] = {"role": role or "", "sessions_min": low, "sessions_max": high}
+        return result
+
+    def to_representation(self, value: Any) -> Any:
         return value
 
 
@@ -249,6 +298,15 @@ class AvailabilityInput(serializers.Serializer[Any]):
             "max_value": LONG_DAY_RANGE,
         },
     )
+    sport_preferences = SportPreferencesField(
+        required=False, error_messages={"null": SPORT_PREFERENCES}
+    )
+    strength_focus = serializers.ChoiceField(
+        choices=StrengthFocus.choices,
+        allow_null=True,
+        required=False,
+        error_messages={"invalid_choice": STRENGTH_FOCUS_CHOICE},
+    )
     sports = SportsField(required=False, error_messages={"null": SPORTS_CHOICE})
     stretching = StrictBooleanField(required=False, error_messages={"null": STRETCHING_CHOICE})
     limitations = TextField(max_length=LIMITATIONS_MAX, allow_blank=True, required=False)
@@ -285,20 +343,24 @@ class AvailabilityInput(serializers.Serializer[Any]):
 
 
 def availability_data(
-    settings: AvailabilitySettings | None, weekdays: list[WeekdayMinutes]
+    settings: AvailabilitySettings | None,
+    weekdays: list[WeekdayMinutes],
+    preferences: list[SportPreference] | None = None,
 ) -> dict[str, Any]:
     """The answer: the seven weekdays (Monday first, 0 where nothing is saved), for each of them
     whether two sessions are allowed and the parts of the day that are open (all of them where
     nothing is saved), the weekly budget, the least the user wants to train in a week, the days a
     week they want to train on and the weekdays of the long run and the long ride (``null`` for
-    none of these), the typical week (``null`` for none), the sports of the plan (all of them if
-    none was chosen), whether stretching may be added, the limitations and whether they may be sent
-    to the coach (off by default), the intensity level with the own limits (``null`` for the
-    level's value) and the limits of every level, so that a client need not repeat them. No row
-    ids, no owner."""
+    none of these), what each sport is for the user (role and sessions a week, ``null`` where
+    nothing is said), the focus of strength training, the typical week (``null`` for none), the
+    sports of the plan (all of them if none was chosen), whether stretching may be added, the
+    limitations and whether they may be sent to the coach (off by default), the intensity level
+    with the own limits (``null`` for the level's value) and the limits of every level, so that a
+    client need not repeat them. No row ids, no owner."""
     minutes = [0] * 7
     double_days = [True] * 7
     time_windows = [list(SLOTS) for _ in range(7)]
+    by_sport = {row.sport: row for row in preferences or []}
     for row in weekdays:
         minutes[row.weekday] = row.minutes
         double_days[row.weekday] = row.double_allowed
@@ -313,6 +375,15 @@ def availability_data(
         "long_run_day": settings.long_run_day if settings else None,
         "long_ride_day": settings.long_ride_day if settings else None,
         "typical_weekly_minutes": settings.typical_weekly_minutes if settings else None,
+        "sport_preferences": {
+            sport: {
+                "role": (by_sport[sport].role or None) if sport in by_sport else None,
+                "sessions_min": by_sport[sport].sessions_min if sport in by_sport else None,
+                "sessions_max": by_sport[sport].sessions_max if sport in by_sport else None,
+            }
+            for sport in SPORTS
+        },
+        "strength_focus": (settings.strength_focus or None) if settings else None,
         "sports": effective_sports(settings.sports if settings else None),
         "stretching": settings.stretching if settings else False,
         "limitations": settings.limitations if settings else "",
