@@ -10,10 +10,12 @@ from accounts.models import User
 from coach.providers.base import ProviderError
 from coach.services import NotConfiguredError
 from coach.views import provider_problem
+from goals.services import today_of
 from planning.serializers import finding_data
 from planning.validation import Report
 
 from . import services
+from .done import done_minutes
 from .generation import NothingToPlan, PlanNotUsable, generate
 from .inputs import skeleton_for
 from .models import SeasonPlanVersion
@@ -50,7 +52,15 @@ def _detail(user: User, plan: SeasonPlanVersion, report: Report | None = None) -
         report = None
     elif report is None:
         report = services.validate(user, plan.pk)
-    return Response(plan_detail(plan, loaded, report))
+    done = None
+    if plan.status == SeasonPlanVersion.Status.CONFIRMED:
+        # the minutes done, for the weeks that have begun; the current week with what is done so far
+        today = today_of(user)
+        begun = [
+            week.week_start for week in loaded.context.skeleton.weeks if week.week_start <= today
+        ]
+        done = done_minutes(user, begun)
+    return Response(plan_detail(plan, loaded, report, done))
 
 
 class SeasonView(APIView):

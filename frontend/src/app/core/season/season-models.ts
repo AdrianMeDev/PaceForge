@@ -79,11 +79,23 @@ export interface KeySession {
  */
 export interface PlanWeek {
   week_start: string;
+  /**
+   * The minutes the athlete trained in the week, by sport (`other`: activities of no sport of the
+   * plan), only the sports with minutes. `null`: not known, which is every week of every version
+   * but the confirmed one and its weeks that have not begun; `[]`: a week without any training.
+   */
+  done: DoneMinutes[] | null;
   minutes: Partial<Record<Sport, number>>;
   total_minutes: number;
   focus: Focus;
   key_sessions: KeySession[];
   reason: string;
+}
+
+/** The minutes done in one sport; `other` is no sport of the plan. */
+export interface DoneMinutes {
+  sport: Sport | 'other';
+  minutes: number;
 }
 
 /** One version of the season plan in the list. Timestamps are ISO 8601. */

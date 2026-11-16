@@ -232,6 +232,7 @@ const PLAN_WEEKS = SEASON.weeks.map((week, index) => ({
       ? [{ sport: 'running', kind: 'race', minutes: 60, detail: '' }]
       : [{ sport: 'running', kind: 'long', minutes: 90, detail: '3 x 10 min at tempo' }],
   reason: 'Build the base.',
+  done: null,
 }));
 const PLAN = {
   id: ID,
@@ -398,6 +399,37 @@ describe('SeasonApi season plans', () => {
       });
     });
 
+    it('reads the minutes done of a week that has begun, and an empty week', async () => {
+      const done = altered(
+        PLAN,
+        [
+          ['weeks', 0, 'done'],
+          [
+            { sport: 'running', minutes: 60 },
+            { sport: 'other', minutes: 10 },
+          ],
+        ],
+        [['weeks', 1, 'done'], []],
+      );
+      const action = api.plan(ID);
+      await answer(url, done as object, 200);
+
+      expect(await action).toMatchObject({
+        plan: {
+          weeks: [
+            {
+              done: [
+                { sport: 'running', minutes: 60 },
+                { sport: 'other', minutes: 10 },
+              ],
+            },
+            { done: [] },
+            { done: null },
+          ],
+        },
+      });
+    });
+
     it('takes over only the known fields', async () => {
       const crowded = altered(
         PLAN,
@@ -476,6 +508,32 @@ describe('SeasonApi season plans', () => {
       ['negative minutes', altered(PLAN, [['weeks', 0, 'minutes', 'running'], -1])],
       ['a total that is not the sum', altered(PLAN, [['weeks', 0, 'total_minutes'], 181])],
       ['a total above a week', altered(PLAN, [['weeks', 0, 'total_minutes'], 10081])],
+      ['no done', altered(PLAN, [['weeks', 0, 'done'], REMOVE])],
+      ['a text as done', altered(PLAN, [['weeks', 0, 'done'], 'none'])],
+      ['an object as done', altered(PLAN, [['weeks', 0, 'done'], {}])],
+      ['a text as a done entry', altered(PLAN, [['weeks', 0, 'done'], ['running']])],
+      [
+        'an unknown sport done',
+        altered(PLAN, [['weeks', 0, 'done'], [{ sport: 'rowing', minutes: 5 }]]),
+      ],
+      [
+        'a sport done twice',
+        altered(PLAN, [
+          ['weeks', 0, 'done'],
+          [
+            { sport: 'running', minutes: 5 },
+            { sport: 'running', minutes: 6 },
+          ],
+        ]),
+      ],
+      [
+        'fractional minutes done',
+        altered(PLAN, [['weeks', 0, 'done'], [{ sport: 'running', minutes: 1.5 }]]),
+      ],
+      [
+        'no minutes done',
+        altered(PLAN, [['weeks', 0, 'done'], [{ sport: 'running', minutes: 0 }]]),
+      ],
       ['no key sessions', altered(PLAN, [['weeks', 0, 'key_sessions'], REMOVE])],
       [
         'four key sessions',

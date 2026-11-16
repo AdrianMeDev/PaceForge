@@ -11,6 +11,17 @@
   --danger-bg: #fdeceb;
   --info: #0b4a99;
   --info-bg: #e6f0fd;
+  --phase-base: #cfe3fa;
+  --phase-build: #9fc4f2;
+  --phase-specific: #f6d28b;
+  --phase-taper: #b9e3c4;
+  --phase-transition: #e3e6ea;
+  --sport-running: #d55e00;
+  --sport-cycling: #0072b2;
+  --sport-swimming: #009e73;
+  --sport-strength: #cc79a7;
+  --sport-other: #7f7f7f;
+  --sport-aim: #8a96a3;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -26,6 +37,17 @@
     --danger-bg: #3a1c1a;
     --info: #9cc4ff;
     --info-bg: #16263d;
+    --phase-base: #24405f;
+    --phase-build: #2f5f99;
+    --phase-specific: #7a5a1c;
+    --phase-taper: #25543a;
+    --phase-transition: #2b323a;
+    --sport-running: #ff9a4d;
+    --sport-cycling: #5aaae0;
+    --sport-swimming: #3cc9a0;
+    --sport-strength: #e59cc4;
+    --sport-other: #aab0b6;
+    --sport-aim: #6b7683;
   }
 }
 

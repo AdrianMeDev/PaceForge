@@ -190,6 +190,10 @@
           </p>
         }
 
+        <app-season-timeline [season]="shown" [today]="today" />
+
+        <app-season-chart [season]="shown" [plan]="plan()" />
+
         <div class="table-wrap">
           <table>
             <caption class="visually-hidden">
@@ -206,6 +210,9 @@
                   <th scope="col">Plan</th>
                   <th scope="col">Focus</th>
                   <th scope="col">Key sessions</th>
+                  @if (hasDone()) {
+                    <th scope="col">Done</th>
+                  }
                 }
               </tr>
             </thead>
@@ -246,12 +253,19 @@
                         <span class="session">{{ session(item) }}</span>
                       }
                     </td>
+                    @if (hasDone()) {
+                      <td data-testid="plan-done">
+                        @if (filledWeek.done; as made) {
+                          {{ done(made) }}
+                        }
+                      </td>
+                    }
                   }
                 </tr>
                 @if (plan(); as filled) {
                   <tr class="reason" [attr.data-testid]="'reason-' + index">
                     <td></td>
-                    <td [attr.colspan]="7">{{ filled.weeks[index].reason }}</td>
+                    <td [attr.colspan]="hasDone() ? 8 : 7">{{ filled.weeks[index].reason }}</td>
                   </tr>
                 }
               }

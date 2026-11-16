@@ -18,6 +18,7 @@ import {
 } from '../api/coach-replies';
 import {
   ConfirmSeasonResult,
+  DoneMinutes,
   DiscardSeasonResult,
   Focus,
   GenerateSeasonResult,
@@ -46,6 +47,7 @@ const PHASES: readonly string[] = ['base', 'build', 'specific', 'taper', 'transi
 const PRIORITIES: readonly string[] = ['main', 'secondary', 'preparation'];
 const DISCIPLINES: readonly string[] = ['running', 'cycling', 'swimming', 'triathlon'];
 const SPORTS: readonly string[] = ['running', 'cycling', 'swimming', 'strength'];
+const DONE_SPORTS: readonly string[] = [...SPORTS, 'other'];
 const FOCI: readonly string[] = [
   'recovery',
   'endurance',
@@ -318,6 +320,7 @@ function toPlanWeek(raw: unknown, reply: Reply): PlanWeek {
   const item = asObject(raw, reply);
   const { week_start, focus, reason, total_minutes } = item;
   const minutes = asObject(item['minutes'], reply);
+  const done = toDone(item['done'], reply);
   const sessions = item['key_sessions'];
   const amounts = Object.entries(minutes);
   if (
@@ -345,7 +348,29 @@ function toPlanWeek(raw: unknown, reply: Reply): PlanWeek {
     focus,
     key_sessions: sessions.map((session: unknown) => toKeySession(session, reply)),
     reason,
+    done,
   };
+}
+
+/** The minutes done in a week: `null`, or each sport at most once with at least a minute. */
+function toDone(raw: unknown, reply: Reply): DoneMinutes[] | null {
+  if (raw === null) {
+    return null;
+  }
+  if (!Array.isArray(raw) || raw.length > DONE_SPORTS.length) {
+    throw unexpected(reply);
+  }
+  const done = raw.map((entry: unknown) => {
+    const { sport, minutes } = asObject(entry, reply);
+    if (!isOneOf<DoneMinutes['sport']>(sport, DONE_SPORTS) || !isCount(minutes) || minutes < 1) {
+      throw unexpected(reply);
+    }
+    return { sport, minutes };
+  });
+  if (new Set(done.map((entry) => entry.sport)).size !== done.length) {
+    throw unexpected(reply);
+  }
+  return done;
 }
 
 /**

@@ -43,6 +43,12 @@ export function raceText(race: SeasonRace): string {
   return parts.join(' · ');
 }
 
+/** The calendar day of `now` on this device, `YYYY-MM-DD` (the week that is marked as this one). */
+export function localToday(now: Date = new Date()): string {
+  const pad = (value: number): string => String(value).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
 /** "70 %": the share of what the week offers that the skeleton plans; empty if it offers nothing. */
 export function usedShare(target: number, capacity: number): string {
   return capacity > 0 ? `${Math.round((target / capacity) * 100)} %` : '';
@@ -97,4 +103,17 @@ export function seasonFindingPlace(path: string, weekStarts: string[]): string {
   const match = /^weeks\[(\d+)\]/.exec(path);
   const start = match === null ? undefined : weekStarts[Number(match[1])];
   return start === undefined ? 'Season' : weekRange(start);
+}
+
+/** "Running 1 h · Other 30 min" for the minutes done in a week; "0 min" if there were none. */
+export function doneText(done: { sport: string; minutes: number }[]): string {
+  if (done.length === 0) {
+    return '0 min';
+  }
+  const total = done.reduce((sum, entry) => sum + entry.minutes, 0);
+  const parts = done.map(
+    (entry) =>
+      `${entry.sport === 'other' ? 'Other' : SPORT_LABELS[entry.sport as Sport]} ${minutesText(entry.minutes)}`,
+  );
+  return `${parts.join(' · ')} · ${minutesText(total)} in all`;
 }

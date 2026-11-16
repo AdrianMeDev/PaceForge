@@ -101,6 +101,7 @@ function plan(changes: Partial<SeasonPlan> = {}): SeasonPlan {
           ? [{ sport: 'running', kind: 'race', minutes: 60, detail: '' }]
           : [{ sport: 'running', kind: 'long', minutes: 90, detail: '3 x 10 min at tempo' }],
       reason: `Reason of week ${index + 1}.`,
+      done: null,
     })),
     report: null,
     ...changes,
@@ -235,6 +236,22 @@ describe('SeasonPage', () => {
         '5 h',
         'A · Berlin Marathon · 42.2 km',
       ]);
+    });
+
+    it('draws the timeline of the same weeks above the table', () => {
+      const cells = Array.from(page.querySelectorAll('[data-testid="timeline-cell"]'));
+
+      expect(cells).toHaveLength(4);
+      expect(cells.map((cell) => cell.getAttribute('data-phase'))).toEqual([
+        'base',
+        'base',
+        'specific',
+        'taper',
+      ]);
+    });
+
+    it('draws the chart of the aim of the skeleton above the table', () => {
+      expect(page.querySelectorAll('svg [data-series="aim"]')).toHaveLength(4);
     });
 
     it('marks a recovery week', () => {
@@ -401,6 +418,41 @@ describe('SeasonPage', () => {
         'Race specific',
         'Running · Race · 1 h',
       ]);
+    });
+
+    it('charts the plan by sport instead of the aim', async () => {
+      await load([CONFIRMED]);
+
+      expect(page.querySelector('svg [data-series="aim"]')).toBeNull();
+      expect(page.querySelectorAll('svg [data-series="running"]')).toHaveLength(4);
+      expect(page.querySelectorAll('svg [data-series="cycling"]')).toHaveLength(3);
+    });
+
+    it('adds a Done column and the narrow bars when the version has minutes done', async () => {
+      const shown = plan({ id: CONFIRMED.id, version: 2 });
+      shown.weeks[0] = {
+        ...shown.weeks[0],
+        done: [
+          { sport: 'running', minutes: 60 },
+          { sport: 'other', minutes: 30 },
+        ],
+      };
+      shown.weeks[1] = { ...shown.weeks[1], done: [] };
+      await load([CONFIRMED], shown);
+
+      expect(Array.from(page.querySelectorAll('thead th')).pop()?.textContent?.trim()).toBe('Done');
+      const done = Array.from(page.querySelectorAll('[data-testid="plan-done"]')).map((cell) =>
+        cell.textContent?.replace(/\s+/g, ' ').trim(),
+      );
+      expect(done).toEqual(['Running 1 h · Other 30 min · 1 h 30 min in all', '0 min', '', '']);
+      expect(page.querySelectorAll('svg rect.done')).toHaveLength(2);
+    });
+
+    it('has no Done column when no week has minutes done', async () => {
+      await load([CONFIRMED]);
+
+      expect(page.querySelector('[data-testid="plan-done"]')).toBeNull();
+      expect(page.querySelector('svg rect.done')).toBeNull();
     });
 
     it('shows the reason of the week under it, and the rationale and status above', async () => {

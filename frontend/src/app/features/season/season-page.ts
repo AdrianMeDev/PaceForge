@@ -11,12 +11,16 @@ import {
   SeasonPlanVersion,
 } from '../../core/season/season-models';
 import { STATUS_LABELS, dayLabel, minutesText, weekRange } from '../planning/plan-format';
+import { SeasonChart } from './season-chart';
+import { SeasonTimeline } from './season-timeline';
 import {
   FOCUS_LABELS,
   PHASE_HINTS,
   PHASE_LABELS,
   PRIORITY_LETTERS,
+  doneText,
   keySessionText,
+  localToday,
   minutesBySport,
   seasonFindingPlace,
   raceText,
@@ -55,7 +59,7 @@ const REFRESH_FAILED = 'The list of plans could not be refreshed. Please try aga
  */
 @Component({
   selector: 'app-season-page',
-  imports: [DatePipe, RouterLink],
+  imports: [DatePipe, RouterLink, SeasonChart, SeasonTimeline],
   templateUrl: './season-page.html',
   styleUrl: './season-page.css',
 })
@@ -83,6 +87,10 @@ export class SeasonPage implements OnInit {
   /** The skeleton in the table: the one of the shown version, else today's. */
   protected readonly shown = computed(() => this.plan()?.skeleton ?? this.season());
 
+  /** The version has the minutes done for some of its weeks. */
+  protected readonly hasDone = computed(
+    () => this.plan()?.weeks.some((week) => week.done !== null) ?? false,
+  );
   protected readonly findings = computed(() => this.plan()?.report?.findings ?? []);
   protected readonly canConfirm = computed(
     () => this.plan()?.status === 'draft' && this.plan()?.report?.valid === true,
@@ -118,6 +126,7 @@ export class SeasonPage implements OnInit {
   protected readonly focusLabel = FOCUS_LABELS;
   protected readonly status = STATUS_LABELS;
   protected readonly bySport = minutesBySport;
+  protected readonly done = doneText;
   protected readonly session = keySessionText;
   protected readonly letter = PRIORITY_LETTERS;
   protected readonly race = raceText;
@@ -125,6 +134,7 @@ export class SeasonPage implements OnInit {
   protected readonly range = weekRange;
   protected readonly day = dayLabel;
   protected readonly share = usedShare;
+  protected readonly today = localToday();
   protected readonly place = (path: string): string =>
     seasonFindingPlace(
       path,

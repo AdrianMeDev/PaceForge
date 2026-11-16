@@ -5,7 +5,9 @@ import {
   PHASE_HINTS,
   PHASE_LABELS,
   PRIORITY_LETTERS,
+  doneText,
   keySessionText,
+  localToday,
   minutesBySport,
   seasonFindingPlace,
   raceText,
@@ -120,4 +122,30 @@ describe('seasonFindingPlace', () => {
       expect(seasonFindingPlace(path, STARTS)).toBe('Season');
     },
   );
+});
+
+describe('localToday', () => {
+  it('writes the calendar day of the device as YYYY-MM-DD', () => {
+    expect(localToday(new Date(2027, 0, 5, 23, 59))).toBe('2027-01-05');
+    expect(localToday(new Date(2026, 11, 31, 0, 0))).toBe('2026-12-31');
+  });
+
+  it('is today by default', () => {
+    expect(localToday()).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+});
+
+describe('doneText', () => {
+  it('names the sports with their minutes and the total', () => {
+    expect(
+      doneText([
+        { sport: 'running', minutes: 60 },
+        { sport: 'other', minutes: 30 },
+      ]),
+    ).toBe('Running 1 h · Other 30 min · 1 h 30 min in all');
+  });
+
+  it('says 0 min for a week without training', () => {
+    expect(doneText([])).toBe('0 min');
+  });
 });
