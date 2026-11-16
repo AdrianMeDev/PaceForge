@@ -100,9 +100,9 @@ class WeeklyPlan(OwnedModel):
 class PlannedWorkout(OwnedModel):
     """One workout of a plan, with its intensity target and an optional interval structure.
 
-    ``segments`` is a list of dictionaries in the format of ``planning.schema`` (checked there,
-    not by the database). ``zone_system`` and ``zone`` give the target of the whole session when
-    there are no segments; both are set or both are empty.
+    ``segments`` and ``exercises`` are lists of dictionaries in the format of ``planning.schema``
+    (checked there, not by the database). ``zone_system`` and ``zone`` give the target of the whole
+    session when there are no segments; both are set or both are empty.
     """
 
     class Sport(models.TextChoices):
@@ -140,6 +140,9 @@ class PlannedWorkout(OwnedModel):
     goal = models.CharField(max_length=20, choices=Goal.choices)
     duration_minutes = models.PositiveSmallIntegerField()
     segments = models.JSONField(default=list, blank=True)
+    # The exercises of a strength workout, a list of dictionaries in the format of
+    # ``planning.schema`` (checked there, not by the database).
+    exercises = models.JSONField(default=list, blank=True)
     zone_system = models.CharField(max_length=20, choices=ZoneSystem.choices, blank=True)
     zone = models.PositiveSmallIntegerField(null=True, blank=True)
     notes = models.CharField(max_length=NOTES_MAX, blank=True)
@@ -222,6 +225,8 @@ class PlannedWorkout(OwnedModel):
                 errors["day"] = "The day lies outside the week of the plan."
         if not isinstance(self.segments, list):
             errors["segments"] = "Segments are a list."
+        if not isinstance(self.exercises, list):
+            errors["exercises"] = "Exercises are a list."
         if errors:
             raise ValidationError(errors)
 

@@ -21,7 +21,7 @@ import re
 from datetime import time
 from typing import Any
 
-from .schema import Segment, SegmentKind, Slot, Sport, Workout, ZoneSystem
+from .schema import Exercise, Segment, SegmentKind, Slot, Sport, Workout, ZoneSystem
 from .targets import Target, Targets
 
 # The type of the event in Intervals.icu for each sport.
@@ -76,6 +76,8 @@ def description(workout: Workout, targets: Targets) -> str:
         blocks.append(_line("Note: ", workout.notes))
     if workout.sport is Sport.STRENGTH:
         blocks.append(f"Strength session, {workout.duration_minutes} min.")
+        if workout.exercises:
+            blocks.append(_exercises(workout.exercises))
     elif workout.segments:
         blocks.extend(_segment(workout.sport, segment, targets) for segment in workout.segments)
     else:
@@ -93,6 +95,23 @@ def description(workout: Workout, targets: Targets) -> str:
     if workout.stretching_minutes:
         blocks.append(f"Stretching: {workout.stretching_minutes} min after the workout.")
     return "\n\n".join(blocks)
+
+
+def _exercises(exercises: tuple[Exercise, ...]) -> str:
+    """The exercises as numbered comment lines: ``1. Goblet squat: 3 sets of 10, RPE 7, rest 1:30``.
+    The name is the coach's text, so every line goes through ``_line``: it starts with a number
+    (never with ``-``) and its end is a number or a unit (never ``4x``)."""
+    lines = ["Exercises:"]
+    for number, exercise in enumerate(exercises, start=1):
+        amount = f"{exercise.reps}" if exercise.reps is not None else f"{exercise.seconds} s"
+        parts = [f"{exercise.sets} sets of {amount}"]
+        if exercise.rpe is not None:
+            parts.append(f"RPE {exercise.rpe}")
+        if exercise.rest_seconds is not None:
+            parts.append(f"rest {exercise.rest_seconds // 60}:{exercise.rest_seconds % 60:02d}")
+        name = " ".join(exercise.name.split())
+        lines.append(_line(f"{number}. ", f"{name}: {', '.join(parts)}"))
+    return "\n".join(lines)
 
 
 def _segment(sport: Sport, segment: Segment, targets: Targets) -> str:

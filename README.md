@@ -471,7 +471,7 @@ there are several, the first one in that order counts and the others are listed 
      300 kg, one decimal) and **resting heart rate** (25 to 120 bpm).
    - **Years of training** in running, cycling, swimming and strength (0 to 80 whole years each).
    - **Strength training experience** (beginner or advanced) and the **equipment** you have (gym,
-     at home, dumbbells; none ticked: not said).
+     bodyweight only, dumbbells; none ticked: not said).
 
    These go to your AI coach with every plan request, as numbers and fixed words and without any
    text of yours, and the panel names the provider. **The year of birth is not sent**, only the age
@@ -620,10 +620,11 @@ The coach is told and uses the roles to decide what to plan first and what to cu
 is short; nothing checks a role. A week with fewer sessions of a sport than your least, or more
 than your most, gets a **warning** on the [Week plan](#week-plan) page (a sport you said nothing
 about is never looked at). Below the table, **What strength training is for** (**Legs**,
-**Core**, **Upper body**, **Full body**, or not said). With **Legs** or **Full body** every
-strength session counts as leg training, and the checks **warn** about one on the day before your
-longest run of the week or before a hard run. They do not know exercises yet, so with the focus
-**Core** or **Upper body**, or none, nothing is checked.
+**Core**, **Upper body**, **Full body**, or not said). A strength session that trains the legs
+gets a **warning** on the day before your longest run of the week or before a hard run. A session
+**with exercises** trains the legs if one of its exercises is for the legs or the whole body,
+whatever the focus; a session **without** exercises (an older plan, or one that was changed) does
+if the focus is **Legs** or **Full body**.
 
 **Intensity.** How hard your plans may be: **Relaxed**, **Normal** (the default) or **Intensive**.
 The level sets the limits that the checks of every plan use, and the coach is told them:
@@ -758,6 +759,18 @@ coach splits it over the day, and knows from the Training time page in which par
 can train. Stretching
 comes as "+ 10 min stretching" under a session, only if you switched it on, and never as a session.
 
+**Strength sessions and their exercises.** The coach lists the exercises of every strength session
+in the order you do them: a name of its own ("Goblet squat"), the sets and the repetitions or, for
+a hold such as a plank, the seconds, and if it likes the RPE and the rest between sets. Next to the
+name every exercise says what it trains (legs, core, upper body, full body) and what it needs (gym,
+dumbbells, body weight). The coach chooses them for your **strength focus**, your **experience**
+and your **equipment** (see the athlete page: *Bodyweight only*, *Dumbbells*, *Gym*). The checks
+**warn** about an exercise that needs a gym or dumbbells which you did not list (a gym provides
+dumbbells too; body weight always fits; nothing is said if you listed no equipment), and refuse
+exercises on a session that is not strength. They never judge the name. A workout form keeps the
+exercises when you change the session and drops them if you make it another sport; there is no way
+to change a single exercise by hand yet. Older plans have none.
+
 **Changing a plan by hand.** **Change this plan** (on a draft and on a confirmed plan) opens an
 editor in place of the plan. Change a workout (day, time of day, sport, goal, title, duration,
 target zone, stretching, notes), **move** it by changing its day and its time of day (there is no
@@ -829,7 +842,8 @@ confirmed and the page says why.
 - **What arrives:** one workout in your calendar for each workout of the plan, with its steps, the
   targets in watts, beats per minute or minutes per kilometre (worked out from your thresholds at
   the moment of sending), the time of day as start time (**morning** 07:00, **afternoon** 12:00,
-  **evening** 18:00, otherwise all day), strength and stretching as text. Intervals.icu passes the
+  **evening** 18:00, otherwise all day), strength (with its exercises, one numbered line each, for
+  example "1. Goblet squat: 3 sets of 10, RPE 7, rest 1:30") and stretching as text. Intervals.icu passes the
   workouts on to the devices and services you connected there (Zwift, COROS, Garmin …).
 - **Sending again** updates the same workouts and never adds them twice. A version made from
   another by [changing or restoring it](#week-plan) updates the events of the workouts it keeps,

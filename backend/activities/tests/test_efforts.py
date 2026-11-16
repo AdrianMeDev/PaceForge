@@ -200,10 +200,14 @@ class TestRobustness:
             Sample(s, power=200 + (s % 7), distance=3.0 * s, heart_rate=150) for s in range(100_000)
         ]
 
-        began = time.perf_counter()
+        # CPU time of this process, not the clock on the wall: the tests run in parallel on a shared
+        # machine, and waiting for the processor is no slowness of the code. The limit is far
+        # above what it takes (about half a second) and far below what a quadratic search over a
+        # hundred thousand seconds would take (minutes), which is what this test is for.
+        began = time.process_time()
         found = best_efforts(samples)
-        elapsed = time.perf_counter() - began
+        elapsed = time.process_time() - began
 
         assert set(found.power) == set(POWER_WINDOWS)
         assert set(found.speed) == set(SPEED_WINDOWS)
-        assert elapsed < 1.0
+        assert elapsed < 5.0

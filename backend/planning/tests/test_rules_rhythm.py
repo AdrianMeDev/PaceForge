@@ -9,7 +9,7 @@ import pytest
 from availability.intensity import LEVEL_LIMITS, IntensityLevel, Limits
 from availability.models import BodyPart
 from planning import rules
-from planning.context import ActiveLimitation, FixedFacts, PlanContext, SportFacts
+from planning.context import ActiveLimitation, AthleteFacts, FixedFacts, PlanContext, SportFacts
 from planning.rules import (
     ALL_CHECKS,
     BASIC_CHECKS,
@@ -25,6 +25,7 @@ from planning.rules import (
     check_double_days,
     check_duplicates,
     check_easy_share,
+    check_exercises,
     check_fixed_sessions,
     check_hard_days,
     check_hard_days_in_a_row,
@@ -41,6 +42,9 @@ from planning.rules import (
     intensity_of,
 )
 from planning.schema import (
+    Exercise,
+    ExerciseEquipment,
+    ExerciseRegion,
     Goal,
     Segment,
     SegmentKind,
@@ -1029,6 +1033,35 @@ class TestLegsBeforeAKeyRun:
     def test_a_week_without_a_run_is_not_checked(self) -> None:
         assert self.found(self.strength(2), workout(3, 90)) == []
 
+    def with_regions(self, offset: int, *regions: ExerciseRegion) -> Workout:
+        exercises = tuple(
+            Exercise("Move", region, ExerciseEquipment.BODYWEIGHT, 3, reps=10) for region in regions
+        )
+        return workout(offset, 40, sport=Sport.STRENGTH, goal=Goal.STRENGTH, exercises=exercises)
+
+    @pytest.mark.parametrize("region", [ExerciseRegion.LEGS, ExerciseRegion.FULL_BODY])
+    @pytest.mark.parametrize("focus", ["core", "upper_body", None])
+    def test_a_leg_exercise_counts_whatever_the_focus(
+        self, region: ExerciseRegion, focus: str | None
+    ) -> None:
+        found = self.found(
+            self.with_regions(2, ExerciseRegion.CORE, region), self.run(3, 90), focus=focus
+        )
+
+        assert [f.code for f in found] == ["legs_before_key_run"]
+
+    @pytest.mark.parametrize("focus", ["legs", "full_body"])
+    def test_exercises_without_the_legs_do_not_count_even_for_a_legs_focus(
+        self, focus: str
+    ) -> None:
+        workout_without_legs = self.with_regions(2, ExerciseRegion.CORE, ExerciseRegion.UPPER_BODY)
+
+        assert self.found(workout_without_legs, self.run(3, 90), focus=focus) == []
+
+    def test_without_exercises_the_focus_still_decides(self) -> None:
+        assert self.found(self.strength(2), self.run(3, 90), focus="legs") != []
+        assert self.found(self.strength(2), self.run(3, 90), focus="core") == []
+
     def test_another_sport_is_no_key_run(self) -> None:
         assert self.found(self.strength(2), workout(3, 200, sport=Sport.CYCLING)) == []
 
@@ -1154,6 +1187,118 @@ class TestFixedSessions:
         plan = [workout(2, 30, sport=Sport.CYCLING, title="SECRETMARKER", notes="SECRETMARKER")]
 
         found = self.found(plan, self.club())
+
+        assert found
+        assert "SECRETMARKER" not in repr(found)
+
+
+class TestExercises:
+    HAVE_NONE: tuple[str, ...] = ()
+
+    def lift(self, *kinds: ExerciseEquipment, sport: Sport = Sport.STRENGTH) -> Workout:
+        exercises = tuple(
+            Exercise(f"Move {number}", ExerciseRegion.CORE, kind, 3, reps=10)
+            for number, kind in enumerate(kinds)
+        )
+        return workout(2, 40, sport=sport, exercises=exercises)
+
+    def found(self, lifting: Workout, *equipment: str) -> list[Finding]:
+        athlete = AthleteFacts(strength_equipment=equipment)
+        return check_exercises(week(lifting), context(athlete=athlete))
+
+    def test_exercises_on_another_sport_are_an_error_once_per_workout(self) -> None:
+        found = self.found(
+            self.lift(ExerciseEquipment.GYM, ExerciseEquipment.BODYWEIGHT, sport=Sport.RUNNING)
+        )
+
+        assert found == [
+            Finding(
+                Severity.ERROR,
+                "exercises_not_strength",
+                "Wednesday has exercises on a running workout; only a strength workout has "
+                "exercises.",
+                "workouts[0].exercises",
+            )
+        ]
+
+    def test_a_strength_workout_may_have_exercises(self) -> None:
+        assert self.found(self.lift(ExerciseEquipment.BODYWEIGHT), "gym") == []
+
+    def test_a_workout_without_exercises_is_fine_for_any_sport(self) -> None:
+        for sport in Sport:
+            assert self.found(workout(2, 40, sport=sport), "home") == []
+
+    def test_a_gym_exercise_needs_a_gym(self) -> None:
+        found = self.found(self.lift(ExerciseEquipment.GYM), "home", "dumbbells")
+
+        assert found == [
+            Finding(
+                Severity.WARNING,
+                "exercise_needs_equipment",
+                "Wednesday has an exercise that needs a gym, which you did not list as your "
+                "equipment.",
+                "workouts[0].exercises[0].equipment",
+            )
+        ]
+
+    @pytest.mark.parametrize("equipment", [("dumbbells",), ("gym",), ("gym", "home")])
+    def test_dumbbells_are_provided_by_dumbbells_and_by_a_gym(
+        self, equipment: tuple[str, ...]
+    ) -> None:
+        assert self.found(self.lift(ExerciseEquipment.DUMBBELLS), *equipment) == []
+
+    def test_dumbbells_are_not_provided_by_body_weight_alone(self) -> None:
+        found = self.found(self.lift(ExerciseEquipment.DUMBBELLS), "home")
+
+        assert [f.code for f in found] == ["exercise_needs_equipment"]
+        assert "dumbbells" in found[0].message
+
+    @pytest.mark.parametrize("equipment", [("home",), ("gym",), ("dumbbells",)])
+    def test_body_weight_always_fits(self, equipment: tuple[str, ...]) -> None:
+        assert self.found(self.lift(ExerciseEquipment.BODYWEIGHT), *equipment) == []
+
+    def test_nothing_is_said_if_the_athlete_listed_no_equipment(self) -> None:
+        found = self.found(self.lift(ExerciseEquipment.GYM, ExerciseEquipment.DUMBBELLS))
+
+        assert found == []
+
+    def test_every_exercise_that_does_not_fit_is_named_at_its_place(self) -> None:
+        found = self.found(
+            self.lift(
+                ExerciseEquipment.GYM,
+                ExerciseEquipment.BODYWEIGHT,
+                ExerciseEquipment.DUMBBELLS,
+            ),
+            "home",
+        )
+
+        assert [f.path for f in found] == [
+            "workouts[0].exercises[0].equipment",
+            "workouts[0].exercises[2].equipment",
+        ]
+
+    def test_exercises_outside_the_week_are_left_alone(self) -> None:
+        lifting = workout(
+            9,
+            40,
+            sport=Sport.STRENGTH,
+            exercises=(Exercise("Move", ExerciseRegion.CORE, ExerciseEquipment.GYM, 3, reps=10),),
+        )
+
+        assert self.found(lifting, "home") == []
+
+    def test_the_name_and_the_title_are_not_repeated(self) -> None:
+        lifting = workout(
+            2,
+            40,
+            sport=Sport.STRENGTH,
+            title="SECRETMARKER",
+            exercises=(
+                Exercise("SECRETMARKER", ExerciseRegion.CORE, ExerciseEquipment.GYM, 3, reps=10),
+            ),
+        )
+
+        found = self.found(lifting, "home")
 
         assert found
         assert "SECRETMARKER" not in repr(found)
@@ -1638,6 +1783,7 @@ class TestTheLists:
             check_sessions_per_sport,
             check_legs_before_key_run,
             check_fixed_sessions,
+            check_exercises,
         )
 
     def test_which_rules_are_errors_and_which_warnings(self) -> None:

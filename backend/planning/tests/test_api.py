@@ -30,6 +30,9 @@ from integrations.models import ProviderConnection
 from planning import services
 from planning.models import PlannedWorkout, WeeklyPlan
 from planning.schema import (
+    Exercise,
+    ExerciseEquipment,
+    ExerciseRegion,
     Goal,
     Segment,
     SegmentKind,
@@ -87,6 +90,7 @@ WORKOUT_FIELDS = {
     "lineage",
     "target",
     "export",
+    "exercises",
 }
 
 
@@ -665,6 +669,40 @@ class TestRevising:
             w["lineage"] for w in data["workouts"]
         ]
         assert WeeklyPlan.objects.get(pk=old.pk).status == "confirmed"
+
+    def test_the_exercises_of_a_strength_workout_survive_a_change_and_are_in_the_answer(
+        self, alice: User
+    ) -> None:
+        squat = Exercise(
+            "Goblet squat",
+            ExerciseRegion.LEGS,
+            ExerciseEquipment.DUMBBELLS,
+            3,
+            reps=10,
+            rpe=7,
+            rest_seconds=90,
+        )
+        lift = Workout(
+            day=MONDAY,
+            sport=Sport.STRENGTH,
+            title="Strength",
+            goal=Goal.STRENGTH,
+            duration_minutes=45,
+            exercises=(squat,),
+        )
+        old = services.confirm(alice, draft(alice, lift, ride(2), ride(4, 90)).pk)
+        data = stored_body(old)
+        data["workouts"][1]["title"] = "Changed"
+
+        response = signed_in(alice).call("POST", plan_url(old.pk, "revise/"), data)
+
+        assert response.status_code == HTTPStatus.CREATED
+        shown = body(response)["workouts"][0]["exercises"]
+        assert [(e["name"], e["sets"], e["reps"], e["rpe"]) for e in shown] == [
+            ("Goblet squat", 3, 10, 7)
+        ]
+        read = signed_in(alice).call("GET", plan_url(body(response)["id"]))
+        assert body(read)["workouts"][0]["exercises"] == shown
 
     def test_a_workout_that_was_moved_keeps_its_lineage_in_the_answer(self, alice: User) -> None:
         old = self.confirmed(alice)

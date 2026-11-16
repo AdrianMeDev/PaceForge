@@ -39,6 +39,7 @@ const DRAFT = {
       notes: 'Keep it easy',
       slot: null,
       stretching_minutes: 0,
+      exercises: [],
       target: null,
       export: null,
       segments: [],
@@ -55,6 +56,7 @@ const DRAFT = {
       notes: 'Keep it easy',
       slot: null,
       stretching_minutes: 0,
+      exercises: [],
       target: null,
       export: null,
       segments: [],
@@ -71,6 +73,7 @@ const DRAFT = {
       notes: 'Keep it easy',
       slot: null,
       stretching_minutes: 0,
+      exercises: [],
       target: null,
       export: null,
       segments: [
@@ -117,6 +120,7 @@ const CONFIRMED = {
       notes: '',
       slot: null,
       stretching_minutes: 0,
+      exercises: [],
       target: null,
       export: null,
       segments: [],
@@ -220,6 +224,27 @@ const SEGMENT = ['workouts', 2, 'segments', 0] as const;
 const FINDING = ['report', 'findings', 0] as const;
 
 /** Answers that are no plan: each must make a call that returns a plan reject. */
+const SQUAT = {
+  name: 'Goblet squat',
+  region: 'legs',
+  equipment: 'dumbbells',
+  sets: 3,
+  reps: 10,
+  seconds: null,
+  rpe: 7,
+  rest_seconds: 90,
+};
+const PLANK = {
+  name: 'Plank',
+  region: 'core',
+  equipment: 'bodyweight',
+  sets: 3,
+  reps: null,
+  seconds: 45,
+  rpe: null,
+  rest_seconds: null,
+};
+
 const WRONG_PLANS: [string, unknown][] = [
   ['no body', null],
   ['a list as body', []],
@@ -321,6 +346,38 @@ const WRONG_PLANS: [string, unknown][] = [
   ['a fraction as stretching', altered(DRAFT, [[...WORKOUT, 'stretching_minutes'], 7.5])],
   ['negative stretching', altered(DRAFT, [[...WORKOUT, 'stretching_minutes'], -1])],
   ['more than an hour of stretching', altered(DRAFT, [[...WORKOUT, 'stretching_minutes'], 61])],
+  ['no exercises', altered(DRAFT, [[...WORKOUT, 'exercises'], REMOVE])],
+  ['null as exercises', altered(DRAFT, [[...WORKOUT, 'exercises'], null])],
+  ['an object as exercises', altered(DRAFT, [[...WORKOUT, 'exercises'], {}])],
+  ['more than 15 exercises', altered(DRAFT, [[...WORKOUT, 'exercises'], Array(16).fill(SQUAT)])],
+  ['a text as an exercise', altered(DRAFT, [[...WORKOUT, 'exercises'], ['squat']])],
+  [
+    'an exercise without a name',
+    altered(DRAFT, [[...WORKOUT, 'exercises'], [{ ...SQUAT, name: '' }]]),
+  ],
+  [
+    'an unknown region',
+    altered(DRAFT, [[...WORKOUT, 'exercises'], [{ ...SQUAT, region: 'arms' }]]),
+  ],
+  [
+    'unknown equipment',
+    altered(DRAFT, [[...WORKOUT, 'exercises'], [{ ...SQUAT, equipment: 'barbell' }]]),
+  ],
+  ['zero sets', altered(DRAFT, [[...WORKOUT, 'exercises'], [{ ...SQUAT, sets: 0 }]])],
+  ['fractional sets', altered(DRAFT, [[...WORKOUT, 'exercises'], [{ ...SQUAT, sets: 2.5 }]])],
+  [
+    'reps and seconds both',
+    altered(DRAFT, [[...WORKOUT, 'exercises'], [{ ...SQUAT, seconds: 45 }]]),
+  ],
+  [
+    'neither reps nor seconds',
+    altered(DRAFT, [[...WORKOUT, 'exercises'], [{ ...SQUAT, reps: null }]]),
+  ],
+  ['a text as RPE', altered(DRAFT, [[...WORKOUT, 'exercises'], [{ ...SQUAT, rpe: '7' }]])],
+  [
+    'no rest field',
+    altered(DRAFT, [[...WORKOUT, 'exercises'], [{ ...SQUAT, rest_seconds: undefined }]]),
+  ],
   ['no target', altered(DRAFT, [[...WORKOUT, 'target'], REMOVE])],
   ['a text as target', altered(DRAFT, [[...WORKOUT, 'target'], '138-188 W'])],
   [
@@ -586,6 +643,29 @@ describe('PlanningApi', () => {
       expect(result).toMatchObject({
         plan: { workouts: [{ slot }, { slot: null }, { slot: null }] },
       });
+    });
+
+    it('takes over the exercises of a workout in their order', async () => {
+      const body = altered(DRAFT, [
+        [...WORKOUT, 'exercises'],
+        [SQUAT, PLANK],
+      ]);
+
+      const { result } = await run(api.generate('2026-11-16'), 'POST', URL, body as object, 201);
+
+      expect(result).toMatchObject({
+        plan: { workouts: [{ exercises: [SQUAT, PLANK] }, { exercises: [] }, { exercises: [] }] },
+      });
+    });
+
+    it('copies the exercises', async () => {
+      const exercises = [{ ...SQUAT }];
+      const body = altered(DRAFT, [[...WORKOUT, 'exercises'], exercises]);
+
+      const { result } = await run(api.generate('2026-11-16'), 'POST', URL, body as object, 201);
+
+      const plan = (result as { plan: { workouts: { exercises: unknown[] }[] } }).plan;
+      expect(plan.workouts[0].exercises[0]).not.toBe(exercises[0]);
     });
 
     it.each([0, 1, 60])('takes over %i minutes of stretching', async (minutes) => {
@@ -1331,6 +1411,7 @@ describe('PlanningApi', () => {
           zone_system: segment.zone_system,
           zone: segment.zone,
         })),
+        exercises: workout.exercises.map((exercise) => ({ ...exercise })),
       })),
     };
   }
@@ -1426,6 +1507,22 @@ describe('PlanningApi', () => {
       expect(request.request.body).toEqual(sent());
       expect(JSON.stringify(request.request.body)).not.toContain('target');
       expect(JSON.stringify(request.request.body)).not.toContain('export');
+    });
+
+    it('sends the exercises as they are and nothing else of them', async () => {
+      const plan = sent();
+      const exercises = [
+        { ...SQUAT, region: 'legs' as const, equipment: 'dumbbells' as const },
+        { ...PLANK, region: 'core' as const, equipment: 'bodyweight' as const },
+      ];
+      plan.workouts[0] = {
+        ...plan.workouts[0],
+        exercises: exercises.map((exercise) => ({ ...exercise, extra: 'x' })),
+      };
+
+      const { request } = await run(api.check('2026-11-16', plan), 'POST', URL, ANSWER, 200);
+
+      expect((request.request.body as EditedPlan).workouts[0].exercises).toEqual(exercises);
     });
 
     it('sends a new workout with a null lineage', async () => {

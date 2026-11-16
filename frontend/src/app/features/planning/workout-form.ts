@@ -90,6 +90,14 @@ export class WorkoutForm {
     () => this.start().segments.length > 0 && !this.dropStructure(),
   );
   protected readonly hasStructure = computed(() => this.start().segments.length > 0);
+  /** What to tell about the exercises: none to tell, kept as they are, or removed with the sport. */
+  protected readonly exercisesHint = computed<'none' | 'kept' | 'removed'>(() => {
+    if (this.start().exercises.length === 0) {
+      return 'none';
+    }
+    return this.sportValue() === 'strength' ? 'kept' : 'removed';
+  });
+  protected readonly exerciseCount = computed(() => this.start().exercises.length);
   protected readonly zoneSystems = computed(() => zoneSystemChoices(this.sportValue()));
   protected readonly zoneSystem = computed<ZoneSystem | null>(() => {
     const system = this.zoneSystemValue();
@@ -154,6 +162,8 @@ export class WorkoutForm {
       slot: this.slotValue() === '' ? null : (this.slotValue() as WorkoutSlot),
       stretching_minutes: stretching.value,
       segments: this.keepsStructure() ? this.start().segments : [],
+      // The exercises belong to a strength workout: they stay with it and go with another sport.
+      exercises: this.sportValue() === 'strength' ? this.start().exercises : [],
     });
   }
 }

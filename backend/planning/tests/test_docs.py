@@ -186,8 +186,8 @@ class TestTheRules:
 
     def test_every_check_of_the_rules_is_covered_by_the_table(self) -> None:
         # the number of checks and of codes can only move together with the page
-        assert len(rules.ALL_CHECKS) == 25
-        assert len(self.in_the_code()) == 30
+        assert len(rules.ALL_CHECKS) == 26
+        assert len(self.in_the_code()) == 32
 
 
 class TestTheZoneSystems:
@@ -225,14 +225,21 @@ class TestTheFormatTables:
     def test_every_field_of_a_workout_and_a_segment_is_named_on_the_page(self) -> None:
         text = section("The format")
 
-        for dataclass in (schema.Workout, schema.Segment):
+        for dataclass in (schema.Workout, schema.Segment, schema.Exercise):
             for field in dataclasses.fields(dataclass):
                 assert f"`{field.name}`" in text, field.name
 
     def test_the_enums_named_on_the_page_are_those_of_the_code(self) -> None:
         text = section("The format")
 
-        for enum in (schema.Sport, schema.Goal, schema.SegmentKind, schema.Slot):
+        for enum in (
+            schema.Sport,
+            schema.Goal,
+            schema.SegmentKind,
+            schema.Slot,
+            schema.ExerciseRegion,
+            schema.ExerciseEquipment,
+        ):
             for member in enum:
                 assert f"`{member.value}`" in text, member
 

@@ -172,6 +172,19 @@
     </div>
   }
 
+  @if (exercisesHint(); as state) {
+    @if (state !== 'none') {
+      <p class="hint" data-testid="exercises-hint">
+        @if (state === 'kept') {
+          This workout has {{ exerciseCount() }}
+          {{ exerciseCount() === 1 ? 'exercise' : 'exercises' }}; they are kept as they are.
+        } @else {
+          The exercises are removed when you save, because the sport is not strength any more.
+        }
+      </p>
+    }
+  }
+
   <div class="field">
     <label for="workout-notes">Notes (optional)</label>
     <textarea

@@ -25,6 +25,9 @@ import {
   Report,
   RestorePlanResult,
   RevisePlanResult,
+  Exercise,
+  ExerciseEquipment,
+  ExerciseRegion,
   Segment,
   SegmentKind,
   TargetUnit,
@@ -80,6 +83,9 @@ const ZONE_COUNT: Record<string, number> = { power: 7, heart_rate: 5, pace: 5 };
 const DURATION_MAX = 1440;
 const STRETCHING_MAX = 60;
 const REPEAT_MAX = 50;
+const EXERCISES_MAX = 15;
+const REGIONS: readonly string[] = ['legs', 'core', 'upper_body', 'full_body'];
+const EQUIPMENT: readonly string[] = ['gym', 'dumbbells', 'bodyweight'];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -443,6 +449,7 @@ function toWorkout(raw: unknown, reply: Reply): Workout {
   const range = toRange(item['target']);
   const sent = toExport(item['export']);
   const segments = item['segments'];
+  const exercises = item['exercises'];
   if (
     !isUuid(lineage) ||
     !isDate(day) ||
@@ -460,7 +467,9 @@ function toWorkout(raw: unknown, reply: Reply): Workout {
     (slot !== null && !isOneOf<WorkoutSlot>(slot, SLOTS)) ||
     !isCount(stretching_minutes) ||
     stretching_minutes > STRETCHING_MAX ||
-    !Array.isArray(segments)
+    !Array.isArray(segments) ||
+    !Array.isArray(exercises) ||
+    exercises.length > EXERCISES_MAX
   ) {
     throw unexpected(reply);
   }
@@ -478,6 +487,7 @@ function toWorkout(raw: unknown, reply: Reply): Workout {
     slot,
     stretching_minutes,
     segments: segments.map((segment: unknown) => toSegment(segment, reply)),
+    exercises: exercises.map((exercise: unknown) => toExercise(exercise, reply)),
   };
 }
 
@@ -509,6 +519,16 @@ function toBody(plan: EditedPlan): EditedPlan {
         zone_system: segment.zone_system,
         zone: segment.zone,
       })),
+      exercises: workout.exercises.map((exercise) => ({
+        name: exercise.name,
+        region: exercise.region,
+        equipment: exercise.equipment,
+        sets: exercise.sets,
+        reps: exercise.reps,
+        seconds: exercise.seconds,
+        rpe: exercise.rpe,
+        rest_seconds: exercise.rest_seconds,
+      })),
     })),
   };
 }
@@ -525,6 +545,32 @@ function toOrder(body: unknown, count: number, reply: Reply): number[] {
     throw unexpected(reply);
   }
   return order;
+}
+
+function toExercise(raw: unknown, reply: Reply): Exercise {
+  const item = asObject(raw, reply);
+  const { name, region, equipment, sets, reps, seconds, rpe, rest_seconds } = item;
+  if (
+    typeof name !== 'string' ||
+    name === '' ||
+    !isOneOf<ExerciseRegion>(region, REGIONS) ||
+    !isOneOf<ExerciseEquipment>(equipment, EQUIPMENT) ||
+    !isCount(sets) ||
+    sets < 1 ||
+    !isCountOrNull(reps) ||
+    !isCountOrNull(seconds) ||
+    // exactly one of the two
+    (reps === null) === (seconds === null) ||
+    !isCountOrNull(rpe) ||
+    !isCountOrNull(rest_seconds)
+  ) {
+    throw unexpected(reply);
+  }
+  return { name, region, equipment, sets, reps, seconds, rpe, rest_seconds };
+}
+
+function isCountOrNull(value: unknown): value is number | null {
+  return value === null || isCount(value);
 }
 
 function toSegment(raw: unknown, reply: Reply): Segment {

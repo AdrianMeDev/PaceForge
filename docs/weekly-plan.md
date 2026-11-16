@@ -90,6 +90,7 @@ A **workout**:
 | `slot` | no | When on the day: `morning`, `afternoon` or `evening`. Only the order is meant, not a clock time. |
 | `stretching_minutes` | no | Stretching added to this workout, 0 to 60 minutes (0 or left out: none). Never a workout of its own, and not part of the training time. |
 | `segments` | no | The interval structure: a list of at most 40 segments. |
+| `exercises` | no | The exercises of a **strength** workout, in the order they are done: a list of at most 15 exercises. Any other sport with exercises is an error. |
 
 A **segment**:
 
@@ -99,6 +100,18 @@ A **segment**:
 | `seconds` | yes | 1 to 86400. |
 | `repeat` | no | How often the segment is done in a row, 1 to 50, default 1. |
 | `zone_system`, `zone` | no | The target. Both or neither. |
+
+An **exercise**:
+
+| Field | Required | Meaning |
+| ----- | -------- | ------- |
+| `name` | yes | One line of 1 to 60 characters, free text ("Goblet squat"). The checks never read it. |
+| `region` | yes | What it trains: `legs`, `core`, `upper_body` or `full_body`. |
+| `equipment` | yes | What it needs: `gym`, `dumbbells` or `bodyweight`. |
+| `sets` | yes | 1 to 10. |
+| `reps`, `seconds` | one of them | Repetitions per set (1 to 100) **or** the length of a hold in seconds (5 to 600), such as a plank. Exactly one of the two. |
+| `rpe` | no | How hard, 1 to 10. |
+| `rest_seconds` | no | The rest between sets, 0 to 600 seconds. |
 
 **Text.** Text is trimmed and the length is counted after trimming. A title is one line. Control
 characters are refused everywhere (line breaks are allowed in `notes` and `rationale` only), and so
@@ -168,8 +181,9 @@ Each plan is checked against the facts of its user for that week, collected when
 - **Sports.** What the athlete said about each sport: a role (goal, secondary, supplementary) and
   the least and the most sessions a week. Only the sessions are checked (`sessions_out_of_range`,
   a warning); the role is for the coach. The strength focus (legs, core, upper body, full body)
-  makes every strength workout count as leg training for legs and full body, and a strength
-  workout on the day before a key run is a warning (`legs_before_key_run`).
+  makes every strength workout **without exercises** count as leg training for legs and full body;
+  with exercises their regions decide. A strength workout that trains the legs on the day before a
+  key run is a warning (`legs_before_key_run`).
 - **The wishes for a week.** On how many days the athlete wants to train at most, the least they
   want to train in a week, and the weekday of the long run and of the long ride. Each is optional
   and a missing one is never checked. They only produce warnings (`too_many_training_days`,
@@ -231,8 +245,10 @@ user to weigh.
 | `below_minimum_minutes` | warning | Fewer minutes than the least the athlete wants to train in a week, as far as the week offers it (the bar is the lower of that minimum and what the week offers). |
 | `long_session_elsewhere` | warning | For running and cycling, if the athlete named a day for the long session: the longest workout of that sport is on another day (with a tie one of the longest on that day is enough). Named at the `day` of the longest workout. Not said if the week has no workout of the sport or if that day is an absence or offers no minutes. |
 | `sessions_out_of_range` | warning | A sport has fewer sessions in the week than the least the athlete wants of it, or more than the most. Only sports with such a wish are looked at. Named once per sport, at the plan as a whole. |
-| `legs_before_key_run` | warning | With the strength focus legs or full body: a strength workout on the day before a key run, that is a hard run or the longest run of the week (with a tie, each of the longest). Named at the strength workout, once. Only days of the week are compared. |
+| `legs_before_key_run` | warning | A strength workout that trains the legs on the day before a key run, that is a hard run or the longest run of the week (with a tie, each of the longest). A strength workout trains the legs if one of its exercises has the region `legs` or `full_body` (whatever the strength focus); without exercises it does if the strength focus is legs or full body. Named at the strength workout, once. Only days of the week are compared. |
 | `fixed_session_missing` | warning | A session that happens every week (training time page) is not in the plan: the day has no workout of its sport, in its part of the day if one was named (a workout without a time of day fits any part of the day). A workout covers one session only. The minutes are not checked. Named once per session, at the plan as a whole. Not said for a day of absence or a day that offers no minutes. |
+| `exercises_not_strength` | error | A workout of another sport than strength has exercises. Named once per workout, at its `exercises`. |
+| `exercise_needs_equipment` | warning | An exercise needs a gym, or dumbbells, and the athlete did not list that equipment (training time and athlete pages): a gym is the only thing that provides a gym, dumbbells are provided by dumbbells and by a gym, body weight always fits. Named once per exercise, at its `equipment`. Not said if the athlete listed no equipment. |
 | `hard_days_in_a_row` | warning | A hard day directly after a hard day. |
 | `no_free_day` | warning | Every day of the week has a workout. |
 | `many_workouts_in_a_day` | error | More workouts on a day than the limit (two). Named once per day, at the first one too many. |
@@ -266,6 +282,14 @@ decisions, not coaching science; better ones will come from using the feature.
 | `SEGMENT_SECONDS_MAX` | 86400 | Seconds of a segment. |
 | `REPEAT_MAX` | 50 | Repeats of a segment. |
 | `STRETCHING_MAX` | 60 | Minutes of stretching added to one workout. |
+| `MAX_EXERCISES` | 15 | Exercises of a strength workout. |
+| `EXERCISE_NAME_MAX` | 60 | Characters of the name of an exercise. |
+| `SETS_MAX` | 10 | Sets of an exercise. |
+| `REPS_MAX` | 100 | Repetitions per set. |
+| `HOLD_SECONDS_MIN` | 5 | Shortest hold of an exercise, in seconds. |
+| `HOLD_SECONDS_MAX` | 600 | Longest hold of an exercise, in seconds. |
+| `RPE_MAX` | 10 | Highest RPE of an exercise. |
+| `REST_SECONDS_MAX` | 600 | Longest rest between sets, in seconds. |
 
 The progression rule compares without rounding the reference: with the weeks 100 and 101 (average
 100.5) a limit of 130 percent is 130.65, so 130 planned minutes pass and 131 do not. A week exactly at a limit
@@ -521,7 +545,10 @@ when confirming. It uses the API key the user connected (see the README, section
 come from the thresholds of the user at the time of sending (the same numbers as on the plan page):
 watts as `138-188w`, heart rate as `145-152bpm`, pace as `5:12-5:41/km Pace`. A zone for which the
 user has no threshold stays in the text (`Power zone 3`) and has no target. A workout without
-segments is one step. Strength is a line of text and no steps. Stretching is a line after the
+segments is one step. Strength is a line of text and no steps: after it come the exercises, one
+numbered comment line each (`1. Goblet squat: 3 sets of 10, RPE 7, rest 1:30`; a hold is
+`3 sets of 45 s`). A line starts with its number and never with `-`, and the name is one line, so
+Intervals.icu reads none of them as a step or a repeat block. Stretching is a line after the
 workout, and the notes of the coach come first as one comment line.
 
 ```
@@ -573,6 +600,12 @@ what Intervals.icu said. Nothing holds a lock while the calls are made (sending 
   not for their minutes, and a workout without a time of day fits any of their parts of the day.
   They have no name or other text, so nothing of the athlete is repeated in a finding. Only
   weekly appointments exist; a session on one date has no place in the rules.
+- The **exercises** are checked for their numbers (the format), for the sport of their workout and for
+  the equipment they need. The **name** is free text of the coach and is never read by a rule, so
+  the `region` and the `equipment` are taken as the coach says them: "Barbell squat" with
+  `bodyweight` is not caught. The sets, the repetitions and the RPE are not judged either. Nothing
+  asks for exercises: an older or hand-changed workout may have none, and the legs rule then falls
+  back to the strength focus. In the export the name is a comment line, never a step.
 - The **time of day** is only an order (morning, afternoon, evening), not a clock time: two
   workouts on one day add up. The athlete can say which parts of the day are open on each weekday
   (`slot_outside_window`), but a workout without a time of day is not held to them, and the time

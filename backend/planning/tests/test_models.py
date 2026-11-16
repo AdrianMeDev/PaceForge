@@ -316,6 +316,7 @@ class TestAWorkout:
         workout = make_workout(make_plan(alice))
 
         assert workout.segments == []
+        assert workout.exercises == []
         assert (workout.zone_system, workout.zone) == ("", None)
         assert (workout.position, workout.notes) == (0, "")
         assert workout.pk.version == 7
@@ -572,6 +573,24 @@ class TestAWorkoutInItsPlan:
         workout.refresh_from_db()
 
         assert workout.segments == segments
+
+    @pytest.mark.parametrize("exercises", [{}, "x", 5, None])
+    def test_exercises_are_a_list(self, alice: User, exercises: Any) -> None:
+        workout = PlannedWorkout(
+            owner=alice, plan=make_plan(alice), **workout_fields(exercises=exercises)
+        )
+
+        with pytest.raises(ValidationError) as raised:
+            workout.full_clean(exclude=["owner"])
+        assert "exercises" in raised.value.message_dict
+
+    def test_exercises_keep_what_they_were_given(self, alice: User) -> None:
+        exercises = [{"name": "Plank", "region": "core", "equipment": "bodyweight", "sets": 3}]
+        workout = make_workout(make_plan(alice), exercises=exercises)
+
+        workout.refresh_from_db()
+
+        assert workout.exercises == exercises
 
     def test_the_text_names_neither_title_nor_notes(self, alice: User) -> None:
         workout = make_workout(make_plan(alice), title="secret knee test", notes="secret diagnosis")

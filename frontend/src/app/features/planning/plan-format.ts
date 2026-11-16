@@ -1,4 +1,7 @@
 import {
+  Exercise,
+  ExerciseEquipment,
+  ExerciseRegion,
   ExportSummary,
   PlanStatus,
   PushOutcome,
@@ -146,6 +149,36 @@ export function segmentText(segment: Segment): string {
 export function findingPlace(path: string): string {
   const match = /^workouts\[(\d+)\]/.exec(path);
   return match === null ? 'Week' : `Workout ${Number(match[1]) + 1}`;
+}
+
+export const REGION_LABELS: Record<ExerciseRegion, string> = {
+  legs: 'Legs',
+  core: 'Core',
+  upper_body: 'Upper body',
+  full_body: 'Full body',
+};
+
+export const EQUIPMENT_LABELS: Record<ExerciseEquipment, string> = {
+  gym: 'Gym',
+  dumbbells: 'Dumbbells',
+  bodyweight: 'Body weight',
+};
+
+/**
+ * "3 × 10 · RPE 7 · rest 1:30", "3 × 45 s": the numbers of an exercise (the name is shown next
+ * to it). Sets of repetitions or of a hold, then the RPE and the rest if they are given.
+ */
+export function exerciseDetail(exercise: Exercise): string {
+  const amount = exercise.reps !== null ? `${exercise.reps}` : `${exercise.seconds ?? 0} s`;
+  const parts = [`${exercise.sets} × ${amount}`];
+  if (exercise.rpe !== null) {
+    parts.push(`RPE ${exercise.rpe}`);
+  }
+  if (exercise.rest_seconds !== null) {
+    const rest = exercise.rest_seconds;
+    parts.push(`rest ${Math.floor(rest / 60)}:${String(rest % 60).padStart(2, '0')}`);
+  }
+  return parts.join(' · ');
 }
 
 /** "+ 10 min stretching": what is added to a workout; empty for none. Never a workout. */

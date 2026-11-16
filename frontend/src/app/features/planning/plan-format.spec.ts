@@ -1,10 +1,13 @@
-import { Segment } from '../../core/planning/planning-models';
+import { Exercise, Segment } from '../../core/planning/planning-models';
 import {
+  EQUIPMENT_LABELS,
   GOAL_LABELS,
+  REGION_LABELS,
   SLOT_LABELS,
   SPORT_LABELS,
   STATUS_LABELS,
   dayLabel,
+  exerciseDetail,
   findingPlace,
   minutesText,
   exportSummaryText,
@@ -155,6 +158,59 @@ describe('stretchingText', () => {
 
   it('says nothing for no stretching', () => {
     expect(stretchingText(0)).toBe('');
+  });
+});
+
+function exercise(changes: Partial<Exercise> = {}): Exercise {
+  return {
+    name: 'Goblet squat',
+    region: 'legs',
+    equipment: 'dumbbells',
+    sets: 3,
+    reps: 10,
+    seconds: null,
+    rpe: null,
+    rest_seconds: null,
+    ...changes,
+  };
+}
+
+describe('exerciseDetail', () => {
+  it('writes the sets and the repetitions', () => {
+    expect(exerciseDetail(exercise())).toBe('3 × 10');
+  });
+
+  it('writes a hold in seconds', () => {
+    expect(exerciseDetail(exercise({ reps: null, seconds: 45 }))).toBe('3 × 45 s');
+  });
+
+  it('adds the RPE and the rest if they are given', () => {
+    expect(exerciseDetail(exercise({ rpe: 7, rest_seconds: 90 }))).toBe(
+      '3 × 10 · RPE 7 · rest 1:30',
+    );
+    expect(exerciseDetail(exercise({ rest_seconds: 60 }))).toBe('3 × 10 · rest 1:00');
+    expect(exerciseDetail(exercise({ rpe: 8 }))).toBe('3 × 10 · RPE 8');
+  });
+
+  it('writes a rest below ten seconds with two digits and no rest as nothing', () => {
+    expect(exerciseDetail(exercise({ rest_seconds: 5 }))).toBe('3 × 10 · rest 0:05');
+    expect(exerciseDetail(exercise({ rest_seconds: 0 }))).toBe('3 × 10 · rest 0:00');
+  });
+});
+
+describe('the labels of exercises', () => {
+  it('name every region and every kind of equipment', () => {
+    expect(REGION_LABELS).toEqual({
+      legs: 'Legs',
+      core: 'Core',
+      upper_body: 'Upper body',
+      full_body: 'Full body',
+    });
+    expect(EQUIPMENT_LABELS).toEqual({
+      gym: 'Gym',
+      dumbbells: 'Dumbbells',
+      bodyweight: 'Body weight',
+    });
   });
 });
 

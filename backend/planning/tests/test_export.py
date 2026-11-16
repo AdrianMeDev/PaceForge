@@ -6,7 +6,18 @@ import pytest
 from accounts.models import User
 from athletes.models import ThresholdValue
 from planning.export import EVENT_TYPE, START, to_event
-from planning.schema import Goal, Segment, SegmentKind, Slot, Sport, Workout, ZoneSystem
+from planning.schema import (
+    Exercise,
+    ExerciseEquipment,
+    ExerciseRegion,
+    Goal,
+    Segment,
+    SegmentKind,
+    Slot,
+    Sport,
+    Workout,
+    ZoneSystem,
+)
 from planning.targets import Targets
 
 from .conftest import make_user
@@ -196,6 +207,87 @@ class TestStrengthAndStretching:
 
     def test_no_stretching_says_nothing(self, targets: Targets) -> None:
         assert "Stretching" not in to_event(workout(), ID, targets)["description"]
+
+
+def move(name: str = "Goblet squat", **fields: object) -> Exercise:
+    values: dict[str, Any] = {
+        "name": name,
+        "region": ExerciseRegion.LEGS,
+        "equipment": ExerciseEquipment.DUMBBELLS,
+        "sets": 3,
+        "reps": 10,
+    }
+    values.update(fields)
+    return Exercise(**values)
+
+
+def lifting(*exercises: Exercise, **fields: object) -> Workout:
+    return workout(
+        sport=Sport.STRENGTH,
+        goal=Goal.STRENGTH,
+        duration_minutes=45,
+        exercises=exercises,
+        **fields,
+    )
+
+
+class TestExercises:
+    def test_every_exercise_is_a_numbered_line_after_the_duration(self, targets: Targets) -> None:
+        event = to_event(
+            lifting(
+                move(rpe=7, rest_seconds=90),
+                move("Plank", reps=None, seconds=45),
+                move("Push-up", sets=4, reps=12, rest_seconds=60),
+            ),
+            ID,
+            targets,
+        )
+
+        assert event["description"] == (
+            "Strength session, 45 min.\n\n"
+            "Exercises:\n"
+            "1. Goblet squat: 3 sets of 10, RPE 7, rest 1:30\n"
+            "2. Plank: 3 sets of 45 s\n"
+            "3. Push-up: 4 sets of 12, rest 1:00"
+        )
+        assert event["moving_time"] == 2700
+
+    def test_a_workout_without_exercises_is_as_before(self, targets: Targets) -> None:
+        event = to_event(lifting(), ID, targets)
+
+        assert event["description"] == "Strength session, 45 min."
+
+    def test_the_notes_come_first_and_stretching_last(self, targets: Targets) -> None:
+        event = to_event(lifting(move(), notes="Go slow", stretching_minutes=10), ID, targets)
+
+        lines = event["description"].split("\n\n")
+        assert lines[0] == "Note: Go slow"
+        assert lines[1] == "Strength session, 45 min."
+        assert lines[2].startswith("Exercises:")
+        assert lines[3] == "Stretching: 10 min after the workout."
+
+    @pytest.mark.parametrize(
+        "name",
+        ["- 5m 300w", "Squat 4x", "Squat 3 X", "\n- 10m", "a\n- b", "  - dash first", "5m 300w"],
+    )
+    def test_a_name_never_becomes_a_step_or_a_repeat(self, targets: Targets, name: str) -> None:
+        event = to_event(lifting(move(name)), ID, targets)
+
+        lines = event["description"].splitlines()
+        exercise_lines = [line for line in lines if line[:1].isdigit() and ". " in line[:4]]
+        assert len(exercise_lines) == 1
+        assert not any(line.startswith("-") for line in lines)
+        assert not exercise_lines[0].rstrip().lower().endswith(("1x", "2x", "3x", "4x", "5x"))
+
+    def test_the_name_is_one_line_with_single_spaces(self, targets: Targets) -> None:
+        event = to_event(lifting(move("Goblet   squat\nwide")), ID, targets)
+
+        assert "1. Goblet squat wide: 3 sets of 10" in event["description"]
+
+    def test_no_exercise_makes_the_event_a_step_workout(self, targets: Targets) -> None:
+        event = to_event(lifting(move()), ID, targets)
+
+        assert not any(line.startswith("-") for line in event["description"].splitlines())
 
 
 class TestFreeText:

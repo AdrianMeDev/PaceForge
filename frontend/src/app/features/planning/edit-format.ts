@@ -163,6 +163,7 @@ export function editedFrom(workout: Workout): EditedWorkout {
       zone_system: segment.zone_system,
       zone: segment.zone,
     })),
+    exercises: workout.exercises.map((exercise) => ({ ...exercise })),
   };
 }
 
@@ -181,6 +182,7 @@ export function blankWorkout(day: string): EditedWorkout {
     slot: null,
     stretching_minutes: 0,
     segments: [],
+    exercises: [],
   };
 }
 

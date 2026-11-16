@@ -15,6 +15,9 @@ from availability.models import AvailabilitySettings, UnavailablePeriod, Weekday
 from planning import services
 from planning.models import PlannedWorkout, WeeklyPlan
 from planning.schema import (
+    Exercise,
+    ExerciseEquipment,
+    ExerciseRegion,
     Goal,
     PlanFormatError,
     Segment,
@@ -498,6 +501,87 @@ class TestLoading:
     def test_an_unknown_id_is_not_found(self, alice: User) -> None:
         with pytest.raises(PlanNotFound):
             load(alice, uuid4())
+
+
+SQUAT = Exercise(
+    "Goblet squat",
+    ExerciseRegion.LEGS,
+    ExerciseEquipment.DUMBBELLS,
+    3,
+    reps=10,
+    rpe=7,
+    rest_seconds=90,
+)
+PLANK = Exercise("Plank", ExerciseRegion.CORE, ExerciseEquipment.BODYWEIGHT, 3, seconds=45)
+
+
+def strength_week() -> WeekPlan:
+    return WeekPlan(
+        MONDAY,
+        (
+            workout(
+                MONDAY, 0, 45, sport=Sport.STRENGTH, goal=Goal.STRENGTH, exercises=(SQUAT, PLANK)
+            ),
+            workout(MONDAY, 2, 60, sport=Sport.RUNNING),
+        ),
+    )
+
+
+class TestTheExercises:
+    def test_they_are_stored_as_the_format_has_them(self, alice: User) -> None:
+        plan = draft(alice, strength_week())
+
+        row = PlannedWorkout.objects.get(plan=plan, day=MONDAY)
+
+        assert row.exercises == [
+            {
+                "name": "Goblet squat",
+                "region": "legs",
+                "equipment": "dumbbells",
+                "sets": 3,
+                "reps": 10,
+                "seconds": None,
+                "rpe": 7,
+                "rest_seconds": 90,
+            },
+            {
+                "name": "Plank",
+                "region": "core",
+                "equipment": "bodyweight",
+                "sets": 3,
+                "reps": None,
+                "seconds": 45,
+                "rpe": None,
+                "rest_seconds": None,
+            },
+        ]
+
+    def test_a_workout_without_them_has_an_empty_list(self, alice: User) -> None:
+        plan = draft(alice, strength_week())
+
+        assert PlannedWorkout.objects.get(plan=plan, day=MONDAY + timedelta(days=2)).exercises == []
+
+    def test_they_come_back_in_the_same_order(self, alice: User) -> None:
+        plan = draft(alice, strength_week())
+
+        loaded = load(alice, plan.pk)
+
+        assert loaded.workouts[0].exercises == (SQUAT, PLANK)
+        assert loaded.workouts[1].exercises == ()
+
+    def test_a_copy_of_a_loaded_plan_keeps_them(self, alice: User) -> None:
+        first = draft(alice, strength_week())
+
+        second = save_draft(alice, load(alice, first.pk), parent=first.pk)
+
+        assert load(alice, second.pk).workouts[0].exercises == (SQUAT, PLANK)
+
+    def test_they_are_in_the_json_of_the_loaded_plan(self, alice: User) -> None:
+        plan = draft(alice, strength_week())
+
+        written = to_json(load(alice, plan.pk))["workouts"][0]["exercises"]
+
+        assert [e["name"] for e in written] == ["Goblet squat", "Plank"]
 
 
 class TestTheLineage:

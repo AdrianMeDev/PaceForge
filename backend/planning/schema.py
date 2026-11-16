@@ -23,6 +23,11 @@ This module is pure: no database, no Django. The limits here are the single sour
       "segments": [                                 # optional: the interval structure
         {"kind": "warmup", "seconds": 600, "zone_system": "power", "zone": 1},
         {"kind": "work", "seconds": 300, "repeat": 4, "zone_system": "power", "zone": 4}
+      ],
+      "exercises": [                                # optional, strength workouts only
+        {"name": "Goblet squat", "region": "legs", "equipment": "dumbbells", "sets": 3,
+         "reps": 10, "rpe": 7, "rest_seconds": 90},
+        {"name": "Plank", "region": "core", "equipment": "bodyweight", "sets": 3, "seconds": 45}
       ]
     }
   ]
@@ -47,6 +52,14 @@ MAX_SEGMENTS = 40
 SEGMENT_SECONDS_MAX = 86_400
 REPEAT_MAX = 50
 STRETCHING_MAX = 60  # minutes of stretching added to one workout
+MAX_EXERCISES = 15  # exercises of one strength workout
+EXERCISE_NAME_MAX = 60
+SETS_MAX = 10
+REPS_MAX = 100
+HOLD_SECONDS_MIN = 5  # a hold such as a plank
+HOLD_SECONDS_MAX = 600
+RPE_MAX = 10
+REST_SECONDS_MAX = 600
 # Zones per zone system: the seven power levels, five heart rate zones, five pace zones. The zones
 # themselves are those of ``athletes.zones`` (a test keeps the two in step).
 ZONE_COUNT = {"power": 7, "heart_rate": 5, "pace": 5}
@@ -92,6 +105,41 @@ class SegmentKind(StrEnum):
     COOLDOWN = "cooldown"
 
 
+class ExerciseRegion(StrEnum):
+    """What an exercise trains. The checks use this word, never the name."""
+
+    LEGS = "legs"
+    CORE = "core"
+    UPPER_BODY = "upper_body"
+    FULL_BODY = "full_body"
+
+
+class ExerciseEquipment(StrEnum):
+    """What an exercise needs. Body weight needs nothing, dumbbells are weights that fit in a
+    home, the gym has everything."""
+
+    GYM = "gym"
+    DUMBBELLS = "dumbbells"
+    BODYWEIGHT = "bodyweight"
+
+
+@dataclass(frozen=True)
+class Exercise:
+    """One exercise of a strength workout: ``sets`` of ``reps`` repetitions, or of a hold of
+    ``seconds`` (exactly one of the two)."""
+
+    name: str
+    region: ExerciseRegion
+    equipment: ExerciseEquipment
+    sets: int
+    reps: int | None = None
+    seconds: int | None = None
+    # How hard it is, 1 to 10; ``None``: not said.
+    rpe: int | None = None
+    # The rest between sets in seconds; ``None``: not said.
+    rest_seconds: int | None = None
+
+
 @dataclass(frozen=True)
 class Segment:
     """One part of a workout, done ``repeat`` times in a row."""
@@ -120,6 +168,8 @@ class Workout:
     # Stretching added to this workout, in minutes (0: none). It is never a workout of its own and
     # does not count as training time.
     stretching_minutes: int = 0
+    # The exercises of a strength workout, in the order they are done.
+    exercises: tuple[Exercise, ...] = ()
     # Which training this is across the versions of a week (``PlannedWorkout.lineage``): kept when
     # a version is copied or changed, new for a workout that is new. Not part of the format: it is
     # never read from an answer, and it does not make two workouts different (``compare=False``).
@@ -205,6 +255,19 @@ def workout_to_json(workout: Workout) -> dict[str, Any]:
             }
             for segment in workout.segments
         ],
+        "exercises": [
+            {
+                "name": exercise.name,
+                "region": exercise.region.value,
+                "equipment": exercise.equipment.value,
+                "sets": exercise.sets,
+                "reps": exercise.reps,
+                "seconds": exercise.seconds,
+                "rpe": exercise.rpe,
+                "rest_seconds": exercise.rest_seconds,
+            }
+            for exercise in workout.exercises
+        ],
     }
 
 
@@ -236,7 +299,15 @@ class _Reader:
             data,
             path,
             {"day", "sport", "title", "goal", "duration_minutes"},
-            {"zone_system", "zone", "notes", "segments", "slot", "stretching_minutes"},
+            {
+                "zone_system",
+                "zone",
+                "notes",
+                "segments",
+                "slot",
+                "stretching_minutes",
+                "exercises",
+            },
         )
         if item is None:
             return None
@@ -259,6 +330,11 @@ class _Reader:
             self._segment(raw, f"{path}.segments[{index}]")
             for index, raw in enumerate(raw_segments or [])
         ]
+        raw_exercises = self._list(item.get("exercises", []), f"{path}.exercises", MAX_EXERCISES)
+        exercises = [
+            self._exercise(raw, f"{path}.exercises[{index}]")
+            for index, raw in enumerate(raw_exercises or [])
+        ]
         if (
             day is None
             or sport is None
@@ -271,6 +347,8 @@ class _Reader:
             or not zone_ok
             or raw_segments is None
             or any(segment is None for segment in segments)
+            or raw_exercises is None
+            or any(exercise is None for exercise in exercises)
         ):
             return None
         return Workout(
@@ -285,7 +363,56 @@ class _Reader:
             notes=notes,
             slot=slot,
             stretching_minutes=stretching,
+            exercises=tuple(e for e in exercises if e is not None),
         )
+
+    def _exercise(self, data: object, path: str) -> Exercise | None:
+        item = self._object(
+            data,
+            path,
+            {"name", "region", "equipment", "sets"},
+            {"reps", "seconds", "rpe", "rest_seconds"},
+        )
+        if item is None:
+            return None
+        name = self._text(
+            item.get("name", _MISSING), f"{path}.name", EXERCISE_NAME_MAX, False, False
+        )
+        region = self._choice(item.get("region", _MISSING), ExerciseRegion, f"{path}.region")
+        equipment = self._choice(
+            item.get("equipment", _MISSING), ExerciseEquipment, f"{path}.equipment"
+        )
+        sets = self._integer(item.get("sets", _MISSING), f"{path}.sets", 1, SETS_MAX)
+        raw_reps, raw_seconds = item.get("reps"), item.get("seconds")
+        reps = None if raw_reps is None else self._integer(raw_reps, f"{path}.reps", 1, REPS_MAX)
+        seconds = (
+            None
+            if raw_seconds is None
+            else self._integer(raw_seconds, f"{path}.seconds", HOLD_SECONDS_MIN, HOLD_SECONDS_MAX)
+        )
+        counted = (raw_reps is None) == (raw_seconds is None)
+        if counted:
+            self.fail(f"{path}.reps", "Give either reps or seconds, not both and not neither.")
+        raw_rpe, raw_rest = item.get("rpe"), item.get("rest_seconds")
+        rpe = None if raw_rpe is None else self._integer(raw_rpe, f"{path}.rpe", 1, RPE_MAX)
+        rest = (
+            None
+            if raw_rest is None
+            else self._integer(raw_rest, f"{path}.rest_seconds", 0, REST_SECONDS_MAX)
+        )
+        if (
+            name is None
+            or region is None
+            or equipment is None
+            or sets is None
+            or counted
+            or (raw_reps is not None and reps is None)
+            or (raw_seconds is not None and seconds is None)
+            or (raw_rpe is not None and rpe is None)
+            or (raw_rest is not None and rest is None)
+        ):
+            return None
+        return Exercise(name, region, equipment, sets, reps, seconds, rpe, rest)
 
     def _segment(self, data: object, path: str) -> Segment | None:
         item = self._object(data, path, {"kind", "seconds"}, {"repeat", "zone_system", "zone"})

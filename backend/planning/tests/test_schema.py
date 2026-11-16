@@ -10,6 +10,9 @@ import pytest
 
 from planning import schema
 from planning.schema import (
+    Exercise,
+    ExerciseEquipment,
+    ExerciseRegion,
     Goal,
     PlanFormatError,
     Problem,
@@ -42,6 +45,23 @@ def workout(**fields: Any) -> dict[str, Any]:
         "duration_minutes": 90,
         **fields,
     }
+
+
+def exercise(**fields: Any) -> dict[str, Any]:
+    return {
+        "name": "Goblet squat",
+        "region": "legs",
+        "equipment": "dumbbells",
+        "sets": 3,
+        "reps": 10,
+        **fields,
+    }
+
+
+def with_exercise(**fields: Any) -> dict[str, Any]:
+    return plan(
+        workouts=[workout(sport="strength", goal="strength", exercises=[exercise(**fields)])]
+    )
 
 
 def plan(**fields: Any) -> dict[str, Any]:
@@ -224,6 +244,7 @@ class TestTheWayBack:
                             "zone": None,
                         }
                     ],
+                    "exercises": [],
                 }
             ],
         }
@@ -691,6 +712,167 @@ class TestTheSegments:
         ]
 
 
+class TestTheExercises:
+    def first(self, **fields: Any) -> Exercise:
+        return parse_week_plan(with_exercise(**fields)).workouts[0].exercises[0]
+
+    def test_a_workout_has_none_by_default(self) -> None:
+        assert parse_week_plan(plan()).workouts[0].exercises == ()
+
+    def test_an_exercise_has_its_defaults(self) -> None:
+        assert self.first() == Exercise(
+            "Goblet squat",
+            ExerciseRegion.LEGS,
+            ExerciseEquipment.DUMBBELLS,
+            3,
+            reps=10,
+        )
+
+    def test_a_full_exercise_is_read_and_written_back(self) -> None:
+        data = with_exercise(rpe=7, rest_seconds=90)
+
+        written = to_json(parse_week_plan(data))["workouts"][0]["exercises"]
+
+        assert written == [
+            {
+                "name": "Goblet squat",
+                "region": "legs",
+                "equipment": "dumbbells",
+                "sets": 3,
+                "reps": 10,
+                "seconds": None,
+                "rpe": 7,
+                "rest_seconds": 90,
+            }
+        ]
+        assert parse_week_plan(to_json(parse_week_plan(data))) == parse_week_plan(data)
+
+    def test_a_hold_is_read_with_seconds(self) -> None:
+        found = self.first(name="Plank", reps=None, seconds=45)
+
+        assert (found.reps, found.seconds) == (None, 45)
+
+    def test_the_order_is_kept(self) -> None:
+        data = plan(
+            workouts=[
+                workout(
+                    sport="strength",
+                    exercises=[exercise(name="First"), exercise(name="Second")],
+                )
+            ]
+        )
+
+        names = [e.name for e in parse_week_plan(data).workouts[0].exercises]
+
+        assert names == ["First", "Second"]
+
+    def test_the_name_is_trimmed(self) -> None:
+        assert self.first(name="  Plank  ").name == "Plank"
+
+    @pytest.mark.parametrize("region", ["legs", "core", "upper_body", "full_body"])
+    def test_every_region_is_known(self, region: str) -> None:
+        assert self.first(region=region).region == region
+
+    @pytest.mark.parametrize("equipment", ["gym", "dumbbells", "bodyweight"])
+    def test_every_equipment_is_known(self, equipment: str) -> None:
+        assert self.first(equipment=equipment).equipment == equipment
+
+    @pytest.mark.parametrize(
+        ("field", "value", "message"),
+        [
+            ("region", "arms", "Must be one of: legs, core, upper_body, full_body."),
+            ("region", None, "Must be one of: legs, core, upper_body, full_body."),
+            ("equipment", "barbell", "Must be one of: gym, dumbbells, bodyweight."),
+            ("name", "", "Must not be empty."),
+            ("name", "   ", "Must not be empty."),
+            ("name", "x" * 61, "Must have at most 60 characters."),
+            ("name", "a\nb", "Must not contain control characters."),
+            ("name", 5, "Must be text."),
+            ("sets", 0, "Must be between 1 and 10."),
+            ("sets", 11, "Must be between 1 and 10."),
+            ("sets", 3.0, "Must be a whole number."),
+            ("sets", "3", "Must be a whole number."),
+            ("sets", True, "Must be a whole number."),
+            ("reps", 0, "Must be between 1 and 100."),
+            ("reps", 101, "Must be between 1 and 100."),
+            ("reps", "10", "Must be a whole number."),
+            ("rpe", 0, "Must be between 1 and 10."),
+            ("rpe", 11, "Must be between 1 and 10."),
+            ("rest_seconds", -1, "Must be between 0 and 600."),
+            ("rest_seconds", 601, "Must be between 0 and 600."),
+        ],
+    )
+    def test_a_field_that_is_not_usable_is_named(
+        self, field: str, value: object, message: str
+    ) -> None:
+        assert problems_of(with_exercise(**{field: value})) == [
+            Problem(f"workouts[0].exercises[0].{field}", message)
+        ]
+
+    @pytest.mark.parametrize("seconds", [4, 601, 0])
+    def test_a_hold_outside_its_range_is_named(self, seconds: int) -> None:
+        assert problems_of(with_exercise(reps=None, seconds=seconds)) == [
+            Problem("workouts[0].exercises[0].seconds", "Must be between 5 and 600.")
+        ]
+
+    @pytest.mark.parametrize(
+        "fields", [{"reps": None}, {"reps": 10, "seconds": 45}, {"reps": None, "seconds": None}]
+    )
+    def test_exactly_one_of_reps_and_seconds_is_needed(self, fields: dict[str, Any]) -> None:
+        assert problems_of(with_exercise(**fields)) == [
+            Problem(
+                "workouts[0].exercises[0].reps",
+                "Give either reps or seconds, not both and not neither.",
+            )
+        ]
+
+    @pytest.mark.parametrize("missing", ["name", "region", "equipment", "sets"])
+    def test_a_required_field_is_named(self, missing: str) -> None:
+        data = with_exercise()
+        del data["workouts"][0]["exercises"][0][missing]
+
+        assert problems_of(data) == [Problem(f"workouts[0].exercises[0].{missing}", "Is required.")]
+
+    def test_an_unknown_field_is_named(self) -> None:
+        assert paths_of(with_exercise(weight_kg=20)) == ["workouts[0].exercises[0].weight_kg"]
+
+    def test_at_most_fifteen_exercises(self) -> None:
+        many = plan(workouts=[workout(sport="strength", exercises=[exercise()] * 16)])
+
+        assert problems_of(many) == [
+            Problem("workouts[0].exercises", "Must have at most 15 entries.")
+        ]
+        full = plan(workouts=[workout(sport="strength", exercises=[exercise()] * 15)])
+        assert len(parse_week_plan(full).workouts[0].exercises) == 15
+
+    def test_the_exercises_must_be_a_list(self) -> None:
+        assert problems_of(plan(workouts=[workout(exercises="squat")])) == [
+            Problem("workouts[0].exercises", "Must be a list.")
+        ]
+
+    def test_every_problem_of_every_exercise_is_named_at_once(self) -> None:
+        data = plan(
+            workouts=[
+                workout(
+                    sport="strength",
+                    exercises=[exercise(sets=0), exercise(), exercise(region="x", rpe=99)],
+                )
+            ]
+        )
+
+        assert paths_of(data) == [
+            "workouts[0].exercises[0].sets",
+            "workouts[0].exercises[2].region",
+            "workouts[0].exercises[2].rpe",
+        ]
+
+    def test_the_sport_is_not_checked_here(self) -> None:
+        # exercises on a run are a matter of the checks, not of the format
+        data = plan(workouts=[workout(sport="running", exercises=[exercise()])])
+
+        assert len(parse_week_plan(data).workouts[0].exercises) == 1
+
+
 class TestEveryProblemAtOnce:
     def test_problems_in_several_places_are_all_reported_by_path(self) -> None:
         data = {
@@ -749,6 +931,11 @@ class TestNothingOfTheInputIsRepeated:
             with_workout(notes=[MARKER]),
             with_workout(zone_system=MARKER, zone=MARKER),
             with_segment(kind=MARKER),
+            with_exercise(name=MARKER[:6] + "\n" + MARKER[6:]),
+            with_exercise(region=MARKER),
+            with_exercise(equipment=MARKER),
+            with_exercise(sets=MARKER),
+            with_exercise(**{MARKER: 1}),
             with_segment(seconds=MARKER),
             plan(**{MARKER: 1}),
             with_workout(**{MARKER: 1}),
@@ -777,6 +964,10 @@ class TestTheLimits:
         assert (schema.DURATION_MAX, schema.MAX_WORKOUTS, schema.MAX_SEGMENTS) == (1440, 28, 40)
         assert (schema.SEGMENT_SECONDS_MAX, schema.REPEAT_MAX) == (86_400, 50)
         assert schema.STRETCHING_MAX == 60
+        assert (schema.MAX_EXERCISES, schema.EXERCISE_NAME_MAX) == (15, 60)
+        assert (schema.SETS_MAX, schema.REPS_MAX, schema.RPE_MAX) == (10, 100, 10)
+        assert (schema.HOLD_SECONDS_MIN, schema.HOLD_SECONDS_MAX) == (5, 600)
+        assert schema.REST_SECONDS_MAX == 600
         assert schema.ZONE_COUNT == {"power": 7, "heart_rate": 5, "pace": 5}
 
     def test_the_models_use_the_same_limits(self) -> None:

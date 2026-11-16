@@ -114,6 +114,7 @@ def load(user: User, plan_id: UUID) -> WeekPlan:
             "zone",
             "notes",
             "segments",
+            "exercises",
             "slot",
             "stretching_minutes",
         )
@@ -241,6 +242,7 @@ def _store(user: User, week_plan: WeekPlan, reason: str, parent: UUID | None) ->
                 goal=workout.goal.value,
                 duration_minutes=workout.duration_minutes,
                 segments=data["segments"],
+                exercises=data["exercises"],
                 zone_system=workout.zone_system.value if workout.zone_system else "",
                 zone=workout.zone,
                 notes=workout.notes,
