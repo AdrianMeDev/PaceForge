@@ -17,12 +17,14 @@ from season.schema import Focus, KeySession, PlanWeek, SeasonPlan, SessionKind, 
 from season.services import (
     PlanNotConfirmable,
     PlanNotFound,
+    PlanNotRestorable,
     PlanStateError,
     confirm,
     discard,
     get,
     list_versions,
     load,
+    restore,
     save_draft,
     validate,
 )
@@ -384,3 +386,121 @@ class TestDiscarding:
 
         assert SeasonPlanVersion.objects.filter(pk=plan.pk).exists()
         assert [v.status for v in list_versions(alice)] == ["discarded"]
+
+
+class TestRestoring:
+    def replaced(self, user: User, skel: Skeleton | None = None) -> SeasonPlanVersion:
+        first = draft(user, skel)
+        confirm(user, first.pk)
+        confirm(user, draft(user, skel).pk)
+        first.refresh_from_db()
+        assert first.status == "superseded"
+        return first
+
+    def test_a_replaced_version_comes_back_as_the_next_draft(self, alice: User) -> None:
+        old = self.replaced(alice)
+
+        new = restore(alice, old.pk)
+
+        assert (new.version, new.status, new.confirmed_at) == (3, "draft", None)
+        assert new.parent_id == old.pk
+        assert new.reason == "Restored from version 1"
+
+    def test_a_discarded_version_can_be_restored_too(self, alice: User) -> None:
+        old = discard(alice, draft(alice).pk)
+
+        new = restore(alice, old.pk)
+
+        assert (new.version, new.status, new.reason) == (2, "draft", "Restored from version 1")
+
+    def test_it_is_a_copy_of_what_the_old_version_was_made_for(self, alice: User) -> None:
+        old = self.replaced(alice, skeleton(6))
+
+        new = restore(alice, old.pk)
+
+        assert new.weeks == old.weeks
+        assert new.rationale == old.rationale
+        assert new.skeleton == old.skeleton
+        assert new.sports == old.sports
+        assert load(alice, new.pk).plan == load(alice, old.pk).plan
+
+    def test_it_keeps_the_skeleton_of_the_old_version_not_the_one_of_today(
+        self, alice: User
+    ) -> None:
+        old = self.replaced(alice, skeleton(3))
+        Goal.objects.create(
+            owner=alice,
+            kind="race",
+            title="New",
+            priority="main",
+            target_date=MONDAY + timedelta(weeks=20),
+            discipline="running",
+        )
+
+        new = restore(alice, old.pk)
+
+        assert len(new.skeleton["weeks"]) == 3
+        assert validate(alice, new.pk).valid
+
+    def test_the_old_version_is_not_touched(self, alice: User) -> None:
+        old = self.replaced(alice)
+        before = SeasonPlanVersion.objects.values().get(pk=old.pk)
+
+        restore(alice, old.pk)
+
+        assert SeasonPlanVersion.objects.values().get(pk=old.pk) == before
+
+    def test_the_confirmed_version_stays_confirmed_until_the_copy_is(self, alice: User) -> None:
+        old = self.replaced(alice)
+
+        new = restore(alice, old.pk)
+
+        assert [v.status for v in list_versions(alice)] == ["draft", "confirmed", "superseded"]
+        confirm(alice, new.pk)
+        assert [v.status for v in list_versions(alice)] == ["confirmed", "superseded", "superseded"]
+
+    def test_a_version_can_be_restored_again(self, alice: User) -> None:
+        old = self.replaced(alice)
+
+        restore(alice, old.pk)
+        again = restore(alice, old.pk)
+
+        assert again.version == 4
+
+    @pytest.mark.parametrize("status", ["draft", "confirmed"])
+    def test_only_a_replaced_or_discarded_version_can_be_restored(
+        self, alice: User, status: str
+    ) -> None:
+        plan = draft(alice)
+        if status == "confirmed":
+            confirm(alice, plan.pk)
+
+        with pytest.raises(PlanNotRestorable):
+            restore(alice, plan.pk)
+
+        assert SeasonPlanVersion.objects.count() == 1
+
+    def test_a_version_of_another_user_is_not_found(self, alice: User, bob: User) -> None:
+        theirs = discard(bob, draft(bob).pk)
+
+        with pytest.raises(PlanNotFound):
+            restore(alice, theirs.pk)
+
+        assert SeasonPlanVersion.objects.count() == 1
+
+    def test_an_id_that_does_not_exist_is_not_found(self, alice: User) -> None:
+        with pytest.raises(PlanNotFound):
+            restore(alice, uuid4())
+
+    def test_a_plan_with_errors_can_be_restored_and_still_cannot_be_confirmed(
+        self, alice: User
+    ) -> None:
+        skel = skeleton()
+        bad = SeasonPlan(good(skel).weeks[:1])
+        old = discard(alice, save_draft(alice, bad, SeasonContext(skel)).pk)
+
+        new = restore(alice, old.pk)
+
+        assert not validate(alice, new.pk).valid
+        with pytest.raises(PlanNotConfirmable):
+            confirm(alice, new.pk)
