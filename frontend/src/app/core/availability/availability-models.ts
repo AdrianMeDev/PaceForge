@@ -140,6 +140,32 @@ export interface LimitationInput {
 /** What is sent to change a limitation: only the fields that change. */
 export type LimitationChanges = Partial<LimitationInput>;
 
+/** The days of the week of a fixed appointment: 0 is Monday, 6 is Sunday. */
+export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6;
+
+/**
+ * A session that happens every week at a fixed time: the weekday, the sport, how long it lasts
+ * (5 to 600 minutes) and the part of the day (`null`: none named).
+ */
+export interface FixedSession {
+  id: string;
+  weekday: Weekday;
+  sport: AvailabilitySport;
+  minutes: number;
+  slot: AvailabilitySlot | null;
+}
+
+/** What is sent to add a fixed appointment; the part of the day is none when left out. */
+export interface FixedSessionInput {
+  weekday: Weekday;
+  sport: AvailabilitySport;
+  minutes: number;
+  slot?: AvailabilitySlot | null;
+}
+
+/** What is sent to change a fixed appointment: only the fields that change. */
+export type FixedSessionChanges = Partial<FixedSessionInput>;
+
 /** What is sent to add a period. */
 export interface PeriodInput {
   kind: PeriodKind;
@@ -164,4 +190,10 @@ export type CreateLimitationResult = { kind: 'ok'; limitation: Limitation } | In
 export type UpdateLimitationResult =
   { kind: 'ok'; limitation: Limitation } | Invalid | NotFound | Forbidden;
 export type DeleteLimitationResult = { kind: 'deleted' } | NotFound | Forbidden;
+/** By weekday, then by part of the day (none first). */
+export type ListFixedSessionsResult = { kind: 'ok'; sessions: FixedSession[] } | Forbidden;
+export type CreateFixedSessionResult = { kind: 'ok'; session: FixedSession } | Invalid | Forbidden;
+export type UpdateFixedSessionResult =
+  { kind: 'ok'; session: FixedSession } | Invalid | NotFound | Forbidden;
+export type DeleteFixedSessionResult = { kind: 'deleted' } | NotFound | Forbidden;
 export type DeletePeriodResult = { kind: 'deleted' } | NotFound | Forbidden;

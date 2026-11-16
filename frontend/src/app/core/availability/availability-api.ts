@@ -8,10 +8,15 @@ import {
   AvailabilitySlot,
   AvailabilitySport,
   BodyPart,
+  CreateFixedSessionResult,
   CreateLimitationResult,
   CreatePeriodResult,
+  DeleteFixedSessionResult,
   DeleteLimitationResult,
   DeletePeriodResult,
+  FixedSession,
+  FixedSessionChanges,
+  FixedSessionInput,
   GetAvailabilityResult,
   IntensityLevel,
   Invalid,
@@ -21,6 +26,7 @@ import {
   LimitationInput,
   LimitationStatus,
   Limits,
+  ListFixedSessionsResult,
   ListLimitationsResult,
   ListPeriodsResult,
   Period,
@@ -33,13 +39,16 @@ import {
   SportPreferences,
   SportRole,
   StrengthFocus,
+  UpdateFixedSessionResult,
   UpdateLimitationResult,
+  Weekday,
   UpdatePeriodResult,
 } from './availability-models';
 
 const URL = `${API_BASE}/availability/`;
 const PERIODS_URL = `${URL}periods/`;
 const LIMITATIONS_URL = `${URL}limitations/`;
+const FIXED_SESSIONS_URL = `${URL}fixed-sessions/`;
 const INVALID_FALLBACK = 'The input was not accepted.';
 const HANDLED_ERRORS = [400, 401, 403, 404];
 const KINDS: readonly string[] = ['vacation', 'illness', 'other'];
@@ -241,6 +250,75 @@ export class AvailabilityApi {
     }
   }
 
+  /** The user's fixed appointments, in the order the server sends them. */
+  async listFixedSessions(): Promise<ListFixedSessionsResult> {
+    const reply = await this.send(this.http.get(FIXED_SESSIONS_URL, { observe: 'response' }));
+    switch (reply.status) {
+      case 200:
+        return { kind: 'ok', sessions: toFixedSessions(reply) };
+      case 401:
+      case 403:
+        return { kind: 'forbidden' };
+      default:
+        throw unexpected(reply);
+    }
+  }
+
+  async createFixedSession(input: FixedSessionInput): Promise<CreateFixedSessionResult> {
+    const reply = await this.send(
+      this.http.post(FIXED_SESSIONS_URL, input, { observe: 'response' }),
+    );
+    switch (reply.status) {
+      case 201:
+        return { kind: 'ok', session: toFixedSession(reply.body, reply) };
+      case 400:
+        return invalid(reply);
+      case 401:
+      case 403:
+        return { kind: 'forbidden' };
+      default:
+        throw unexpected(reply);
+    }
+  }
+
+  /** Changes only the fields given. */
+  async updateFixedSession(
+    id: string,
+    changes: FixedSessionChanges,
+  ): Promise<UpdateFixedSessionResult> {
+    const reply = await this.send(
+      this.http.patch(fixedSessionUrl(id), changes, { observe: 'response' }),
+    );
+    switch (reply.status) {
+      case 200:
+        return { kind: 'ok', session: toFixedSession(reply.body, reply) };
+      case 400:
+        return invalid(reply);
+      case 404:
+        return { kind: 'not_found' };
+      case 401:
+      case 403:
+        return { kind: 'forbidden' };
+      default:
+        throw unexpected(reply);
+    }
+  }
+
+  async deleteFixedSession(id: string): Promise<DeleteFixedSessionResult> {
+    const reply = await this.send(this.http.delete(fixedSessionUrl(id), { observe: 'response' }));
+    switch (reply.status) {
+      case 204:
+        return { kind: 'deleted' };
+      case 404:
+        return { kind: 'not_found' };
+      case 401:
+      case 403:
+        return { kind: 'forbidden' };
+      default:
+        throw unexpected(reply);
+    }
+  }
+
   private async send(request: Observable<HttpResponse<unknown>>): Promise<Reply> {
     try {
       const response = await firstValueFrom(request);
@@ -260,6 +338,10 @@ function periodUrl(id: string): string {
 
 function limitationUrl(id: string): string {
   return `${LIMITATIONS_URL}${encodeURIComponent(id)}/`;
+}
+
+function fixedSessionUrl(id: string): string {
+  return `${FIXED_SESSIONS_URL}${encodeURIComponent(id)}/`;
 }
 
 /** Only the known fields are taken over, whatever else an answer might carry. */
@@ -403,6 +485,42 @@ function toLimitation(raw: unknown, reply: Reply): Limitation {
     body_part: item['body_part'],
     status: item['status'],
     sports: [...(sports as AvailabilitySport[])],
+  };
+}
+
+function toFixedSessions(reply: Reply): FixedSession[] {
+  if (!Array.isArray(reply.body)) {
+    throw unexpected(reply);
+  }
+  return reply.body.map((item) => toFixedSession(item, reply));
+}
+
+/** Only the known fields are taken over. */
+function toFixedSession(raw: unknown, reply: Reply): FixedSession {
+  const item = asObject(raw, reply);
+  const weekday = item['weekday'];
+  const minutes = item['minutes'];
+  const slot = item['slot'];
+  if (
+    typeof item['id'] !== 'string' ||
+    typeof weekday !== 'number' ||
+    !Number.isInteger(weekday) ||
+    weekday < 0 ||
+    weekday > 6 ||
+    !isOneOf<AvailabilitySport>(item['sport'], SPORTS) ||
+    typeof minutes !== 'number' ||
+    !Number.isInteger(minutes) ||
+    minutes < 1 ||
+    (slot !== null && !isOneOf<AvailabilitySlot>(slot, SLOTS))
+  ) {
+    throw unexpected(reply);
+  }
+  return {
+    id: item['id'],
+    weekday: weekday as Weekday,
+    sport: item['sport'],
+    minutes,
+    slot,
   };
 }
 
