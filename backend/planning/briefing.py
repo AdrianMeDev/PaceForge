@@ -382,6 +382,7 @@ def _previous_week_review(user: User, monday: date) -> dict[str, Any] | None:
                 "fatigue": feedback.fatigue,
                 "motivation": feedback.motivation,
                 "pain": feedback.pain,
+                "verdict": feedback.verdict or None,
             }
         ),
         "next_week": review.comment.next_week if review.comment is not None else None,

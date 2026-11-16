@@ -271,6 +271,7 @@ def save_feedback(
     fatigue: int | None = None,
     motivation: int | None = None,
     pain: int | None = None,
+    verdict: str | None = None,
     notes: str = "",
 ) -> WeekReview:
     """Set the feedback on the week, replacing an earlier one, and return the week as it is now.
@@ -278,7 +279,7 @@ def save_feedback(
     if monday not in reviewable_weeks(user):
         raise WeekNotReviewable
     feedback = WeekFeedback.objects.for_user(user).filter(week_start=monday)
-    if fatigue is None and motivation is None and pain is None and not notes:
+    if fatigue is None and motivation is None and pain is None and not verdict and not notes:
         feedback.delete()
     else:
         WeekFeedback.objects.update_or_create(
@@ -288,6 +289,7 @@ def save_feedback(
                 "fatigue": fatigue,
                 "motivation": motivation,
                 "pain": pain,
+                "verdict": verdict or "",
                 "notes": notes,
             },
         )

@@ -248,6 +248,34 @@ class TestWeekFeedback:
                 exclude=["owner"]
             )
 
+    @pytest.mark.parametrize("word", ["bad", "fair", "good", "strong"])
+    def test_the_verdict_is_one_of_four_words(self, alice: User, word: str) -> None:
+        feedback = WeekFeedback.objects.create(owner=alice, week_start=MONDAY, verdict=word)
+
+        feedback.full_clean(exclude=["owner"])
+
+    def test_the_verdict_may_be_left_out(self, alice: User) -> None:
+        feedback = WeekFeedback.objects.create(owner=alice, week_start=MONDAY)
+
+        feedback.full_clean(exclude=["owner"])
+        assert feedback.verdict == ""
+
+    @pytest.mark.parametrize("word", ["great", "GOOD", "5"])
+    def test_another_verdict_is_refused(self, alice: User, word: str) -> None:
+        message = rejected_by_database(WeekFeedback, owner=alice, week_start=MONDAY, verdict=word)
+
+        assert "reviews_feedback_verdict_is_known" in message
+        with pytest.raises(ValidationError, match="verdict"):
+            WeekFeedback(owner=alice, week_start=MONDAY, verdict=word).full_clean(exclude=["owner"])
+
+    def test_the_verdicts_of_the_model_are_those_of_the_constraint(self) -> None:
+        assert [value for value, _ in WeekFeedback.Verdict.choices] == [
+            "bad",
+            "fair",
+            "good",
+            "strong",
+        ]
+
     def test_a_week_starts_on_a_monday(self, alice: User) -> None:
         tuesday = MONDAY + timedelta(days=1)
 

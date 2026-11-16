@@ -101,6 +101,42 @@ class TestGiving:
         stored = WeekFeedback.objects.get()
         assert (stored.fatigue, stored.motivation, stored.pain) == (None, 2, None)
 
+    @pytest.mark.parametrize("word", ["bad", "fair", "good", "strong"])
+    def test_every_verdict_is_stored_and_comes_back(self, alice: User, word: str) -> None:
+        response = give(alice, verdict=word)
+
+        assert response.status_code == HTTPStatus.OK
+        assert body(response)["feedback"]["verdict"] == word
+        assert WeekFeedback.objects.get().verdict == word
+
+    def test_a_verdict_alone_is_feedback(self, alice: User) -> None:
+        give(alice, verdict="good")
+
+        assert WeekFeedback.objects.count() == 1
+
+    def test_no_verdict_comes_back_as_null(self, alice: User) -> None:
+        response = give(alice, fatigue=3)
+
+        assert body(response)["feedback"]["verdict"] is None
+        assert WeekFeedback.objects.get().verdict == ""
+
+    def test_the_verdict_can_be_cleared_with_null_and_by_leaving_it_out(self, alice: User) -> None:
+        give(alice, fatigue=3, verdict="bad")
+        give(alice, fatigue=3, verdict=None)
+        assert WeekFeedback.objects.get().verdict == ""
+
+        give(alice, fatigue=3, verdict="good")
+        give(alice, fatigue=3)
+        assert WeekFeedback.objects.get().verdict == ""
+
+    def test_a_verdict_that_is_none_of_the_four_is_refused(self, alice: User) -> None:
+        for value in ("great", "", "GOOD", " good", 3, True, ["good"], {"a": 1}):
+            response = give(alice, fatigue=2, verdict=value)
+
+            assert response.status_code == HTTPStatus.BAD_REQUEST, value
+            assert set(body(response)) == {"verdict"}, value
+        assert WeekFeedback.objects.count() == 0
+
     def test_feedback_with_nothing_in_it_is_removed(self, alice: User) -> None:
         give(alice, **FULL)
 
@@ -169,9 +205,9 @@ class TestRefusals:
         assert WeekFeedback.objects.count() == 0
 
     def test_every_problem_is_reported_at_once(self, alice: User) -> None:
-        response = give(alice, fatigue=0, motivation=9, notes="x" * 501)
+        response = give(alice, fatigue=0, motivation=9, verdict="x", notes="x" * 501)
 
-        assert set(body(response)) == {"fatigue", "motivation", "notes"}
+        assert set(body(response)) == {"fatigue", "motivation", "verdict", "notes"}
 
     @pytest.mark.parametrize("extra", ["owner", "id", "week_start", "tiredness"])
     def test_a_field_that_is_not_part_of_the_form_is_refused(self, alice: User, extra: str) -> None:
@@ -196,7 +232,13 @@ class TestRefusals:
 
     def test_nothing_of_the_input_is_repeated_in_an_error(self, alice: User) -> None:
         for form in (
-            {"fatigue": MARKER, "motivation": MARKER, "pain": MARKER, "notes": MARKER + "\x00"},
+            {
+                "fatigue": MARKER,
+                "motivation": MARKER,
+                "pain": MARKER,
+                "verdict": MARKER,
+                "notes": MARKER + "\x00",
+            },
             {MARKER: MARKER},
             {"notes": MARKER * 100},
         ):

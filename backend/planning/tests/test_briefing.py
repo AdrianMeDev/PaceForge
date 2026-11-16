@@ -160,6 +160,7 @@ ALLOWED_KEYS = {
     "fatigue",
     "motivation",
     "pain",
+    "verdict",
     "next_week",
 }
 
@@ -1521,8 +1522,24 @@ class TestHowTheWeekBeforeWent:
 
         review = self.review_of(alice)
 
-        assert review["feedback"] == {"fatigue": 4, "motivation": None, "pain": 2}
+        assert review["feedback"] == {
+            "fatigue": 4,
+            "motivation": None,
+            "pain": 2,
+            "verdict": None,
+        }
         assert "SECRET FEEDBACK" not in to_json(build_briefing(alice, MONDAY))
+
+    @pytest.mark.parametrize("word", ["bad", "fair", "good", "strong"])
+    def test_the_verdict_on_the_week_is_told_as_its_word(self, alice: User, word: str) -> None:
+        WeekFeedback.objects.create(owner=alice, week_start=self.BEFORE, verdict=word)
+
+        assert self.review_of(alice)["feedback"]["verdict"] == word
+
+    def test_a_week_with_only_a_verdict_is_something_to_look_back_on(self, alice: User) -> None:
+        WeekFeedback.objects.create(owner=alice, week_start=self.BEFORE, verdict="good")
+
+        assert self.review_of(alice) is not None
 
     @pytest.mark.parametrize("word", ["increase", "hold", "reduce"])
     def test_the_recommendation_of_the_review_is_told_as_its_word(

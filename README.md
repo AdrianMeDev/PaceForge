@@ -1063,9 +1063,9 @@ the workouts that are the same training (see [Week plan](#week-plan)).
 to 500 characters. You can change or clear it at any time. The load follows the rating (minutes
 times RPE, in AU; it is not TSS).
 
-**How the week felt.** Tiredness, motivation and pain, each from 1 to 5, and a note of up to 500
-characters. There is one feedback per week; saving replaces it, and saving with nothing in it
-removes it.
+**How the week felt.** Tiredness, motivation and pain, each from 1 to 5, the week as a whole
+(*bad*, *fair*, *good* or *strong*) and a note of up to 500 characters. There is one feedback per
+week; saving replaces it, and saving with nothing in it removes it.
 
 **Planned and done.** A table per sport and for the week: the planned workouts and minutes, the
 activities done and their minutes (every activity of the week counts, planned or not), and the sum
@@ -1092,7 +1092,7 @@ shown as text, and it is **never sent back** to the coach, not even when it plan
 
 **The effect on the next week.** When your coach drafts a [week plan](#week-plan), it is told how
 the week before went (`previous_week_review`): the workouts by status, the minutes planned and
-done, the mean RPE, the three scales and the recommendation of your review of that week, if you
+done, the mean RPE, the three scales, your verdict on the week and the recommendation of your review of that week, if you
 asked for one. That is advice, not a rule: the checks of the plan stay as they are, and nothing is
 confirmed without you. The figures are worked out when the plan is drafted, so a correction or a
 rating you make later is in the next draft without asking the coach again.
@@ -1111,7 +1111,7 @@ is not part of a form is refused):
 | `GET /api/reviews/weeks/`                          | the weeks that can be reviewed                            |
 | `GET /api/reviews/weeks/<Monday>/`                 | one week: plan, match, activities, comparison, feedback, comment |
 | `PUT /api/reviews/weeks/<Monday>/workouts/<id>/`   | `activity`, `no_activity`, `status` of one workout        |
-| `PUT /api/reviews/weeks/<Monday>/feedback/`        | `fatigue`, `motivation`, `pain`, `notes` of the week      |
+| `PUT /api/reviews/weeks/<Monday>/feedback/`        | `fatigue`, `motivation`, `pain`, `verdict`, `notes`      |
 | `POST /api/reviews/weeks/<Monday>/comment/`        | asks the coach to comment on the week (`201`)             |
 | `PATCH /api/activities/<id>/`                      | `rpe` and `notes` of an activity (nothing else changes)  |
 
