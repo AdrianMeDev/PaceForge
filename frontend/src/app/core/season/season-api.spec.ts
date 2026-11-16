@@ -835,4 +835,57 @@ describe('SeasonApi acting on season plans', () => {
       await postFailing(api.confirm(ID), url, body, 422);
     });
   });
+
+  describe('restore', () => {
+    const url = `${PLANS_URL}${ID}/restore/`;
+    const restored = { ...DRAFT, parent: ID, reason: 'Restored from version 1' };
+
+    it('posts to the address of the version and returns the new draft', async () => {
+      const { result, request } = await post(api.restore(ID), url, restored, 201);
+
+      expect(request.request.body).toEqual({});
+      expect(result).toMatchObject({
+        kind: 'ok',
+        plan: { status: 'draft', parent: ID, reason: 'Restored from version 1' },
+      });
+    });
+
+    it('says that a version does not exist', async () => {
+      const { result } = await post(api.restore(ID), url, { code: 'not_found' }, 404);
+
+      expect(result).toEqual({ kind: 'not_found' });
+    });
+
+    it('says that only a replaced or discarded version can be restored', async () => {
+      const { result } = await post(api.restore(ID), url, { code: 'not_restorable' }, 409);
+
+      expect(result).toEqual({ kind: 'not_restorable' });
+    });
+
+    it.each(['1', 'not-an-id', '../season', `${ID}/x`])(
+      'does not send %j, which is no id',
+      async (id) => {
+        expect(await api.restore(id)).toEqual({ kind: 'not_found' });
+        backend.expectNone(() => true);
+      },
+    );
+
+    it.each([401, 403])('says when the session is gone (%i)', async (status) => {
+      const { result } = await post(api.restore(ID), url, NO_SESSION, status);
+
+      expect(result).toEqual({ kind: 'forbidden' });
+    });
+
+    it.each([
+      ['a draft without a report', altered(restored, [['report'], null])],
+      ['a broken week', altered(restored, [['weeks', 0, 'focus'], 'rest'])],
+      ['no body', null],
+    ])('rejects a draft with %s', async (_name, bad) => {
+      await postFailing(api.restore(ID), url, bad as object | null, 201);
+    });
+
+    it.each([200, 422, 429, 500, 502])('rejects the unexpected status %i', async (status) => {
+      await postFailing(api.restore(ID), url, 'oops', status);
+    });
+  });
 });

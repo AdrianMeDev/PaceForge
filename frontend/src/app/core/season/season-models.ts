@@ -165,6 +165,14 @@ export type ConfirmSeasonResult =
   | { kind: 'not_confirmable'; findings: Finding[] }
   | Forbidden;
 
+export type RestoreSeasonResult =
+  /** The new draft, with its checks as they are now; the version it was made from is not touched. */
+  | { kind: 'ok'; plan: SeasonPlan }
+  | SeasonPlanNotFound
+  /** Only a version that was replaced or discarded can be restored. */
+  | { kind: 'not_restorable' }
+  | Forbidden;
+
 export type DiscardSeasonResult =
   { kind: 'ok'; plan: SeasonPlan } | SeasonPlanNotFound | SeasonPlanNotADraft | Forbidden;
 
