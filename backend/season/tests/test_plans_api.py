@@ -126,6 +126,7 @@ class TestWhoMayCome:
             ("GET", url(UNKNOWN_ID)),
             ("POST", url(UNKNOWN_ID, "confirm/")),
             ("POST", url(UNKNOWN_ID, "discard/")),
+            ("POST", url(UNKNOWN_ID, "restore/")),
         ],
     )
     def test_a_visitor_who_is_not_signed_in_is_refused(self, method: str, path: str) -> None:
@@ -143,6 +144,8 @@ class TestWhoMayCome:
             ("PATCH", url(UNKNOWN_ID)),
             ("GET", url(UNKNOWN_ID, "confirm/")),
             ("GET", url(UNKNOWN_ID, "discard/")),
+            ("GET", url(UNKNOWN_ID, "restore/")),
+            ("PUT", url(UNKNOWN_ID, "restore/")),
         ],
     )
     def test_other_methods_are_not_allowed(self, alice: User, method: str, path: str) -> None:
@@ -516,8 +519,90 @@ class TestDiscarding:
         assert theirs.status == "draft"
 
 
+class TestRestoring:
+    def replaced(self, user: User) -> SeasonPlanVersion:
+        first = services.confirm(user, draft(user).pk)
+        services.confirm(user, draft(user).pk)
+        first.refresh_from_db()
+        return first
+
+    def test_a_replaced_version_comes_back_as_a_new_draft_with_its_checks(
+        self, alice: User
+    ) -> None:
+        old = self.replaced(alice)
+
+        response = signed_in(alice).call("POST", url(old.pk, "restore/"))
+
+        assert response.status_code == HTTPStatus.CREATED
+        data = body(response)
+        assert set(data) == DETAIL_FIELDS
+        assert (data["status"], data["version"], data["parent"]) == ("draft", 3, str(old.pk))
+        assert data["reason"] == "Restored from version 1"
+        assert data["report"] == {"valid": True, "findings": []}
+        assert data["weeks"] == body(signed_in(alice).call("GET", url(old.pk)))["weeks"]
+
+    def test_a_discarded_version_comes_back_too(self, alice: User) -> None:
+        old = services.discard(alice, draft(alice).pk)
+
+        response = signed_in(alice).call("POST", url(old.pk, "restore/"))
+
+        assert response.status_code == HTTPStatus.CREATED
+        assert body(response)["parent"] == str(old.pk)
+
+    def test_the_new_draft_can_be_confirmed(self, alice: User) -> None:
+        old = self.replaced(alice)
+        new = body(signed_in(alice).call("POST", url(old.pk, "restore/")))
+
+        response = signed_in(alice).call("POST", url(new["id"], "confirm/"))
+
+        assert (response.status_code, body(response)["status"]) == (HTTPStatus.OK, "confirmed")
+
+    def test_the_old_version_is_not_touched(self, alice: User) -> None:
+        old = self.replaced(alice)
+
+        signed_in(alice).call("POST", url(old.pk, "restore/"))
+
+        old.refresh_from_db()
+        assert old.status == "superseded"
+
+    @pytest.mark.parametrize("status", ["draft", "confirmed"])
+    def test_a_draft_and_the_confirmed_version_cannot_be_restored(
+        self, alice: User, status: str
+    ) -> None:
+        stored = draft(alice)
+        if status == "confirmed":
+            stored = services.confirm(alice, stored.pk)
+
+        response = signed_in(alice).call("POST", url(stored.pk, "restore/"))
+
+        assert response.status_code == HTTPStatus.CONFLICT
+        assert body(response) == {
+            "detail": "Only a version that was replaced or discarded can be restored.",
+            "code": "not_restorable",
+        }
+        assert SeasonPlanVersion.objects.count() == 1
+
+    def test_the_version_of_another_user_is_not_found_and_not_copied(
+        self, alice: User, bob: User
+    ) -> None:
+        theirs = services.discard(bob, draft(bob).pk)
+
+        response = signed_in(alice).call("POST", url(theirs.pk, "restore/"))
+
+        assert response.status_code == HTTPStatus.NOT_FOUND
+        assert body(response)["code"] == "not_found"
+        assert SeasonPlanVersion.objects.count() == 1
+
+    def test_an_id_that_does_not_exist_is_not_found(self, alice: User) -> None:
+        response = signed_in(alice).call("POST", url(UNKNOWN_ID, "restore/"))
+
+        assert response.status_code == HTTPStatus.NOT_FOUND
+
+
 class TestWithoutCsrf:
-    @pytest.mark.parametrize("action", ["generate/", "{id}/confirm/", "{id}/discard/"])
+    @pytest.mark.parametrize(
+        "action", ["generate/", "{id}/confirm/", "{id}/discard/", "{id}/restore/"]
+    )
     def test_a_post_without_the_token_is_refused(self, alice: User, action: str) -> None:
         stored = draft(alice)
         api = signed_in(alice)

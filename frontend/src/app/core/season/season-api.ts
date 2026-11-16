@@ -28,6 +28,7 @@ import {
   ListSeasonPlansResult,
   PlanStatus,
   PlanWeek,
+  RestoreSeasonResult,
   RacePriority,
   Season,
   SeasonPhase,
@@ -181,6 +182,29 @@ export class SeasonApi {
           kind: 'not_confirmable',
           findings: toFindings(asObject(reply.body, reply), reply),
         };
+      case 401:
+      case 403:
+        return { kind: 'forbidden' };
+      default:
+        throw unexpected(reply);
+    }
+  }
+
+  /** Brings back a version that was replaced or discarded, as a new draft. */
+  async restore(id: string): Promise<RestoreSeasonResult> {
+    if (!UUID.test(id)) {
+      return { kind: 'not_found' };
+    }
+    const reply = await this.send(
+      this.http.post(`${PLANS_URL}${id}/restore/`, {}, { observe: 'response' }),
+    );
+    switch (reply.status) {
+      case 201:
+        return { kind: 'ok', plan: toPlan(reply.body, reply) };
+      case 404:
+        return { kind: 'not_found' };
+      case 409:
+        return { kind: 'not_restorable' };
       case 401:
       case 403:
         return { kind: 'forbidden' };

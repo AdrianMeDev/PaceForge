@@ -35,7 +35,7 @@ const HINTED: SeasonPhase[] = ['base', 'build', 'specific', 'taper', 'transition
 /** What went wrong with the plans (the skeleton itself loads on its own). */
 type Problem = 'list' | 'version' | 'missing' | null;
 /** What the page is waiting for; one thing at a time. */
-type Work = 'generating' | 'deciding' | 'opening';
+type Work = 'generating' | 'deciding' | 'opening' | 'restoring';
 
 const FALLBACK = 'Something went wrong. Please try again.';
 const GONE = 'That plan does not exist any more.';
@@ -43,6 +43,7 @@ const NO_TIME = 'You have no training time in the weeks of your season.';
 const NOT_USABLE = 'The coach did not give a plan that could be used. Please try again.';
 const TOO_MANY = 'Too many requests. Please wait a minute and try again.';
 const NOT_A_DRAFT = 'That plan is not a draft any more.';
+const NOT_RESTORABLE = 'Only a version that was replaced or discarded can be restored.';
 const HAS_ERRORS = 'The plan has errors and cannot be confirmed.';
 const REFRESH_FAILED = 'The list of plans could not be refreshed. Please try again.';
 
@@ -92,6 +93,10 @@ export class SeasonPage implements OnInit {
     () => this.plan()?.weeks.some((week) => week.done !== null) ?? false,
   );
   protected readonly findings = computed(() => this.plan()?.report?.findings ?? []);
+  /** A version that was replaced or discarded can be brought back as a new draft. */
+  protected readonly canRestore = computed(
+    () => this.plan()?.status === 'superseded' || this.plan()?.status === 'discarded',
+  );
   protected readonly canConfirm = computed(
     () => this.plan()?.status === 'draft' && this.plan()?.report?.valid === true,
   );
@@ -240,6 +245,49 @@ export class SeasonPage implements OnInit {
           break;
         default:
           await this.decided(result.kind, current.id);
+      }
+    } catch {
+      this.errors.set([FALLBACK]);
+    } finally {
+      this.work.set(null);
+    }
+  }
+
+  /** Brings the version on the screen back as a new draft; nothing else changes. */
+  protected async restore(): Promise<void> {
+    const current = this.plan();
+    if (this.busy() || current === null || !this.canRestore()) {
+      return;
+    }
+    this.clearMessages();
+    this.work.set('restoring');
+    try {
+      const result = await this.api.restore(current.id);
+      switch (result.kind) {
+        case 'ok':
+          this.plan.set(result.plan);
+          this.notice.set(
+            `Version ${current.version} was restored as a new draft (version ${result.plan.version}).` +
+              (result.plan.report?.valid === false
+                ? ' It has errors and cannot be confirmed yet.'
+                : ' Read it, then confirm it to make it the plan.'),
+          );
+          await this.refresh();
+          break;
+        case 'not_found':
+          this.plan.set(null);
+          this.errors.set([GONE]);
+          await this.refresh();
+          break;
+        case 'not_restorable':
+          // It has been decided on meanwhile: show it as it is now.
+          this.errors.set([NOT_RESTORABLE]);
+          await this.show(current.id, false);
+          await this.refresh();
+          break;
+        case 'forbidden':
+          this.view.set('signed_out');
+          break;
       }
     } catch {
       this.errors.set([FALLBACK]);

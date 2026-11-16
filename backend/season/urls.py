@@ -9,4 +9,5 @@ urlpatterns = [
     path("plans/<uuid:plan_id>/", views.PlanView.as_view(), name="season-plan"),
     path("plans/<uuid:plan_id>/confirm/", views.ConfirmView.as_view(), name="season-confirm"),
     path("plans/<uuid:plan_id>/discard/", views.DiscardView.as_view(), name="season-discard"),
+    path("plans/<uuid:plan_id>/restore/", views.RestoreView.as_view(), name="season-restore"),
 ]

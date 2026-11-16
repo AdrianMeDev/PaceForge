@@ -10,6 +10,7 @@ import {
   GetSeasonPlanResult,
   GetSeasonResult,
   ListSeasonPlansResult,
+  RestoreSeasonResult,
   Season,
   SeasonPlan,
   SeasonPlanVersion,
@@ -116,6 +117,7 @@ describe('SeasonPage', () => {
   let open: ReturnType<typeof vi.fn<(id: string) => Promise<GetSeasonPlanResult>>>;
   let generate: ReturnType<typeof vi.fn<() => Promise<GenerateSeasonResult>>>;
   let confirm: ReturnType<typeof vi.fn<(id: string) => Promise<ConfirmSeasonResult>>>;
+  let restore: ReturnType<typeof vi.fn<(id: string) => Promise<RestoreSeasonResult>>>;
   let discard: ReturnType<typeof vi.fn<(id: string) => Promise<DiscardSeasonResult>>>;
   let provider: ReturnType<typeof vi.fn<() => Promise<GetProviderResult>>>;
 
@@ -125,7 +127,7 @@ describe('SeasonPage', () => {
       provideRouter([]),
       {
         provide: SeasonApi,
-        useValue: { get, plans, plan: open, generate, confirm, discard },
+        useValue: { get, plans, plan: open, generate, confirm, discard, restore },
       },
       { provide: CoachApi, useValue: { get: provider } },
     ];
@@ -140,6 +142,7 @@ describe('SeasonPage', () => {
     generate = vi.fn<() => Promise<GenerateSeasonResult>>();
     confirm = vi.fn<(id: string) => Promise<ConfirmSeasonResult>>();
     discard = vi.fn<(id: string) => Promise<DiscardSeasonResult>>();
+    restore = vi.fn<(id: string) => Promise<RestoreSeasonResult>>();
     provider = vi.fn<() => Promise<GetProviderResult>>().mockResolvedValue(CONFIGURED);
     if (first instanceof Error) {
       get.mockRejectedValueOnce(first);
@@ -957,6 +960,167 @@ describe('SeasonPage', () => {
 
         expect(page.querySelector('[data-testid="confirm"]')).toBeNull();
         expect(page.querySelector('[data-testid="discard"]')).toBeNull();
+      });
+    });
+
+    describe('restoring', () => {
+      const OLD_ID = '0195f3a0-0000-7000-8000-000000000001';
+      const NEW_ID = '0195f3a0-0000-7000-8000-000000000009';
+      const REPLACED = version({ id: OLD_ID, version: 1, status: 'superseded' });
+      const NOW_CONFIRMED = version({ id: NEW_ID, version: 2 });
+      const alerts = () =>
+        Array.from(page.querySelectorAll('[role="alert"]')).map((alert) =>
+          alert.textContent?.replace(/\s+/g, ' ').trim(),
+        );
+      const click = async (testId: string) => {
+        query<HTMLButtonElement>(page, `[data-testid="${testId}"]`).click();
+        await settle(fixture);
+      };
+      const newDraft = (valid = true) =>
+        plan({
+          id: '0195f3a0-0000-7000-8000-000000000010',
+          version: 3,
+          status: 'draft',
+          parent: OLD_ID,
+          confirmed_at: null,
+          report: {
+            valid,
+            findings: valid
+              ? []
+              : [{ severity: 'error', code: 'x', message: 'Too much.', path: 'weeks[0].minutes' }],
+          },
+        });
+
+      async function openOld(status: 'superseded' | 'discarded' = 'superseded') {
+        await load([NOW_CONFIRMED, { ...REPLACED, status }], plan({ id: NEW_ID, version: 2 }));
+        open.mockResolvedValue({
+          kind: 'ok',
+          plan: plan({ id: OLD_ID, version: 1, status, confirmed_at: null, report: null }),
+        });
+        await click('version-1');
+      }
+
+      it.each(['superseded', 'discarded'] as const)(
+        'offers to bring back a version that was %s',
+        async (status) => {
+          await openOld(status);
+
+          expect(query(page, '[data-testid="restore"]').textContent?.trim()).toBe(
+            'Make this the new draft',
+          );
+          expect(query(page, '[data-testid="restore-hint"]').textContent).toContain(
+            'Restoring copies it as a new draft',
+          );
+        },
+      );
+
+      it('offers nothing for the confirmed version', async () => {
+        await load([NOW_CONFIRMED], plan({ id: NEW_ID, version: 2 }));
+
+        expect(page.querySelector('[data-testid="restore"]')).toBeNull();
+      });
+
+      it('offers nothing for a draft', async () => {
+        await load(
+          [version({ id: NEW_ID, version: 2, status: 'draft', confirmed_at: null })],
+          plan({ id: NEW_ID, version: 2, status: 'draft', report: { valid: true, findings: [] } }),
+        );
+
+        expect(page.querySelector('[data-testid="restore"]')).toBeNull();
+      });
+
+      it('shows the new draft with its checks, says where it comes from and refreshes the list', async () => {
+        await openOld();
+        restore.mockResolvedValue({ kind: 'ok', plan: newDraft() });
+        plans.mockResolvedValue({
+          kind: 'ok',
+          plans: [
+            version({ id: newDraft().id, version: 3, status: 'draft', confirmed_at: null }),
+            NOW_CONFIRMED,
+            REPLACED,
+          ],
+        });
+
+        await click('restore');
+
+        expect(restore).toHaveBeenCalledExactlyOnceWith(OLD_ID);
+        expect(query(page, '.notice').textContent).toContain(
+          'Version 1 was restored as a new draft (version 3). Read it, then confirm it',
+        );
+        expect(query(page, '[data-testid="plan-status"]').textContent).toContain('Draft');
+        expect(page.querySelectorAll('.versions li')).toHaveLength(3);
+        expect(page.querySelector('[data-testid="restore"]')).toBeNull();
+        expect(page.querySelector('[data-testid="confirm"]')).not.toBeNull();
+      });
+
+      it('says when the new draft has errors', async () => {
+        await openOld();
+        restore.mockResolvedValue({ kind: 'ok', plan: newDraft(false) });
+
+        await click('restore');
+
+        expect(query(page, '.notice').textContent).toContain(
+          'It has errors and cannot be confirmed',
+        );
+        expect(query<HTMLButtonElement>(page, '[data-testid="confirm"]').disabled).toBe(true);
+      });
+
+      it('says that it works while it works and allows nothing else meanwhile', async () => {
+        await openOld();
+        let finish: (value: RestoreSeasonResult) => void = () => undefined;
+        restore.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+
+        query<HTMLButtonElement>(page, '[data-testid="restore"]').click();
+        fixture.detectChanges();
+
+        expect(query(page, '[data-testid="restoring"]').textContent).toContain('Restoring');
+        expect(query<HTMLButtonElement>(page, '[data-testid="restore"]').disabled).toBe(true);
+        expect(query<HTMLButtonElement>(page, '[data-testid="generate"]').disabled).toBe(true);
+        finish({ kind: 'forbidden' });
+        await settle(fixture);
+      });
+
+      it('says when the version is gone', async () => {
+        await openOld();
+        restore.mockResolvedValue({ kind: 'not_found' });
+        plans.mockResolvedValue({ kind: 'ok', plans: [NOW_CONFIRMED] });
+
+        await click('restore');
+
+        expect(alerts()).toEqual(['That plan does not exist any more.']);
+        expect(page.querySelector('[data-testid="plan-status"]')).toBeNull();
+      });
+
+      it('says when it cannot be restored (any more) and shows it as it is', async () => {
+        await openOld();
+        restore.mockResolvedValue({ kind: 'not_restorable' });
+
+        await click('restore');
+
+        expect(alerts()).toEqual([
+          'Only a version that was replaced or discarded can be restored.',
+        ]);
+        expect(open).toHaveBeenLastCalledWith(OLD_ID);
+      });
+
+      it('says when the request fails, and stays usable', async () => {
+        await openOld();
+        restore.mockRejectedValue(new Error('offline'));
+
+        await click('restore');
+
+        expect(alerts()).toEqual(['Something went wrong. Please try again.']);
+        expect(query<HTMLButtonElement>(page, '[data-testid="restore"]').disabled).toBe(false);
+        expect(rows()).toHaveLength(4);
+      });
+
+      it('says when the session is gone', async () => {
+        await openOld();
+        restore.mockResolvedValue({ kind: 'forbidden' });
+
+        await click('restore');
+
+        expect(text()).toContain('Your session has ended.');
       });
     });
   });

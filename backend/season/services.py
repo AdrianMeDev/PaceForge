@@ -35,6 +35,10 @@ class PlanStateError(Exception):
     """The plan is not in a state that allows this: only a draft can be confirmed or discarded."""
 
 
+class PlanNotRestorable(Exception):
+    """Only a version that was replaced or discarded can be restored."""
+
+
 class PlanNotConfirmable(Exception):
     """The plan has errors and cannot be confirmed. ``report`` says which."""
 
@@ -141,6 +145,28 @@ def discard(user: User, plan_id: UUID) -> SeasonPlanVersion:
         plan.status = Status.DISCARDED
         plan.save(update_fields=["status"])
         return plan
+
+
+def restore(user: User, plan_id: UUID) -> SeasonPlanVersion:
+    """Bring back a version that was replaced or discarded, as the next version: a draft with the
+    same weeks and rationale, ``parent`` the version it was restored from and a ``reason`` that says
+    so. It keeps the skeleton and the sports the old version was made for (a copy is read and
+    checked against what it was made for, as the original was); it is confirmed like any other
+    draft. The old version is not touched.
+
+    Raises ``PlanNotFound`` and ``PlanNotRestorable``; in each case nothing is stored.
+    """
+    old = get(user, plan_id)
+    if old.status not in (Status.SUPERSEDED, Status.DISCARDED):
+        raise PlanNotRestorable
+    loaded = read(old)
+    return save_draft(
+        user,
+        loaded.plan,
+        loaded.context,
+        reason=f"Restored from version {old.version}",
+        parent=old.pk,
+    )
 
 
 def _lock(user: User, plan_id: UUID) -> SeasonPlanVersion:
