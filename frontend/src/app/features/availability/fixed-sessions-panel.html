@@ -1,0 +1,142 @@
+<div class="panel">
+  <h2>Fixed appointments</h2>
+  <p class="hint">
+    Sessions that happen every week at a fixed time, such as a running club. Your AI coach is told
+    to plan each one on its day; it is sent as a day, a sport, the minutes and the part of the day,
+    without any text of yours. A plan without one gets a warning.
+  </p>
+
+  @switch (view()) {
+    @case ('loading') {
+      <p role="status">Loading…</p>
+    }
+    @case ('unreachable') {
+      <p class="alert" role="alert">Your fixed appointments could not be loaded.</p>
+      <p><button type="button" class="primary" (click)="load()">Try again</button></p>
+    }
+    @case ('ready') {
+      @for (message of errors(); track $index) {
+        <p class="alert" role="alert">{{ message }}</p>
+      }
+      @if (notice(); as text) {
+        <p class="notice" role="status">{{ text }}</p>
+      }
+
+      <form class="form" novalidate (submit)="add($event)">
+        <h3>Add an appointment</h3>
+        <div class="field">
+          <label for="fixed-weekday">Day</label>
+          <select
+            id="fixed-weekday"
+            [attr.aria-invalid]="fieldErrors()['weekday'] ? true : null"
+            (change)="weekday.set(toWeekday(readValue($event)))"
+          >
+            @for (day of weekdays; track day) {
+              <option [value]="day" [selected]="weekday() === day">{{ weekdayNames[day] }}</option>
+            }
+          </select>
+          @if (fieldErrors()['weekday']; as message) {
+            <p class="field-error" role="alert">{{ message }}</p>
+          }
+        </div>
+
+        <div class="field">
+          <label for="fixed-sport">Sport</label>
+          <select
+            id="fixed-sport"
+            [attr.aria-invalid]="fieldErrors()['sport'] ? true : null"
+            (change)="sport.set($any(readValue($event)))"
+          >
+            @for (choice of sportChoices; track choice.value) {
+              <option [value]="choice.value" [selected]="sport() === choice.value">
+                {{ choice.label }}
+              </option>
+            }
+          </select>
+          @if (fieldErrors()['sport']; as message) {
+            <p class="field-error" role="alert">{{ message }}</p>
+          }
+        </div>
+
+        <div class="field">
+          <label for="fixed-minutes">Minutes</label>
+          <input
+            id="fixed-minutes"
+            type="text"
+            inputmode="numeric"
+            [value]="minutes()"
+            [attr.aria-invalid]="fieldErrors()['minutes'] ? true : null"
+            (input)="minutes.set(readValue($event))"
+          />
+          @if (fieldErrors()['minutes']; as message) {
+            <p class="field-error" role="alert">{{ message }}</p>
+          }
+        </div>
+
+        <div class="field">
+          <label for="fixed-slot">Part of the day (optional)</label>
+          <select
+            id="fixed-slot"
+            [attr.aria-invalid]="fieldErrors()['slot'] ? true : null"
+            (change)="slot.set($any(readValue($event)))"
+          >
+            <option value="" [selected]="slot() === ''">Any</option>
+            @for (choice of slotChoices; track choice.value) {
+              <option [value]="choice.value" [selected]="slot() === choice.value">
+                {{ choice.label }}
+              </option>
+            }
+          </select>
+          @if (fieldErrors()['slot']; as message) {
+            <p class="field-error" role="alert">{{ message }}</p>
+          }
+        </div>
+
+        <p>
+          <button type="submit" class="primary" [disabled]="busy()">
+            {{ busy() ? 'Saving…' : 'Add' }}
+          </button>
+        </p>
+      </form>
+
+      @if (sessions().length === 0) {
+        <p class="hint">You have not entered anything yet.</p>
+      } @else {
+        <ul class="list">
+          @for (entry of sessions(); track entry.id) {
+            <li class="entry" [attr.data-testid]="'fixed-' + entry.id">
+              <p class="entry-sports" data-testid="text">{{ describe(entry) }}</p>
+
+              <div class="actions">
+                @if (confirming() === entry.id) {
+                  <span class="confirm" role="group" aria-label="Delete this entry">
+                    Delete this entry?
+                    <button
+                      type="button"
+                      class="primary"
+                      [disabled]="busy()"
+                      (click)="delete(entry)"
+                    >
+                      Yes, delete
+                    </button>
+                    <button type="button" class="link" (click)="cancelDelete()">Cancel</button>
+                  </span>
+                } @else {
+                  <button
+                    type="button"
+                    class="link"
+                    [disabled]="busy()"
+                    [attr.aria-label]="'Delete: ' + describe(entry)"
+                    (click)="askDelete(entry)"
+                  >
+                    Delete
+                  </button>
+                }
+              </div>
+            </li>
+          }
+        </ul>
+      }
+    }
+  }
+</div>

@@ -227,6 +227,8 @@
         </div>
       </form>
 
+      <app-fixed-sessions-panel (signedOut)="endSession()" />
+
       <app-limitations-panel [provider]="provider()" (signedOut)="endSession()" />
 
       <app-periods-panel (signedOut)="endSession()" />

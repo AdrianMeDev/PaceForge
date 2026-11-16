@@ -8,6 +8,7 @@ import {
   AvailabilityChanges,
   AvailabilitySlot,
   GetAvailabilityResult,
+  ListFixedSessionsResult,
   ListLimitationsResult,
   ListPeriodsResult,
   SaveAvailabilityResult,
@@ -132,6 +133,10 @@ function createApiStub() {
     listPeriods: vi
       .fn<() => Promise<ListPeriodsResult>>()
       .mockResolvedValue({ kind: 'ok', periods: [] }),
+    // The fixed appointments have a panel of their own, tested in fixed-sessions-panel.spec.ts.
+    listFixedSessions: vi
+      .fn<() => Promise<ListFixedSessionsResult>>()
+      .mockResolvedValue({ kind: 'ok', sessions: [] }),
     // The limitations have a panel of their own, tested in limitations-panel.spec.ts.
     listLimitations: vi
       .fn<() => Promise<ListLimitationsResult>>()
@@ -1387,6 +1392,22 @@ describe('AvailabilityPage', () => {
       await save();
 
       expect(box().checked).toBe(true);
+    });
+  });
+
+  describe('the fixed appointments', () => {
+    it('are shown below the form and above the limitations', async () => {
+      await setup();
+
+      const panel = query(page, 'app-fixed-sessions-panel');
+      expect(panel.textContent).toContain('Fixed appointments');
+      expect(
+        query(page, 'form').compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(
+        panel.compareDocumentPosition(query(page, 'app-limitations-panel')) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
     });
   });
 
