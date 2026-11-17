@@ -2,6 +2,8 @@ import { Component, ElementRef, computed, effect, inject, signal, viewChild } fr
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { AuthStore } from '../core/auth/auth-store';
 import { ThemeStore } from '../core/theme/theme-store';
+import { OnlineStatus } from '../core/network/online-status';
+import { UpdateNotice } from '../core/update/update-notice';
 import { Icon } from '../shared/icon';
 import { moreGroups, tabItems, visibleGroups } from './navigation';
 
@@ -14,7 +16,7 @@ import { moreGroups, tabItems, visibleGroups } from './navigation';
  */
 @Component({
   selector: 'app-shell',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, Icon],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, Icon, UpdateNotice],
   templateUrl: './shell.html',
   styleUrl: './shell.css',
 })
@@ -22,6 +24,7 @@ export class Shell {
   private readonly store = inject(AuthStore);
   private readonly router = inject(Router);
   private readonly theme = inject(ThemeStore);
+  protected readonly online = inject(OnlineStatus).online;
 
   protected readonly isStaff = this.store.isStaff;
   protected readonly groups = computed(() => visibleGroups(this.isStaff()));
