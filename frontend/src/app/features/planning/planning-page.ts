@@ -28,6 +28,7 @@ import {
   keySessionText,
   minutesBySport,
 } from '../season/season-format';
+import { ConfirmDialog } from '../../shared/confirm-dialog';
 import { PageHeader } from '../../shared/page-header';
 import { PlanEditor } from './plan-editor';
 import { PlanDay, PlanDayView } from './plan-day';
@@ -58,7 +59,7 @@ const TOO_MANY_PUSHES = 'Too many sends in a short time. Please wait a minute an
  */
 @Component({
   selector: 'app-planning-page',
-  imports: [RouterLink, DatePipe, PageHeader, PlanEditor, PlanDayView],
+  imports: [RouterLink, DatePipe, ConfirmDialog, PageHeader, PlanEditor, PlanDayView],
   templateUrl: './planning-page.html',
   styleUrls: ['../auth/auth-form.css', './planning-page.css'],
 })

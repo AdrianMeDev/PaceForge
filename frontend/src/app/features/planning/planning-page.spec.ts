@@ -231,6 +231,19 @@ function deferred<T>() {
 }
 
 describe('PlanningPage', () => {
+  // jsdom has no modal dialog: this is what the browser does that the question relies on.
+  beforeAll(() => {
+    HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
+      this.setAttribute('open', '');
+    };
+    HTMLDialogElement.prototype.close = function (this: HTMLDialogElement) {
+      if (this.hasAttribute('open')) {
+        this.removeAttribute('open');
+        this.dispatchEvent(new Event('close'));
+      }
+    };
+  });
+
   let stubs: ReturnType<typeof createStubs>;
   let fixture: ComponentFixture<PlanningPage>;
   let page: HTMLElement;
@@ -309,6 +322,12 @@ describe('PlanningPage', () => {
   async function click(id: string) {
     button(id).click();
     await settle(fixture);
+  }
+
+  /** "Discard" asks first: this answers the question with "Discard draft". */
+  async function discardAndConfirm() {
+    await click('discard');
+    await click('confirm-dialog-confirm');
   }
 
   describe('loading', () => {
@@ -1575,6 +1594,22 @@ describe('PlanningPage', () => {
   });
 
   describe('discarding', () => {
+    it('asks first and discards nothing when the answer is "Cancel"', async () => {
+      await setup();
+
+      await click('discard');
+      const dialog = query<HTMLDialogElement>(page, '[data-testid="confirm-dialog"]');
+      expect(dialog.open).toBe(true);
+      expect(dialog.textContent).toContain('Version 2 will be marked as discarded');
+      expect(stubs.planning.discard).not.toHaveBeenCalled();
+
+      await click('confirm-dialog-cancel');
+
+      expect(dialog.open).toBe(false);
+      expect(stubs.planning.discard).not.toHaveBeenCalled();
+      expect(byId('discard')).not.toBeNull();
+    });
+
     it('discards a draft and shows it as discarded', async () => {
       await setup();
       stubs.planning.discard.mockResolvedValue({
@@ -1582,7 +1617,7 @@ describe('PlanningPage', () => {
         plan: { ...WITH_ERRORS, status: 'discarded', report: null },
       });
 
-      await click('discard');
+      await discardAndConfirm();
 
       expect(stubs.planning.discard).toHaveBeenCalledExactlyOnceWith(DRAFT_ID);
       expect(notice()).toBe('The draft was discarded.');
@@ -1604,7 +1639,7 @@ describe('PlanningPage', () => {
       stubs.planning.discard.mockResolvedValue({ kind: 'not_a_draft' });
       stubs.planning.get.mockResolvedValue({ kind: 'ok', plan: CONFIRMED });
 
-      await click('discard');
+      await discardAndConfirm();
 
       expect(alerts()).toEqual(['That plan is not a draft any more.']);
       expect(byId('status')?.textContent?.trim()).toBe('Confirmed');
@@ -1614,7 +1649,7 @@ describe('PlanningPage', () => {
       await setup();
       stubs.planning.discard.mockResolvedValue({ kind: 'not_found' });
 
-      await click('discard');
+      await discardAndConfirm();
 
       expect(alerts()).toEqual(['That plan does not exist any more.']);
       expect(byId('status')).toBeNull();
@@ -1624,7 +1659,7 @@ describe('PlanningPage', () => {
       await setup();
       stubs.planning.discard.mockResolvedValue({ kind: 'forbidden' });
 
-      await click('discard');
+      await discardAndConfirm();
 
       expect(alerts()).toEqual(['Your session has ended. Please sign in again.']);
     });
@@ -1633,7 +1668,7 @@ describe('PlanningPage', () => {
       await setup();
       stubs.planning.discard.mockRejectedValue(new Error('network'));
 
-      await click('discard');
+      await discardAndConfirm();
 
       expect(alerts()).toEqual(['Something went wrong. Please try again.']);
       expect(button('discard').disabled).toBe(false);
@@ -1731,6 +1766,8 @@ describe('PlanningPage', () => {
         stubs.planning.discard.mockReturnValue(pending.promise);
 
         button('discard').click();
+        await fixture.whenStable();
+        button('confirm-dialog-confirm').click();
         await fixture.whenStable();
 
         expect(button('change-plan').disabled).toBe(true);
