@@ -2,6 +2,7 @@ import { Component, ElementRef, computed, effect, inject, signal, viewChild } fr
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { AuthStore } from '../core/auth/auth-store';
 import { ThemeStore } from '../core/theme/theme-store';
+import { UpdateNotice } from '../core/update/update-notice';
 import { Icon } from '../shared/icon';
 import { moreGroups, tabItems, visibleGroups } from './navigation';
 
@@ -14,7 +15,7 @@ import { moreGroups, tabItems, visibleGroups } from './navigation';
  */
 @Component({
   selector: 'app-shell',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, Icon],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, Icon, UpdateNotice],
   templateUrl: './shell.html',
   styleUrl: './shell.css',
 })
