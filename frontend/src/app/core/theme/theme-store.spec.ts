@@ -88,4 +88,75 @@ describe('ThemeStore', () => {
     expect(store().choice()).toBe('dark');
     expect(root.getAttribute('data-theme')).toBe('dark');
   });
+
+  describe('what is shown', () => {
+    let listeners: ((event: { matches: boolean }) => void)[];
+
+    function device(dark: boolean) {
+      listeners = [];
+      vi.stubGlobal(
+        'matchMedia',
+        vi.fn(() => ({
+          matches: dark,
+          addEventListener: (_: string, listener: (event: { matches: boolean }) => void) =>
+            listeners.push(listener),
+        })),
+      );
+    }
+
+    afterEach(() => vi.unstubAllGlobals());
+
+    it("is the device's setting while none is chosen", () => {
+      device(true);
+      store().initialize();
+
+      expect(store().shown()).toBe('dark');
+    });
+
+    it('is the choice once there is one', () => {
+      device(true);
+      store().initialize();
+
+      store().set('light');
+
+      expect(store().shown()).toBe('light');
+    });
+
+    it('follows the device when it changes by itself', () => {
+      device(false);
+      store().initialize();
+      expect(store().shown()).toBe('light');
+
+      listeners.forEach((listener) => listener({ matches: true }));
+
+      expect(store().shown()).toBe('dark');
+    });
+
+    it('is light without a way to ask the device', () => {
+      vi.stubGlobal('matchMedia', undefined);
+      store().initialize();
+
+      expect(store().shown()).toBe('light');
+    });
+
+    it("toggles from the device's dark to light and keeps that choice", () => {
+      device(true);
+      store().initialize();
+
+      store().toggle();
+
+      expect(store().choice()).toBe('light');
+      expect(localStorage.getItem(THEME_KEY)).toBe('light');
+    });
+
+    it("toggles from the device's light to dark, and back", () => {
+      device(false);
+      store().initialize();
+
+      store().toggle();
+      expect(store().choice()).toBe('dark');
+      store().toggle();
+      expect(store().choice()).toBe('light');
+    });
+  });
 });

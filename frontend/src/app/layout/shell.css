@@ -43,7 +43,8 @@ ul {
 }
 
 a,
-.signout {
+.signout,
+.theme {
   display: flex;
   white-space: nowrap;
   align-items: center;
@@ -59,7 +60,8 @@ a,
 }
 
 a:hover,
-.signout:hover {
+.signout:hover,
+.theme:hover {
   background: var(--surface-2);
   color: var(--text);
 }

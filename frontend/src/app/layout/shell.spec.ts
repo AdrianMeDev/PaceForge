@@ -355,4 +355,50 @@ describe('Shell', () => {
       expect(more(page).getAttribute('aria-expanded')).toBe('true');
     });
   });
+
+  describe('theme shortcut', () => {
+    afterEach(() => {
+      localStorage.clear();
+      document.documentElement.removeAttribute('data-theme');
+      vi.unstubAllGlobals();
+    });
+
+    it('switches the theme from the sidebar, and says what it will do', async () => {
+      localStorage.clear();
+      const { fixture, page } = await setup();
+      const button = () => query<HTMLButtonElement>(page, '[data-testid="theme-toggle"]');
+      expect(button().getAttribute('aria-label')).toBe('Switch to the dark theme');
+
+      button().click();
+      await fixture.whenStable();
+
+      expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+      expect(button().getAttribute('aria-label')).toBe('Switch to the light theme');
+    });
+
+    it('switches it from the sheet too, to the same choice', async () => {
+      localStorage.clear();
+      const { fixture, page } = await setup();
+
+      query<HTMLButtonElement>(page, '[data-testid="sheet-theme-toggle"]').click();
+      await fixture.whenStable();
+
+      expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+      expect(query(page, '[data-testid="theme-toggle"]').getAttribute('aria-label')).toBe(
+        'Switch to the light theme',
+      );
+    });
+
+    it('shows a moon while the theme is light and a sun while it is dark', async () => {
+      localStorage.clear();
+      const { fixture, page } = await setup();
+      const icon = () => query(page, '[data-testid="theme-toggle"] app-icon svg').innerHTML;
+      const light = icon();
+
+      query<HTMLButtonElement>(page, '[data-testid="theme-toggle"]').click();
+      await fixture.whenStable();
+
+      expect(icon()).not.toBe(light);
+    });
+  });
 });

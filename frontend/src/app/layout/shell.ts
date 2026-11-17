@@ -1,6 +1,7 @@
 import { Component, ElementRef, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { AuthStore } from '../core/auth/auth-store';
+import { ThemeStore } from '../core/theme/theme-store';
 import { Icon } from '../shared/icon';
 import { moreGroups, tabItems, visibleGroups } from './navigation';
 
@@ -20,10 +21,12 @@ import { moreGroups, tabItems, visibleGroups } from './navigation';
 export class Shell {
   private readonly store = inject(AuthStore);
   private readonly router = inject(Router);
+  private readonly theme = inject(ThemeStore);
 
   protected readonly isStaff = this.store.isStaff;
   protected readonly groups = computed(() => visibleGroups(this.isStaff()));
   protected readonly tabs = tabItems();
+  protected readonly shownTheme = this.theme.shown;
   protected readonly more = computed(() => moreGroups(this.isStaff()));
 
   private readonly sheet = viewChild<ElementRef<HTMLDialogElement>>('sheet');
@@ -49,6 +52,10 @@ export class Shell {
     const user = this.store.user();
     return user ? user.display_name || user.email : '';
   });
+
+  protected toggleTheme(): void {
+    this.theme.toggle();
+  }
 
   protected openMore(): void {
     const sheet = this.sheet()?.nativeElement;

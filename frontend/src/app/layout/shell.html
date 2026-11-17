@@ -26,6 +26,17 @@
     </nav>
     <div class="who">
       <span class="user sr-only lg:not-sr-only" data-testid="user-label">{{ userLabel() }}</span>
+      <button
+        type="button"
+        class="theme"
+        data-testid="theme-toggle"
+        [attr.aria-label]="
+          shownTheme() === 'dark' ? 'Switch to the light theme' : 'Switch to the dark theme'
+        "
+        (click)="toggleTheme()"
+      >
+        <app-icon [name]="shownTheme() === 'dark' ? 'sun' : 'moon'" />
+      </button>
       <button type="button" class="signout" data-testid="sign-out" (click)="logout()">
         <app-icon name="log-out" />
         <span class="sr-only lg:not-sr-only">Sign out</span>
@@ -89,6 +100,17 @@
     </nav>
     <div class="sheet-who">
       <span class="user" data-testid="sheet-user">{{ userLabel() }}</span>
+      <button
+        type="button"
+        class="theme"
+        data-testid="sheet-theme-toggle"
+        [attr.aria-label]="
+          shownTheme() === 'dark' ? 'Switch to the light theme' : 'Switch to the dark theme'
+        "
+        (click)="toggleTheme()"
+      >
+        <app-icon [name]="shownTheme() === 'dark' ? 'sun' : 'moon'" />
+      </button>
       <button type="button" class="signout" data-testid="sheet-sign-out" (click)="logout()">
         <app-icon name="log-out" />
         <span>Sign out</span>
