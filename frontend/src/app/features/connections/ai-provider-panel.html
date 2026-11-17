@@ -1,5 +1,5 @@
-<div class="panel">
-  <h2>AI coach</h2>
+<div class="card">
+  <h2 class="m-0 mb-2 text-lg font-semibold">AI coach</h2>
   <p class="hint">
     The coach works with your own AI account. Your key is stored encrypted and never shown again.
     Checking the connection sends one short test message and nothing about your training.
@@ -7,11 +7,16 @@
 
   @switch (view()) {
     @case ('loading') {
-      <p role="status">Loading…</p>
+      <div class="grid gap-3" role="status" aria-label="Loading">
+        <div class="skeleton h-12"></div>
+        <div class="skeleton h-28"></div>
+      </div>
     }
     @case ('unreachable') {
       <p class="alert" role="alert">Your AI provider could not be loaded.</p>
-      <p><button type="button" class="primary" (click)="load()">Try again</button></p>
+      <p>
+        <button type="button" class="btn btn-primary btn-sm" (click)="load()">Try again</button>
+      </p>
     }
     @case ('ready') {
       @for (message of errors(); track $index) {
@@ -23,7 +28,7 @@
 
       @if (state(); as current) {
         @if (current.configured && current.provider && current.status) {
-          <dl class="state">
+          <dl class="state state-list my-4 [&_dd]:break-words">
             <dt>Provider</dt>
             <dd data-testid="provider">{{ providerLabel[current.provider] }}</dd>
             <dt>Model</dt>
@@ -69,18 +74,35 @@
                 itself unusable, delete it with your provider.
               </p>
               <div class="actions">
-                <button type="button" class="primary" [disabled]="busy()" (click)="remove()">
+                <button
+                  type="button"
+                  class="btn btn-primary btn-sm"
+                  [disabled]="busy()"
+                  (click)="remove()"
+                >
                   Yes, remove
                 </button>
-                <button type="button" class="link" (click)="cancelRemoval()">Cancel</button>
+                <button type="button" class="btn btn-ghost btn-sm" (click)="cancelRemoval()">
+                  Cancel
+                </button>
               </div>
             </div>
           } @else {
             <div class="actions">
-              <button type="button" class="secondary" [disabled]="busy()" (click)="check()">
+              <button
+                type="button"
+                class="btn btn-secondary btn-sm"
+                [disabled]="busy()"
+                (click)="check()"
+              >
                 Check connection
               </button>
-              <button type="button" class="secondary" [disabled]="busy()" (click)="askRemoval()">
+              <button
+                type="button"
+                class="btn btn-secondary btn-sm"
+                [disabled]="busy()"
+                (click)="askRemoval()"
+              >
                 Remove
               </button>
             </div>
@@ -232,9 +254,11 @@
             </div>
           }
 
-          <button type="submit" class="primary" [disabled]="busy()">
-            {{ busy() ? 'Working…' : state()?.configured ? 'Save changes' : 'Save' }}
-          </button>
+          <div class="action-bar">
+            <button type="submit" class="btn btn-primary w-full sm:w-auto" [disabled]="busy()">
+              {{ busy() ? 'Working…' : state()?.configured ? 'Save changes' : 'Save' }}
+            </button>
+          </div>
         </form>
       }
     }

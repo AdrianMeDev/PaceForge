@@ -155,6 +155,15 @@ describe('AiProviderPanel', () => {
     await settle(fixture);
   }
 
+  describe('the card', () => {
+    it('keeps the one save button in a bar and the state in a list', async () => {
+      await setup();
+
+      expect(query(panel, '.action-bar button[type="submit"]')).toBeTruthy();
+      expect(query(panel, '.card')).toBeTruthy();
+    });
+  });
+
   describe('loading', () => {
     it('shows a loading note until the setup arrives', () => {
       api = createApiStub();
@@ -166,7 +175,9 @@ describe('AiProviderPanel', () => {
       fixture = TestBed.createComponent(AiProviderPanel);
       fixture.detectChanges();
 
-      expect(fixture.nativeElement.textContent).toContain('Loading');
+      expect(
+        fixture.nativeElement.querySelector('[role="status"][aria-label="Loading"]'),
+      ).toBeTruthy();
       expect(fixture.nativeElement.querySelector('form')).toBeNull();
     });
 
