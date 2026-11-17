@@ -50,6 +50,19 @@ describe('sportsText', () => {
 });
 
 describe('LimitationsPanel', () => {
+  // jsdom has no modal dialog: this is what the browser does that the question relies on.
+  beforeAll(() => {
+    HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
+      this.setAttribute('open', '');
+    };
+    HTMLDialogElement.prototype.close = function (this: HTMLDialogElement) {
+      if (this.hasAttribute('open')) {
+        this.removeAttribute('open');
+        this.dispatchEvent(new Event('close'));
+      }
+    };
+  });
+
   let api: ReturnType<typeof createApiStub>;
   let fixture: ComponentFixture<LimitationsPanel>;
   let panel: HTMLElement;
@@ -391,19 +404,19 @@ describe('LimitationsPanel', () => {
     it('asks first and deletes nothing until the answer is yes', async () => {
       await click(labelled('Delete: achilles tendon'));
 
-      expect(card('achilles').textContent).toContain('Delete this entry?');
+      expect(query<HTMLDialogElement>(panel, '[data-testid="confirm-dialog"]').open).toBe(true);
+      expect(
+        query<HTMLDialogElement>(panel, '[data-testid="confirm-dialog"]').textContent,
+      ).toContain('Delete the entry for achilles tendon?');
       expect(api.deleteLimitation).not.toHaveBeenCalled();
     });
 
     it('goes back when the answer is cancel', async () => {
       await click(labelled('Delete: achilles tendon'));
 
-      const cancel = Array.from(card('achilles').querySelectorAll('button')).find(
-        (b) => b.textContent?.trim() === 'Cancel',
-      );
-      await click(cancel as HTMLButtonElement);
+      await click(query<HTMLButtonElement>(panel, '[data-testid="confirm-dialog-cancel"]'));
 
-      expect(card('achilles').textContent).not.toContain('Delete this entry?');
+      expect(query<HTMLDialogElement>(panel, '[data-testid="confirm-dialog"]').open).toBe(false);
       expect(api.deleteLimitation).not.toHaveBeenCalled();
     });
 
@@ -412,10 +425,7 @@ describe('LimitationsPanel', () => {
       api.listLimitations.mockResolvedValue(ok(BACK, KNEE));
       await click(labelled('Delete: achilles tendon'));
 
-      const yes = Array.from(card('achilles').querySelectorAll('button')).find(
-        (b) => b.textContent?.trim() === 'Yes, delete',
-      );
-      await click(yes as HTMLButtonElement);
+      await click(query<HTMLButtonElement>(panel, '[data-testid="confirm-dialog-confirm"]'));
 
       expect(api.deleteLimitation).toHaveBeenCalledExactlyOnceWith('achilles');
       expect(ids()).toEqual(['back', 'knee']);
@@ -429,10 +439,7 @@ describe('LimitationsPanel', () => {
       api.listLimitations.mockResolvedValue(ok(BACK, KNEE));
       await click(labelled('Delete: achilles tendon'));
 
-      const yes = Array.from(card('achilles').querySelectorAll('button')).find(
-        (b) => b.textContent?.trim() === 'Yes, delete',
-      );
-      await click(yes as HTMLButtonElement);
+      await click(query<HTMLButtonElement>(panel, '[data-testid="confirm-dialog-confirm"]'));
 
       expect(panel.querySelector('[role="status"]')?.textContent?.trim()).toBe(
         'That entry does not exist any more.',
@@ -444,10 +451,7 @@ describe('LimitationsPanel', () => {
       api.listLimitations.mockRejectedValue(new Error('offline'));
       await click(labelled('Delete: achilles tendon'));
 
-      const yes = Array.from(card('achilles').querySelectorAll('button')).find(
-        (b) => b.textContent?.trim() === 'Yes, delete',
-      );
-      await click(yes as HTMLButtonElement);
+      await click(query<HTMLButtonElement>(panel, '[data-testid="confirm-dialog-confirm"]'));
 
       expect(alerts()).toEqual(['The list could not be refreshed. Please try again.']);
     });

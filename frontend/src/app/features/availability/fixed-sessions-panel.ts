@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, output, signal } from '@angular/core';
+import { Component, OnInit, inject, viewChild, output, signal } from '@angular/core';
 import { AvailabilityApi } from '../../core/availability/availability-api';
 import {
   AvailabilitySlot,
@@ -6,6 +6,7 @@ import {
   FixedSession,
   Weekday,
 } from '../../core/availability/availability-models';
+import { ConfirmDialog } from '../../shared/confirm-dialog';
 import { WEEKDAY_NAMES } from './availability-format';
 
 type View = 'loading' | 'unreachable' | 'ready';
@@ -46,6 +47,7 @@ export function sessionText(session: FixedSession): string {
  */
 @Component({
   selector: 'app-fixed-sessions-panel',
+  imports: [ConfirmDialog],
   templateUrl: './fixed-sessions-panel.html',
   styleUrls: ['../auth/auth-form.css', './fixed-sessions-panel.css'],
 })
@@ -61,7 +63,9 @@ export class FixedSessionsPanel implements OnInit {
   protected readonly errors = signal<string[]>([]);
   protected readonly notice = signal<string | null>(null);
   /** The id of the entry about to be deleted, waiting for the answer to the question. */
-  protected readonly confirming = signal<string | null>(null);
+  /** The entry the dialog asks about. */
+  protected readonly confirming = signal<FixedSession | null>(null);
+  private readonly deleteDialog = viewChild(ConfirmDialog);
 
   protected readonly weekday = signal<Weekday>(1);
   protected readonly sport = signal<AvailabilitySport>('running');
@@ -157,15 +161,14 @@ export class FixedSessionsPanel implements OnInit {
 
   protected askDelete(session: FixedSession): void {
     this.clearMessages();
-    this.confirming.set(session.id);
+    this.confirming.set(session);
+    this.deleteDialog()?.open();
   }
 
-  protected cancelDelete(): void {
-    this.confirming.set(null);
-  }
-
-  protected async delete(session: FixedSession): Promise<void> {
-    if (this.busy()) {
+  /** The dialog was answered with "Delete entry". */
+  protected async delete(): Promise<void> {
+    const session = this.confirming();
+    if (this.busy() || session === null) {
       return;
     }
     this.clearMessages();

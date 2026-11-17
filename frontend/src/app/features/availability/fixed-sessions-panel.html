@@ -120,37 +120,28 @@
               <p class="entry-sports m-0 mb-2" data-testid="text">{{ describe(entry) }}</p>
 
               <div class="actions flex flex-wrap items-center gap-2">
-                @if (confirming() === entry.id) {
-                  <span class="confirm" role="group" aria-label="Delete this entry">
-                    Delete this entry?
-                    <button
-                      type="button"
-                      class="btn btn-primary btn-sm"
-                      [disabled]="busy()"
-                      (click)="delete(entry)"
-                    >
-                      Yes, delete
-                    </button>
-                    <button type="button" class="btn btn-ghost btn-sm" (click)="cancelDelete()">
-                      Cancel
-                    </button>
-                  </span>
-                } @else {
-                  <button
-                    type="button"
-                    class="btn btn-ghost btn-sm"
-                    [disabled]="busy()"
-                    [attr.aria-label]="'Delete: ' + describe(entry)"
-                    (click)="askDelete(entry)"
-                  >
-                    Delete
-                  </button>
-                }
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-sm"
+                  [disabled]="busy()"
+                  [attr.aria-label]="'Delete: ' + describe(entry)"
+                  (click)="askDelete(entry)"
+                >
+                  Delete
+                </button>
               </div>
             </li>
           }
         </ul>
       }
+      @let doomed = confirming();
+      <app-confirm-dialog
+        title="Delete this entry?"
+        [message]="doomed ? 'Delete this appointment: ' + describe(doomed) + '?' : ''"
+        confirmLabel="Delete entry"
+        [danger]="true"
+        (confirmed)="delete()"
+      />
     }
   }
 </div>

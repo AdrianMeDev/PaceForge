@@ -1,10 +1,11 @@
-import { Component, OnInit, inject, input, output, signal } from '@angular/core';
+import { Component, OnInit, inject, viewChild, input, output, signal } from '@angular/core';
 import { AvailabilityApi } from '../../core/availability/availability-api';
 import {
   AvailabilitySport,
   BodyPart,
   Limitation,
 } from '../../core/availability/availability-models';
+import { ConfirmDialog } from '../../shared/confirm-dialog';
 import { UNKNOWN_PROVIDER } from './provider-line';
 
 type View = 'loading' | 'unreachable' | 'ready';
@@ -55,6 +56,7 @@ export function sportsText(sports: readonly AvailabilitySport[]): string {
  */
 @Component({
   selector: 'app-limitations-panel',
+  imports: [ConfirmDialog],
   templateUrl: './limitations-panel.html',
   styleUrls: ['../auth/auth-form.css', './limitations-panel.css'],
 })
@@ -72,7 +74,9 @@ export class LimitationsPanel implements OnInit {
   protected readonly errors = signal<string[]>([]);
   protected readonly notice = signal<string | null>(null);
   /** The id of the entry about to be deleted, waiting for the answer to the question. */
-  protected readonly confirming = signal<string | null>(null);
+  /** The entry the dialog asks about. */
+  protected readonly confirming = signal<Limitation | null>(null);
+  private readonly deleteDialog = viewChild(ConfirmDialog);
 
   protected readonly bodyPart = signal<BodyPart>('knee');
   protected readonly sports = signal<AvailabilitySport[]>([]);
@@ -195,15 +199,14 @@ export class LimitationsPanel implements OnInit {
 
   protected askDelete(entry: Limitation): void {
     this.clearMessages();
-    this.confirming.set(entry.id);
+    this.confirming.set(entry);
+    this.deleteDialog()?.open();
   }
 
-  protected cancelDelete(): void {
-    this.confirming.set(null);
-  }
-
-  protected async delete(entry: Limitation): Promise<void> {
-    if (this.busy()) {
+  /** The dialog was answered with "Delete entry". */
+  protected async delete(): Promise<void> {
+    const entry = this.confirming();
+    if (this.busy() || entry === null) {
       return;
     }
     this.clearMessages();
