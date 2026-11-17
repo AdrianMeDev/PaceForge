@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 
 // `ng test` runs in the folder of the project.
 const styles = readFileSync('src/styles.css', 'utf-8');
@@ -135,20 +135,12 @@ describe('the base styles', () => {
 });
 
 describe('the retired stylesheet of the account pages', () => {
-  it.each([
-    'auth',
-    'admin',
-    'security',
-    'connections',
-    'athlete',
-    'availability',
-    'goals',
-    'activities',
-    'planning',
-    'review',
-  ])('is no longer bound in features/%s', (folder) => {
-    for (const file of sourceFiles(`src/app/features/${folder}`)) {
-      expect(readFileSync(file, 'utf-8'), file).not.toContain('auth-form.css');
+  it('is deleted, and no component of the app names it', () => {
+    expect(existsSync('src/app/features/auth/auth-form.css')).toBe(false);
+    for (const folder of readdirSync('src/app/features')) {
+      for (const file of sourceFiles(`src/app/features/${folder}`)) {
+        expect(readFileSync(file, 'utf-8'), file).not.toContain('auth-form.css');
+      }
     }
   });
 });
