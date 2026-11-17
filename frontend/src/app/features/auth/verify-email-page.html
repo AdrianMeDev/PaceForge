@@ -1,5 +1,5 @@
 <main class="auth-card">
-  <h1>Confirm your email address</h1>
+  <h1 class="m-0 mb-4 text-2xl font-semibold">Confirm your email address</h1>
 
   @switch (view()) {
     @case ('checking') {
@@ -12,7 +12,7 @@
       <p>
         Please confirm that <strong>{{ email() }}</strong> is your email address.
       </p>
-      <button type="button" class="primary" [disabled]="confirming()" (click)="confirm()">
+      <button type="button" class="btn btn-primary" [disabled]="confirming()" (click)="confirm()">
         {{ confirming() ? 'Confirming…' : 'Confirm email address' }}
       </button>
     }
@@ -36,7 +36,7 @@
     }
     @case ('unreachable') {
       <p class="alert" role="alert">We could not check the link. Please try again.</p>
-      <button type="button" class="primary" (click)="check()">Try again</button>
+      <button type="button" class="btn btn-primary" (click)="check()">Try again</button>
     }
   }
 </main>
