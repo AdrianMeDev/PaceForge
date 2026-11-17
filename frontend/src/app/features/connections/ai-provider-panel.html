@@ -67,51 +67,36 @@
             </dd>
           </dl>
 
-          @if (confirmingRemoval()) {
-            <div class="confirm" role="group" aria-label="Remove the AI provider">
-              <p>
-                Remove the AI provider? The stored key is deleted from PaceForge. To make the key
-                itself unusable, delete it with your provider.
-              </p>
-              <div class="actions">
-                <button
-                  type="button"
-                  class="btn btn-primary btn-sm"
-                  [disabled]="busy()"
-                  (click)="remove()"
-                >
-                  Yes, remove
-                </button>
-                <button type="button" class="btn btn-ghost btn-sm" (click)="cancelRemoval()">
-                  Cancel
-                </button>
-              </div>
-            </div>
-          } @else {
-            <div class="actions">
-              <button
-                type="button"
-                class="btn btn-secondary btn-sm"
-                [disabled]="busy()"
-                (click)="check()"
-              >
-                Check connection
-              </button>
-              <button
-                type="button"
-                class="btn btn-secondary btn-sm"
-                [disabled]="busy()"
-                (click)="askRemoval()"
-              >
-                Remove
-              </button>
-            </div>
-            @if (unsaved()) {
-              <p class="hint" data-testid="unsaved">
-                You have changes that are not saved. The check uses the saved setup.
-              </p>
-            }
+          <div class="actions">
+            <button
+              type="button"
+              class="btn btn-secondary btn-sm"
+              [disabled]="busy()"
+              (click)="check()"
+            >
+              Check connection
+            </button>
+            <button
+              type="button"
+              class="btn btn-secondary btn-sm"
+              [disabled]="busy()"
+              (click)="askRemoval()"
+            >
+              Remove
+            </button>
+          </div>
+          @if (unsaved()) {
+            <p class="hint" data-testid="unsaved">
+              You have changes that are not saved. The check uses the saved setup.
+            </p>
           }
+          <app-confirm-dialog
+            title="Remove the AI provider?"
+            message="The stored key is deleted from PaceForge. To make the key itself unusable, delete it with your provider."
+            confirmLabel="Remove provider"
+            [danger]="true"
+            (confirmed)="remove()"
+          />
         } @else {
           <p class="hint" data-testid="none">No AI provider set up yet.</p>
         }

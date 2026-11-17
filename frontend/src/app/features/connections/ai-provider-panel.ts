@@ -1,5 +1,5 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
-import { Component, OnInit, computed, inject, output, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, output, signal, viewChild } from '@angular/core';
 import { CoachApi } from '../../core/coach/coach-api';
 import {
   AiProviderInput,
@@ -7,6 +7,7 @@ import {
   AiProviderState,
   AiStatus,
 } from '../../core/coach/coach-models';
+import { ConfirmDialog } from '../../shared/confirm-dialog';
 import { endpointLabel } from './known-endpoints';
 
 type View = 'loading' | 'unreachable' | 'ready';
@@ -47,7 +48,7 @@ const FIELDS = ['provider', 'model', 'season_model', 'base_url', 'api_key'];
  */
 @Component({
   selector: 'app-ai-provider-panel',
-  imports: [DatePipe, DecimalPipe],
+  imports: [DatePipe, DecimalPipe, ConfirmDialog],
   templateUrl: './ai-provider-panel.html',
   styleUrls: ['../auth/auth-form.css', './ai-provider-panel.css'],
 })
@@ -71,7 +72,7 @@ export class AiProviderPanel implements OnInit {
   protected readonly errors = signal<string[]>([]);
   protected readonly notice = signal<string | null>(null);
   protected readonly fieldErrors = signal<Record<string, string>>({});
-  protected readonly confirmingRemoval = signal(false);
+  private readonly removalDialog = viewChild(ConfirmDialog);
 
   protected readonly providerLabel = PROVIDER_LABELS;
   protected readonly statusText = STATUS_TEXT;
@@ -249,11 +250,7 @@ export class AiProviderPanel implements OnInit {
 
   protected askRemoval(): void {
     this.clearMessages();
-    this.confirmingRemoval.set(true);
-  }
-
-  protected cancelRemoval(): void {
-    this.confirmingRemoval.set(false);
+    this.removalDialog()?.open();
   }
 
   protected async remove(): Promise<void> {
@@ -264,7 +261,6 @@ export class AiProviderPanel implements OnInit {
     this.busy.set(true);
     try {
       const result = await this.api.remove();
-      this.confirmingRemoval.set(false);
       if (result.kind === 'forbidden') {
         this.signedOut.emit();
         return;
