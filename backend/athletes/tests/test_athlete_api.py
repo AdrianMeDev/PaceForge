@@ -797,7 +797,7 @@ class TestBestTimes:
             ({"seconds": 1197, "date": None}, "date"),
             ({"seconds": 300, "date": "2026-10-01"}, "seconds"),
             ({"seconds": 100000, "date": "2026-10-01"}, "seconds"),
-            ({"seconds": 1197, "date": "2026-11-17"}, "date"),
+            ({"seconds": 1197, "date": "2999-01-01"}, "date"),
             ({"seconds": 1197, "date": "1899-12-31"}, "date"),
         ],
     )
