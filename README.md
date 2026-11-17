@@ -950,8 +950,10 @@ links to the Connections page.
    (for example a workout on a day you cannot train, or segments that do not add up to the length)
    means the plan cannot be confirmed; a *note* is for you to weigh.
 4. **Confirm plan** or **Discard**. Confirming checks the plan again with your data of that moment.
-   Drafting again makes a **new version** of the week; all versions stay in the list, and
-   confirming a draft replaces the version that was confirmed before.
+   Discarding asks first (*Discard this draft?*), because it cannot be undone with one click; you can
+   bring the version back later (see *Restoring a version*). Drafting again makes a **new version**
+   of the week; the versions are chips (`v2 · Draft`) above the plan, and confirming a draft replaces
+   the version that was confirmed before. On a phone the buttons stay in a bar above the tab bar.
 5. Send the confirmed week to your calendar: see [Sending to Intervals.icu](#sending-to-intervalsicu).
 
 **The season plan.** If you have a **confirmed** [season plan](#filling-the-season-with-your-coach)
