@@ -4,6 +4,7 @@ import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angula
 import { RouterLink } from '@angular/router';
 import { IntervalsConnectionApi } from '../../core/integrations/intervals-api';
 import { IntervalsConnection } from '../../core/integrations/intervals-models';
+import { PageHeader } from '../../shared/page-header';
 import { AiProviderPanel } from './ai-provider-panel';
 
 type View = 'loading' | 'unreachable' | 'ready' | 'signed_out';
@@ -18,7 +19,7 @@ const RATE_LIMIT = 'Too many attempts. Please wait a minute and try again.';
  */
 @Component({
   selector: 'app-connections-page',
-  imports: [ReactiveFormsModule, RouterLink, DatePipe, AiProviderPanel],
+  imports: [ReactiveFormsModule, RouterLink, DatePipe, PageHeader, AiProviderPanel],
   templateUrl: './connections-page.html',
   styleUrls: ['../auth/auth-form.css', './connections-page.css'],
 })

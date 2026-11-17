@@ -2,26 +2,6 @@
   max-width: 36rem;
 }
 
-h2 {
-  margin: 0 0 0.75rem;
-  font-size: 1.15rem;
-}
-
-.state {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: 0.35rem 1rem;
-  margin: 0 0 1rem;
-}
-
-.state dt {
-  color: var(--muted);
-}
-
-.state dd {
-  margin: 0;
-}
-
 .actions {
   display: flex;
   flex-wrap: wrap;
@@ -32,15 +12,6 @@ h2 {
 
 .confirm {
   margin-bottom: 1.25rem;
-}
-
-button.secondary {
-  padding: 0.6rem 1rem;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text);
-  cursor: pointer;
 }
 
 form {

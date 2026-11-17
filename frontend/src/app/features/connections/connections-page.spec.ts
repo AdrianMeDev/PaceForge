@@ -123,7 +123,9 @@ describe('ConnectionsPage', () => {
       fixture = TestBed.createComponent(ConnectionsPage);
       fixture.detectChanges();
 
-      expect(fixture.nativeElement.textContent).toContain('Loading');
+      expect(
+        fixture.nativeElement.querySelector('[role="status"][aria-label="Loading"]'),
+      ).toBeTruthy();
       expect(fixture.nativeElement.querySelector('form')).toBeNull();
     });
 
