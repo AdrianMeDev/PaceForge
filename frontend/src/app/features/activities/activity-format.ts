@@ -11,6 +11,12 @@ const SPORT_LABELS: Record<Activity['sport'], string> = {
   other: 'Other',
 };
 
+/** The choices of the filter of the list: every sport the server knows. */
+export const SPORT_CHOICES = (Object.keys(SPORT_LABELS) as Activity['sport'][]).map((value) => ({
+  value,
+  label: SPORT_LABELS[value],
+}));
+
 export function sportLabel(activity: Pick<Activity, 'sport' | 'source_sport'>): string {
   const label = SPORT_LABELS[activity.sport];
   return activity.sport === 'other' && activity.source_sport

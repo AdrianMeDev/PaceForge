@@ -1,23 +1,39 @@
 <section class="activities">
-  <h1>Activities</h1>
+  <app-page-header title="Activities" [subtitle]="subtitle()" />
 
   @switch (view()) {
     @case ('loading') {
-      <p role="status">Loading…</p>
+      <div class="grid gap-4" role="status" aria-label="Loading">
+        <div class="skeleton h-40"></div>
+        <div class="skeleton h-28"></div>
+        <div class="skeleton h-40"></div>
+      </div>
     }
     @case ('unreachable') {
       <p class="alert" role="alert">Your activities could not be loaded.</p>
-      <p><button type="button" class="primary" (click)="load()">Try again</button></p>
+      <p>
+        <button type="button" class="btn btn-primary btn-sm" (click)="load()">Try again</button>
+      </p>
     }
     @case ('signed_out') {
       <p class="alert" role="alert">Your session has ended. Please sign in again.</p>
       <p><a routerLink="/login">Go to sign in</a></p>
     }
     @case ('ready') {
-      <div class="panel">
-        <h2>Import</h2>
-        <div class="field">
-          <label for="file">FIT, TCX or GPX files</label>
+      <div class="card">
+        <h2 class="m-0 mb-3 text-lg font-semibold">Import</h2>
+        <div
+          class="drop-zone field rounded-md border-2 border-dashed border-border p-4 text-center transition-colors"
+          data-testid="drop-zone"
+          [class.border-accent]="dragging()"
+          [class.bg-accent-soft]="dragging()"
+          [attr.data-dragging]="dragging()"
+          (dragover)="dragOver($event)"
+          (dragleave)="dragLeave($event)"
+          (drop)="drop($event)"
+        >
+          <app-icon name="upload" class="text-2xl text-muted" />
+          <label for="file" class="mt-1">Drop FIT, TCX or GPX files here, or choose them</label>
           <input
             id="file"
             type="file"
@@ -94,64 +110,88 @@
         <p class="notice" role="status">{{ text }}</p>
       }
 
-      <h2 class="list-title">Your activities</h2>
-      @if (page().count === 0) {
-        <p class="hint">
-          No activities yet. Import a FIT, TCX or GPX file above, or enter a session by hand.
-        </p>
+      <h2 class="mb-3 mt-8 text-lg font-semibold">Your activities</h2>
+      @if (page().count === 0 && filter() === null) {
+        <div class="empty-state">
+          <p class="m-0">
+            No activities yet. Import a FIT, TCX or GPX file above, or enter a session by hand.
+          </p>
+        </div>
       } @else {
-        <div class="table-wrap" [attr.aria-busy]="refreshing()">
-          <table>
-            <thead>
-              <tr>
-                <th scope="col">Date</th>
-                <th scope="col">Sport</th>
-                <th scope="col">Duration</th>
-                <th scope="col">Distance</th>
-                <th scope="col">Avg. heart rate</th>
-                <th scope="col">RPE</th>
-                <th scope="col">Load</th>
-                <th scope="col">Source</th>
-                <th scope="col"><span class="visually-hidden">Actions</span></th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (activity of page().results; track activity.id) {
-                <tr
-                  [id]="'activity-' + activity.id"
-                  tabindex="-1"
-                  [attr.data-highlight]="highlighted() === activity.id"
-                >
-                  <td>{{ activity.start_time | date: 'medium' }}</td>
-                  <td>{{ sport(activity) }}</td>
-                  <td>{{ duration(activity) }}</td>
-                  <td>{{ distance(activity.distance_m) }}</td>
-                  <td>{{ heartRate(activity.avg_heart_rate) }}</td>
-                  <td>{{ rpeText(activity.rpe) }}</td>
-                  <td>{{ loadText(activity.load) }}</td>
-                  <td>{{ source(activity.source) }}</td>
-                  <td class="row-actions">
-                    @if (confirming() === activity.id) {
-                      <span
-                        class="confirm"
-                        role="group"
-                        [attr.aria-label]="'Delete ' + sport(activity)"
-                      >
-                        Delete this activity and its stored file, if it has one?
-                        <button
-                          type="button"
-                          class="primary"
-                          [disabled]="busy()"
-                          (click)="delete(activity)"
-                        >
-                          Yes, delete
-                        </button>
-                        <button type="button" class="link" (click)="cancelDelete()">Cancel</button>
-                      </span>
-                    } @else {
+        <ul
+          class="m-0 mb-4 flex list-none flex-wrap gap-2 p-0"
+          aria-label="Filter by sport"
+          data-testid="sport-filter"
+        >
+          <li>
+            <button
+              type="button"
+              class="chip"
+              data-testid="filter-all"
+              [attr.aria-pressed]="filter() === null"
+              [disabled]="busy() || refreshing()"
+              (click)="filterBy(null)"
+            >
+              All
+            </button>
+          </li>
+          @for (choice of sports; track choice.value) {
+            <li>
+              <button
+                type="button"
+                class="chip"
+                [attr.data-testid]="'filter-' + choice.value"
+                [attr.aria-pressed]="filter() === choice.value"
+                [disabled]="busy() || refreshing()"
+                (click)="filterBy(choice.value)"
+              >
+                {{ choice.label }}
+              </button>
+            </li>
+          }
+        </ul>
+        @if (page().count === 0) {
+          <div class="empty-state" data-testid="filter-empty">
+            <p class="m-0">No {{ filterLabel() }} activities.</p>
+            <button type="button" class="btn btn-secondary btn-sm" (click)="filterBy(null)">
+              Show all
+            </button>
+          </div>
+        } @else {
+          <div class="table-wrap" [attr.aria-busy]="refreshing()">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Date</th>
+                  <th scope="col">Sport</th>
+                  <th scope="col">Duration</th>
+                  <th scope="col">Distance</th>
+                  <th scope="col">Avg. heart rate</th>
+                  <th scope="col">RPE</th>
+                  <th scope="col">Load</th>
+                  <th scope="col">Source</th>
+                  <th scope="col"><span class="visually-hidden">Actions</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (activity of page().results; track activity.id) {
+                  <tr
+                    [id]="'activity-' + activity.id"
+                    tabindex="-1"
+                    [attr.data-highlight]="highlighted() === activity.id"
+                  >
+                    <td data-label="Date">{{ activity.start_time | date: 'medium' }}</td>
+                    <td data-label="Sport">{{ sport(activity) }}</td>
+                    <td data-label="Duration">{{ duration(activity) }}</td>
+                    <td data-label="Distance">{{ distance(activity.distance_m) }}</td>
+                    <td data-label="Avg. heart rate">{{ heartRate(activity.avg_heart_rate) }}</td>
+                    <td data-label="RPE">{{ rpeText(activity.rpe) }}</td>
+                    <td data-label="Load">{{ loadText(activity.load) }}</td>
+                    <td data-label="Source">{{ source(activity.source) }}</td>
+                    <td class="row-actions">
                       <button
                         type="button"
-                        class="secondary"
+                        class="btn btn-secondary btn-sm"
                         [disabled]="busy()"
                         [attr.aria-label]="
                           'Delete ' +
@@ -163,34 +203,50 @@
                       >
                         Delete
                       </button>
-                    }
-                  </td>
-                </tr>
-              }
-            </tbody>
-          </table>
-        </div>
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
 
-        <nav class="paging" aria-label="Pages">
-          <button
-            type="button"
-            class="secondary"
-            [disabled]="!hasPrevious() || busy() || refreshing()"
-            (click)="goTo(previousOffset())"
-          >
-            Previous
-          </button>
-          <span data-testid="range">{{ first() }}–{{ last() }} of {{ page().count }}</span>
-          <button
-            type="button"
-            class="secondary"
-            [disabled]="!hasNext() || busy() || refreshing()"
-            (click)="goTo(nextOffset())"
-          >
-            Next
-          </button>
-        </nav>
+          <nav class="paging" aria-label="Pages">
+            <button
+              type="button"
+              class="btn btn-secondary btn-sm"
+              [disabled]="!hasPrevious() || busy() || refreshing()"
+              (click)="goTo(previousOffset())"
+            >
+              Previous
+            </button>
+            <span data-testid="range">{{ first() }}–{{ last() }} of {{ page().count }}</span>
+            <button
+              type="button"
+              class="btn btn-secondary btn-sm"
+              [disabled]="!hasNext() || busy() || refreshing()"
+              (click)="goTo(nextOffset())"
+            >
+              Next
+            </button>
+          </nav>
+        }
       }
+      @let doomed = confirming();
+      <app-confirm-dialog
+        title="Delete this activity?"
+        [message]="
+          doomed
+            ? 'Delete the ' +
+              sport(doomed) +
+              ' of ' +
+              (doomed.start_time | date: 'medium') +
+              ' and the file stored with it, if there is one? This cannot be undone.'
+            : ''
+        "
+        confirmLabel="Delete activity"
+        [danger]="true"
+        (confirmed)="delete()"
+      />
     }
   }
 </section>

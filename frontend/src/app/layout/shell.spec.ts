@@ -72,6 +72,16 @@ describe('Shell', () => {
       (a.textContent ?? '').trim(),
     );
 
+  it('shows the logo and the name as a link to the start page', async () => {
+    const { page } = await setup();
+
+    const brand = page.querySelector<HTMLAnchorElement>('[data-testid="brand"]');
+    expect(brand?.getAttribute('href')).toBe('/');
+    expect(brand?.textContent?.trim()).toBe('PaceForge');
+    // The name is next to it, so the picture says nothing of its own.
+    expect(brand?.querySelector('img')?.getAttribute('alt')).toBe('');
+  });
+
   it('shows the display name of the signed-in user', async () => {
     const { page } = await setup();
 

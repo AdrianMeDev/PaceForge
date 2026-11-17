@@ -68,6 +68,19 @@ function deferred<T>() {
 }
 
 describe('ActivitiesPage', () => {
+  // jsdom has no modal dialog: this is what the browser does that the question relies on.
+  beforeAll(() => {
+    HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
+      this.setAttribute('open', '');
+    };
+    HTMLDialogElement.prototype.close = function (this: HTMLDialogElement) {
+      if (this.hasAttribute('open')) {
+        this.removeAttribute('open');
+        this.dispatchEvent(new Event('close'));
+      }
+    };
+  });
+
   let api: ReturnType<typeof createApiStub>;
   let fixture: ComponentFixture<ActivitiesPage>;
   let page: HTMLElement;
@@ -138,7 +151,9 @@ describe('ActivitiesPage', () => {
       fixture = TestBed.createComponent(ActivitiesPage);
       fixture.detectChanges();
 
-      expect(fixture.nativeElement.textContent).toContain('Loading');
+      expect(
+        fixture.nativeElement.querySelector('[role="status"][aria-label="Loading"]'),
+      ).toBeTruthy();
       expect(fixture.nativeElement.querySelector('input')).toBeNull();
     });
 
@@ -174,12 +189,88 @@ describe('ActivitiesPage', () => {
       expect(page.querySelector('input')).toBeNull();
     });
 
+    it('says how many activities there are under the title', async () => {
+      await setup(ok([RUN]));
+
+      expect(query(page, '[data-testid=subtitle]').textContent).toBe('1 activity');
+    });
+
+    it('gives every value the name of its column, for the card of a phone', async () => {
+      await setup(ok([RUN]));
+
+      const labels = Array.from(rows()[0].querySelectorAll('td[data-label]')).map((cell) =>
+        cell.getAttribute('data-label'),
+      );
+      expect(labels).toEqual([
+        'Date',
+        'Sport',
+        'Duration',
+        'Distance',
+        'Avg. heart rate',
+        'RPE',
+        'Load',
+        'Source',
+      ]);
+    });
+
     it('shows an empty state', async () => {
       await setup(ok([]));
 
       expect(text()).toContain('No activities yet.');
       expect(page.querySelector('table')).toBeNull();
       expect(page.querySelector('.paging')).toBeNull();
+    });
+  });
+
+  describe('the drop zone', () => {
+    /** A drop (or a drag) as the browser sends it, with the files it carries. */
+    function drag(type: 'dragover' | 'dragleave' | 'drop', ...files: File[]): Event {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(event, 'dataTransfer', { value: { files } });
+      query(page, '[data-testid="drop-zone"]').dispatchEvent(event);
+      return event;
+    }
+
+    it('imports dropped files one after the other, like chosen ones', async () => {
+      await setup(ok([]));
+      api.import.mockResolvedValue({ kind: 'imported', activity: RUN });
+
+      const event = drag('drop', new File(['a'], 'a.fit'), new File(['b'], 'b.tcx'));
+      await settle(fixture);
+
+      expect(event.defaultPrevented).toBe(true);
+      expect(api.import.mock.calls.map(([sent]) => sent.name)).toEqual(['a.fit', 'b.tcx']);
+      expect(results()).toHaveLength(2);
+    });
+
+    it('ignores a drop without files and one while an import runs', async () => {
+      await setup(ok([]));
+      let finish!: (result: ImportActivityResult) => void;
+      api.import.mockReturnValue(new Promise<ImportActivityResult>((r) => (finish = r)));
+
+      drag('drop');
+      expect(api.import).not.toHaveBeenCalled();
+
+      drag('drop', new File(['a'], 'a.fit'));
+      await fixture.whenStable();
+      drag('drop', new File(['b'], 'b.fit'));
+      expect(api.import).toHaveBeenCalledTimes(1);
+
+      finish({ kind: 'imported', activity: RUN });
+      await settle(fixture);
+    });
+
+    it('is highlighted while files are over it, and not while it is busy', async () => {
+      await setup(ok([]));
+      const zone = () => query(page, '[data-testid="drop-zone"]');
+
+      expect(drag('dragover').defaultPrevented).toBe(true);
+      fixture.detectChanges();
+      expect(zone().getAttribute('data-dragging')).toBe('true');
+
+      drag('dragleave');
+      fixture.detectChanges();
+      expect(zone().getAttribute('data-dragging')).toBe('false');
     });
   });
 
@@ -640,7 +731,10 @@ describe('ActivitiesPage', () => {
       deleteButton('Running').click();
       await settle(fixture);
 
-      expect(text()).toContain('Delete this activity and its stored file, if it has one?');
+      const dialog = query<HTMLDialogElement>(page, '[data-testid="confirm-dialog"]');
+      expect(dialog.open).toBe(true);
+      expect(dialog.textContent).toContain('Delete the Running of');
+      expect(dialog.textContent).toContain('and the file stored with it, if there is one?');
       expect(api.delete).not.toHaveBeenCalled();
     });
 
@@ -648,10 +742,11 @@ describe('ActivitiesPage', () => {
       deleteButton('Running').click();
       await settle(fixture);
 
-      await click('Cancel');
+      query<HTMLButtonElement>(page, '[data-testid="confirm-dialog-cancel"]').click();
+      await settle(fixture);
 
       expect(api.delete).not.toHaveBeenCalled();
-      expect(text()).not.toContain('Delete this activity');
+      expect(query<HTMLDialogElement>(page, '[data-testid="confirm-dialog"]').open).toBe(false);
       expect(rows()).toHaveLength(2);
       expect(api.list).toHaveBeenCalledTimes(1);
     });
@@ -662,8 +757,10 @@ describe('ActivitiesPage', () => {
       deleteButton('Other (Rowing)').click();
       await settle(fixture);
 
-      expect(page.querySelectorAll('.confirm')).toHaveLength(1);
-      expect(query(page, '.confirm').getAttribute('aria-label')).toBe('Delete Other (Rowing)');
+      expect(page.querySelectorAll('[data-testid="confirm-dialog"]')).toHaveLength(1);
+      expect(query(page, '[data-testid="confirm-dialog-message"]').textContent).toContain(
+        'Delete the Other (Rowing) of',
+      );
     });
 
     it('deletes the confirmed activity and refreshes the list', async () => {
@@ -672,7 +769,7 @@ describe('ActivitiesPage', () => {
       deleteButton('Running').click();
       await settle(fixture);
 
-      await click('Yes, delete');
+      await click('Delete activity');
 
       expect(api.delete).toHaveBeenCalledExactlyOnceWith('a1');
       expect(rows()).toHaveLength(1);
@@ -687,7 +784,7 @@ describe('ActivitiesPage', () => {
       deleteButton('Running').click();
       await settle(fixture);
 
-      const confirm = button('Yes, delete');
+      const confirm = button('Delete activity');
       confirm.click();
       confirm.click(); // before the page has been drawn again
       pending.resolve({ kind: 'deleted' });
@@ -702,7 +799,7 @@ describe('ActivitiesPage', () => {
       deleteButton('Running').click();
       await settle(fixture);
 
-      await click('Yes, delete');
+      await click('Delete activity');
 
       expect(text()).toContain('The activity was already gone.');
       expect(rows()).toHaveLength(1);
@@ -713,7 +810,7 @@ describe('ActivitiesPage', () => {
       deleteButton('Running').click();
       await settle(fixture);
 
-      await click('Yes, delete');
+      await click('Delete activity');
 
       expect(alerts()).toEqual(['Something went wrong. Please try again.']);
       expect(rows()).toHaveLength(2);
@@ -725,7 +822,7 @@ describe('ActivitiesPage', () => {
       deleteButton('Running').click();
       await settle(fixture);
 
-      await click('Yes, delete');
+      await click('Delete activity');
 
       expect(alerts()).toEqual(['Your session has ended. Please sign in again.']);
     });
@@ -736,9 +833,86 @@ describe('ActivitiesPage', () => {
       deleteButton('Running').click();
       await settle(fixture);
 
-      await click('Yes, delete');
+      await click('Delete activity');
 
       expect(text()).toContain('No activities yet.');
+    });
+  });
+
+  describe('the sport filter', () => {
+    const press = async (id: string) => {
+      query<HTMLButtonElement>(page, `[data-testid="${id}"]`).click();
+      await settle(fixture);
+    };
+
+    it('offers all and every sport, with all pressed first', async () => {
+      await setup(ok([RUN]));
+
+      const chips = Array.from(page.querySelectorAll('[data-testid="sport-filter"] button'));
+      expect(chips.map((chip) => chip.textContent?.trim())).toEqual([
+        'All',
+        'Running',
+        'Cycling',
+        'Swimming',
+        'Strength',
+        'Other',
+      ]);
+      expect(query(page, '[data-testid="filter-all"]').getAttribute('aria-pressed')).toBe('true');
+    });
+
+    it('asks for one sport from the start and says which one is pressed', async () => {
+      await setup(ok(many(20), 45));
+      api.list.mockResolvedValue(ok([RUN], 1));
+
+      await press('filter-running');
+
+      expect(api.list).toHaveBeenLastCalledWith(20, 0, 'running');
+      expect(query(page, '[data-testid="filter-running"]').getAttribute('aria-pressed')).toBe(
+        'true',
+      );
+      expect(query(page, '[data-testid="filter-all"]').getAttribute('aria-pressed')).toBe('false');
+    });
+
+    it('keeps the sport while paging and goes back to the first page when it changes', async () => {
+      await setup(ok(many(20), 45));
+      api.list.mockResolvedValue(ok(many(20), 45));
+      await press('filter-cycling');
+      await click('Next');
+
+      expect(api.list).toHaveBeenLastCalledWith(20, 20, 'cycling');
+
+      await press('filter-swimming');
+
+      expect(api.list).toHaveBeenLastCalledWith(20, 0, 'swimming');
+    });
+
+    it('shows all again without a sport', async () => {
+      await setup(ok([RUN]));
+      api.list.mockResolvedValue(ok([RUN], 1));
+      await press('filter-running');
+
+      await press('filter-all');
+
+      expect(api.list.mock.calls.at(-1)).toEqual([20, 0]);
+    });
+
+    it('says when a sport has no activities, and keeps the filter to change it', async () => {
+      await setup(ok([RUN]));
+      api.list.mockResolvedValue(ok([], 0));
+
+      await press('filter-swimming');
+
+      expect(query(page, '[data-testid="filter-empty"]').textContent).toContain(
+        'No swimming activities.',
+      );
+      expect(page.querySelector('table')).toBeNull();
+      expect(query(page, '[data-testid="sport-filter"]')).toBeTruthy();
+      expect(text()).not.toContain('No activities yet.');
+
+      api.list.mockResolvedValue(ok([RUN], 1));
+      await click('Show all');
+
+      expect(rows()).toHaveLength(1);
     });
   });
 
@@ -753,7 +927,7 @@ describe('ActivitiesPage', () => {
 
       page.querySelector<HTMLButtonElement>('button[aria-label^="Delete"]')?.click();
       await settle(fixture);
-      await click('Yes, delete');
+      await click('Delete activity');
 
       expect(api.list.mock.calls).toEqual([
         [20, 20],

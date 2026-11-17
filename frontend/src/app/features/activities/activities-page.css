@@ -2,15 +2,6 @@
   max-width: 64rem;
 }
 
-h2 {
-  margin: 0 0 0.75rem;
-  font-size: 1.15rem;
-}
-
-.list-title {
-  margin-top: 2rem;
-}
-
 .results {
   margin: 0;
   padding: 0;
@@ -33,13 +24,26 @@ h2 {
   color: var(--danger);
 }
 
-button.secondary {
-  padding: 0.6rem 1rem;
+.chip {
+  padding: 0.3rem 0.8rem;
   border: 1px solid var(--border);
-  border-radius: 6px;
-  background: transparent;
+  border-radius: 999px;
+  background: var(--surface);
   color: var(--text);
+  font: inherit;
   cursor: pointer;
+}
+
+.chip[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.chip:disabled {
+  cursor: progress;
+  opacity: 0.6;
 }
 
 .table-wrap {
@@ -67,11 +71,61 @@ tr[data-highlight='true'] {
   white-space: nowrap;
 }
 
-.confirm {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
+/* Below 40rem a row is a card: the head of the table is hidden, each value carries its column. */
+@media (max-width: 39.99rem) {
+  .table-wrap {
+    overflow: visible;
+  }
+
+  table,
+  tbody {
+    display: block;
+  }
+
+  thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  tr {
+    display: block;
+    margin-bottom: 0.75rem;
+    padding: 0.5rem 0.8rem;
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    background: var(--surface);
+  }
+
+  tr[data-highlight='true'] {
+    background: var(--info-bg);
+  }
+
+  td {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.25rem 0;
+    border: 0;
+    text-align: right;
+  }
+
+  td::before {
+    content: attr(data-label);
+    color: var(--muted);
+    text-align: left;
+  }
+
+  td:first-child {
+    font-weight: 600;
+  }
+
+  .row-actions {
+    justify-content: flex-end;
+    padding-top: 0.5rem;
+  }
 }
 
 .paging {

@@ -1,6 +1,9 @@
 <div class="shell">
   <aside class="side">
-    <span class="brand">PaceForge</span>
+    <a class="brand" routerLink="/" data-testid="brand">
+      <img src="logo.png" alt="" width="28" height="28" />
+      <span>PaceForge</span>
+    </a>
     <nav aria-label="Main">
       @for (group of groups(); track group.label) {
         <div class="group" [attr.data-group]="group.label">

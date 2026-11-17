@@ -54,11 +54,15 @@ interface Reply {
 export class ActivitiesApi {
   private readonly http = inject(HttpClient);
 
-  /** One page, newest first. The server caps `limit` at 200. */
-  async list(limit: number, offset: number): Promise<ListActivitiesResult> {
+  /** One page, newest first; with `sport` only that sport. The server caps `limit` at 200. */
+  async list(limit: number, offset: number, sport?: Sport): Promise<ListActivitiesResult> {
+    const params: Record<string, string> = { limit: String(limit), offset: String(offset) };
+    if (sport !== undefined) {
+      params['sport'] = sport;
+    }
     const reply = await this.send(
       this.http.get(URL, {
-        params: { limit: String(limit), offset: String(offset) },
+        params,
         observe: 'response',
       }),
     );

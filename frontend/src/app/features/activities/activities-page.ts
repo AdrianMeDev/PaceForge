@@ -1,5 +1,5 @@
 import { DOCUMENT, DatePipe } from '@angular/common';
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { ActivitiesApi } from '../../core/activities/activities-api';
 import {
@@ -8,6 +8,7 @@ import {
   ImportActivityResult,
 } from '../../core/activities/activities-models';
 import {
+  SPORT_CHOICES,
   formatDistance,
   formatDuration,
   formatHeartRate,
@@ -16,6 +17,9 @@ import {
   sourceLabel,
   sportLabel,
 } from './activity-format';
+import { ConfirmDialog } from '../../shared/confirm-dialog';
+import { Icon } from '../../shared/icon';
+import { PageHeader } from '../../shared/page-header';
 import { ManualActivityForm } from './manual-activity-form';
 
 type View = 'loading' | 'unreachable' | 'ready' | 'signed_out';
@@ -39,7 +43,7 @@ const REFRESH_FAILED = 'The list could not be refreshed. Please try again.';
  */
 @Component({
   selector: 'app-activities-page',
-  imports: [RouterLink, DatePipe, ManualActivityForm],
+  imports: [RouterLink, DatePipe, ConfirmDialog, Icon, PageHeader, ManualActivityForm],
   templateUrl: './activities-page.html',
   styleUrls: ['../auth/auth-form.css', './activities-page.css'],
 })
@@ -58,9 +62,22 @@ export class ActivitiesPage implements OnInit {
   protected readonly results = signal<FileResult[]>([]);
   protected readonly errors = signal<string[]>([]);
   protected readonly notice = signal<string | null>(null);
-  protected readonly confirming = signal<string | null>(null);
+  /** The activity the dialog asks about. */
+  protected readonly confirming = signal<Activity | null>(null);
+  private readonly deleteDialog = viewChild(ConfirmDialog);
   protected readonly highlighted = signal<string | null>(null);
+  /** The sport the list is kept to; `null`: all of them. */
+  protected readonly filter = signal<Activity['sport'] | null>(null);
+  /** Files are being dragged over the drop zone. */
+  protected readonly dragging = signal(false);
 
+  /** The line under the title: how many activities there are. */
+  protected readonly subtitle = computed(() => {
+    const count = this.page().count;
+    return this.view() !== 'ready' || count === 0
+      ? ''
+      : `${count} ${count === 1 ? 'activity' : 'activities'}`;
+  });
   protected readonly first = computed(() => (this.page().results.length ? this.offset() + 1 : 0));
   protected readonly last = computed(() => this.offset() + this.page().results.length);
   protected readonly hasPrevious = computed(() => this.offset() > 0);
@@ -69,6 +86,10 @@ export class ActivitiesPage implements OnInit {
   protected readonly nextOffset = computed(() => this.offset() + PAGE_SIZE);
   protected readonly listedIds = computed(() => this.page().results.map((a) => a.id));
 
+  protected readonly sports = SPORT_CHOICES;
+  protected readonly filterLabel = computed(
+    () => SPORT_CHOICES.find((choice) => choice.value === this.filter())?.label.toLowerCase() ?? '',
+  );
   protected readonly sport = sportLabel;
   protected readonly source = sourceLabel;
   protected readonly distance = formatDistance;
@@ -100,6 +121,40 @@ export class ActivitiesPage implements OnInit {
     await this.importAll(files);
   }
 
+  /** Files over the zone: the browser must be told that they may be dropped, or it opens them. */
+  protected dragOver(event: DragEvent): void {
+    event.preventDefault();
+    this.dragging.set(!this.busy());
+  }
+
+  protected dragLeave(event: DragEvent): void {
+    const zone = event.currentTarget as HTMLElement;
+    if (!(event.relatedTarget instanceof Node) || !zone.contains(event.relatedTarget)) {
+      this.dragging.set(false);
+    }
+  }
+
+  /** Dropped files go the way chosen ones go; while something runs they are ignored. */
+  protected async drop(event: DragEvent): Promise<void> {
+    event.preventDefault();
+    this.dragging.set(false);
+    const files = Array.from(event.dataTransfer?.files ?? []);
+    if (files.length === 0 || this.busy()) {
+      return;
+    }
+    await this.importAll(files);
+  }
+
+  /** Keeps the list to one sport (or, with `null`, shows all): it starts again at the newest. */
+  protected async filterBy(sport: Activity['sport'] | null): Promise<void> {
+    if (this.busy() || this.refreshing()) {
+      return;
+    }
+    this.clearMessages();
+    this.filter.set(sport);
+    await this.refresh(0);
+  }
+
   /** A session was entered by hand: the list starts again at the newest activity. */
   protected async entered(): Promise<void> {
     this.clearMessages();
@@ -120,15 +175,14 @@ export class ActivitiesPage implements OnInit {
 
   protected askDelete(activity: Activity): void {
     this.clearMessages();
-    this.confirming.set(activity.id);
+    this.confirming.set(activity);
+    this.deleteDialog()?.open();
   }
 
-  protected cancelDelete(): void {
-    this.confirming.set(null);
-  }
-
-  protected async delete(activity: Activity): Promise<void> {
-    if (this.busy()) {
+  /** The dialog was answered with "Delete activity". */
+  protected async delete(): Promise<void> {
+    const activity = this.confirming();
+    if (this.busy() || activity === null) {
       return;
     }
     this.clearMessages();
@@ -211,7 +265,11 @@ export class ActivitiesPage implements OnInit {
 
   private async fetch(offset: number): Promise<'ok' | 'failed' | 'signed_out'> {
     try {
-      const result = await this.api.list(PAGE_SIZE, offset);
+      const sport = this.filter();
+      const result =
+        sport === null
+          ? await this.api.list(PAGE_SIZE, offset)
+          : await this.api.list(PAGE_SIZE, offset, sport);
       if (result.kind === 'forbidden') {
         return 'signed_out';
       }
