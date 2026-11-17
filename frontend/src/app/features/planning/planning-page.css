@@ -70,6 +70,10 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+.findings-box {
+  margin: 0.75rem 0;
+}
+
 .findings,
 .problems {
   margin: 0.75rem 0;

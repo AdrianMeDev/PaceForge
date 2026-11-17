@@ -15,6 +15,7 @@ import {
   dayLabel,
   exportSummaryText,
   findingPlace,
+  findingsSummary,
   minutesText,
   pushText,
   WEEK_NOTE_MAX,
@@ -104,6 +105,10 @@ export class PlanningPage implements OnInit {
   protected readonly days = computed<PlanDay[]>(() => this.group(this.plan()));
   protected readonly findings = computed(() => this.plan()?.report?.findings ?? []);
   /** The plan is being changed by hand: nothing else may start until that is saved or dropped. */
+  protected readonly findingsText = computed(() => findingsSummary(this.findings()));
+  protected readonly hasFindingErrors = computed(() =>
+    this.findings().some((finding) => finding.severity === 'error'),
+  );
   protected readonly changing = signal(false);
   protected readonly busy = computed(() => this.work() !== null || this.changing());
   /** A draft and a confirmed plan can be changed; a version that was replaced is restored first. */

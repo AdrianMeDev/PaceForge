@@ -7,6 +7,7 @@ import {
   PushOutcome,
   Segment,
   SegmentKind,
+  Severity,
   Sport,
   WorkoutExport,
   WorkoutGoal,
@@ -159,6 +160,20 @@ export function segmentText(segment: Segment): string {
   const target = targetText(segment.zone_system, segment.zone, segment.target);
   const text = `${repeat}${length} ${SEGMENT_LABELS[segment.kind]}`;
   return target === '' ? text : `${text}, ${target.charAt(0).toLowerCase()}${target.slice(1)}`;
+}
+
+/** What the checks found in a line: "1 error, 2 notes". */
+export function findingsSummary(findings: { severity: Severity }[]): string {
+  const errors = findings.filter((finding) => finding.severity === 'error').length;
+  const notes = findings.length - errors;
+  const parts: string[] = [];
+  if (errors > 0) {
+    parts.push(errors === 1 ? '1 error' : `${errors} errors`);
+  }
+  if (notes > 0) {
+    parts.push(notes === 1 ? '1 note' : `${notes} notes`);
+  }
+  return parts.join(', ');
 }
 
 /**

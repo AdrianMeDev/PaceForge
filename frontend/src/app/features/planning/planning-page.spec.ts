@@ -735,6 +735,20 @@ describe('PlanningPage', () => {
       expect(item.getAttribute('data-severity')).toBe('warning');
     });
 
+    it('are folded away behind a summary, open when there is an error', async () => {
+      await setup();
+
+      expect(byId('findings-summary')?.textContent?.trim()).toBe('What the checks say: 1 error');
+      expect(query<HTMLDetailsElement>(page, '[data-testid="findings-box"]').open).toBe(true);
+    });
+
+    it('stay folded when there are only notes', async () => {
+      await setup({ plans: { [DRAFT_ID]: { kind: 'ok', plan: WARNED } } });
+
+      expect(byId('findings-summary')?.textContent?.trim()).toBe('What the checks say: 1 note');
+      expect(query<HTMLDetailsElement>(page, '[data-testid="findings-box"]').open).toBe(false);
+    });
+
     it('say when there is nothing to point out', async () => {
       await setup({ plans: { [DRAFT_ID]: { kind: 'ok', plan: VALID } } });
 

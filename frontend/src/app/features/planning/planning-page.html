@@ -224,14 +224,23 @@
 
             @if (shown.report; as report) {
               @if (findings().length > 0) {
-                <ul class="findings" aria-label="What the checks say">
-                  @for (finding of findings(); track $index) {
-                    <li [attr.data-severity]="finding.severity">
-                      <strong>{{ finding.severity === 'error' ? 'Error' : 'Note' }}</strong>
-                      · {{ place(finding.path) }}: {{ finding.message }}
-                    </li>
-                  }
-                </ul>
+                <details
+                  class="findings-box"
+                  data-testid="findings-box"
+                  [open]="hasFindingErrors()"
+                >
+                  <summary class="cursor-pointer font-semibold" data-testid="findings-summary">
+                    What the checks say: {{ findingsText() }}
+                  </summary>
+                  <ul class="findings" aria-label="What the checks say">
+                    @for (finding of findings(); track $index) {
+                      <li [attr.data-severity]="finding.severity">
+                        <strong>{{ finding.severity === 'error' ? 'Error' : 'Note' }}</strong>
+                        · {{ place(finding.path) }}: {{ finding.message }}
+                      </li>
+                    }
+                  </ul>
+                </details>
               } @else {
                 <p class="hint" data-testid="all-clear">The checks found nothing to point out.</p>
               }
