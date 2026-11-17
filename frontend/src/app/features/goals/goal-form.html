@@ -1,5 +1,5 @@
 <form class="panel" novalidate (submit)="submit($event)">
-  <h2>{{ goal() ? 'Edit goal' : 'Add goal' }}</h2>
+  <h2 class="m-0 mb-3 text-lg font-semibold">{{ goal() ? 'Edit goal' : 'Add goal' }}</h2>
 
   @if (errors()['form']; as message) {
     <p class="alert" role="alert">{{ message }}</p>
@@ -38,140 +38,156 @@
   </div>
 
   @if (kind() === 'race') {
-    <div class="field">
-      <label for="goal-discipline">Discipline</label>
-      <select
-        id="goal-discipline"
-        [attr.aria-invalid]="errors()['discipline'] ? true : null"
-        [attr.aria-describedby]="errors()['discipline'] ? 'goal-discipline-error' : null"
-        (change)="chooseDiscipline($event)"
-      >
-        <option value="" [selected]="discipline() === ''">Choose…</option>
-        @for (entry of disciplines; track entry[0]) {
-          <option [value]="entry[0]" [selected]="discipline() === entry[0]">{{ entry[1] }}</option>
-        }
-      </select>
-      @if (errors()['discipline']; as message) {
-        <p class="field-error" id="goal-discipline-error" role="alert">{{ message }}</p>
-      }
-    </div>
-
-    <div class="field">
-      <label for="goal-date">Date of the race</label>
-      <input
-        id="goal-date"
-        type="date"
-        [value]="date()"
-        [attr.aria-invalid]="errors()['date'] ? true : null"
-        [attr.aria-describedby]="errors()['date'] ? 'goal-date-error' : null"
-        (input)="date.set(read($event))"
-      />
-      @if (errors()['date']; as message) {
-        <p class="field-error" id="goal-date-error" role="alert">{{ message }}</p>
-      }
-    </div>
-
-    <div class="field">
-      <label for="goal-distance">Distance</label>
-      <select id="goal-distance" (change)="chooseDistance($event)">
-        <option value="" [selected]="distanceChoice() === ''">No distance</option>
-        @for (preset of presets(); track preset.meters) {
-          <option [value]="preset.meters" [selected]="distanceChoice() === '' + preset.meters">
-            {{ preset.label }}
-          </option>
-        }
-        <option [value]="other" [selected]="distanceChoice() === other">Other distance</option>
-      </select>
-    </div>
-
-    @if (distanceChoice() === other) {
+    <div class="form-grid">
       <div class="field">
-        <label for="goal-distance-km">Distance in km</label>
-        <input
-          id="goal-distance-km"
-          type="text"
-          inputmode="decimal"
-          autocomplete="off"
-          [value]="distanceKm()"
-          [attr.aria-invalid]="errors()['distance'] ? true : null"
-          [attr.aria-describedby]="errors()['distance'] ? 'goal-distance-error' : null"
-          (input)="distanceKm.set(read($event))"
-        />
-        @if (errors()['distance']; as message) {
-          <p class="field-error" id="goal-distance-error" role="alert">{{ message }}</p>
+        <label for="goal-discipline">Discipline</label>
+        <select
+          id="goal-discipline"
+          [attr.aria-invalid]="errors()['discipline'] ? true : null"
+          [attr.aria-describedby]="errors()['discipline'] ? 'goal-discipline-error' : null"
+          (change)="chooseDiscipline($event)"
+        >
+          <option value="" [selected]="discipline() === ''">Choose…</option>
+          @for (entry of disciplines; track entry[0]) {
+            <option [value]="entry[0]" [selected]="discipline() === entry[0]">
+              {{ entry[1] }}
+            </option>
+          }
+        </select>
+        @if (errors()['discipline']; as message) {
+          <p class="field-error" id="goal-discipline-error" role="alert">{{ message }}</p>
         }
       </div>
-    }
 
-    <div class="field">
-      <label for="goal-time">Target time (optional)</label>
-      <input
-        id="goal-time"
-        type="text"
-        autocomplete="off"
-        aria-describedby="goal-time-hint"
-        [value]="time()"
-        [attr.aria-invalid]="errors()['time'] ? true : null"
-        (input)="time.set(read($event))"
-      />
-      @if (errors()['time']; as message) {
-        <p class="field-error" role="alert">{{ message }}</p>
+      <div class="field">
+        <label for="goal-date">Date of the race</label>
+        <input
+          id="goal-date"
+          type="date"
+          [value]="date()"
+          [attr.aria-invalid]="errors()['date'] ? true : null"
+          [attr.aria-describedby]="errors()['date'] ? 'goal-date-error' : null"
+          (input)="date.set(read($event))"
+        />
+        @if (errors()['date']; as message) {
+          <p class="field-error" id="goal-date-error" role="alert">{{ message }}</p>
+        }
+      </div>
+
+      <div class="field">
+        <label for="goal-distance">Distance</label>
+        <select id="goal-distance" (change)="chooseDistance($event)">
+          <option value="" [selected]="distanceChoice() === ''">No distance</option>
+          @for (preset of presets(); track preset.meters) {
+            <option [value]="preset.meters" [selected]="distanceChoice() === '' + preset.meters">
+              {{ preset.label }}
+            </option>
+          }
+          <option [value]="other" [selected]="distanceChoice() === other">Other distance</option>
+        </select>
+      </div>
+
+      @if (distanceChoice() === other) {
+        <div class="field">
+          <label for="goal-distance-km">Distance in km</label>
+          <input
+            id="goal-distance-km"
+            type="text"
+            inputmode="decimal"
+            autocomplete="off"
+            [value]="distanceKm()"
+            [attr.aria-invalid]="errors()['distance'] ? true : null"
+            [attr.aria-describedby]="errors()['distance'] ? 'goal-distance-error' : null"
+            (input)="distanceKm.set(read($event))"
+          />
+          @if (errors()['distance']; as message) {
+            <p class="field-error" id="goal-distance-error" role="alert">{{ message }}</p>
+          }
+        </div>
       }
-      <p class="hint" id="goal-time-hint">Hours, minutes and seconds, for example 3:45:00.</p>
-      @if (suggested(); as hint) {
-        <p class="hint" data-testid="suggestion">
-          A time that can be reached by the date: {{ hint.text }}.
-          <button type="button" class="link" data-testid="use-suggestion" (click)="useSuggestion()">
-            Use it
-          </button>
-          Nothing is saved until you save; your own time is yours to keep.
-        </p>
-      }
+
+      <div class="field">
+        <label for="goal-time">Target time (optional)</label>
+        <input
+          id="goal-time"
+          type="text"
+          autocomplete="off"
+          aria-describedby="goal-time-hint"
+          [value]="time()"
+          [attr.aria-invalid]="errors()['time'] ? true : null"
+          (input)="time.set(read($event))"
+        />
+        @if (errors()['time']; as message) {
+          <p class="field-error" role="alert">{{ message }}</p>
+        }
+        <p class="hint" id="goal-time-hint">Hours, minutes and seconds, for example 3:45:00.</p>
+        @if (suggested(); as hint) {
+          <p class="hint" data-testid="suggestion">
+            A time that can be reached by the date: {{ hint.text }}.
+            <button
+              type="button"
+              class="link"
+              data-testid="use-suggestion"
+              (click)="useSuggestion()"
+            >
+              Use it
+            </button>
+            Nothing is saved until you save; your own time is yours to keep.
+          </p>
+        }
+      </div>
     </div>
   }
 
   @if (kind() === 'threshold') {
-    <div class="field">
-      <label for="goal-metric">Raise</label>
-      <select id="goal-metric" (change)="metric.set($any(read($event)))">
-        <option value="ftp" [selected]="metric() === 'ftp'">FTP (cycling)</option>
-        <option value="threshold_pace" [selected]="metric() === 'threshold_pace'">
-          Threshold pace (running)
-        </option>
-      </select>
-    </div>
+    <div class="form-grid">
+      <div class="field">
+        <label for="goal-metric">Raise</label>
+        <select id="goal-metric" (change)="metric.set($any(read($event)))">
+          <option value="ftp" [selected]="metric() === 'ftp'">FTP (cycling)</option>
+          <option value="threshold_pace" [selected]="metric() === 'threshold_pace'">
+            Threshold pace (running)
+          </option>
+        </select>
+      </div>
 
-    <div class="field">
-      <label for="goal-value">Target value</label>
-      <input
-        id="goal-value"
-        type="text"
-        inputmode="decimal"
-        autocomplete="off"
-        aria-describedby="goal-value-hint"
-        [value]="value()"
-        [attr.aria-invalid]="errors()['value'] ? true : null"
-        (input)="value.set(read($event))"
-      />
-      @if (errors()['value']; as message) {
-        <p class="field-error" role="alert">{{ message }}</p>
-      }
-      <p class="hint" id="goal-value-hint">
-        {{
-          metric() === 'ftp'
-            ? 'Watts, for example 280.'
-            : 'Minutes and seconds per kilometre, for example 4:45.'
-        }}
-      </p>
-      @if (suggested(); as hint) {
-        <p class="hint" data-testid="suggestion">
-          A value that can be reached by the date: {{ hint.text }}.
-          <button type="button" class="link" data-testid="use-suggestion" (click)="useSuggestion()">
-            Use it
-          </button>
-          Nothing is saved until you save; your own value is yours to keep.
+      <div class="field">
+        <label for="goal-value">Target value</label>
+        <input
+          id="goal-value"
+          type="text"
+          inputmode="decimal"
+          autocomplete="off"
+          aria-describedby="goal-value-hint"
+          [value]="value()"
+          [attr.aria-invalid]="errors()['value'] ? true : null"
+          (input)="value.set(read($event))"
+        />
+        @if (errors()['value']; as message) {
+          <p class="field-error" role="alert">{{ message }}</p>
+        }
+        <p class="hint" id="goal-value-hint">
+          {{
+            metric() === 'ftp'
+              ? 'Watts, for example 280.'
+              : 'Minutes and seconds per kilometre, for example 4:45.'
+          }}
         </p>
-      }
+        @if (suggested(); as hint) {
+          <p class="hint" data-testid="suggestion">
+            A value that can be reached by the date: {{ hint.text }}.
+            <button
+              type="button"
+              class="link"
+              data-testid="use-suggestion"
+              (click)="useSuggestion()"
+            >
+              Use it
+            </button>
+            Nothing is saved until you save; your own value is yours to keep.
+          </p>
+        }
+      </div>
     </div>
   }
 
@@ -211,10 +227,10 @@
     }
   </div>
 
-  <div class="actions">
-    <button type="submit" class="primary" [disabled]="busy()">
+  <div class="action-bar flex flex-wrap items-center gap-3">
+    <button type="submit" class="btn btn-primary" [disabled]="busy()">
       {{ busy() ? 'Saving…' : goal() ? 'Save changes' : 'Add goal' }}
     </button>
-    <button type="button" class="link" (click)="cancel()">Cancel</button>
+    <button type="button" class="btn btn-ghost" (click)="cancel()">Cancel</button>
   </div>
 </form>

@@ -92,6 +92,26 @@ export const RATING_LABELS: Record<Rating, string> = {
   unknown: 'Cannot be judged yet',
 };
 
+/** The colours of the badges: the main goal stands out, a preparation race and what was achieved are calm. */
+export const PRIORITY_STYLES: Record<GoalPriority, string> = {
+  main: 'border-accent text-accent',
+  secondary: '',
+  preparation: 'text-info',
+};
+
+export const STATUS_STYLES: Record<GoalStatus, string> = {
+  active: '',
+  achieved: 'text-info',
+  dropped: 'text-muted',
+};
+
+export const RATING_STYLES: Record<Rating, string> = {
+  realistic: '',
+  ambitious: 'border-info text-info',
+  unrealistic: 'border-danger text-danger',
+  unknown: '',
+};
+
 /** What to do about a goal that could not be judged, by the reason the server gives. */
 export const REASON_TEXTS: Record<AssessmentReason, string> = {
   no_model: 'There is no way to judge this kind of goal yet.',

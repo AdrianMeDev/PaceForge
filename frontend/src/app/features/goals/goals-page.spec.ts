@@ -97,6 +97,19 @@ function deferred<T>() {
 }
 
 describe('GoalsPage', () => {
+  // jsdom has no modal dialog: this is what the browser does that the question relies on.
+  beforeAll(() => {
+    HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
+      this.setAttribute('open', '');
+    };
+    HTMLDialogElement.prototype.close = function (this: HTMLDialogElement) {
+      if (this.hasAttribute('open')) {
+        this.removeAttribute('open');
+        this.dispatchEvent(new Event('close'));
+      }
+    };
+  });
+
   let api: ReturnType<typeof createApiStub>;
   let fixture: ComponentFixture<GoalsPage>;
   let page: HTMLElement;
@@ -154,7 +167,9 @@ describe('GoalsPage', () => {
       fixture = TestBed.createComponent(GoalsPage);
       fixture.detectChanges();
 
-      expect(fixture.nativeElement.textContent).toContain('Loading');
+      expect(
+        fixture.nativeElement.querySelector('[role="status"][aria-label="Loading"]'),
+      ).toBeTruthy();
       expect(fixture.nativeElement.querySelector('.goal')).toBeNull();
     });
 
@@ -190,8 +205,16 @@ describe('GoalsPage', () => {
       expect(page.querySelector('.goal')).toBeNull();
     });
 
+    it('says how many goals are active under the title', async () => {
+      await setup(ok(MAIN, FTP));
+
+      expect(query(page, '[data-testid=subtitle]').textContent).toMatch(/^\d+ active$/);
+    });
+
     it('shows an empty state', async () => {
       await setup(ok());
+
+      expect(page.querySelector('[data-testid=subtitle]')).toBeNull();
 
       expect(text()).toContain('You have no goals yet.');
       expect(page.querySelector('.goal')).toBeNull();
@@ -479,10 +502,15 @@ describe('GoalsPage', () => {
       button('Drop Raise FTP').click();
       fixture.detectChanges();
 
-      expect(Array.from(page.querySelectorAll('button')).every((b) => b.disabled)).toBe(true);
+      // the buttons of the dialog are not the page's: the dialog is closed
+      const pageButtons = () =>
+        Array.from(
+          page.querySelectorAll<HTMLButtonElement>('button:not(app-confirm-dialog button)'),
+        );
+      expect(pageButtons().every((b) => b.disabled)).toBe(true);
       pending.resolve(updated(FTP));
       await settle(fixture);
-      expect(Array.from(page.querySelectorAll('button')).some((b) => b.disabled)).toBe(false);
+      expect(pageButtons().some((b) => b.disabled)).toBe(false);
     });
   });
 
@@ -521,7 +549,7 @@ describe('GoalsPage', () => {
           (b) => b.textContent?.trim() === 'Add goal',
         ),
       ).toHaveLength(1);
-      expect(page.querySelector('p > button.primary')).toBeNull();
+      expect(page.querySelector('app-page-header button')).toBeNull();
     });
 
     it('closes the form again with Cancel and sends nothing', async () => {
@@ -614,15 +642,6 @@ describe('GoalsPage', () => {
       expect(alerts()).toEqual([]);
     });
 
-    it('closes an open delete question when the form for a new goal opens', async () => {
-      await click(button('Delete Raise FTP'));
-      expect(text()).toContain('Delete this goal?');
-
-      await click(buttonWithText('Add goal'));
-
-      expect(text()).not.toContain('Delete this goal?');
-    });
-
     it('clears an earlier message when a goal is opened for editing', async () => {
       api.update.mockResolvedValue({ kind: 'invalid', errors: ['No.'], fields: {} });
       await click(button('Drop Raise FTP'));
@@ -631,15 +650,6 @@ describe('GoalsPage', () => {
       await click(button('Edit Berlin Marathon'));
 
       expect(alerts()).toEqual([]);
-    });
-
-    it('closes an open delete question when the form opens', async () => {
-      await click(button('Delete Raise FTP'));
-      expect(text()).toContain('Delete this goal?');
-
-      await click(button('Edit Berlin Marathon'));
-
-      expect(text()).not.toContain('Delete this goal?');
     });
 
     it('says when the goal being edited is gone, closes the form and refreshes', async () => {
@@ -673,23 +683,34 @@ describe('GoalsPage', () => {
     });
   });
 
+  describe('the colours of the badges', () => {
+    it('lets the main goal, what was achieved and what is unrealistic stand out', async () => {
+      await setup(ok(MAIN, FTP));
+
+      const priorities = Array.from(page.querySelectorAll('[data-testid="priority"]'));
+      expect(priorities.some((badge) => badge.className.includes('text-accent'))).toBe(true);
+    });
+  });
+
   describe('deleting', () => {
     beforeEach(() => setup(ok(MAIN, FTP)));
 
     it('asks first and deletes nothing until confirmed', async () => {
       await click(button('Delete Raise FTP'));
 
-      expect(text()).toContain('Delete this goal?');
+      const dialog = query<HTMLDialogElement>(page, '[data-testid="confirm-dialog"]');
+      expect(dialog.open).toBe(true);
+      expect(dialog.textContent).toContain('Delete the goal “Raise FTP”?');
       expect(api.delete).not.toHaveBeenCalled();
     });
 
     it('does nothing when cancelled', async () => {
       await click(button('Delete Raise FTP'));
 
-      await click(buttonWithText('Cancel'));
+      await click(query<HTMLButtonElement>(page, '[data-testid="confirm-dialog-cancel"]'));
 
       expect(api.delete).not.toHaveBeenCalled();
-      expect(text()).not.toContain('Delete this goal?');
+      expect(query<HTMLDialogElement>(page, '[data-testid="confirm-dialog"]').open).toBe(false);
       expect(api.list).toHaveBeenCalledTimes(1);
     });
 
@@ -707,8 +728,10 @@ describe('GoalsPage', () => {
       await click(button('Delete Raise FTP'));
       await click(button('Delete Berlin Marathon'));
 
-      expect(page.querySelectorAll('.confirm')).toHaveLength(1);
-      expect(query(page, '.confirm').getAttribute('aria-label')).toBe('Delete Berlin Marathon');
+      expect(page.querySelectorAll('[data-testid="confirm-dialog"]')).toHaveLength(1);
+      expect(query(page, '[data-testid="confirm-dialog-message"]').textContent).toContain(
+        'Berlin Marathon',
+      );
     });
 
     it('deletes the confirmed goal and refreshes the list', async () => {
@@ -716,7 +739,7 @@ describe('GoalsPage', () => {
       api.list.mockResolvedValue(ok(MAIN));
       await click(button('Delete Raise FTP'));
 
-      await click(buttonWithText('Yes, delete'));
+      await click(buttonWithText('Delete goal'));
 
       expect(api.delete).toHaveBeenCalledExactlyOnceWith('ftp');
       expect(titles()).toEqual(['Berlin Marathon']);
@@ -728,7 +751,7 @@ describe('GoalsPage', () => {
       api.list.mockResolvedValue(ok(MAIN));
       await click(button('Delete Raise FTP'));
 
-      await click(buttonWithText('Yes, delete'));
+      await click(buttonWithText('Delete goal'));
 
       expect(text()).toContain('That goal does not exist any more.');
       expect(titles()).toEqual(['Berlin Marathon']);
@@ -739,7 +762,7 @@ describe('GoalsPage', () => {
       api.list.mockResolvedValue(ok());
       await click(button('Delete Raise FTP'));
 
-      await click(buttonWithText('Yes, delete'));
+      await click(buttonWithText('Delete goal'));
 
       expect(text()).toContain('You have no goals yet.');
     });
@@ -748,7 +771,7 @@ describe('GoalsPage', () => {
       api.delete.mockResolvedValue({ kind: 'forbidden' });
       await click(button('Delete Raise FTP'));
 
-      await click(buttonWithText('Yes, delete'));
+      await click(buttonWithText('Delete goal'));
 
       expect(alerts()).toEqual(['Your session has ended. Please sign in again.']);
     });
@@ -757,7 +780,7 @@ describe('GoalsPage', () => {
       api.delete.mockRejectedValue(new Error('offline'));
       await click(button('Delete Raise FTP'));
 
-      await click(buttonWithText('Yes, delete'));
+      await click(buttonWithText('Delete goal'));
 
       expect(alerts()).toEqual(['Something went wrong. Please try again.']);
       expect(titles()).toEqual(['Berlin Marathon', 'Raise FTP']);
@@ -768,7 +791,7 @@ describe('GoalsPage', () => {
       api.delete.mockReturnValue(pending.promise);
       await click(button('Delete Raise FTP'));
 
-      const confirm = buttonWithText('Yes, delete');
+      const confirm = buttonWithText('Delete goal');
       confirm.click();
       confirm.click();
       pending.resolve({ kind: 'deleted' });

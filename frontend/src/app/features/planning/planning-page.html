@@ -233,7 +233,7 @@
             }
 
             @if (canRestore() || canChange() || shown.export || shown.status === 'draft') {
-              <div class="plan-actions" data-testid="plan-actions">
+              <div class="plan-actions action-bar" data-testid="plan-actions">
                 @if (shown.status === 'draft') {
                   <label class="check">
                     <input

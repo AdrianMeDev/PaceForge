@@ -603,7 +603,9 @@ and `POST /api/athlete/sync/` reads Intervals.icu.
 ## Goals
 
 The **Goals** page (`/goals`, also in the navigation) is where you say what you are training for.
-Each user has their own goals; another user, an administrator included, never sees them.
+Each user has their own goals; another user, an administrator included, never sees them. **Add
+goal** is at the top of the page; on a phone the form has one column and its buttons stay above the
+tab bar.
 
 **Kinds.** Every goal has a title (up to 100 characters), optional notes (up to 1000), a priority
 and a status. The kind is chosen when the goal is added and cannot be changed afterwards.
@@ -629,7 +631,7 @@ also works on a C race. In the API the priorities are `main`, `secondary` and `p
 
 **Status.** A goal is **active**, **achieved** or **dropped**. **Mark achieved**, **Drop** and
 **Reactivate** change it; nothing is deleted by that. **Delete** removes the goal for good, after a
-question. An active race cannot lie in the past: adding one, changing its date or reactivating it
+question in a dialog. An active race cannot lie in the past: adding one, changing its date or reactivating it
 with a past date is refused, while a past race that stays as it is (its title changes, say) is left
 alone. Mark it achieved or dropped instead.
 

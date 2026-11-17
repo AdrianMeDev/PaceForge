@@ -469,8 +469,15 @@ describe('GoalForm', () => {
       expect(alerts()).toEqual(['Enter a title.']);
     });
 
+    it('keeps saving and cancelling together in one bar', () => {
+      const bar = query(form, '.action-bar');
+
+      expect(bar.querySelector('button[type="submit"]')).not.toBeNull();
+      expect(bar.querySelector('button.btn-ghost')).not.toBeNull();
+    });
+
     it('cancels', async () => {
-      query<HTMLButtonElement>(form, 'button.link').click();
+      query<HTMLButtonElement>(form, '.action-bar button.btn-ghost').click();
 
       expect(events).toEqual(['cancelled']);
       expect(api.create).not.toHaveBeenCalled();

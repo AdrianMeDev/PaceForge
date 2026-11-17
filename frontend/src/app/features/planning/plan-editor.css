@@ -41,23 +41,3 @@
   gap: 0.6rem;
   margin-top: 0.75rem;
 }
-
-/* Saving and leaving stay in reach: on a phone the bar sticks above the tab bar. */
-.editor-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.6rem;
-  margin-top: 0.75rem;
-}
-
-@media (max-width: 39.99rem) {
-  .editor-actions {
-    position: sticky;
-    bottom: calc(3.5rem + env(safe-area-inset-bottom));
-    z-index: 5;
-    margin: 1rem -1.25rem -1rem;
-    padding: 0.75rem 1.25rem;
-    border-top: 1px solid var(--border);
-    background: var(--surface);
-  }
-}
