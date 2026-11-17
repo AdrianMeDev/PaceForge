@@ -1,8 +1,9 @@
 import { DatePipe } from '@angular/common';
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { GoalsApi } from '../../core/goals/goals-api';
 import { Goal, GoalChanges, GoalStatus } from '../../core/goals/goals-models';
+import { ConfirmDialog } from '../../shared/confirm-dialog';
 import { PageHeader } from '../../shared/page-header';
 import { GoalForm } from './goal-form';
 import {
@@ -41,7 +42,7 @@ const NOTICES: Record<GoalStatus, string> = {
  */
 @Component({
   selector: 'app-goals-page',
-  imports: [RouterLink, DatePipe, GoalForm, PageHeader],
+  imports: [RouterLink, DatePipe, ConfirmDialog, GoalForm, PageHeader],
   templateUrl: './goals-page.html',
   styleUrls: ['../auth/auth-form.css', './goals-page.css'],
 })
@@ -58,8 +59,9 @@ export class GoalsPage implements OnInit {
   });
   protected readonly errors = signal<string[]>([]);
   protected readonly notice = signal<string | null>(null);
-  /** The id of the goal that is about to be deleted, waiting for the answer to "Are you sure?". */
-  protected readonly confirming = signal<string | null>(null);
+  /** The goal the dialog asks about. */
+  protected readonly confirming = signal<Goal | null>(null);
+  private readonly deleteDialog = viewChild(ConfirmDialog);
 
   /** `closed`, `new` (a goal is being added) or the id of the goal being changed. */
   protected readonly form = signal<string>('closed');
@@ -150,15 +152,14 @@ export class GoalsPage implements OnInit {
 
   protected askDelete(goal: Goal): void {
     this.clearMessages();
-    this.confirming.set(goal.id);
+    this.confirming.set(goal);
+    this.deleteDialog()?.open();
   }
 
-  protected cancelDelete(): void {
-    this.confirming.set(null);
-  }
-
-  protected async delete(goal: Goal): Promise<void> {
-    if (this.busy()) {
+  /** The dialog was answered with "Delete goal". */
+  protected async delete(): Promise<void> {
+    const goal = this.confirming();
+    if (this.busy() || goal === null) {
       return;
     }
     this.clearMessages();

@@ -124,97 +124,88 @@
               }
 
               <div class="actions mt-3 flex flex-wrap items-center gap-2">
-                @if (confirming() === goal.id) {
-                  <span class="confirm" role="group" [attr.aria-label]="'Delete ' + goal.title">
-                    Delete this goal?
-                    <button
-                      type="button"
-                      class="btn btn-primary btn-sm"
-                      [disabled]="busy()"
-                      (click)="delete(goal)"
-                    >
-                      Yes, delete
-                    </button>
-                    <button type="button" class="btn btn-ghost btn-sm" (click)="cancelDelete()">
-                      Cancel
-                    </button>
-                  </span>
-                } @else {
-                  @if (goal.status === 'active') {
-                    <button
-                      type="button"
-                      class="btn btn-secondary btn-sm"
-                      [disabled]="busy()"
-                      [attr.aria-label]="'Mark ' + goal.title + ' as achieved'"
-                      (click)="setStatus(goal, 'achieved')"
-                    >
-                      Mark achieved
-                    </button>
+                @if (goal.status === 'active') {
+                  <button
+                    type="button"
+                    class="btn btn-secondary btn-sm"
+                    [disabled]="busy()"
+                    [attr.aria-label]="'Mark ' + goal.title + ' as achieved'"
+                    (click)="setStatus(goal, 'achieved')"
+                  >
+                    Mark achieved
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-secondary btn-sm"
+                    [disabled]="busy()"
+                    [attr.aria-label]="'Drop ' + goal.title"
+                    (click)="setStatus(goal, 'dropped')"
+                  >
+                    Drop
+                  </button>
+                  @if (goal.priority !== 'main') {
                     <button
                       type="button"
                       class="btn btn-secondary btn-sm"
                       [disabled]="busy()"
-                      [attr.aria-label]="'Drop ' + goal.title"
-                      (click)="setStatus(goal, 'dropped')"
+                      [attr.aria-label]="'Make ' + goal.title + ' the main goal'"
+                      (click)="makeMain(goal)"
                     >
-                      Drop
+                      Make main goal
                     </button>
-                    @if (goal.priority !== 'main') {
-                      <button
-                        type="button"
-                        class="btn btn-secondary btn-sm"
-                        [disabled]="busy()"
-                        [attr.aria-label]="'Make ' + goal.title + ' the main goal'"
-                        (click)="makeMain(goal)"
-                      >
-                        Make main goal
-                      </button>
-                    } @else {
-                      <button
-                        type="button"
-                        class="btn btn-secondary btn-sm"
-                        [disabled]="busy()"
-                        [attr.aria-label]="'Make ' + goal.title + ' a secondary goal'"
-                        (click)="makeSecondary(goal)"
-                      >
-                        Make secondary
-                      </button>
-                    }
                   } @else {
                     <button
                       type="button"
                       class="btn btn-secondary btn-sm"
                       [disabled]="busy()"
-                      [attr.aria-label]="'Reactivate ' + goal.title"
-                      (click)="setStatus(goal, 'active')"
+                      [attr.aria-label]="'Make ' + goal.title + ' a secondary goal'"
+                      (click)="makeSecondary(goal)"
                     >
-                      Reactivate
+                      Make secondary
                     </button>
                   }
+                } @else {
                   <button
                     type="button"
-                    class="btn btn-ghost btn-sm"
+                    class="btn btn-secondary btn-sm"
                     [disabled]="busy()"
-                    [attr.aria-label]="'Edit ' + goal.title"
-                    (click)="openEdit(goal)"
+                    [attr.aria-label]="'Reactivate ' + goal.title"
+                    (click)="setStatus(goal, 'active')"
                   >
-                    Edit
-                  </button>
-                  <button
-                    type="button"
-                    class="btn btn-ghost btn-sm"
-                    [disabled]="busy()"
-                    [attr.aria-label]="'Delete ' + goal.title"
-                    (click)="askDelete(goal)"
-                  >
-                    Delete
+                    Reactivate
                   </button>
                 }
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-sm"
+                  [disabled]="busy()"
+                  [attr.aria-label]="'Edit ' + goal.title"
+                  (click)="openEdit(goal)"
+                >
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-sm"
+                  [disabled]="busy()"
+                  [attr.aria-label]="'Delete ' + goal.title"
+                  (click)="askDelete(goal)"
+                >
+                  Delete
+                </button>
               </div>
             </li>
           }
         </ul>
       }
+      @let doomed = confirming();
+      <app-confirm-dialog
+        title="Delete this goal?"
+        [message]="doomed ? 'Delete the goal “' + doomed.title + '”? This cannot be undone.' : ''"
+        confirmLabel="Delete goal"
+        [danger]="true"
+        (confirmed)="delete()"
+      />
     }
   }
 </section>
