@@ -2,15 +2,6 @@
   max-width: 64rem;
 }
 
-h2 {
-  margin: 0 0 0.75rem;
-  font-size: 1.15rem;
-}
-
-.list-title {
-  margin-top: 2rem;
-}
-
 .results {
   margin: 0;
   padding: 0;
@@ -31,15 +22,6 @@ h2 {
 .results li[data-kind='rate_limited'],
 .results li[data-kind='failed'] {
   color: var(--danger);
-}
-
-button.secondary {
-  padding: 0.6rem 1rem;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text);
-  cursor: pointer;
 }
 
 .table-wrap {

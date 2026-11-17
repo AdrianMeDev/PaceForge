@@ -4,7 +4,7 @@
   aria-labelledby="manual-title"
   (submit)="$event.preventDefault(); submit()"
 >
-  <h2 id="manual-title">Enter a session</h2>
+  <h2 id="manual-title" class="m-0 text-lg font-semibold">Enter a session</h2>
   <p class="hint">
     For what no watch recorded, such as strength training, and for sessions that only Strava has.
   </p>
@@ -142,7 +142,7 @@
 
   <button
     type="submit"
-    class="primary"
+    class="btn btn-primary"
     data-testid="manual-save"
     [disabled]="saving() || disabled()"
   >

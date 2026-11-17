@@ -138,7 +138,9 @@ describe('ActivitiesPage', () => {
       fixture = TestBed.createComponent(ActivitiesPage);
       fixture.detectChanges();
 
-      expect(fixture.nativeElement.textContent).toContain('Loading');
+      expect(
+        fixture.nativeElement.querySelector('[role="status"][aria-label="Loading"]'),
+      ).toBeTruthy();
       expect(fixture.nativeElement.querySelector('input')).toBeNull();
     });
 
@@ -172,6 +174,12 @@ describe('ActivitiesPage', () => {
       expect(alerts()).toEqual(['Your session has ended. Please sign in again.']);
       expect(page.querySelector('a')?.getAttribute('href')).toBe('/login');
       expect(page.querySelector('input')).toBeNull();
+    });
+
+    it('says how many activities there are under the title', async () => {
+      await setup(ok([RUN]));
+
+      expect(query(page, '[data-testid=subtitle]').textContent).toBe('1 activity');
     });
 
     it('shows an empty state', async () => {

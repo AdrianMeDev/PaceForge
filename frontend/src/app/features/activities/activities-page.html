@@ -1,21 +1,27 @@
 <section class="activities">
-  <h1>Activities</h1>
+  <app-page-header title="Activities" [subtitle]="subtitle()" />
 
   @switch (view()) {
     @case ('loading') {
-      <p role="status">Loading…</p>
+      <div class="grid gap-4" role="status" aria-label="Loading">
+        <div class="skeleton h-40"></div>
+        <div class="skeleton h-28"></div>
+        <div class="skeleton h-40"></div>
+      </div>
     }
     @case ('unreachable') {
       <p class="alert" role="alert">Your activities could not be loaded.</p>
-      <p><button type="button" class="primary" (click)="load()">Try again</button></p>
+      <p>
+        <button type="button" class="btn btn-primary btn-sm" (click)="load()">Try again</button>
+      </p>
     }
     @case ('signed_out') {
       <p class="alert" role="alert">Your session has ended. Please sign in again.</p>
       <p><a routerLink="/login">Go to sign in</a></p>
     }
     @case ('ready') {
-      <div class="panel">
-        <h2>Import</h2>
+      <div class="card">
+        <h2 class="m-0 mb-3 text-lg font-semibold">Import</h2>
         <div class="field">
           <label for="file">FIT, TCX or GPX files</label>
           <input
@@ -94,11 +100,13 @@
         <p class="notice" role="status">{{ text }}</p>
       }
 
-      <h2 class="list-title">Your activities</h2>
+      <h2 class="mb-3 mt-8 text-lg font-semibold">Your activities</h2>
       @if (page().count === 0) {
-        <p class="hint">
-          No activities yet. Import a FIT, TCX or GPX file above, or enter a session by hand.
-        </p>
+        <div class="empty-state">
+          <p class="m-0">
+            No activities yet. Import a FIT, TCX or GPX file above, or enter a session by hand.
+          </p>
+        </div>
       } @else {
         <div class="table-wrap" [attr.aria-busy]="refreshing()">
           <table>
@@ -140,7 +148,7 @@
                         Delete this activity and its stored file, if it has one?
                         <button
                           type="button"
-                          class="primary"
+                          class="btn btn-primary btn-sm"
                           [disabled]="busy()"
                           (click)="delete(activity)"
                         >
@@ -151,7 +159,7 @@
                     } @else {
                       <button
                         type="button"
-                        class="secondary"
+                        class="btn btn-secondary btn-sm"
                         [disabled]="busy()"
                         [attr.aria-label]="
                           'Delete ' +
@@ -174,7 +182,7 @@
         <nav class="paging" aria-label="Pages">
           <button
             type="button"
-            class="secondary"
+            class="btn btn-secondary btn-sm"
             [disabled]="!hasPrevious() || busy() || refreshing()"
             (click)="goTo(previousOffset())"
           >
@@ -183,7 +191,7 @@
           <span data-testid="range">{{ first() }}–{{ last() }} of {{ page().count }}</span>
           <button
             type="button"
-            class="secondary"
+            class="btn btn-secondary btn-sm"
             [disabled]="!hasNext() || busy() || refreshing()"
             (click)="goTo(nextOffset())"
           >
