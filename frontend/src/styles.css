@@ -331,6 +331,11 @@ button.primary:disabled {
   }
 }
 
+/* A sheet or a dialog is open: the page behind it does not scroll. */
+body:has(dialog[open]) {
+  overflow: hidden;
+}
+
 /*
  * Building blocks every page can use. They sit in the `components` layer, so a rule of a page that
  * is not in a layer still wins until that page is moved over; the old names (`.panel`, `.alert`,

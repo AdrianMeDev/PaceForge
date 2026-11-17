@@ -47,5 +47,52 @@
         <span>{{ item.label }}</span>
       </a>
     }
+    <button
+      type="button"
+      data-testid="more"
+      aria-haspopup="dialog"
+      [attr.aria-expanded]="moreOpen()"
+      (click)="openMore()"
+    >
+      <app-icon name="more" />
+      <span>More</span>
+    </button>
   </nav>
+  <dialog #sheet class="sheet" aria-labelledby="sheet-title" data-testid="sheet" (close)="closed()">
+    <div class="sheet-head">
+      <h2 id="sheet-title">More</h2>
+      <button type="button" data-testid="sheet-close" aria-label="Close" (click)="closeMore()">
+        <app-icon name="x" />
+      </button>
+    </div>
+    <nav aria-label="More pages">
+      @for (group of more(); track group.label) {
+        <div class="group" [attr.data-group]="group.label">
+          <h3 class="group-title">{{ group.label }}</h3>
+          <ul>
+            @for (item of group.items; track item.path) {
+              <li>
+                <a
+                  [routerLink]="item.path"
+                  routerLinkActive="active"
+                  ariaCurrentWhenActive="page"
+                  (click)="closeMore()"
+                >
+                  <app-icon [name]="item.icon" />
+                  <span>{{ item.label }}</span>
+                </a>
+              </li>
+            }
+          </ul>
+        </div>
+      }
+    </nav>
+    <div class="sheet-who">
+      <span class="user" data-testid="sheet-user">{{ userLabel() }}</span>
+      <button type="button" class="signout" data-testid="sheet-sign-out" (click)="logout()">
+        <app-icon name="log-out" />
+        <span>Sign out</span>
+      </button>
+    </div>
+  </dialog>
 </div>

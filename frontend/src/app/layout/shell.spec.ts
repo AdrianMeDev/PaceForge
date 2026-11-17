@@ -11,6 +11,19 @@ import { query } from '../testing/dom';
 class Blank {}
 
 describe('Shell', () => {
+  // jsdom has no modal dialog: this is what the browser does that the shell relies on.
+  beforeAll(() => {
+    HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
+      this.setAttribute('open', '');
+    };
+    HTMLDialogElement.prototype.close = function (this: HTMLDialogElement) {
+      if (this.hasAttribute('open')) {
+        this.removeAttribute('open');
+        this.dispatchEvent(new Event('close'));
+      }
+    };
+  });
+
   async function setup(user = ADA) {
     const store = createAuthStoreStub();
     store.signIn(user);
@@ -214,6 +227,132 @@ describe('Shell', () => {
       await open(fixture, navigate, '/goals');
 
       expect(tabs(page).some((a) => a.hasAttribute('aria-current'))).toBe(false);
+    });
+  });
+
+  describe('sheet', () => {
+    const more = (page: HTMLElement) => query<HTMLButtonElement>(page, '[data-testid="more"]');
+    const sheet = (page: HTMLElement) => query<HTMLDialogElement>(page, '[data-testid="sheet"]');
+    const flush = async (fixture: { whenStable(): Promise<unknown> }) => {
+      await new Promise((resolve) => setTimeout(resolve));
+      await fixture.whenStable();
+    };
+
+    it('is closed until "More" is pressed, and "More" says it opens a dialog', async () => {
+      const { page } = await setup();
+
+      expect(sheet(page).open).toBe(false);
+      expect(more(page).getAttribute('aria-haspopup')).toBe('dialog');
+      expect(more(page).getAttribute('aria-expanded')).toBe('false');
+    });
+
+    it('opens from "More" and says so', async () => {
+      const { fixture, page } = await setup();
+
+      more(page).click();
+      await flush(fixture);
+
+      expect(sheet(page).open).toBe(true);
+      expect(more(page).getAttribute('aria-expanded')).toBe('true');
+      expect(sheet(page).getAttribute('aria-labelledby')).toBe('sheet-title');
+    });
+
+    it('holds the groups that are not in the tab bar, and the user', async () => {
+      const { page } = await setup();
+
+      const links = Array.from(page.querySelectorAll('[data-testid="sheet"] a')).map((a) =>
+        (a.textContent ?? '').trim(),
+      );
+      expect(links).toEqual([
+        'Season',
+        'Goals',
+        'Training time',
+        'Profile',
+        'Connections',
+        'Security',
+      ]);
+      expect(query(page, '[data-testid="sheet-user"]').textContent).toBe('Ada');
+    });
+
+    it('holds the invitations for administrators only', async () => {
+      const { page } = await setup({ ...ADA, is_staff: true });
+
+      expect(sheet(page).textContent).toContain('Invitations');
+    });
+
+    it('closes with the button', async () => {
+      const { fixture, page } = await setup();
+      more(page).click();
+      await flush(fixture);
+
+      query<HTMLButtonElement>(page, '[data-testid="sheet-close"]').click();
+      await flush(fixture);
+
+      expect(sheet(page).open).toBe(false);
+      expect(more(page).getAttribute('aria-expanded')).toBe('false');
+    });
+
+    it('closes when the dialog closes by itself, as on Escape', async () => {
+      const { fixture, page } = await setup();
+      more(page).click();
+      await flush(fixture);
+
+      sheet(page).close();
+      await flush(fixture);
+
+      expect(more(page).getAttribute('aria-expanded')).toBe('false');
+    });
+
+    it('closes on a click on the backdrop, not on a click inside', async () => {
+      const { fixture, page } = await setup();
+      more(page).click();
+      await flush(fixture);
+
+      query(page, '[data-testid="sheet"] h2').click();
+      await flush(fixture);
+      expect(sheet(page).open).toBe(true);
+
+      sheet(page).click();
+      await flush(fixture);
+      expect(sheet(page).open).toBe(false);
+    });
+
+    it('closes when a link is followed', async () => {
+      const { fixture, page } = await setup();
+      more(page).click();
+      await flush(fixture);
+
+      query<HTMLAnchorElement>(page, '[data-testid="sheet"] a').click();
+      await flush(fixture);
+
+      expect(sheet(page).open).toBe(false);
+    });
+
+    it('signs out from the sheet', async () => {
+      const { store, navigate, fixture, page } = await setup();
+      more(page).click();
+      await flush(fixture);
+
+      query<HTMLButtonElement>(page, '[data-testid="sheet-sign-out"]').click();
+      await flush(fixture);
+
+      expect(sheet(page).open).toBe(false);
+      expect(store.logout).toHaveBeenCalledTimes(1);
+      expect(navigate).toHaveBeenCalledWith('/login');
+    });
+
+    it('can be opened again after it was closed', async () => {
+      const { fixture, page } = await setup();
+      more(page).click();
+      await flush(fixture);
+      sheet(page).close();
+      await flush(fixture);
+
+      more(page).click();
+      await flush(fixture);
+
+      expect(sheet(page).open).toBe(true);
+      expect(more(page).getAttribute('aria-expanded')).toBe('true');
     });
   });
 });
