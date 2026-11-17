@@ -189,41 +189,20 @@
                     <td data-label="Load">{{ loadText(activity.load) }}</td>
                     <td data-label="Source">{{ source(activity.source) }}</td>
                     <td class="row-actions">
-                      @if (confirming() === activity.id) {
-                        <span
-                          class="confirm"
-                          role="group"
-                          [attr.aria-label]="'Delete ' + sport(activity)"
-                        >
-                          Delete this activity and its stored file, if it has one?
-                          <button
-                            type="button"
-                            class="btn btn-primary btn-sm"
-                            [disabled]="busy()"
-                            (click)="delete(activity)"
-                          >
-                            Yes, delete
-                          </button>
-                          <button type="button" class="link" (click)="cancelDelete()">
-                            Cancel
-                          </button>
-                        </span>
-                      } @else {
-                        <button
-                          type="button"
-                          class="btn btn-secondary btn-sm"
-                          [disabled]="busy()"
-                          [attr.aria-label]="
-                            'Delete ' +
-                            sport(activity) +
-                            ' of ' +
-                            (activity.start_time | date: 'medium')
-                          "
-                          (click)="askDelete(activity)"
-                        >
-                          Delete
-                        </button>
-                      }
+                      <button
+                        type="button"
+                        class="btn btn-secondary btn-sm"
+                        [disabled]="busy()"
+                        [attr.aria-label]="
+                          'Delete ' +
+                          sport(activity) +
+                          ' of ' +
+                          (activity.start_time | date: 'medium')
+                        "
+                        (click)="askDelete(activity)"
+                      >
+                        Delete
+                      </button>
                     </td>
                   </tr>
                 }
@@ -252,6 +231,22 @@
           </nav>
         }
       }
+      @let doomed = confirming();
+      <app-confirm-dialog
+        title="Delete this activity?"
+        [message]="
+          doomed
+            ? 'Delete the ' +
+              sport(doomed) +
+              ' of ' +
+              (doomed.start_time | date: 'medium') +
+              ' and the file stored with it, if there is one? This cannot be undone.'
+            : ''
+        "
+        confirmLabel="Delete activity"
+        [danger]="true"
+        (confirmed)="delete()"
+      />
     }
   }
 </section>

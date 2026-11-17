@@ -68,6 +68,19 @@ function deferred<T>() {
 }
 
 describe('ActivitiesPage', () => {
+  // jsdom has no modal dialog: this is what the browser does that the question relies on.
+  beforeAll(() => {
+    HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
+      this.setAttribute('open', '');
+    };
+    HTMLDialogElement.prototype.close = function (this: HTMLDialogElement) {
+      if (this.hasAttribute('open')) {
+        this.removeAttribute('open');
+        this.dispatchEvent(new Event('close'));
+      }
+    };
+  });
+
   let api: ReturnType<typeof createApiStub>;
   let fixture: ComponentFixture<ActivitiesPage>;
   let page: HTMLElement;
@@ -718,7 +731,10 @@ describe('ActivitiesPage', () => {
       deleteButton('Running').click();
       await settle(fixture);
 
-      expect(text()).toContain('Delete this activity and its stored file, if it has one?');
+      const dialog = query<HTMLDialogElement>(page, '[data-testid="confirm-dialog"]');
+      expect(dialog.open).toBe(true);
+      expect(dialog.textContent).toContain('Delete the Running of');
+      expect(dialog.textContent).toContain('and the file stored with it, if there is one?');
       expect(api.delete).not.toHaveBeenCalled();
     });
 
@@ -726,10 +742,11 @@ describe('ActivitiesPage', () => {
       deleteButton('Running').click();
       await settle(fixture);
 
-      await click('Cancel');
+      query<HTMLButtonElement>(page, '[data-testid="confirm-dialog-cancel"]').click();
+      await settle(fixture);
 
       expect(api.delete).not.toHaveBeenCalled();
-      expect(text()).not.toContain('Delete this activity');
+      expect(query<HTMLDialogElement>(page, '[data-testid="confirm-dialog"]').open).toBe(false);
       expect(rows()).toHaveLength(2);
       expect(api.list).toHaveBeenCalledTimes(1);
     });
@@ -740,8 +757,10 @@ describe('ActivitiesPage', () => {
       deleteButton('Other (Rowing)').click();
       await settle(fixture);
 
-      expect(page.querySelectorAll('.confirm')).toHaveLength(1);
-      expect(query(page, '.confirm').getAttribute('aria-label')).toBe('Delete Other (Rowing)');
+      expect(page.querySelectorAll('[data-testid="confirm-dialog"]')).toHaveLength(1);
+      expect(query(page, '[data-testid="confirm-dialog-message"]').textContent).toContain(
+        'Delete the Other (Rowing) of',
+      );
     });
 
     it('deletes the confirmed activity and refreshes the list', async () => {
@@ -750,7 +769,7 @@ describe('ActivitiesPage', () => {
       deleteButton('Running').click();
       await settle(fixture);
 
-      await click('Yes, delete');
+      await click('Delete activity');
 
       expect(api.delete).toHaveBeenCalledExactlyOnceWith('a1');
       expect(rows()).toHaveLength(1);
@@ -765,7 +784,7 @@ describe('ActivitiesPage', () => {
       deleteButton('Running').click();
       await settle(fixture);
 
-      const confirm = button('Yes, delete');
+      const confirm = button('Delete activity');
       confirm.click();
       confirm.click(); // before the page has been drawn again
       pending.resolve({ kind: 'deleted' });
@@ -780,7 +799,7 @@ describe('ActivitiesPage', () => {
       deleteButton('Running').click();
       await settle(fixture);
 
-      await click('Yes, delete');
+      await click('Delete activity');
 
       expect(text()).toContain('The activity was already gone.');
       expect(rows()).toHaveLength(1);
@@ -791,7 +810,7 @@ describe('ActivitiesPage', () => {
       deleteButton('Running').click();
       await settle(fixture);
 
-      await click('Yes, delete');
+      await click('Delete activity');
 
       expect(alerts()).toEqual(['Something went wrong. Please try again.']);
       expect(rows()).toHaveLength(2);
@@ -803,7 +822,7 @@ describe('ActivitiesPage', () => {
       deleteButton('Running').click();
       await settle(fixture);
 
-      await click('Yes, delete');
+      await click('Delete activity');
 
       expect(alerts()).toEqual(['Your session has ended. Please sign in again.']);
     });
@@ -814,7 +833,7 @@ describe('ActivitiesPage', () => {
       deleteButton('Running').click();
       await settle(fixture);
 
-      await click('Yes, delete');
+      await click('Delete activity');
 
       expect(text()).toContain('No activities yet.');
     });
@@ -908,7 +927,7 @@ describe('ActivitiesPage', () => {
 
       page.querySelector<HTMLButtonElement>('button[aria-label^="Delete"]')?.click();
       await settle(fixture);
-      await click('Yes, delete');
+      await click('Delete activity');
 
       expect(api.list.mock.calls).toEqual([
         [20, 20],

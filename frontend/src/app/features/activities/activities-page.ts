@@ -1,5 +1,5 @@
 import { DOCUMENT, DatePipe } from '@angular/common';
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { ActivitiesApi } from '../../core/activities/activities-api';
 import {
@@ -17,6 +17,7 @@ import {
   sourceLabel,
   sportLabel,
 } from './activity-format';
+import { ConfirmDialog } from '../../shared/confirm-dialog';
 import { Icon } from '../../shared/icon';
 import { PageHeader } from '../../shared/page-header';
 import { ManualActivityForm } from './manual-activity-form';
@@ -42,7 +43,7 @@ const REFRESH_FAILED = 'The list could not be refreshed. Please try again.';
  */
 @Component({
   selector: 'app-activities-page',
-  imports: [RouterLink, DatePipe, Icon, PageHeader, ManualActivityForm],
+  imports: [RouterLink, DatePipe, ConfirmDialog, Icon, PageHeader, ManualActivityForm],
   templateUrl: './activities-page.html',
   styleUrls: ['../auth/auth-form.css', './activities-page.css'],
 })
@@ -61,7 +62,9 @@ export class ActivitiesPage implements OnInit {
   protected readonly results = signal<FileResult[]>([]);
   protected readonly errors = signal<string[]>([]);
   protected readonly notice = signal<string | null>(null);
-  protected readonly confirming = signal<string | null>(null);
+  /** The activity the dialog asks about. */
+  protected readonly confirming = signal<Activity | null>(null);
+  private readonly deleteDialog = viewChild(ConfirmDialog);
   protected readonly highlighted = signal<string | null>(null);
   /** The sport the list is kept to; `null`: all of them. */
   protected readonly filter = signal<Activity['sport'] | null>(null);
@@ -172,15 +175,14 @@ export class ActivitiesPage implements OnInit {
 
   protected askDelete(activity: Activity): void {
     this.clearMessages();
-    this.confirming.set(activity.id);
+    this.confirming.set(activity);
+    this.deleteDialog()?.open();
   }
 
-  protected cancelDelete(): void {
-    this.confirming.set(null);
-  }
-
-  protected async delete(activity: Activity): Promise<void> {
-    if (this.busy()) {
+  /** The dialog was answered with "Delete activity". */
+  protected async delete(): Promise<void> {
+    const activity = this.confirming();
+    if (this.busy() || activity === null) {
       return;
     }
     this.clearMessages();
