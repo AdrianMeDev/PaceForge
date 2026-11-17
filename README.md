@@ -835,7 +835,8 @@ Not there yet: time windows within a day, and different time per sport.
 The **Season** page (`/season`, also in the navigation) shows the skeleton of your season: one row
 for every week from this week to the week of your last **A or B race**, with the **phase** of the
 week (base, build, specific, taper), the minutes to aim for, the minutes the week offers and the
-races. It is the frame that your coach fills with the main plan (see [below](#filling-the-season-with-your-coach)); the [week plan](#week-plan) follows it.
+races. It is the frame that your coach fills with the main plan (see [below](#filling-the-season-with-your-coach)); the [week plan](#week-plan) follows it. On a phone the timeline swipes and starts at
+this week, and every week of the table is a card.
 
 It is **worked out by the code, not by a coach**, every time you open the page, from your goals,
 your last four weeks of training (or your normal week, if that is more), your training time and
@@ -907,8 +908,9 @@ sessions (a long run, a threshold session, the race …) and a reason. The model
   version was made for; the page says so when today's skeleton has other weeks. **Draft the season
   with my coach** (or **Draft a new version**) asks for a draft, and says before that what it
   costs and that it takes a few minutes. A draft is shown with what the checks say, in order of
-  the week; **Confirm plan** is disabled while it has errors and says why, **Discard** always
-  works. Without an AI provider the page points to the Connections page. The coach's texts are
+  the week (folded behind a line such as "1 error, 2 notes", open when there is an error);
+  **Confirm plan** is disabled while it has errors and says why, **Discard** always works and asks
+  first. The versions are chips (`v2 · Draft`) above the plan. Without an AI provider the page points to the Connections page. The coach's texts are
   shown as text, never as markup.
 - **Timeline and chart:** above the table the page draws the season. The **timeline** has a cell
   for every week, coloured and lettered by phase (Ba base, Bu build, Sp specific, Ta taper, Tr
