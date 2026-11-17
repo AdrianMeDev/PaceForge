@@ -124,7 +124,9 @@ describe('PeriodsPanel', () => {
       fixture = TestBed.createComponent(PeriodsPanel);
       fixture.detectChanges();
 
-      expect(fixture.nativeElement.textContent).toContain('Loading');
+      expect(
+        fixture.nativeElement.querySelector('[role="status"][aria-label="Loading"]'),
+      ).toBeTruthy();
       expect(fixture.nativeElement.querySelector('.period')).toBeNull();
     });
 
@@ -219,7 +221,7 @@ describe('PeriodsPanel', () => {
 
       expect(panel.querySelector('form')).not.toBeNull();
       expect(query(panel, 'h3').textContent).toBe('Add a period');
-      expect(panel.querySelector('p > button.primary')).toBeNull();
+      expect(panel.querySelector('p > button.btn-primary')).toBeNull();
     });
 
     it('closes the form again with Cancel and sends nothing', async () => {

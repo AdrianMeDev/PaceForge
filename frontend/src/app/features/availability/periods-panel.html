@@ -1,5 +1,5 @@
 <div class="panel">
-  <h2>Not available</h2>
+  <h2 class="m-0 mb-2 text-lg font-semibold">Not available</h2>
   <p class="hint">
     Vacation, illness or anything else that keeps you from training. On these days you offer no
     training time.
@@ -7,11 +7,16 @@
 
   @switch (view()) {
     @case ('loading') {
-      <p role="status">Loading…</p>
+      <div class="grid gap-3" role="status" aria-label="Loading">
+        <div class="skeleton h-12"></div>
+        <div class="skeleton h-12"></div>
+      </div>
     }
     @case ('unreachable') {
       <p class="alert" role="alert">Your periods could not be loaded.</p>
-      <p><button type="button" class="primary" (click)="load()">Try again</button></p>
+      <p>
+        <button type="button" class="btn btn-primary btn-sm" (click)="load()">Try again</button>
+      </p>
     }
     @case ('ready') {
       @for (message of errors(); track $index) {
@@ -29,7 +34,12 @@
         />
       } @else {
         <p>
-          <button type="button" class="primary" [disabled]="busy()" (click)="openAdd()">
+          <button
+            type="button"
+            class="btn btn-primary btn-sm"
+            [disabled]="busy()"
+            (click)="openAdd()"
+          >
             Add period
           </button>
         </p>
@@ -38,14 +48,14 @@
       @if (periods().length === 0) {
         <p class="hint">You have not entered any period yet.</p>
       } @else {
-        <ul class="list">
+        <ul class="list m-0 grid list-none gap-3 p-0">
           @for (period of periods(); track period.id) {
             <li
-              class="period"
+              class="period rounded-md border border-border bg-bg p-3"
               [attr.data-status]="period.status"
               [attr.data-testid]="'period-' + period.id"
             >
-              <div class="head">
+              <div class="head flex flex-wrap items-center gap-2">
                 <span class="badge kind">{{ kindLabel[period.kind] }}</span>
                 @if (period.status === 'current') {
                   <span class="badge now">Now</span>
@@ -55,35 +65,39 @@
                 }
               </div>
 
-              <p class="dates" data-testid="dates">
+              <p class="dates m-0 mt-2" data-testid="dates">
                 {{ period.start_date | date: 'mediumDate' }}
                 @if (period.days > 1) {
                   – {{ period.end_date | date: 'mediumDate' }}
                 }
-                <span class="length">({{ lengthText(period.days) }})</span>
+                <span class="length text-muted">({{ lengthText(period.days) }})</span>
               </p>
               @if (period.note) {
-                <p class="note" data-testid="note">{{ period.note }}</p>
+                <p class="note m-0 mt-2 break-words text-muted" data-testid="note">
+                  {{ period.note }}
+                </p>
               }
 
-              <div class="actions">
+              <div class="actions flex flex-wrap items-center gap-2">
                 @if (confirming() === period.id) {
                   <span class="confirm" role="group" aria-label="Delete this period">
                     Delete this period?
                     <button
                       type="button"
-                      class="primary"
+                      class="btn btn-primary btn-sm"
                       [disabled]="busy()"
                       (click)="delete(period)"
                     >
                       Yes, delete
                     </button>
-                    <button type="button" class="link" (click)="cancelDelete()">Cancel</button>
+                    <button type="button" class="btn btn-ghost btn-sm" (click)="cancelDelete()">
+                      Cancel
+                    </button>
                   </span>
                 } @else {
                   <button
                     type="button"
-                    class="link"
+                    class="btn btn-ghost btn-sm"
                     [disabled]="busy()"
                     [attr.aria-label]="
                       'Delete ' +

@@ -102,7 +102,7 @@ describe('FixedSessionsPanel', () => {
       api.listFixedSessions.mockReturnValue(new Promise<never>(() => undefined));
       fixture.detectChanges();
 
-      expect(panel.textContent).toContain('Loading');
+      expect(panel.querySelector('[role="status"][aria-label="Loading"]')).toBeTruthy();
     });
 
     it('says so and offers to try again when the list cannot be loaded', async () => {
@@ -110,7 +110,7 @@ describe('FixedSessionsPanel', () => {
 
       expect(alerts()).toEqual(['Your fixed appointments could not be loaded.']);
 
-      await click(query(panel, 'button.primary'));
+      await click(query(panel, 'button.btn-primary'));
 
       expect(ids()).toEqual(['ride']);
     });

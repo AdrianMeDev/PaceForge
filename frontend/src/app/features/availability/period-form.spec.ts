@@ -204,8 +204,17 @@ describe('PeriodForm', () => {
       expect(button.disabled).toBe(false);
     });
 
+    it('keeps adding and cancelling together in one bar, and the dates side by side on a wide screen', () => {
+      const bar = query(form, '.action-bar');
+
+      expect(bar.querySelector('button[type="submit"]')).not.toBeNull();
+      expect(bar.querySelector('button.btn-ghost')).not.toBeNull();
+      expect(query(form, '.form-grid #period-start')).toBeTruthy();
+      expect(query(form, '.form-grid #period-end')).toBeTruthy();
+    });
+
     it('cancels without sending anything', () => {
-      query<HTMLButtonElement>(form, 'button.link').click();
+      query<HTMLButtonElement>(form, '.action-bar button.btn-ghost').click();
 
       expect(events).toEqual(['cancelled']);
       expect(api.createPeriod).not.toHaveBeenCalled();

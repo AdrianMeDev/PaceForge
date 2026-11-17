@@ -114,7 +114,9 @@ describe('LimitationsPanel', () => {
       fixture = TestBed.createComponent(LimitationsPanel);
       fixture.detectChanges();
 
-      expect(fixture.nativeElement.textContent).toContain('Loading');
+      expect(
+        fixture.nativeElement.querySelector('[role="status"][aria-label="Loading"]'),
+      ).toBeTruthy();
     });
 
     it('says so and offers to try again when the list cannot be loaded', async () => {
@@ -131,7 +133,7 @@ describe('LimitationsPanel', () => {
 
       expect(alerts()).toEqual(['Your limitations could not be loaded.']);
 
-      query<HTMLButtonElement>(panel, 'button.primary').click();
+      query<HTMLButtonElement>(panel, 'button.btn-primary').click();
       await settle(fixture);
 
       expect(ids()).toEqual(['back']);

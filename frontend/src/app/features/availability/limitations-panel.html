@@ -1,5 +1,5 @@
 <div class="panel">
-  <h2>Injuries and limitations</h2>
+  <h2 class="m-0 mb-2 text-lg font-semibold">Injuries and limitations</h2>
   <p class="hint">
     Tell your coach what to take care of. Current entries are sent to your AI coach with every plan
     request, as a body part and the sports it affects, without any text of yours. Where they go:
@@ -8,11 +8,16 @@
 
   @switch (view()) {
     @case ('loading') {
-      <p role="status">Loading…</p>
+      <div class="grid gap-3" role="status" aria-label="Loading">
+        <div class="skeleton h-12"></div>
+        <div class="skeleton h-12"></div>
+      </div>
     }
     @case ('unreachable') {
       <p class="alert" role="alert">Your limitations could not be loaded.</p>
-      <p><button type="button" class="primary" (click)="load()">Try again</button></p>
+      <p>
+        <button type="button" class="btn btn-primary btn-sm" (click)="load()">Try again</button>
+      </p>
     }
     @case ('ready') {
       @for (message of errors(); track $index) {
@@ -23,7 +28,7 @@
       }
 
       <form class="form" novalidate (submit)="add($event)">
-        <h3>Add an entry</h3>
+        <h3 class="m-0 mb-3 text-base font-semibold">Add an entry</h3>
         <div class="field">
           <label for="limitation-body-part">Where</label>
           <select
@@ -61,7 +66,7 @@
         </fieldset>
 
         <p>
-          <button type="submit" class="primary" [disabled]="busy()">
+          <button type="submit" class="btn btn-primary btn-sm" [disabled]="busy()">
             {{ busy() ? 'Saving…' : 'Add' }}
           </button>
         </p>
@@ -70,14 +75,14 @@
       @if (limitations().length === 0) {
         <p class="hint">You have not entered anything yet.</p>
       } @else {
-        <ul class="list">
+        <ul class="list m-0 grid list-none gap-3 p-0">
           @for (entry of limitations(); track entry.id) {
             <li
-              class="entry"
+              class="entry rounded-md border border-border bg-bg p-3"
               [attr.data-status]="entry.status"
               [attr.data-testid]="'limitation-' + entry.id"
             >
-              <div class="head">
+              <div class="head flex flex-wrap items-center gap-2">
                 <span class="badge" data-testid="part">{{ bodyPartLabels[entry.body_part] }}</span>
                 <span
                   class="badge"
@@ -87,26 +92,28 @@
                   {{ entry.status === 'current' ? 'Current' : 'Healed' }}
                 </span>
               </div>
-              <p class="entry-sports" data-testid="sports">{{ sportsOf(entry.sports) }}</p>
+              <p class="entry-sports my-2" data-testid="sports">{{ sportsOf(entry.sports) }}</p>
 
-              <div class="actions">
+              <div class="actions flex flex-wrap items-center gap-2">
                 @if (confirming() === entry.id) {
                   <span class="confirm" role="group" aria-label="Delete this entry">
                     Delete this entry?
                     <button
                       type="button"
-                      class="primary"
+                      class="btn btn-primary btn-sm"
                       [disabled]="busy()"
                       (click)="delete(entry)"
                     >
                       Yes, delete
                     </button>
-                    <button type="button" class="link" (click)="cancelDelete()">Cancel</button>
+                    <button type="button" class="btn btn-ghost btn-sm" (click)="cancelDelete()">
+                      Cancel
+                    </button>
                   </span>
                 } @else {
                   <button
                     type="button"
-                    class="link"
+                    class="btn btn-ghost btn-sm"
                     [disabled]="busy()"
                     [attr.aria-label]="
                       (entry.status === 'current' ? 'Mark as healed: ' : 'Current again: ') +
@@ -118,7 +125,7 @@
                   </button>
                   <button
                     type="button"
-                    class="link"
+                    class="btn btn-ghost btn-sm"
                     [disabled]="busy()"
                     [attr.aria-label]="'Delete: ' + bodyPartLabels[entry.body_part].toLowerCase()"
                     (click)="askDelete(entry)"
