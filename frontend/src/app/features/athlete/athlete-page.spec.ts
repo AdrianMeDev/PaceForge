@@ -357,6 +357,23 @@ describe('AthletePage', () => {
     });
   });
 
+  describe('the thresholds as cards on a phone', () => {
+    it('gives the value and the source of every threshold the name of their column', async () => {
+      await setup();
+
+      const labels = Array.from(
+        page.querySelectorAll('table:not(.zones) tbody tr')[0].querySelectorAll('td[data-label]'),
+      ).map((cell) => cell.getAttribute('data-label'));
+      expect(labels).toEqual(['Value', 'Source']);
+    });
+
+    it('leaves the zone tables as tables', async () => {
+      await setup();
+
+      expect(page.querySelectorAll('table.zones td[data-label]')).toHaveLength(0);
+    });
+  });
+
   describe('values that do not count', () => {
     it('shows the typed value and lists the others as hints', async () => {
       await setup(

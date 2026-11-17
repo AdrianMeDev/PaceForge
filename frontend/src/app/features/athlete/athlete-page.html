@@ -144,7 +144,7 @@
                 @for (item of section.rows; track item.key) {
                   <tr>
                     <th scope="row">{{ item.label }}</th>
-                    <td>
+                    <td data-label="Value">
                       @if (editing() === item.key) {
                         <label class="visually-hidden" [attr.for]="'edit-' + item.id">
                           New value for {{ item.name }}
@@ -183,7 +183,7 @@
                         }
                       }
                     </td>
-                    <td>
+                    <td data-label="Source">
                       @if (item.threshold.effective; as current) {
                         <span
                           class="source"
