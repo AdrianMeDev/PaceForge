@@ -129,7 +129,12 @@
       {{ text }}
       @if (existingId(); as id) {
         @if (listedIds().includes(id)) {
-          <button type="button" class="link" data-testid="manual-locate" (click)="locate.emit(id)">
+          <button
+            type="button"
+            class="btn btn-ghost btn-sm"
+            data-testid="manual-locate"
+            (click)="locate.emit(id)"
+          >
             Show it in the list
           </button>
         }

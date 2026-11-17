@@ -35,7 +35,11 @@
     </p>
   }
   @if (problems().length > 0) {
-    <ul class="problems" aria-label="What was wrong with the answer" data-testid="coach-problems">
+    <ul
+      class="list-disc problems"
+      aria-label="What was wrong with the answer"
+      data-testid="coach-problems"
+    >
       @for (problem of problems(); track $index) {
         <li>{{ problem.message }}</li>
       }

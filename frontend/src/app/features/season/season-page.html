@@ -28,7 +28,7 @@
         @if (problem() === 'list') {
           <p class="alert" role="alert" data-testid="list-problem">
             The plans of your coach could not be loaded.
-            <button type="button" class="link" (click)="load()">Try again</button>
+            <button type="button" class="btn btn-ghost btn-sm" (click)="load()">Try again</button>
           </p>
         }
         @if (problem() === 'version') {
@@ -52,7 +52,7 @@
           </p>
         }
         @if (problems().length > 0) {
-          <ul class="problems" aria-label="What was wrong with the answer">
+          <ul class="list-disc problems" aria-label="What was wrong with the answer">
             @for (item of problems(); track $index) {
               <li>{{ item.message }}</li>
             }
@@ -132,15 +132,15 @@
             </p>
             @if (differences(); as changes) {
               <section class="changes" data-testid="changes">
-                <h3>What changed since version {{ parent()?.version }}</h3>
+                <h3 class="font-semibold">What changed since version {{ parent()?.version }}</h3>
                 @if (changes.weeks.length === 0 && !changes.rationale) {
                   <p class="hint" data-testid="no-changes">
                     Nothing is different in the weeks. Only the words may have changed.
                   </p>
                 }
                 @for (item of changes.weeks; track item.week_start) {
-                  <h4>{{ range(item.week_start) }}</h4>
-                  <ul data-testid="week-change">
+                  <h4 class="font-semibold">{{ range(item.week_start) }}</h4>
+                  <ul class="list-disc pl-5" data-testid="week-change">
                     @for (entry of item.minutes; track entry.sport) {
                       <li>
                         {{ sportLabel[entry.sport] }}: {{ minutes(entry.before) }} →
@@ -190,7 +190,7 @@
                 <summary class="cursor-pointer font-semibold" data-testid="findings-summary">
                   What the checks say: {{ findingsText() }}
                 </summary>
-                <ul class="findings" aria-label="What the checks say">
+                <ul class="list-disc findings" aria-label="What the checks say">
                   @for (finding of findings(); track $index) {
                     <li [attr.data-severity]="finding.severity">
                       <strong>{{ finding.severity === 'error' ? 'Error' : 'Note' }}</strong>
@@ -265,7 +265,7 @@
 
         @if (canChange()) {
           <section class="change" data-testid="change" aria-label="Ask for a change">
-            <h3>Ask for a change</h3>
+            <h3 class="font-semibold">Ask for a change</h3>
             @if (configured()) {
               <label for="season-request">What should be different?</label>
               <textarea

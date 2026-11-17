@@ -54,7 +54,7 @@
             (the skeleton aims for {{ minutes(aim.target_minutes) }})
           </p>
           @if (aim.key_sessions.length > 0) {
-            <ul class="key-sessions" aria-label="Key sessions of the week">
+            <ul class="list-disc key-sessions" aria-label="Key sessions of the week">
               @for (item of aim.key_sessions; track $index) {
                 <li>{{ keySession(item) }}</li>
               }
@@ -86,7 +86,7 @@
         </p>
       }
       @if (problems().length > 0) {
-        <ul class="problems" aria-label="What was wrong with the answer">
+        <ul class="list-disc problems" aria-label="What was wrong with the answer">
           @for (problem of problems(); track $index) {
             <li>{{ problem.message }}</li>
           }
@@ -166,7 +166,7 @@
         } @else {
           <article class="plan" [attr.data-status]="shown.status">
             <div class="head">
-              <h2>Version {{ shown.version }}</h2>
+              <h2 class="font-semibold">Version {{ shown.version }}</h2>
               <span class="badge" [attr.data-status]="shown.status" data-testid="status">{{
                 status[shown.status]
               }}</span>
@@ -190,7 +190,7 @@
                   <summary class="cursor-pointer font-semibold" data-testid="findings-summary">
                     What the checks say: {{ findingsText() }}
                   </summary>
-                  <ul class="findings" aria-label="What the checks say">
+                  <ul class="list-disc findings" aria-label="What the checks say">
                     @for (finding of findings(); track $index) {
                       <li [attr.data-severity]="finding.severity">
                         <strong>{{ finding.severity === 'error' ? 'Error' : 'Note' }}</strong>
