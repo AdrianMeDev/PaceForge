@@ -74,15 +74,6 @@ h2 {
   margin-top: 0.8rem;
 }
 
-button.secondary {
-  padding: 0.5rem 0.9rem;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text);
-  cursor: pointer;
-}
-
 .confirm {
   display: inline-flex;
   flex-wrap: wrap;

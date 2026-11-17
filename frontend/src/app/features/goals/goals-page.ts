@@ -3,6 +3,7 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { GoalsApi } from '../../core/goals/goals-api';
 import { Goal, GoalChanges, GoalStatus } from '../../core/goals/goals-models';
+import { PageHeader } from '../../shared/page-header';
 import { GoalForm } from './goal-form';
 import {
   KIND_LABELS,
@@ -37,7 +38,7 @@ const NOTICES: Record<GoalStatus, string> = {
  */
 @Component({
   selector: 'app-goals-page',
-  imports: [RouterLink, DatePipe, GoalForm],
+  imports: [RouterLink, DatePipe, GoalForm, PageHeader],
   templateUrl: './goals-page.html',
   styleUrls: ['../auth/auth-form.css', './goals-page.css'],
 })
@@ -47,6 +48,11 @@ export class GoalsPage implements OnInit {
   protected readonly view = signal<View>('loading');
   protected readonly goals = signal<Goal[]>([]);
   protected readonly busy = signal(false);
+  /** The line under the title: how many goals are active. */
+  protected readonly subtitle = computed(() => {
+    const active = this.goals().filter((goal) => goal.status === 'active').length;
+    return this.view() !== 'ready' || this.goals().length === 0 ? '' : `${active} active`;
+  });
   protected readonly errors = signal<string[]>([]);
   protected readonly notice = signal<string | null>(null);
   /** The id of the goal that is about to be deleted, waiting for the answer to "Are you sure?". */

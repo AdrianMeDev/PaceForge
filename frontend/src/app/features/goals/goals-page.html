@@ -1,13 +1,24 @@
 <section class="goals">
-  <h1>Goals</h1>
+  <app-page-header title="Goals" [subtitle]="subtitle()">
+    @if (view() === 'ready' && formKeys().length === 0) {
+      <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="openAdd()">
+        Add goal
+      </button>
+    }
+  </app-page-header>
 
   @switch (view()) {
     @case ('loading') {
-      <p role="status">Loading…</p>
+      <div class="grid gap-4" role="status" aria-label="Loading">
+        <div class="skeleton h-28"></div>
+        <div class="skeleton h-28"></div>
+      </div>
     }
     @case ('unreachable') {
       <p class="alert" role="alert">Your goals could not be loaded.</p>
-      <p><button type="button" class="primary" (click)="load()">Try again</button></p>
+      <p>
+        <button type="button" class="btn btn-primary btn-sm" (click)="load()">Try again</button>
+      </p>
     }
     @case ('signed_out') {
       <p class="alert" role="alert">Your session has ended. Please sign in again.</p>
@@ -29,16 +40,13 @@
           (signedOut)="signedOut()"
           (gone)="gone()"
         />
-      } @empty {
-        <p>
-          <button type="button" class="primary" [disabled]="busy()" (click)="openAdd()">
-            Add goal
-          </button>
-        </p>
       }
 
       @if (goals().length === 0) {
-        <p class="hint">You have no goals yet.</p>
+        <div class="empty-state" data-testid="no-goals">
+          <p class="m-0">You have no goals yet. A race, a threshold target or a general goal?</p>
+          <p class="m-0 text-sm">Use <strong>Add goal</strong> above to start.</p>
+        </div>
       } @else {
         <ul class="list">
           @for (goal of goals(); track goal.id) {
@@ -96,7 +104,7 @@
                     Delete this goal?
                     <button
                       type="button"
-                      class="primary"
+                      class="btn btn-primary btn-sm"
                       [disabled]="busy()"
                       (click)="delete(goal)"
                     >
@@ -108,7 +116,7 @@
                   @if (goal.status === 'active') {
                     <button
                       type="button"
-                      class="secondary"
+                      class="btn btn-secondary btn-sm"
                       [disabled]="busy()"
                       [attr.aria-label]="'Mark ' + goal.title + ' as achieved'"
                       (click)="setStatus(goal, 'achieved')"
@@ -117,7 +125,7 @@
                     </button>
                     <button
                       type="button"
-                      class="secondary"
+                      class="btn btn-secondary btn-sm"
                       [disabled]="busy()"
                       [attr.aria-label]="'Drop ' + goal.title"
                       (click)="setStatus(goal, 'dropped')"
@@ -127,7 +135,7 @@
                     @if (goal.priority !== 'main') {
                       <button
                         type="button"
-                        class="secondary"
+                        class="btn btn-secondary btn-sm"
                         [disabled]="busy()"
                         [attr.aria-label]="'Make ' + goal.title + ' the main goal'"
                         (click)="makeMain(goal)"
@@ -137,7 +145,7 @@
                     } @else {
                       <button
                         type="button"
-                        class="secondary"
+                        class="btn btn-secondary btn-sm"
                         [disabled]="busy()"
                         [attr.aria-label]="'Make ' + goal.title + ' a secondary goal'"
                         (click)="makeSecondary(goal)"
@@ -148,7 +156,7 @@
                   } @else {
                     <button
                       type="button"
-                      class="secondary"
+                      class="btn btn-secondary btn-sm"
                       [disabled]="busy()"
                       [attr.aria-label]="'Reactivate ' + goal.title"
                       (click)="setStatus(goal, 'active')"

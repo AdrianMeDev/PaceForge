@@ -154,7 +154,9 @@ describe('GoalsPage', () => {
       fixture = TestBed.createComponent(GoalsPage);
       fixture.detectChanges();
 
-      expect(fixture.nativeElement.textContent).toContain('Loading');
+      expect(
+        fixture.nativeElement.querySelector('[role="status"][aria-label="Loading"]'),
+      ).toBeTruthy();
       expect(fixture.nativeElement.querySelector('.goal')).toBeNull();
     });
 
@@ -190,8 +192,16 @@ describe('GoalsPage', () => {
       expect(page.querySelector('.goal')).toBeNull();
     });
 
+    it('says how many goals are active under the title', async () => {
+      await setup(ok(MAIN, FTP));
+
+      expect(query(page, '[data-testid=subtitle]').textContent).toMatch(/^\d+ active$/);
+    });
+
     it('shows an empty state', async () => {
       await setup(ok());
+
+      expect(page.querySelector('[data-testid=subtitle]')).toBeNull();
 
       expect(text()).toContain('You have no goals yet.');
       expect(page.querySelector('.goal')).toBeNull();
@@ -521,7 +531,7 @@ describe('GoalsPage', () => {
           (b) => b.textContent?.trim() === 'Add goal',
         ),
       ).toHaveLength(1);
-      expect(page.querySelector('p > button.primary')).toBeNull();
+      expect(page.querySelector('app-page-header button')).toBeNull();
     });
 
     it('closes the form again with Cancel and sends nothing', async () => {
