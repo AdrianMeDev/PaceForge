@@ -72,3 +72,35 @@ describe('the stylesheet', () => {
     }
   });
 });
+
+describe('the shared building blocks', () => {
+  const components = styles.slice(styles.indexOf('@layer components {'));
+
+  it.each([
+    '.btn',
+    '.btn-sm',
+    '.btn-primary',
+    '.btn-secondary',
+    '.btn-ghost',
+    '.btn-danger',
+    '.card',
+    '.panel',
+    '.badge',
+    '.alert',
+    '.notice',
+    '.notice-success',
+    '.notice-warning',
+    '.field',
+    '.hint',
+    '.field-error',
+    '.empty-state',
+    '.skeleton',
+  ])('defines %s in the components layer', (selector) => {
+    // a selector is the end of its rule, or one of several before the brace
+    expect(components).toMatch(new RegExp(`${selector.replace('.', '\\.')}(,\\s*\\S+)* \\{`));
+  });
+
+  it('stops the loading animation for people who ask for less motion', () => {
+    expect(components).toContain('motion-reduce:animate-none');
+  });
+});

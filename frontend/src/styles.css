@@ -219,3 +219,81 @@ button.primary:disabled {
   outline: 3px solid var(--accent);
   outline-offset: 2px;
 }
+
+/*
+ * Building blocks every page can use. They sit in the `components` layer, so a rule of a page that
+ * is not in a layer still wins until that page is moved over; the old names (`.panel`, `.alert`,
+ * `.notice`, `.hint`, `.field-error`, `.badge`) stay valid and are the same blocks.
+ */
+@layer components {
+  .btn {
+    @apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-md border border-transparent px-4 py-2 font-semibold transition-colors disabled:cursor-progress disabled:opacity-60;
+  }
+
+  .btn-sm {
+    @apply px-3 py-1 text-sm;
+  }
+
+  .btn-primary {
+    @apply bg-accent text-accent-text hover:brightness-110;
+  }
+
+  .btn-secondary {
+    @apply border-border bg-surface-2 text-fg hover:bg-accent-soft;
+  }
+
+  .btn-ghost {
+    @apply bg-transparent text-accent hover:bg-accent-soft;
+  }
+
+  .btn-danger {
+    @apply border-danger bg-danger-bg text-danger hover:brightness-95;
+  }
+
+  .card,
+  .panel {
+    @apply mb-4 rounded-md border border-border bg-surface p-5 shadow-card;
+  }
+
+  .badge {
+    @apply inline-flex items-center rounded-full bg-surface-2 px-2 py-0.5 text-xs font-semibold text-muted;
+  }
+
+  .alert {
+    @apply mb-4 rounded-sm bg-danger-bg px-3 py-2 text-danger;
+  }
+
+  .notice {
+    @apply mb-4 rounded-sm bg-info-bg px-3 py-2 text-info;
+  }
+
+  .notice-success {
+    @apply bg-success-bg text-success;
+  }
+
+  .notice-warning {
+    @apply bg-warning-bg text-warning;
+  }
+
+  .field {
+    @apply mb-4;
+  }
+
+  .hint {
+    @apply mt-1 text-sm text-muted;
+  }
+
+  .field-error {
+    @apply mt-1 text-sm text-danger;
+  }
+
+  /* What a list or a block says when it has nothing yet: what is missing and what to do. */
+  .empty-state {
+    @apply flex flex-col items-center gap-2 rounded-md border border-dashed border-border bg-surface-2 p-8 text-center text-muted;
+  }
+
+  /* A grey bar where text or a block will be, while it loads. */
+  .skeleton {
+    @apply min-h-4 animate-pulse rounded-sm bg-surface-2 motion-reduce:animate-none;
+  }
+}
