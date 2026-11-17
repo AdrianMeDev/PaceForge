@@ -221,6 +221,117 @@ button.primary:disabled {
 }
 
 /*
+ * The safe part of Tailwind's base styles (its "preflight"): fixes for differences between browsers
+ * that change nothing the pages look like today. The rest of it (no margin, padding or border on
+ * any element, plain headings, lists and links, buttons and inputs without their own look) is NOT
+ * on yet: it would change every page at once. A page gets it when it is reworked (see UI_PLAN.md,
+ * M3), by writing what it needs as utilities.
+ */
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    tab-size: 4;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  abbr:where([title]) {
+    text-decoration: underline dotted;
+  }
+
+  b,
+  strong {
+    font-weight: bolder;
+  }
+
+  code,
+  kbd,
+  samp,
+  pre {
+    font-size: 1em;
+  }
+
+  small {
+    font-size: 80%;
+  }
+
+  sub,
+  sup {
+    font-size: 75%;
+    line-height: 0;
+    position: relative;
+    vertical-align: baseline;
+  }
+
+  sub {
+    bottom: -0.25em;
+  }
+
+  sup {
+    top: -0.5em;
+  }
+
+  table {
+    text-indent: 0;
+    border-color: inherit;
+  }
+
+  progress {
+    vertical-align: baseline;
+  }
+
+  summary {
+    display: list-item;
+  }
+
+  button,
+  input,
+  select,
+  optgroup,
+  textarea {
+    letter-spacing: inherit;
+  }
+
+  ::placeholder {
+    opacity: 1;
+  }
+
+  textarea {
+    resize: vertical;
+  }
+
+  ::-webkit-date-and-time-value {
+    min-height: 1lh;
+    text-align: inherit;
+  }
+
+  ::-webkit-datetime-edit {
+    display: inline-flex;
+  }
+
+  ::-webkit-datetime-edit-fields-wrapper {
+    padding: 0;
+  }
+
+  ::-webkit-calendar-picker-indicator {
+    line-height: 1;
+  }
+
+  :-moz-ui-invalid {
+    box-shadow: none;
+  }
+
+  ::-webkit-inner-spin-button,
+  ::-webkit-outer-spin-button {
+    height: auto;
+  }
+
+  /* An element with the `hidden` attribute stays hidden, whatever display a rule gives it. */
+  [hidden]:where(:not([hidden='until-found'])) {
+    display: none !important;
+  }
+}
+
+/*
  * Building blocks every page can use. They sit in the `components` layer, so a rule of a page that
  * is not in a layer still wins until that page is moved over; the old names (`.panel`, `.alert`,
  * `.notice`, `.hint`, `.field-error`, `.badge`) stay valid and are the same blocks.

@@ -104,3 +104,18 @@ describe('the shared building blocks', () => {
     expect(components).toContain('motion-reduce:animate-none');
   });
 });
+
+describe('the base styles', () => {
+  const base = styles.slice(styles.indexOf('@layer base {'), styles.indexOf('@layer components {'));
+
+  it('keeps an element with the hidden attribute hidden', () => {
+    expect(base).toContain("[hidden]:where(:not([hidden='until-found']))");
+    expect(base).toContain('display: none !important');
+  });
+
+  it('does not reset the margin, padding or border of every element (not yet)', () => {
+    expect(styles).not.toMatch(/@import\s+['"]tailwindcss\/preflight/);
+    expect(base).not.toMatch(/(^|\n)\s*\*\s*[,{]/);
+    expect(base).not.toMatch(/border:\s*0 solid/);
+  });
+});
