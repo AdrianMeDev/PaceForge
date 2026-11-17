@@ -146,20 +146,22 @@
                     <th scope="row">{{ item.label }}</th>
                     <td data-label="Value">
                       @if (editing() === item.key) {
-                        <label class="visually-hidden" [attr.for]="'edit-' + item.id">
-                          New value for {{ item.name }}
-                        </label>
-                        <input
-                          type="text"
-                          inputmode="decimal"
-                          autocomplete="off"
-                          [id]="'edit-' + item.id"
-                          [value]="draft()"
-                          [attr.aria-invalid]="rowError() ? true : null"
-                          [attr.aria-describedby]="rowError() ? 'error-' + item.id : null"
-                          (input)="onDraft($event)"
-                          (keydown.enter)="save(item)"
-                        />
+                        <div class="field mb-0">
+                          <label class="visually-hidden" [attr.for]="'edit-' + item.id">
+                            New value for {{ item.name }}
+                          </label>
+                          <input
+                            type="text"
+                            inputmode="decimal"
+                            autocomplete="off"
+                            [id]="'edit-' + item.id"
+                            [value]="draft()"
+                            [attr.aria-invalid]="rowError() ? true : null"
+                            [attr.aria-describedby]="rowError() ? 'error-' + item.id : null"
+                            (input)="onDraft($event)"
+                            (keydown.enter)="save(item)"
+                          />
+                        </div>
                         @if (rowError(); as message) {
                           <p class="field-error" role="alert" [id]="'error-' + item.id">
                             {{ message }}

@@ -94,7 +94,7 @@ const RUN_ROWS: Row[] = [
   selector: 'app-athlete-page',
   imports: [RouterLink, DatePipe, PageHeader, AppearancePanel, BestTimesPanel, BodyDataPanel],
   templateUrl: './athlete-page.html',
-  styleUrls: ['../auth/auth-form.css', './athlete-page.css'],
+  styleUrl: './athlete-page.css',
 })
 export class AthletePage implements OnInit {
   private readonly api = inject(AthleteApi);

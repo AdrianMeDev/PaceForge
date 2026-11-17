@@ -65,14 +65,16 @@
             This link is shown <strong>only now</strong>. Send it to the person yourself. If you
             lose it, revoke the invitation and create a new one.
           </p>
-          <label for="invite-link">Invitation link</label>
-          <input
-            id="invite-link"
-            type="text"
-            readonly
-            [value]="link.url"
-            (focus)="select($event)"
-          />
+          <div class="field">
+            <label for="invite-link">Invitation link</label>
+            <input
+              id="invite-link"
+              type="text"
+              readonly
+              [value]="link.url"
+              (focus)="select($event)"
+            />
+          </div>
           <div class="actions mt-3 flex flex-wrap items-center gap-2">
             <button type="button" class="btn btn-primary btn-sm" (click)="copy()">Copy link</button>
             <button type="button" class="btn btn-secondary btn-sm" (click)="dismissLink()">

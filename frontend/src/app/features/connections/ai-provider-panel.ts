@@ -50,7 +50,7 @@ const FIELDS = ['provider', 'model', 'season_model', 'base_url', 'api_key'];
   selector: 'app-ai-provider-panel',
   imports: [DatePipe, DecimalPipe, ConfirmDialog],
   templateUrl: './ai-provider-panel.html',
-  styleUrls: ['../auth/auth-form.css', './ai-provider-panel.css'],
+  styleUrl: './ai-provider-panel.css',
 })
 export class AiProviderPanel implements OnInit {
   private readonly api = inject(CoachApi);

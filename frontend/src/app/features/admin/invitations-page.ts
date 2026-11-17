@@ -34,7 +34,7 @@ const STATUS_LABELS: Record<InvitationStatus, string> = {
   selector: 'app-invitations-page',
   imports: [ReactiveFormsModule, RouterLink, DatePipe, PageHeader],
   templateUrl: './invitations-page.html',
-  styleUrls: ['../auth/auth-form.css', './invitations-page.css'],
+  styleUrl: './invitations-page.css',
 })
 export class InvitationsPage implements OnInit {
   private readonly api = inject(InvitationsApi);
