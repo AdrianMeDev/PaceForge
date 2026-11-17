@@ -1,9 +1,5 @@
 .panel {
-  margin-top: 1.5rem;
-  padding: 1.25rem 1.5rem;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface);
+  margin: 1.5rem 0 0;
 }
 
 h2 {
