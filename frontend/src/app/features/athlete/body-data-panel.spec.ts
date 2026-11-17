@@ -100,6 +100,22 @@ describe('BodyDataPanel', () => {
     await settle(fixture);
   }
 
+  describe('the save bar', () => {
+    it('holds the one save button, in a bar that stays in reach on a phone', async () => {
+      await setup();
+
+      const bar = query(panel, '[data-testid="save-bar"]');
+      expect(bar.classList).toContain('action-bar');
+      expect(bar.querySelector('button[type="submit"]')?.textContent?.trim()).toBe('Save');
+    });
+
+    it('lays the fields out in a grid', async () => {
+      await setup();
+
+      expect(panel.querySelectorAll('.form-grid').length).toBeGreaterThan(0);
+    });
+  });
+
   describe('what is shown', () => {
     it('says what the coach is told and where it goes', async () => {
       await setup();

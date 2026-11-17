@@ -1,5 +1,5 @@
-<div class="panel">
-  <h2>Best times</h2>
+<div class="card">
+  <h2 class="m-0 mb-2 text-lg font-semibold">Best times</h2>
   <p class="hint">
     Your running best times. The newest race of the last twelve months gives a VDOT, a measure of
     your running form, and from it your threshold pace; it counts after a pace you typed in and
@@ -8,12 +8,12 @@
   </p>
 
   @if (counting(); as found) {
-    <p class="counting" data-testid="counting">
+    <p class="counting my-3" data-testid="counting">
       Your VDOT: <strong>{{ found.value }}</strong> (from your {{ found.label }} on
       {{ found.date }})
     </p>
   } @else {
-    <p class="counting" data-testid="counting">
+    <p class="counting my-3" data-testid="counting">
       No best time counts yet. Enter a race of the last twelve months.
     </p>
   }
@@ -25,11 +25,14 @@
     <p class="notice" role="status">{{ text }}</p>
   }
 
-  <ul class="list">
+  <ul class="list m-0 grid list-none gap-3 p-0">
     @for (row of rows(); track row.distance) {
-      <li class="entry" [attr.data-testid]="'best-' + row.distance">
-        <form class="row" novalidate (submit)="save(row.distance, $event)">
-          <h3>{{ row.label }}</h3>
+      <li
+        class="entry rounded-md border border-border bg-bg p-3"
+        [attr.data-testid]="'best-' + row.distance"
+      >
+        <form class="row form-grid items-end" novalidate (submit)="save(row.distance, $event)">
+          <h3 class="m-0 mb-1 text-base font-semibold sm:col-span-2">{{ row.label }}</h3>
           <div class="field">
             <label [for]="'best-time-' + row.distance">Time</label>
             <input
@@ -59,10 +62,10 @@
               <p class="field-error" role="alert">{{ message }}</p>
             }
           </div>
-          <div class="actions">
+          <div class="actions flex flex-wrap items-center gap-2 sm:col-span-2">
             <button
               type="submit"
-              class="primary"
+              class="btn btn-primary btn-sm"
               [disabled]="busy() !== null"
               [attr.aria-label]="'Save the ' + row.label + ' time'"
             >
@@ -71,7 +74,7 @@
             @if (row.stored) {
               <button
                 type="button"
-                class="link"
+                class="btn btn-ghost btn-sm"
                 [disabled]="busy() !== null"
                 [attr.aria-label]="'Remove the ' + row.label + ' time'"
                 (click)="remove(row.distance)"
@@ -82,7 +85,9 @@
           </div>
         </form>
         @if (row.stored; as stored) {
-          <p class="meta" data-testid="meta">VDOT {{ stored.vdot }} · {{ standing(stored) }}</p>
+          <p class="meta m-0 mt-2 text-muted" data-testid="meta">
+            VDOT {{ stored.vdot }} · {{ standing(stored) }}
+          </p>
         }
       </li>
     }

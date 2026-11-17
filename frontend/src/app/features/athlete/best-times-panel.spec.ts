@@ -132,6 +132,16 @@ describe('BestTimesPanel', () => {
     await settle(fixture);
   }
 
+  describe('the rows as cards', () => {
+    it('puts the time and the date of a row in a grid and keeps Save and Remove together', async () => {
+      await setup();
+
+      const row = query(panel, '[data-testid="best-5k"]');
+      expect(row.querySelector('form.form-grid')).not.toBeNull();
+      expect(row.querySelector('.actions button[type="submit"]')).not.toBeNull();
+    });
+  });
+
   describe('what is shown', () => {
     it('has a row for each distance, shortest first', async () => {
       await setup();

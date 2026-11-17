@@ -489,7 +489,8 @@ are two constants in `backend/activities/duplicates.py`.
 The **Profile** page (`/settings/profile`, also in the navigation) holds what PaceForge needs to
 know about you as an athlete: your time zone, some data about you and your training, your
 thresholds and the training zones that follow from them. Cycling has FTP, lactate threshold heart rate (LTHR) and maximum heart rate; running has
-threshold pace, LTHR and maximum heart rate. Swimming and strength training have none yet.
+threshold pace, LTHR and maximum heart rate. Swimming and strength training have none yet. On a
+phone every threshold is a card and the forms have one column.
 
 **Where a value comes from, and which one counts.** Every threshold shows its source: **You**,
 **Best time** (the running threshold pace only, see below), **Intervals.icu** or **Estimated**. If

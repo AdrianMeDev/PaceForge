@@ -2,32 +2,6 @@
   max-width: 56rem;
 }
 
-h2 {
-  margin: 0 0 0.75rem;
-  font-size: 1.15rem;
-}
-
-h3 {
-  margin: 1.5rem 0 0.5rem;
-  font-size: 1rem;
-}
-
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-button.secondary {
-  padding: 0.6rem 1rem;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text);
-  cursor: pointer;
-}
-
 .table-wrap {
   overflow-x: auto;
 }
@@ -101,4 +75,67 @@ td input {
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
+}
+
+/* Below 40rem a threshold is a card: the head of the table is hidden, the row head is the title,
+   value and source carry their column and the buttons fill the width. */
+@media (max-width: 39.99rem) {
+  table:not(.zones),
+  table:not(.zones) tbody {
+    display: block;
+  }
+
+  table:not(.zones) thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  table:not(.zones) tr {
+    display: block;
+    margin-bottom: 0.75rem;
+    padding: 0.5rem 0.8rem;
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    background: var(--surface);
+  }
+
+  table:not(.zones) th,
+  table:not(.zones) td {
+    display: block;
+    padding: 0.25rem 0;
+    border: 0;
+  }
+
+  table:not(.zones) th[scope='row'] {
+    font-weight: 600;
+  }
+
+  table:not(.zones) td[data-label] {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    text-align: right;
+  }
+
+  table:not(.zones) td[data-label]::before {
+    content: attr(data-label);
+    color: var(--muted);
+    text-align: left;
+  }
+
+  table:not(.zones) .row-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding-top: 0.5rem;
+    white-space: normal;
+  }
+
+  td input {
+    max-width: none;
+    width: 100%;
+  }
 }

@@ -1,13 +1,19 @@
 <section class="athlete">
-  <h1>Athlete profile</h1>
+  <app-page-header title="Athlete profile" [subtitle]="subtitle()" />
 
   @switch (view()) {
     @case ('loading') {
-      <p role="status">Loading…</p>
+      <div class="grid gap-4" role="status" aria-label="Loading">
+        <div class="skeleton h-24"></div>
+        <div class="skeleton h-40"></div>
+        <div class="skeleton h-40"></div>
+      </div>
     }
     @case ('unreachable') {
       <p class="alert" role="alert">Your athlete profile could not be loaded.</p>
-      <p><button type="button" class="primary" (click)="load()">Try again</button></p>
+      <p>
+        <button type="button" class="btn btn-primary btn-sm" (click)="load()">Try again</button>
+      </p>
     }
     @case ('signed_out') {
       <p class="alert" role="alert">Your session has ended. Please sign in again.</p>
@@ -21,13 +27,13 @@
         <p class="notice" role="status">{{ text }}</p>
       }
       @if (syncing()) {
-        <p role="status">Reading your thresholds from Intervals.icu…</p>
+        <p class="notice" role="status">Reading your thresholds from Intervals.icu…</p>
       }
 
       <app-appearance-panel />
 
-      <div class="panel">
-        <h2>Time zone</h2>
+      <div class="card">
+        <h2 class="m-0 mb-3 text-lg font-semibold">Time zone</h2>
         <div class="field">
           <label for="timezone">Time zone</label>
           <input
@@ -55,11 +61,16 @@
             plans by day. Leave it empty to remove it.
           </p>
         </div>
-        <div class="actions">
-          <button type="button" class="secondary" (click)="useDeviceTimezone()">
+        <div class="actions flex flex-wrap items-center gap-2">
+          <button type="button" class="btn btn-secondary btn-sm" (click)="useDeviceTimezone()">
             Use this device's time zone
           </button>
-          <button type="button" class="primary" [disabled]="busy()" (click)="saveTimezone()">
+          <button
+            type="button"
+            class="btn btn-primary btn-sm"
+            [disabled]="busy()"
+            (click)="saveTimezone()"
+          >
             Save time zone
           </button>
         </div>
@@ -74,8 +85,8 @@
         />
       }
 
-      <div class="panel">
-        <h2>Intervals.icu</h2>
+      <div class="card">
+        <h2 class="m-0 mb-3 text-lg font-semibold">Intervals.icu</h2>
         @if (profile(); as current) {
           @if (current.intervals.connected) {
             <p data-testid="synced">
@@ -86,8 +97,13 @@
                 never
               }
             </p>
-            <div class="actions">
-              <button type="button" class="secondary" [disabled]="busy()" (click)="syncNow()">
+            <div class="actions flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                class="btn btn-secondary btn-sm"
+                [disabled]="busy()"
+                (click)="syncNow()"
+              >
                 Update from Intervals.icu
               </button>
             </div>
@@ -101,8 +117,8 @@
       </div>
 
       @for (section of sections(); track section.sport) {
-        <div class="panel">
-          <h2>{{ section.title }}</h2>
+        <div class="card">
+          <h2 class="m-0 mb-3 text-lg font-semibold">{{ section.title }}</h2>
           <p class="hint">
             A value you enter always counts. Without one, the value from Intervals.icu counts, then
             an estimate from your activities. The running pace also follows from a recent best time
@@ -128,7 +144,7 @@
                 @for (item of section.rows; track item.key) {
                   <tr>
                     <th scope="row">{{ item.label }}</th>
-                    <td>
+                    <td data-label="Value">
                       @if (editing() === item.key) {
                         <label class="visually-hidden" [attr.for]="'edit-' + item.id">
                           New value for {{ item.name }}
@@ -167,7 +183,7 @@
                         }
                       }
                     </td>
-                    <td>
+                    <td data-label="Source">
                       @if (item.threshold.effective; as current) {
                         <span
                           class="source"
@@ -184,18 +200,20 @@
                       @if (editing() === item.key) {
                         <button
                           type="button"
-                          class="primary"
+                          class="btn btn-primary btn-sm"
                           [disabled]="busy()"
                           [attr.aria-label]="'Save ' + item.name"
                           (click)="save(item)"
                         >
                           Save
                         </button>
-                        <button type="button" class="link" (click)="cancelEdit()">Cancel</button>
+                        <button type="button" class="btn btn-ghost btn-sm" (click)="cancelEdit()">
+                          Cancel
+                        </button>
                       } @else {
                         <button
                           type="button"
-                          class="secondary"
+                          class="btn btn-secondary btn-sm"
                           [disabled]="busy()"
                           [attr.aria-label]="'Edit ' + item.name"
                           (click)="startEdit(item)"
@@ -205,7 +223,7 @@
                         @if (item.hasManual) {
                           <button
                             type="button"
-                            class="link"
+                            class="btn btn-ghost btn-sm"
                             [disabled]="busy()"
                             [attr.aria-label]="'Use automatic value for ' + item.name"
                             (click)="useAutomatic(item)"
@@ -222,7 +240,7 @@
           </div>
 
           @for (zone of section.zones; track zone.title) {
-            <h3>{{ section.title }}: {{ zone.title }}</h3>
+            <h3 class="mb-2 mt-6 text-base font-semibold">{{ section.title }}: {{ zone.title }}</h3>
             @if (zone.set; as set) {
               <div class="table-wrap">
                 <table class="zones">
