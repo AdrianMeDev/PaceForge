@@ -212,7 +212,7 @@ describe('DashboardPage', () => {
 
       const hint = query(page, '[data-testid=close-week]');
       expect(hint.textContent).toContain('2 Nov – 8 Nov');
-      expect(query(hint, 'a').getAttribute('href')).toBe('/review');
+      expect(query(hint, 'a').getAttribute('href')).toBe('/review?week=2026-11-02');
       expect(query(hint, 'a').textContent).toContain('Close the week');
     });
   });

@@ -1,5 +1,5 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { PlanningApi } from '../../core/planning/planning-api';
 import { ReviewApi } from '../../core/review/review-api';
 import {
@@ -12,13 +12,14 @@ import {
   WeekReview,
   WorkoutStatus,
 } from '../../core/review/review-models';
-import { dayLabel, minutesText, weekAfter, weekRange } from '../planning/plan-format';
+import { SPORT_ICONS, dayLabel, minutesText, weekAfter, weekRange } from '../planning/plan-format';
 import {
   NONE,
   AUTOMATIC,
   SPORT_LABELS,
   STATUS_CHOICES,
   STATUS_LABELS,
+  STATUS_STYLES,
   activityChoiceText,
   activitySize,
   choiceOf,
@@ -30,6 +31,8 @@ import {
   statusChoiceOf,
   weekOptionText,
 } from './review-format';
+import { Icon } from '../../shared/icon';
+import { PageHeader } from '../../shared/page-header';
 import { CoachComment } from './coach-comment';
 import { SessionRating } from './session-rating';
 import { WeekFeedbackForm } from './week-feedback-form';
@@ -73,7 +76,7 @@ interface ReviewDay {
  */
 @Component({
   selector: 'app-review-page',
-  imports: [RouterLink, SessionRating, WeekFeedbackForm, CoachComment],
+  imports: [RouterLink, Icon, PageHeader, SessionRating, WeekFeedbackForm, CoachComment],
   templateUrl: './review-page.html',
   styleUrls: ['../auth/auth-form.css', './review-page.css'],
 })
@@ -81,6 +84,7 @@ export class ReviewPage implements OnInit {
   private readonly api = inject(ReviewApi);
   private readonly planning = inject(PlanningApi);
   private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
 
   protected readonly view = signal<View>('loading');
   protected readonly weeks = signal<ReviewableWeek[]>([]);
@@ -90,13 +94,19 @@ export class ReviewPage implements OnInit {
   protected readonly errors = signal<string[]>([]);
   protected readonly notice = signal<string | null>(null);
 
+  /** The line under the title: which week is open. */
+  protected readonly subtitle = computed(() =>
+    this.view() === 'ready' && this.selected() ? weekRange(this.selected()) : '',
+  );
   protected readonly days = computed<ReviewDay[]>(() => this.group(this.review()));
   protected readonly unplanned = computed(
     () => this.review()?.activities.filter((activity) => activity.workout_id === null) ?? [],
   );
 
   protected readonly sport = SPORT_LABELS;
+  protected readonly icon = SPORT_ICONS;
   protected readonly status = STATUS_LABELS;
+  protected readonly statusStyle = STATUS_STYLES;
   protected readonly statusChoices = STATUS_CHOICES;
   protected readonly automatic = AUTOMATIC;
   protected readonly none = NONE;
@@ -126,9 +136,14 @@ export class ReviewPage implements OnInit {
         return;
       }
       this.weeks.set(weeks.weeks);
-      // The latest week with a plan; the current week if none has one.
+      // The week the address names (the dashboard sends the week to close); else the latest week
+      // with a plan, or the current week if none has one.
+      const wanted = this.route.snapshot.queryParamMap.get('week');
+      const named = weeks.weeks.find((week) => week.week_start === wanted);
       const planned = [...weeks.weeks].reverse().find((week) => week.has_plan);
-      this.selected.set((planned ?? weeks.weeks[weeks.weeks.length - 1])?.week_start ?? '');
+      this.selected.set(
+        (named ?? planned ?? weeks.weeks[weeks.weeks.length - 1])?.week_start ?? '',
+      );
       this.view.set('ready');
     } catch {
       this.view.set('unreachable');

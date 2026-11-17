@@ -3,43 +3,12 @@
 }
 
 select {
-  width: 100%;
   padding: 0.55rem 0.7rem;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--bg);
   color: var(--text);
   font: inherit;
-}
-
-.week {
-  margin-top: 1rem;
-}
-
-.summary {
-  margin: 0 0 0.5rem;
-  font-weight: 600;
-}
-
-.statuses {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-  margin: 0 0 0.5rem;
-  padding: 0;
-  list-style: none;
-}
-
-h2 {
-  margin: 1.25rem 0 0.4rem;
-  font-size: 1rem;
-  color: var(--muted);
-}
-
-h3 {
-  margin: 0 0.25rem 0 0;
-  font-size: 1rem;
-  overflow-wrap: anywhere;
 }
 
 .head {
@@ -49,52 +18,11 @@ h3 {
   gap: 0.5rem;
 }
 
-.badge[data-status='done'] {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.badge[data-status='missed'] {
-  border-color: var(--danger);
-  color: var(--danger);
-}
-
-.badge[data-status='open'] {
-  color: var(--muted);
-}
-
-.workout {
-  margin-bottom: 0.75rem;
-  padding: 0.6rem 0.8rem;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
-}
-
-.meta,
-.done {
-  margin: 0.3rem 0 0;
-}
-
 .notes {
   margin: 0.3rem 0 0;
   color: var(--muted);
   white-space: pre-line;
   overflow-wrap: anywhere;
-}
-
-.unplanned {
-  margin: 0;
-  padding-left: 1.2rem;
-}
-
-.correction {
-  margin-top: 0.6rem;
-}
-
-.correction summary {
-  cursor: pointer;
-  color: var(--accent);
 }
 
 .actions {

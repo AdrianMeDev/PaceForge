@@ -30,7 +30,12 @@
           data-testid="close-week"
         >
           <span> The week of {{ range(closing) }} is over. Look back on it and close it. </span>
-          <a routerLink="/review" class="btn no-underline btn-secondary btn-sm">Close the week</a>
+          <a
+            routerLink="/review"
+            [queryParams]="{ week: closing }"
+            class="btn no-underline btn-secondary btn-sm"
+            >Close the week</a
+          >
         </div>
       }
 

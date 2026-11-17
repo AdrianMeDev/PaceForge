@@ -1,5 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { Router, provideRouter } from '@angular/router';
+import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angular/router';
 import { ActivitiesApi } from '../../core/activities/activities-api';
 import { RateActivityResult } from '../../core/activities/activities-models';
 import { PlanningApi } from '../../core/planning/planning-api';
@@ -179,19 +179,30 @@ describe('ReviewPage', () => {
   let fixture: ComponentFixture<ReviewPage>;
   let page: HTMLElement;
 
-  async function setup(options: { weeks?: ListReviewWeeksResult; shown?: GetReviewResult } = {}) {
+  async function setup(
+    options: { weeks?: ListReviewWeeksResult; shown?: GetReviewResult; address?: string } = {},
+  ) {
     stubs = createStubs();
     stubs.api.weeks.mockResolvedValue(options.weeks ?? weeksOk());
     stubs.api.week.mockResolvedValue(options.shown ?? ok());
-    create();
+    create(options.address);
     await settle(fixture);
   }
 
-  function create() {
+  /** `address` is the `week` of the query string of the page, if it has one. */
+  function create(address?: string) {
     TestBed.configureTestingModule({
       imports: [ReviewPage],
       providers: [
         provideRouter([]),
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            snapshot: {
+              queryParamMap: convertToParamMap(address === undefined ? {} : { week: address }),
+            },
+          },
+        },
         { provide: ReviewApi, useValue: stubs.api },
         { provide: ActivitiesApi, useValue: stubs.activities },
         { provide: PlanningApi, useValue: stubs.planning },
@@ -236,7 +247,7 @@ describe('ReviewPage', () => {
       create();
       await fixture.whenStable();
 
-      expect(text()).toContain('Loading…');
+      expect(page.querySelector('[role="status"][aria-label="Loading"]')).toBeTruthy();
     });
 
     it('offers to try again when the weeks cannot be loaded', async () => {
@@ -249,7 +260,7 @@ describe('ReviewPage', () => {
 
       expect(alerts()).toEqual(['Your weeks could not be loaded.']);
 
-      query<HTMLButtonElement>(page, 'button.primary').click();
+      query<HTMLButtonElement>(page, 'button.btn-primary').click();
       await settle(fixture);
 
       expect(alerts()).toEqual([]);
@@ -264,6 +275,36 @@ describe('ReviewPage', () => {
 
       expect(alerts()).toEqual(['Your session has ended. Please sign in again.']);
       expect(page.querySelector('a[href="/login"]')).toBeTruthy();
+    });
+  });
+
+  describe('the workouts as cards', () => {
+    it('marks each workout with the icon of its sport and colours its status', async () => {
+      await setup();
+
+      const icons = Array.from(page.querySelectorAll('.workout app-icon')).map((icon) =>
+        icon.getAttribute('aria-label'),
+      );
+      expect(icons.length).toBeGreaterThan(0);
+      expect(icons.every((label) => label !== null && label !== '')).toBe(true);
+      const done = query(page, '[data-testid="status"][data-status="done"]');
+      expect(done.className).toContain('text-accent');
+      const missed = query(page, '[data-testid="status"][data-status="missed"]');
+      expect(missed.className).toContain('text-danger');
+    });
+  });
+
+  describe('the end of the week', () => {
+    it('sets the coach and the feedback apart as cards with buttons that fill a phone', async () => {
+      await setup();
+
+      expect(query(page, 'app-coach-comment section').classList).toContain('card');
+      expect(query(page, 'app-week-feedback-form form').classList).toContain('panel');
+      for (const id of ['ask', 'feedback-save', 'feedback-close']) {
+        const button = query(page, `[data-testid="${id}"]`);
+        expect(button.classList).toContain('btn-primary');
+        expect(button.classList).toContain('w-full');
+      }
     });
   });
 
@@ -293,6 +334,20 @@ describe('ReviewPage', () => {
 
       expect(weekSelect().value).toBe(SECOND);
       expect(stubs.api.week).toHaveBeenCalledExactlyOnceWith(SECOND);
+    });
+
+    it('opens the week the address names', async () => {
+      await setup({ address: '2026-10-19' });
+
+      expect(weekSelect().value).toBe('2026-10-19');
+      expect(stubs.api.week).toHaveBeenCalledExactlyOnceWith('2026-10-19');
+    });
+
+    it('ignores a week in the address that is not in the list', async () => {
+      await setup({ address: '2026-01-05' });
+
+      expect(weekSelect().value).toBe(FIRST);
+      expect(stubs.api.week).toHaveBeenCalledExactlyOnceWith(FIRST);
     });
 
     it('works without any week', async () => {
@@ -369,12 +424,9 @@ describe('ReviewPage', () => {
     it('shows the workouts by day with their status and what was done', async () => {
       await setup();
 
-      expect(Array.from(page.querySelectorAll('.week > h2')).map((h) => h.textContent)).toEqual([
-        'Mon 2 Nov',
-        'Wed 4 Nov',
-        'Not planned',
-        'Planned and done',
-      ]);
+      expect(
+        Array.from(page.querySelectorAll('.week > h2')).map((h) => h.textContent?.trim()),
+      ).toEqual(['Mon 2 Nov', 'Wed 4 Nov', 'Not planned', 'Planned and done']);
       expect(inWorkout('w1', 'status')?.textContent).toBe('Done');
       expect(inWorkout('w1', 'planned')?.textContent?.trim()).toBe('Planned: 1 h');
       expect(inWorkout('w1', 'matched')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
@@ -454,6 +506,19 @@ describe('ReviewPage', () => {
         '360 AU (1 of 2 rated)',
       ]);
       expect(text()).toContain('It is not the TSS of a platform.');
+    });
+
+    it('shows the same figures as tiles for a phone', async () => {
+      await setup();
+
+      const tile = (id: string) =>
+        Array.from(page.querySelectorAll(`[data-testid="${id}"] dd`)).map((cell) =>
+          cell.textContent?.replace(/\s+/g, ' ').trim(),
+        );
+      expect(tile('tile-running')).toEqual(['2 · 2 h', '1 · 1 h', '360 AU']);
+      expect(tile('tile-cycling')).toEqual(['2 · 2 h', '0 · 0 min', '–']);
+      expect(tile('tile-total')).toEqual(['2 · 2 h', '2 · 1 h 40 min', '360 AU (1 of 2 rated)']);
+      expect(query(page, '[data-testid="tile-running"] p').textContent).toBe('Running');
     });
 
     it('shows a week without a plan with what was done and a way to the plan', async () => {

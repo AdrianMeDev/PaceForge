@@ -22,6 +22,15 @@ export const STATUS_LABELS: Record<WorkoutStatus, string> = {
   open: 'Open',
 };
 
+/** The colours of the badge of a status: what was done is accent, what was missed is a warning. */
+export const STATUS_STYLES: Record<WorkoutStatus, string> = {
+  done: 'border-accent text-accent',
+  partial: '',
+  missed: 'border-danger text-danger',
+  replaced: '',
+  open: 'text-muted',
+};
+
 export const SPORT_LABELS: Record<Sport, string> = {
   running: 'Running',
   cycling: 'Cycling',
