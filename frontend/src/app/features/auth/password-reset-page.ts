@@ -17,7 +17,6 @@ const FALLBACK_MESSAGE = 'Something went wrong. Please try again.';
   selector: 'app-password-reset-page',
   imports: [ReactiveFormsModule, RouterLink],
   templateUrl: './password-reset-page.html',
-  styleUrl: './auth-form.css',
 })
 export class PasswordResetPage implements OnInit {
   private readonly api = inject(AuthApi);

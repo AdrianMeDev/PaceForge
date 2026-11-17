@@ -30,7 +30,6 @@ export function safeReturnUrl(value: string | null): string {
   selector: 'app-login-page',
   imports: [ReactiveFormsModule, RouterLink],
   templateUrl: './login-page.html',
-  styleUrl: './auth-form.css',
 })
 export class LoginPage {
   private readonly store = inject(AuthStore);

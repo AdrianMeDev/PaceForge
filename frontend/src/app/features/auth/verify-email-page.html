@@ -20,7 +20,7 @@
       <p class="notice" role="status">
         Your email address <strong>{{ email() }}</strong> is confirmed.
       </p>
-      <p class="links">
+      <p class="links mt-4">
         <a [routerLink]="continueLink()">{{
           continueLink() === '/' ? 'Continue' : 'Go to sign in'
         }}</a>
@@ -32,7 +32,7 @@
         If you have already confirmed your address, you can sign in. If not, try to sign in and we
         will send you a new link.
       </p>
-      <p class="links"><a routerLink="/login">Go to sign in</a></p>
+      <p class="links mt-4"><a routerLink="/login">Go to sign in</a></p>
     }
     @case ('unreachable') {
       <p class="alert" role="alert">We could not check the link. Please try again.</p>

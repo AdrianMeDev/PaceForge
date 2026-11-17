@@ -20,7 +20,6 @@ const FALLBACK_MESSAGE = 'Something went wrong. Please try again.';
   selector: 'app-signup-page',
   imports: [ReactiveFormsModule, RouterLink],
   templateUrl: './signup-page.html',
-  styleUrl: './auth-form.css',
 })
 export class SignupPage {
   private readonly api = inject(AuthApi);

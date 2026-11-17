@@ -6,7 +6,7 @@
       Registration is by invitation only. Please use the link from your invitation email, or ask an
       administrator to invite you.
     </p>
-    <p class="links"><a routerLink="/login">Back to sign in</a></p>
+    <p class="links mt-4"><a routerLink="/login">Back to sign in</a></p>
   } @else if (created(); as done) {
     <p class="notice" role="status">
       @if (done.needsVerification) {
@@ -16,7 +16,7 @@
         Your account has been created. You can sign in now.
       }
     </p>
-    <p class="links"><a routerLink="/login">Go to sign in</a></p>
+    <p class="links mt-4"><a routerLink="/login">Go to sign in</a></p>
   } @else {
     @for (message of errors(); track $index) {
       <p class="alert" role="alert">{{ message }}</p>
@@ -97,6 +97,6 @@
         {{ submitting() ? 'Creating account…' : 'Create account' }}
       </button>
     </form>
-    <p class="links">Already have an account? <a routerLink="/login">Sign in</a></p>
+    <p class="links mt-4">Already have an account? <a routerLink="/login">Sign in</a></p>
   }
 </main>
