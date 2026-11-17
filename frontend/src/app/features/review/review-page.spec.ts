@@ -494,6 +494,19 @@ describe('ReviewPage', () => {
       expect(text()).toContain('It is not the TSS of a platform.');
     });
 
+    it('shows the same figures as tiles for a phone', async () => {
+      await setup();
+
+      const tile = (id: string) =>
+        Array.from(page.querySelectorAll(`[data-testid="${id}"] dd`)).map((cell) =>
+          cell.textContent?.replace(/\s+/g, ' ').trim(),
+        );
+      expect(tile('tile-running')).toEqual(['2 · 2 h', '1 · 1 h', '360 AU']);
+      expect(tile('tile-cycling')).toEqual(['2 · 2 h', '0 · 0 min', '–']);
+      expect(tile('tile-total')).toEqual(['2 · 2 h', '2 · 1 h 40 min', '360 AU (1 of 2 rated)']);
+      expect(query(page, '[data-testid="tile-running"] p').textContent).toBe('Running');
+    });
+
     it('shows a week without a plan with what was done and a way to the plan', async () => {
       await setup({
         shown: ok(

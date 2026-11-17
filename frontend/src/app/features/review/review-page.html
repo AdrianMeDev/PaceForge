@@ -230,7 +230,57 @@
             <h2 class="mb-2 mt-6 text-sm font-semibold uppercase tracking-wide text-muted">
               Planned and done
             </h2>
-            <table class="figures" data-testid="figures">
+            <ul
+              class="m-0 grid list-none gap-3 p-0 sm:hidden"
+              aria-label="Planned and done by sport"
+              data-testid="figure-tiles"
+            >
+              @for (entry of shown.comparison.sports; track entry.sport) {
+                <li
+                  class="rounded-md border border-border bg-surface p-3 shadow-card"
+                  [attr.data-testid]="'tile-' + entry.sport"
+                >
+                  <p class="m-0 font-semibold">{{ sport[entry.sport] }}</p>
+                  <dl class="m-0 mt-1 grid grid-cols-[auto_1fr] gap-x-3 text-sm">
+                    <dt class="text-muted">Planned</dt>
+                    <dd class="m-0">{{ counted(entry.planned_count, entry.planned_minutes) }}</dd>
+                    <dt class="text-muted">Done</dt>
+                    <dd class="m-0">{{ counted(entry.actual_count, entry.actual_minutes) }}</dd>
+                    <dt class="text-muted">Load</dt>
+                    <dd class="m-0">{{ loadOf(entry) }}</dd>
+                  </dl>
+                </li>
+              }
+              <li
+                class="rounded-md border border-border bg-surface-2 p-3 shadow-card"
+                data-testid="tile-total"
+              >
+                <p class="m-0 font-semibold">Together</p>
+                <dl class="m-0 mt-1 grid grid-cols-[auto_1fr] gap-x-3 text-sm">
+                  <dt class="text-muted">Planned</dt>
+                  <dd class="m-0">
+                    {{
+                      counted(
+                        shown.comparison.total.planned_count,
+                        shown.comparison.total.planned_minutes
+                      )
+                    }}
+                  </dd>
+                  <dt class="text-muted">Done</dt>
+                  <dd class="m-0">
+                    {{
+                      counted(
+                        shown.comparison.total.actual_count,
+                        shown.comparison.total.actual_minutes
+                      )
+                    }}
+                  </dd>
+                  <dt class="text-muted">Load</dt>
+                  <dd class="m-0">{{ loadOf(shown.comparison.total) }}</dd>
+                </dl>
+              </li>
+            </ul>
+            <table class="figures hidden sm:table" data-testid="figures">
               <thead>
                 <tr>
                   <th scope="col">Sport</th>
