@@ -683,6 +683,15 @@ describe('GoalsPage', () => {
     });
   });
 
+  describe('the colours of the badges', () => {
+    it('lets the main goal, what was achieved and what is unrealistic stand out', async () => {
+      await setup(ok(MAIN, FTP));
+
+      const priorities = Array.from(page.querySelectorAll('[data-testid="priority"]'));
+      expect(priorities.some((badge) => badge.className.includes('text-accent'))).toBe(true);
+    });
+  });
+
   describe('deleting', () => {
     beforeEach(() => setup(ok(MAIN, FTP)));
 

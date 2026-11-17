@@ -48,57 +48,82 @@
           <p class="m-0 text-sm">Use <strong>Add goal</strong> above to start.</p>
         </div>
       } @else {
-        <ul class="list">
+        <ul class="list m-0 grid list-none gap-4 p-0">
           @for (goal of goals(); track goal.id) {
             <li
-              class="goal"
+              class="goal rounded-md border border-border bg-surface p-4 shadow-card"
+              [class.opacity-80]="goal.status !== 'active'"
               [attr.data-status]="goal.status"
               [attr.data-testid]="'goal-' + goal.id"
             >
-              <div class="head">
-                <h2>{{ goal.title }}</h2>
+              <div class="head flex flex-wrap items-center gap-2">
+                <h2 class="m-0 mr-1 break-words text-lg font-semibold">{{ goal.title }}</h2>
                 <span class="badge kind">{{ kindLabel[goal.kind] }}</span>
-                <span class="badge" [attr.data-priority]="goal.priority" data-testid="priority">{{
-                  priorityLabel[goal.priority]
-                }}</span>
+                <span
+                  class="badge"
+                  [class]="priorityStyle[goal.priority]"
+                  [attr.data-priority]="goal.priority"
+                  data-testid="priority"
+                  >{{ priorityLabel[goal.priority] }}</span
+                >
                 @if (goal.status !== 'active') {
-                  <span class="badge" [attr.data-status]="goal.status">{{
-                    statusLabel[goal.status]
-                  }}</span>
+                  <span
+                    class="badge"
+                    [class]="statusStyle[goal.status]"
+                    [attr.data-status]="goal.status"
+                    >{{ statusLabel[goal.status] }}</span
+                  >
                 }
               </div>
 
               @if (goal.target_date; as day) {
-                <p class="meta" data-testid="date">
+                <p class="meta m-0 mt-2" data-testid="date">
                   {{ day | date: 'mediumDate' }}
                   @if (goal.days_to_go !== null) {
-                    <span class="days">({{ daysText(goal.days_to_go) }})</span>
+                    <span class="days text-muted">({{ daysText(goal.days_to_go) }})</span>
                   }
                 </p>
               }
               @if (target(goal); as text) {
-                <p class="meta" data-testid="target">{{ text }}</p>
+                <p class="meta m-0 mt-2" data-testid="target">{{ text }}</p>
               }
               @if (goal.assessment; as judged) {
-                <div class="assessment" [attr.data-rating]="judged.rating" data-testid="assessment">
-                  <span class="badge" data-testid="rating">{{ ratingLabel[judged.rating] }}</span>
+                <div
+                  class="assessment mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-sm bg-surface-2 p-2"
+                  [attr.data-rating]="judged.rating"
+                  data-testid="assessment"
+                >
+                  <span class="badge" [class]="ratingStyle[judged.rating]" data-testid="rating">{{
+                    ratingLabel[judged.rating]
+                  }}</span>
                   <span data-testid="judgement">{{ judgement(judged) }}</span>
                   @if (figures(goal); as numbers) {
-                    <span class="figures" data-testid="figures">{{ numbers }}</span>
+                    <span class="figures basis-full text-sm text-muted" data-testid="figures">{{
+                      numbers
+                    }}</span>
                   }
                   @if (suggestion(goal); as hint) {
-                    <span class="figures" data-testid="suggestion">{{ hint }}</span>
+                    <span class="figures basis-full text-sm text-muted" data-testid="suggestion">{{
+                      hint
+                    }}</span>
                   }
                   @if (preparation(judged); as warning) {
-                    <span class="warning" data-testid="preparation">{{ warning }}</span>
+                    <span class="warning basis-full text-danger" data-testid="preparation">{{
+                      warning
+                    }}</span>
                   }
                 </div>
               }
               @if (goal.notes) {
-                <p class="notes" data-testid="notes">{{ goal.notes }}</p>
+                <p
+                  class="notes m-0 mt-2 whitespace-pre-line break-words text-muted"
+                  data-testid="notes"
+                >
+                  {{ goal.notes }}
+                </p>
               }
 
-              <div class="actions">
+              <div class="actions mt-3 flex flex-wrap items-center gap-2">
                 @if (confirming() === goal.id) {
                   <span class="confirm" role="group" [attr.aria-label]="'Delete ' + goal.title">
                     Delete this goal?
@@ -110,7 +135,9 @@
                     >
                       Yes, delete
                     </button>
-                    <button type="button" class="link" (click)="cancelDelete()">Cancel</button>
+                    <button type="button" class="btn btn-ghost btn-sm" (click)="cancelDelete()">
+                      Cancel
+                    </button>
                   </span>
                 } @else {
                   @if (goal.status === 'active') {
@@ -166,7 +193,7 @@
                   }
                   <button
                     type="button"
-                    class="link"
+                    class="btn btn-ghost btn-sm"
                     [disabled]="busy()"
                     [attr.aria-label]="'Edit ' + goal.title"
                     (click)="openEdit(goal)"
@@ -175,7 +202,7 @@
                   </button>
                   <button
                     type="button"
-                    class="link"
+                    class="btn btn-ghost btn-sm"
                     [disabled]="busy()"
                     [attr.aria-label]="'Delete ' + goal.title"
                     (click)="askDelete(goal)"

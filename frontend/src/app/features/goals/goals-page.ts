@@ -8,8 +8,11 @@ import { GoalForm } from './goal-form';
 import {
   KIND_LABELS,
   PRIORITY_LABELS,
+  PRIORITY_STYLES,
   RATING_LABELS,
+  RATING_STYLES,
   STATUS_LABELS,
+  STATUS_STYLES,
   daysToGoText,
   describeTarget,
   figuresText,
@@ -67,6 +70,9 @@ export class GoalsPage implements OnInit {
 
   protected readonly kindLabel = KIND_LABELS;
   protected readonly priorityLabel = PRIORITY_LABELS;
+  protected readonly priorityStyle = PRIORITY_STYLES;
+  protected readonly statusStyle = STATUS_STYLES;
+  protected readonly ratingStyle = RATING_STYLES;
   protected readonly statusLabel = STATUS_LABELS;
   protected readonly daysText = daysToGoText;
   protected readonly target = describeTarget;
