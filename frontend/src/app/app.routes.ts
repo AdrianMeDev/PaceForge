@@ -88,6 +88,11 @@ export const routes: Routes = [
           import('./features/planning/planning-page').then((m) => m.PlanningPage),
       },
       {
+        path: 'coach',
+        title: 'Coach',
+        loadComponent: () => import('./features/chat/chat-page').then((m) => m.ChatPage),
+      },
+      {
         path: 'review',
         title: 'Week review',
         loadComponent: () => import('./features/review/review-page').then((m) => m.ReviewPage),

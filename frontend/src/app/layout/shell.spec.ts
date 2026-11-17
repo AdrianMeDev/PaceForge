@@ -136,6 +136,7 @@ describe('Shell', () => {
           ['Season', '/season'],
           ['Goals', '/goals'],
           ['Training time', '/availability'],
+          ['Coach', '/coach'],
         ],
       ],
       [
@@ -189,7 +190,7 @@ describe('Shell', () => {
       const links = Array.from(
         page.querySelectorAll<HTMLAnchorElement>('nav[aria-label="Main"] a'),
       );
-      expect(links.length).toBe(10);
+      expect(links.length).toBe(11);
       for (const link of links) {
         expect(link.querySelector('app-icon svg')).toBeTruthy();
         expect(link.getAttribute('title')).toBe((link.textContent ?? '').trim());
@@ -291,6 +292,7 @@ describe('Shell', () => {
         'Season',
         'Goals',
         'Training time',
+        'Coach',
         'Profile',
         'Connections',
         'Security',
