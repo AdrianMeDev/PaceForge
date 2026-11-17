@@ -115,6 +115,15 @@ describe('ActivitiesApi', () => {
       expect(result).toEqual({ kind: 'ok', page: { count: 120, results: [ACTIVITY] } });
     });
 
+    it('asks for one sport only when it is given', async () => {
+      const body = { count: 0, next: null, previous: null, results: [] };
+      const all = await run(api.list(20, 0), 'GET', URL, body, 200);
+      const cycling = await run(api.list(20, 0, 'cycling'), 'GET', URL, body, 200);
+
+      expect(all.request.request.params.has('sport')).toBe(false);
+      expect(cycling.request.request.params.get('sport')).toBe('cycling');
+    });
+
     it('returns an empty page', async () => {
       const { result } = await run(
         api.list(50, 0),
