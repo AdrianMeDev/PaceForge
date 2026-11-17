@@ -278,6 +278,22 @@ describe('ReviewPage', () => {
     });
   });
 
+  describe('the workouts as cards', () => {
+    it('marks each workout with the icon of its sport and colours its status', async () => {
+      await setup();
+
+      const icons = Array.from(page.querySelectorAll('.workout app-icon')).map((icon) =>
+        icon.getAttribute('aria-label'),
+      );
+      expect(icons.length).toBeGreaterThan(0);
+      expect(icons.every((label) => label !== null && label !== '')).toBe(true);
+      const done = query(page, '[data-testid="status"][data-status="done"]');
+      expect(done.className).toContain('text-accent');
+      const missed = query(page, '[data-testid="status"][data-status="missed"]');
+      expect(missed.className).toContain('text-danger');
+    });
+  });
+
   describe('the weeks', () => {
     it('lists the weeks with what each holds', async () => {
       await setup();
@@ -394,12 +410,9 @@ describe('ReviewPage', () => {
     it('shows the workouts by day with their status and what was done', async () => {
       await setup();
 
-      expect(Array.from(page.querySelectorAll('.week > h2')).map((h) => h.textContent)).toEqual([
-        'Mon 2 Nov',
-        'Wed 4 Nov',
-        'Not planned',
-        'Planned and done',
-      ]);
+      expect(
+        Array.from(page.querySelectorAll('.week > h2')).map((h) => h.textContent?.trim()),
+      ).toEqual(['Mon 2 Nov', 'Wed 4 Nov', 'Not planned', 'Planned and done']);
       expect(inWorkout('w1', 'status')?.textContent).toBe('Done');
       expect(inWorkout('w1', 'planned')?.textContent?.trim()).toBe('Planned: 1 h');
       expect(inWorkout('w1', 'matched')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(

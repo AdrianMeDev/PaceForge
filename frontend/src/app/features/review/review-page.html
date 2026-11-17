@@ -66,7 +66,11 @@
                 aria-label="Workouts by status"
               >
                 @for (entry of statusCounts(shown.comparison); track entry.status) {
-                  <li class="badge" [attr.data-status]="entry.status">
+                  <li
+                    class="badge"
+                    [class]="statusStyle[entry.status]"
+                    [attr.data-status]="entry.status"
+                  >
                     {{ status[entry.status] }}: {{ entry.count }}
                   </li>
                 }
@@ -75,106 +79,136 @@
           }
 
           @for (day of days(); track day.date) {
-            <h2>{{ day.label }}</h2>
+            <h2 class="mb-2 mt-6 text-sm font-semibold uppercase tracking-wide text-muted">
+              {{ day.label }}
+            </h2>
             @for (workout of day.workouts; track workout.id) {
               <div
-                class="workout"
+                class="workout mb-3 flex items-start gap-3 rounded-md border border-border bg-surface p-3 shadow-card"
                 [attr.data-testid]="'workout-' + workout.id"
                 [attr.data-status]="workout.status"
               >
-                <div class="head">
-                  <h3>{{ workout.title }}</h3>
-                  <span class="badge" [attr.data-status]="workout.status" data-testid="status">{{
-                    status[workout.status]
-                  }}</span>
-                  <span class="badge">{{ sport[workout.sport] }}</span>
-                </div>
-                <p class="meta" data-testid="planned">
-                  Planned: {{ minutes(workout.duration_minutes) }}
-                </p>
-                @if (activityOf(workout); as done) {
-                  <p class="done" data-testid="matched">
-                    Done: {{ sport[done.sport] }} · {{ size(done) }} · {{ rating(done) }}
-                  </p>
-                  @if (done.notes) {
-                    <p class="notes" data-testid="matched-notes">{{ done.notes }}</p>
-                  }
-                  <app-session-rating
-                    [activity]="done"
-                    [disabled]="work() !== null"
-                    (rated)="rated()"
-                    (gone)="gone()"
-                    (signedOut)="signOut()"
-                  />
-                } @else {
-                  <p class="hint" data-testid="no-activity">
-                    {{
-                      workout.activity_origin === 'user'
-                        ? 'You said that no activity belongs to this workout.'
-                        : 'No activity found for this workout.'
-                    }}
-                  </p>
-                }
-                @if (workout.status_origin === 'user' || workout.activity_origin === 'user') {
-                  <p class="hint" data-testid="by-you">Set by you.</p>
-                }
-
-                <details class="correction">
-                  <summary>Change what belongs to this workout</summary>
-                  <div class="field">
-                    <label [for]="'activity-' + workout.id">Activity</label>
-                    <select #chosen [id]="'activity-' + workout.id" [disabled]="work() !== null">
-                      <option [value]="automatic" [selected]="choiceOf(workout) === automatic">
-                        Match automatically
-                      </option>
-                      <option [value]="none" [selected]="choiceOf(workout) === none">
-                        No activity
-                      </option>
-                      @for (item of shown.activities; track item.id) {
-                        <option [value]="item.id" [selected]="choiceOf(workout) === item.id">
-                          {{ choice(item) }}
-                        </option>
-                      }
-                    </select>
-                  </div>
-                  <div class="field">
-                    <label [for]="'state-' + workout.id">Status</label>
-                    <select #state [id]="'state-' + workout.id" [disabled]="work() !== null">
-                      @for (item of statusChoices; track item.value) {
-                        <option
-                          [value]="item.value"
-                          [selected]="statusChoiceOf(workout) === item.value"
-                        >
-                          {{ item.label }}
-                        </option>
-                      }
-                    </select>
-                  </div>
-                  <div class="actions">
-                    <button
-                      type="button"
-                      class="btn btn-primary"
-                      [attr.data-testid]="'save-' + workout.id"
-                      [disabled]="work() !== null"
-                      (click)="correct(workout, chosen.value, state.value)"
+                <span
+                  class="grid size-9 flex-none place-items-center rounded-full bg-surface-2 text-lg"
+                >
+                  <app-icon [name]="icon[workout.sport]" [label]="sport[workout.sport]" />
+                </span>
+                <div class="min-w-0 flex-1">
+                  <div class="head">
+                    <h3 class="m-0 break-words text-base font-semibold">{{ workout.title }}</h3>
+                    <span
+                      class="badge"
+                      [class]="statusStyle[workout.status]"
+                      [attr.data-status]="workout.status"
+                      data-testid="status"
+                      >{{ status[workout.status] }}</span
                     >
-                      Save
-                    </button>
+                    <span class="badge">{{ sport[workout.sport] }}</span>
                   </div>
-                </details>
+                  <p class="meta m-0 mt-1" data-testid="planned">
+                    Planned: {{ minutes(workout.duration_minutes) }}
+                  </p>
+                  @if (activityOf(workout); as done) {
+                    <p class="done m-0 mt-1" data-testid="matched">
+                      Done: {{ sport[done.sport] }} · {{ size(done) }} · {{ rating(done) }}
+                    </p>
+                    @if (done.notes) {
+                      <p class="notes" data-testid="matched-notes">{{ done.notes }}</p>
+                    }
+                    <app-session-rating
+                      [activity]="done"
+                      [disabled]="work() !== null"
+                      (rated)="rated()"
+                      (gone)="gone()"
+                      (signedOut)="signOut()"
+                    />
+                  } @else {
+                    <p class="hint" data-testid="no-activity">
+                      {{
+                        workout.activity_origin === 'user'
+                          ? 'You said that no activity belongs to this workout.'
+                          : 'No activity found for this workout.'
+                      }}
+                    </p>
+                  }
+                  @if (workout.status_origin === 'user' || workout.activity_origin === 'user') {
+                    <p class="hint" data-testid="by-you">Set by you.</p>
+                  }
+
+                  <details class="correction mt-3">
+                    <summary class="cursor-pointer text-accent">
+                      Change what belongs to this workout
+                    </summary>
+                    <div class="field">
+                      <label [for]="'activity-' + workout.id">Activity</label>
+                      <select
+                        #chosen
+                        class="w-full"
+                        [id]="'activity-' + workout.id"
+                        [disabled]="work() !== null"
+                      >
+                        <option [value]="automatic" [selected]="choiceOf(workout) === automatic">
+                          Match automatically
+                        </option>
+                        <option [value]="none" [selected]="choiceOf(workout) === none">
+                          No activity
+                        </option>
+                        @for (item of shown.activities; track item.id) {
+                          <option [value]="item.id" [selected]="choiceOf(workout) === item.id">
+                            {{ choice(item) }}
+                          </option>
+                        }
+                      </select>
+                    </div>
+                    <div class="field">
+                      <label [for]="'state-' + workout.id">Status</label>
+                      <select
+                        #state
+                        class="w-full"
+                        [id]="'state-' + workout.id"
+                        [disabled]="work() !== null"
+                      >
+                        @for (item of statusChoices; track item.value) {
+                          <option
+                            [value]="item.value"
+                            [selected]="statusChoiceOf(workout) === item.value"
+                          >
+                            {{ item.label }}
+                          </option>
+                        }
+                      </select>
+                    </div>
+                    <div class="actions">
+                      <button
+                        type="button"
+                        class="btn btn-primary"
+                        [attr.data-testid]="'save-' + workout.id"
+                        [disabled]="work() !== null"
+                        (click)="correct(workout, chosen.value, state.value)"
+                      >
+                        Save
+                      </button>
+                    </div>
+                  </details>
+                </div>
               </div>
             }
           }
 
           @if (unplanned().length > 0) {
-            <h2>Not planned</h2>
+            <h2 class="mb-2 mt-6 text-sm font-semibold uppercase tracking-wide text-muted">
+              Not planned
+            </h2>
             <ul
-              class="unplanned"
+              class="unplanned m-0 grid list-none gap-3 p-0"
               data-testid="unplanned"
               aria-label="Sessions that were not planned"
             >
               @for (item of unplanned(); track item.id) {
-                <li [attr.data-testid]="'unplanned-' + item.id">
+                <li
+                  class="rounded-md border border-border bg-surface p-3 shadow-card"
+                  [attr.data-testid]="'unplanned-' + item.id"
+                >
                   <strong>{{ dayLabel(item.day) }}</strong> · {{ sport[item.sport] }} ·
                   {{ size(item) }} · {{ rating(item) }}
                   @if (item.notes) {
@@ -193,7 +227,9 @@
           }
 
           @if (shown.comparison.sports.length > 0) {
-            <h2>Planned and done</h2>
+            <h2 class="mb-2 mt-6 text-sm font-semibold uppercase tracking-wide text-muted">
+              Planned and done
+            </h2>
             <table class="figures" data-testid="figures">
               <thead>
                 <tr>

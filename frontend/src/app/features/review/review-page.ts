@@ -12,13 +12,14 @@ import {
   WeekReview,
   WorkoutStatus,
 } from '../../core/review/review-models';
-import { dayLabel, minutesText, weekAfter, weekRange } from '../planning/plan-format';
+import { SPORT_ICONS, dayLabel, minutesText, weekAfter, weekRange } from '../planning/plan-format';
 import {
   NONE,
   AUTOMATIC,
   SPORT_LABELS,
   STATUS_CHOICES,
   STATUS_LABELS,
+  STATUS_STYLES,
   activityChoiceText,
   activitySize,
   choiceOf,
@@ -30,6 +31,7 @@ import {
   statusChoiceOf,
   weekOptionText,
 } from './review-format';
+import { Icon } from '../../shared/icon';
 import { PageHeader } from '../../shared/page-header';
 import { CoachComment } from './coach-comment';
 import { SessionRating } from './session-rating';
@@ -74,7 +76,7 @@ interface ReviewDay {
  */
 @Component({
   selector: 'app-review-page',
-  imports: [RouterLink, PageHeader, SessionRating, WeekFeedbackForm, CoachComment],
+  imports: [RouterLink, Icon, PageHeader, SessionRating, WeekFeedbackForm, CoachComment],
   templateUrl: './review-page.html',
   styleUrls: ['../auth/auth-form.css', './review-page.css'],
 })
@@ -102,7 +104,9 @@ export class ReviewPage implements OnInit {
   );
 
   protected readonly sport = SPORT_LABELS;
+  protected readonly icon = SPORT_ICONS;
   protected readonly status = STATUS_LABELS;
+  protected readonly statusStyle = STATUS_STYLES;
   protected readonly statusChoices = STATUS_CHOICES;
   protected readonly automatic = AUTOMATIC;
   protected readonly none = NONE;
