@@ -77,25 +77,8 @@ h2 {
   margin-top: 1rem;
 }
 
-/* The decisions about the plan stay in reach: on a phone the bar sticks above the tab bar. */
-.plan-actions {
-  margin-top: 1rem;
-}
-
 .plan-actions .actions {
   margin-top: 0.75rem;
-}
-
-@media (max-width: 39.99rem) {
-  .plan-actions {
-    position: sticky;
-    bottom: calc(3.5rem + env(safe-area-inset-bottom));
-    z-index: 5;
-    margin: 1rem -1.25rem -1rem;
-    padding: 0.75rem 1.25rem;
-    border-top: 1px solid var(--border);
-    background: var(--surface);
-  }
 }
 
 .check {

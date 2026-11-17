@@ -412,4 +412,57 @@ body:has(dialog[open]) {
   .skeleton {
     @apply min-h-4 animate-pulse rounded-sm bg-surface-2 motion-reduce:animate-none;
   }
+
+  /* Fields of a form: one column, two from 40rem. */
+  .form-grid {
+    @apply grid grid-cols-1 gap-x-4 sm:grid-cols-2;
+  }
+
+  /* The look of the controls of a form (checkboxes, radios and files keep the browser's own). */
+  .field
+    :is(
+      input:not([type='checkbox'], [type='radio'], [type='file'], [type='range']),
+      select,
+      textarea
+    ) {
+    @apply w-full rounded-sm border border-border bg-bg px-3 py-2 text-fg;
+    font: inherit;
+  }
+
+  .field :is(input, select, textarea)[aria-invalid='true'] {
+    @apply border-danger;
+  }
+
+  .field textarea {
+    @apply resize-y;
+  }
+
+  /*
+   * The decisions of a form or a plan stay in reach: on a phone the bar sticks above the tab bar.
+   * It reaches over the padding of the card it is in (`--bar-x`, `--bar-y`: 1.25rem and 1rem, a
+   * `.card` or `.panel` has 1.5rem and 1.25rem).
+   */
+  .action-bar {
+    --bar-x: 1.25rem;
+    --bar-y: 1rem;
+    @apply mt-4;
+  }
+
+  .card .action-bar,
+  .panel .action-bar {
+    --bar-x: 1.5rem;
+    --bar-y: 1.25rem;
+  }
+
+  @media (max-width: 39.99rem) {
+    .action-bar {
+      position: sticky;
+      bottom: calc(3.5rem + env(safe-area-inset-bottom));
+      z-index: 5;
+      margin: 1rem calc(-1 * var(--bar-x)) calc(-1 * var(--bar-y));
+      padding: 0.75rem var(--bar-x);
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+    }
+  }
 }
