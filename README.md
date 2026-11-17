@@ -1227,6 +1227,15 @@ going" in one look. The server works all of it out from your own data in a singl
 `GET /api/dashboard/` (read only, nothing is stored), and the page only shows it. Every block that
 has nothing to show says what to do next, with a button.
 
+- **Get started:** while the setup is not done, a card at the top lists the steps in the order a new
+  account takes them, each with one sentence and a button to the page: your **time zone** (profile),
+  your **training time** (at least one weekday with minutes), your **AI coach**, **Intervals.icu**
+  (optional), a **goal** (an active one), your **activities** (at least one), a **season plan** and
+  your **first week** (both confirmed; a draft does not count). A step is ticked off because its data
+  exists (`backend/dashboard/setup.py`; one query per step), so a deleted goal opens its step again.
+  The card goes away when every step that is not optional is done. **Hide** removes it for this
+  browser only (it is remembered in the browser, not in your account); **Show the setup steps**
+  brings it back while the setup is not done.
 - **Next workout:** the first workout of the confirmed plan of this week that is today or later and
   still open; when there is none, the first one of the confirmed plan of next week. It shows the
   day, the title, the length, the zone and whether it is **sent to Intervals.icu** (it was pushed
