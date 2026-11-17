@@ -28,7 +28,7 @@ export interface PlanDay {
   selector: 'app-plan-day',
   imports: [Icon],
   templateUrl: './plan-day.html',
-  styleUrls: ['../auth/auth-form.css', './plan-day.css'],
+  styleUrl: './plan-day.css',
 })
 export class PlanDayView {
   readonly day = input.required<PlanDay>();

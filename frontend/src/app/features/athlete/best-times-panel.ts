@@ -23,7 +23,6 @@ const GONE = 'That distance does not exist any more.';
 @Component({
   selector: 'app-best-times-panel',
   templateUrl: './best-times-panel.html',
-  styleUrl: '../auth/auth-form.css',
 })
 export class BestTimesPanel implements OnInit {
   private readonly api = inject(AthleteApi);

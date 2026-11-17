@@ -22,7 +22,7 @@ const RATE_LIMIT = 'Too many attempts. Please wait a minute and try again.';
   selector: 'app-connections-page',
   imports: [ReactiveFormsModule, RouterLink, DatePipe, ConfirmDialog, PageHeader, AiProviderPanel],
   templateUrl: './connections-page.html',
-  styleUrls: ['../auth/auth-form.css', './connections-page.css'],
+  styleUrl: './connections-page.css',
 })
 export class ConnectionsPage implements OnInit {
   private readonly api = inject(IntervalsConnectionApi);

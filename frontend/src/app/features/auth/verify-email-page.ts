@@ -16,7 +16,6 @@ const FALLBACK_MESSAGE = 'Something went wrong. Please try again.';
   selector: 'app-verify-email-page',
   imports: [RouterLink],
   templateUrl: './verify-email-page.html',
-  styleUrl: './auth-form.css',
 })
 export class VerifyEmailPage implements OnInit {
   private readonly api = inject(AuthApi);

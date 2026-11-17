@@ -102,7 +102,7 @@ function dayMinutes(text: string): Parsed<number> {
     SportPreferencesForm,
   ],
   templateUrl: './availability-page.html',
-  styleUrls: ['../auth/auth-form.css', './availability-page.css'],
+  styleUrl: './availability-page.css',
 })
 export class AvailabilityPage implements OnInit {
   private readonly api = inject(AvailabilityApi);

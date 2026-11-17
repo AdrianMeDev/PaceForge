@@ -61,7 +61,7 @@ const SERVER_FIELDS: Record<string, string> = {
 @Component({
   selector: 'app-goal-form',
   templateUrl: './goal-form.html',
-  styleUrls: ['../auth/auth-form.css', './goal-form.css'],
+  styleUrl: './goal-form.css',
 })
 export class GoalForm implements OnInit, AfterViewInit {
   private readonly api = inject(GoalsApi);

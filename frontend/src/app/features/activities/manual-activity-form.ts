@@ -27,7 +27,7 @@ const NOTES_TOO_LONG = `Use at most ${NOTES_MAX} characters.`;
 @Component({
   selector: 'app-manual-activity-form',
   templateUrl: './manual-activity-form.html',
-  styleUrls: ['../auth/auth-form.css', './manual-activity-form.css'],
+  styleUrl: './manual-activity-form.css',
 })
 export class ManualActivityForm {
   private readonly api = inject(ActivitiesApi);

@@ -78,7 +78,7 @@ interface ReviewDay {
   selector: 'app-review-page',
   imports: [RouterLink, Icon, PageHeader, SessionRating, WeekFeedbackForm, CoachComment],
   templateUrl: './review-page.html',
-  styleUrls: ['../auth/auth-form.css', './review-page.css'],
+  styleUrl: './review-page.css',
 })
 export class ReviewPage implements OnInit {
   private readonly api = inject(ReviewApi);

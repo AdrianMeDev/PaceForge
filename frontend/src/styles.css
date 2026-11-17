@@ -307,6 +307,33 @@ body:has(dialog[open]) {
     @apply mb-4;
   }
 
+  /* The card of the sign-in and account pages. */
+  .auth-card {
+    max-width: 24rem;
+    margin: 10vh auto 0;
+    padding: 1.5rem;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+  }
+
+  /* The label of a field sits above it; the label of a checkbox or a radio is inline and plain. */
+  .field label {
+    display: block;
+    margin-bottom: 0.25rem;
+    font-weight: 600;
+  }
+
+  .check label {
+    display: inline;
+    margin: 0;
+    font-weight: 400;
+  }
+
+  .field input[readonly] {
+    color: var(--muted);
+  }
+
   .hint {
     @apply mt-1 text-sm text-muted;
   }

@@ -31,7 +31,7 @@ type Field = FeedbackField | 'nextNote';
 @Component({
   selector: 'app-week-feedback-form',
   templateUrl: './week-feedback-form.html',
-  styleUrls: ['../auth/auth-form.css', './week-feedback-form.css'],
+  styleUrl: './week-feedback-form.css',
 })
 export class WeekFeedbackForm {
   private readonly api = inject(ReviewApi);

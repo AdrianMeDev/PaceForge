@@ -28,7 +28,7 @@ const SERVER_FIELDS: Record<string, string> = {
 @Component({
   selector: 'app-period-form',
   templateUrl: './period-form.html',
-  styleUrls: ['../auth/auth-form.css', './period-form.css'],
+  styleUrl: './period-form.css',
 })
 export class PeriodForm implements AfterViewInit {
   private readonly api = inject(AvailabilityApi);

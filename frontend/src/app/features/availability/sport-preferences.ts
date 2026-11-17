@@ -126,7 +126,7 @@ export function readPreferences(
 @Component({
   selector: 'app-sport-preferences',
   templateUrl: './sport-preferences.html',
-  styleUrls: ['../auth/auth-form.css', './sport-preferences.css'],
+  styleUrl: './sport-preferences.css',
 })
 export class SportPreferencesForm {
   readonly form = model.required<PreferenceForm>();

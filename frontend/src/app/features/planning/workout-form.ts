@@ -39,7 +39,7 @@ type Field = 'title' | 'duration' | 'zone' | 'notes' | 'stretching';
 @Component({
   selector: 'app-workout-form',
   templateUrl: './workout-form.html',
-  styleUrls: ['../auth/auth-form.css', './workout-form.css'],
+  styleUrl: './workout-form.css',
 })
 export class WorkoutForm {
   /** The Monday of the week of the plan, `YYYY-MM-DD`. */

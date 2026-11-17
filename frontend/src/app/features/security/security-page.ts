@@ -44,7 +44,7 @@ function noticeFor(key: string | null): string | null {
   selector: 'app-security-page',
   imports: [ReactiveFormsModule, ConfirmDialog, PageHeader, QrCode],
   templateUrl: './security-page.html',
-  styleUrls: ['../auth/auth-form.css', './security-page.css'],
+  styleUrl: './security-page.css',
 })
 export class SecurityPage implements OnInit {
   private readonly api = inject(AuthApi);

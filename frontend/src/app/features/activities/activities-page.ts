@@ -45,7 +45,7 @@ const REFRESH_FAILED = 'The list could not be refreshed. Please try again.';
   selector: 'app-activities-page',
   imports: [RouterLink, DatePipe, ConfirmDialog, Icon, PageHeader, ManualActivityForm],
   templateUrl: './activities-page.html',
-  styleUrls: ['../auth/auth-form.css', './activities-page.css'],
+  styleUrl: './activities-page.css',
 })
 export class ActivitiesPage implements OnInit {
   private readonly api = inject(ActivitiesApi);

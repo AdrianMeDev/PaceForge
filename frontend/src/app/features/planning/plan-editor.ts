@@ -55,7 +55,7 @@ type Editing = number | 'new' | null;
   selector: 'app-plan-editor',
   imports: [Icon, WorkoutForm],
   templateUrl: './plan-editor.html',
-  styleUrls: ['../auth/auth-form.css', './plan-editor.css'],
+  styleUrl: './plan-editor.css',
 })
 export class PlanEditor implements OnInit {
   private readonly api = inject(PlanningApi);

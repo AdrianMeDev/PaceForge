@@ -120,7 +120,7 @@ export function ownLimitTexts(own: OwnLimits): OwnLimitTexts {
 @Component({
   selector: 'app-intensity-settings',
   templateUrl: './intensity-settings.html',
-  styleUrls: ['../auth/auth-form.css', './intensity-settings.css'],
+  styleUrl: './intensity-settings.css',
 })
 export class IntensitySettings {
   readonly level = model.required<IntensityLevel>();

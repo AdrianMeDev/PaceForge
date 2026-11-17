@@ -31,7 +31,7 @@ const FALLBACK = 'Something went wrong. Please try again.';
 @Component({
   selector: 'app-body-data-panel',
   templateUrl: './body-data-panel.html',
-  styleUrls: ['../auth/auth-form.css', './body-data-panel.css'],
+  styleUrl: './body-data-panel.css',
 })
 export class BodyDataPanel implements OnInit {
   private readonly api = inject(AthleteApi);

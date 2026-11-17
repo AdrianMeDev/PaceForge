@@ -1,7 +1,14 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 
 // `ng test` runs in the folder of the project.
 const styles = readFileSync('src/styles.css', 'utf-8');
+
+/** The `.ts` and `.html` files directly in a folder. */
+function sourceFiles(folder: string): string[] {
+  return readdirSync(folder)
+    .filter((name) => /\.(ts|html)$/.test(name) && !name.endsWith('.spec.ts'))
+    .map((name) => `${folder}/${name}`);
+}
 
 /** The custom properties a block of the stylesheet defines. */
 function tokens(block: string): string[] {
@@ -95,6 +102,9 @@ describe('the shared building blocks', () => {
     '.field-error',
     '.empty-state',
     '.skeleton',
+    '.auth-card',
+    '.field label',
+    '.check label',
   ])('defines %s in the components layer', (selector) => {
     // a selector is the end of its rule, or one of several before the brace
     expect(components).toMatch(new RegExp(`${selector.replace('.', '\\.')}(,\\s*\\S+)* \\{`));
@@ -121,5 +131,16 @@ describe('the base styles', () => {
   it('does not copy the reset by hand any more', () => {
     expect(base).not.toContain('-webkit-text-size-adjust');
     expect(base).not.toMatch(/border:\s*0 solid/);
+  });
+});
+
+describe('the retired stylesheet of the account pages', () => {
+  it('is deleted, and no component of the app names it', () => {
+    expect(existsSync('src/app/features/auth/auth-form.css')).toBe(false);
+    for (const folder of readdirSync('src/app/features')) {
+      for (const file of sourceFiles(`src/app/features/${folder}`)) {
+        expect(readFileSync(file, 'utf-8'), file).not.toContain('auth-form.css');
+      }
+    }
   });
 });

@@ -22,7 +22,6 @@ const FALLBACK_MESSAGE = 'Something went wrong. Please try again.';
   selector: 'app-login-mfa-page',
   imports: [ReactiveFormsModule],
   templateUrl: './login-mfa-page.html',
-  styleUrl: './auth-form.css',
 })
 export class LoginMfaPage {
   private readonly store = inject(AuthStore);
