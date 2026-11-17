@@ -9,25 +9,14 @@ import {
   PushOutcome,
   Sport,
   WeekPlan,
-  Workout,
 } from '../../core/planning/planning-models';
 import {
-  GOAL_LABELS,
-  SLOT_LABELS,
-  SPORT_LABELS,
   STATUS_LABELS,
   dayLabel,
   exportSummaryText,
-  exportText,
   findingPlace,
   minutesText,
   pushText,
-  segmentText,
-  exerciseDetail,
-  REGION_LABELS,
-  EQUIPMENT_LABELS,
-  stretchingText,
-  targetText,
   WEEK_NOTE_MAX,
   weekRange,
 } from './plan-format';
@@ -39,6 +28,7 @@ import {
   minutesBySport,
 } from '../season/season-format';
 import { PlanEditor } from './plan-editor';
+import { PlanDay, PlanDayView } from './plan-day';
 
 type View = 'loading' | 'unreachable' | 'ready' | 'signed_out';
 /** What the page is waiting for; one thing at a time. */
@@ -58,13 +48,6 @@ const RESTORE_NOT_PLANNABLE =
   'This week cannot be planned any more, so a version of it cannot be restored.';
 const TOO_MANY_PUSHES = 'Too many sends in a short time. Please wait a minute and try again.';
 
-/** One day of the plan with its workouts, numbered as the checks number them. */
-interface PlanDay {
-  date: string;
-  label: string;
-  workouts: { number: number; workout: Workout }[];
-}
-
 /**
  * The weekly plan: pick a week, let the user's own coach draft it, read the draft with what the
  * checks say about it, then confirm or discard it. Nothing the coach writes is trusted: the
@@ -73,7 +56,7 @@ interface PlanDay {
  */
 @Component({
   selector: 'app-planning-page',
-  imports: [RouterLink, DatePipe, PlanEditor],
+  imports: [RouterLink, DatePipe, PlanEditor, PlanDayView],
   templateUrl: './planning-page.html',
   styleUrls: ['../auth/auth-form.css', './planning-page.css'],
 })
@@ -130,9 +113,6 @@ export class PlanningPage implements OnInit {
     () => this.plan()?.status === 'draft' && this.plan()?.report?.valid === true,
   );
 
-  protected readonly slot = SLOT_LABELS;
-  protected readonly sport = SPORT_LABELS;
-  protected readonly goal = GOAL_LABELS;
   protected readonly status = STATUS_LABELS;
   protected readonly phase = PHASE_LABELS;
   protected readonly focus = FOCUS_LABELS;
@@ -142,15 +122,8 @@ export class PlanningPage implements OnInit {
     minutesBySport(Object.fromEntries(entries.map((entry) => [entry.sport, entry.minutes])));
   protected readonly range = weekRange;
   protected readonly day = dayLabel;
-  protected readonly stretching = stretchingText;
   protected readonly minutes = minutesText;
-  protected readonly target = targetText;
-  protected readonly segment = segmentText;
-  protected readonly exerciseNumbers = exerciseDetail;
-  protected readonly region = REGION_LABELS;
-  protected readonly equipment = EQUIPMENT_LABELS;
   protected readonly place = findingPlace;
-  protected readonly sent = exportText;
   protected readonly sentSummary = exportSummaryText;
 
   ngOnInit(): Promise<void> {
