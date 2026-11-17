@@ -1,9 +1,7 @@
 .panel {
   margin: 0.75rem 0;
   padding: 1rem 1.25rem;
-  border: 1px solid var(--accent);
-  border-radius: 8px;
-  background: var(--surface);
+  border-color: var(--accent);
 }
 
 h3 {
