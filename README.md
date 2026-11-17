@@ -151,7 +151,7 @@ the password; a recovery code works in the same field.
   it off in the interface.
 - **The password is asked for again** when turning it on or off, showing recovery codes or
   generating new ones, even right after signing in.
-- **Recovery codes:** save them when they are shown. Generating new ones replaces all old ones.
+- **Recovery codes:** save them when they are shown. Generating new ones replaces all old ones; the page asks first, in a dialog, and asks the same before turning two-factor authentication off.
 - **The QR code is drawn in the browser.** The authenticator URL contains the secret; it is never
   sent to a third party.
 - **Stored encrypted.** The authenticator secrets and the seed of the recovery codes are encrypted
@@ -184,7 +184,7 @@ and invite a few others. The findings behind this are in
 3. The page shows the status, the athlete and the time of the last check. **Check connection**
    tests the stored key again; if Intervals.icu no longer accepts it (you created a new key there),
    the status says **Needs attention** and you paste the new one under **Replace the API key**.
-4. **Disconnect** deletes the stored key. PaceForge cannot revoke it at Intervals.icu; create a new
+4. **Disconnect** (a dialog asks first) deletes the stored key. PaceForge cannot revoke it at Intervals.icu; create a new
    key there if the old one should stop working.
 
 - **The key is write-only.** It is sent once, never shown again (not even in part), not returned
@@ -260,7 +260,7 @@ Things to know before you allow one of them:
 4. Change anything later by saving again. Any change of provider, model, season model, address or
    key sets the status back to **Not checked yet**; saving the very same setup again changes nothing. The check
    always uses the **saved** setup (the page says when you have unsaved changes).
-5. **Remove** deletes the setup and the stored key after a question. PaceForge cannot revoke the key
+5. **Remove** deletes the setup and the stored key after a question in a dialog. PaceForge cannot revoke the key
    at your provider; delete it there if it should stop working.
 
 **The status** shows what was learned at the last call:
