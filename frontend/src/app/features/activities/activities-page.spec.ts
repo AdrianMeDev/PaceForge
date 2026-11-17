@@ -820,6 +820,83 @@ describe('ActivitiesPage', () => {
     });
   });
 
+  describe('the sport filter', () => {
+    const press = async (id: string) => {
+      query<HTMLButtonElement>(page, `[data-testid="${id}"]`).click();
+      await settle(fixture);
+    };
+
+    it('offers all and every sport, with all pressed first', async () => {
+      await setup(ok([RUN]));
+
+      const chips = Array.from(page.querySelectorAll('[data-testid="sport-filter"] button'));
+      expect(chips.map((chip) => chip.textContent?.trim())).toEqual([
+        'All',
+        'Running',
+        'Cycling',
+        'Swimming',
+        'Strength',
+        'Other',
+      ]);
+      expect(query(page, '[data-testid="filter-all"]').getAttribute('aria-pressed')).toBe('true');
+    });
+
+    it('asks for one sport from the start and says which one is pressed', async () => {
+      await setup(ok(many(20), 45));
+      api.list.mockResolvedValue(ok([RUN], 1));
+
+      await press('filter-running');
+
+      expect(api.list).toHaveBeenLastCalledWith(20, 0, 'running');
+      expect(query(page, '[data-testid="filter-running"]').getAttribute('aria-pressed')).toBe(
+        'true',
+      );
+      expect(query(page, '[data-testid="filter-all"]').getAttribute('aria-pressed')).toBe('false');
+    });
+
+    it('keeps the sport while paging and goes back to the first page when it changes', async () => {
+      await setup(ok(many(20), 45));
+      api.list.mockResolvedValue(ok(many(20), 45));
+      await press('filter-cycling');
+      await click('Next');
+
+      expect(api.list).toHaveBeenLastCalledWith(20, 20, 'cycling');
+
+      await press('filter-swimming');
+
+      expect(api.list).toHaveBeenLastCalledWith(20, 0, 'swimming');
+    });
+
+    it('shows all again without a sport', async () => {
+      await setup(ok([RUN]));
+      api.list.mockResolvedValue(ok([RUN], 1));
+      await press('filter-running');
+
+      await press('filter-all');
+
+      expect(api.list.mock.calls.at(-1)).toEqual([20, 0]);
+    });
+
+    it('says when a sport has no activities, and keeps the filter to change it', async () => {
+      await setup(ok([RUN]));
+      api.list.mockResolvedValue(ok([], 0));
+
+      await press('filter-swimming');
+
+      expect(query(page, '[data-testid="filter-empty"]').textContent).toContain(
+        'No swimming activities.',
+      );
+      expect(page.querySelector('table')).toBeNull();
+      expect(query(page, '[data-testid="sport-filter"]')).toBeTruthy();
+      expect(text()).not.toContain('No activities yet.');
+
+      api.list.mockResolvedValue(ok([RUN], 1));
+      await click('Show all');
+
+      expect(rows()).toHaveLength(1);
+    });
+  });
+
   describe('deleting the last activity of a page', () => {
     it('shows the new last page', async () => {
       await setup(ok(many(20), 21));

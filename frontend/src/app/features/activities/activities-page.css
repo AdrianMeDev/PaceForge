@@ -24,6 +24,28 @@
   color: var(--danger);
 }
 
+.chip {
+  padding: 0.3rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.chip[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.chip:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+
 .table-wrap {
   overflow-x: auto;
 }

@@ -8,6 +8,7 @@ import {
   ImportActivityResult,
 } from '../../core/activities/activities-models';
 import {
+  SPORT_CHOICES,
   formatDistance,
   formatDuration,
   formatHeartRate,
@@ -62,6 +63,8 @@ export class ActivitiesPage implements OnInit {
   protected readonly notice = signal<string | null>(null);
   protected readonly confirming = signal<string | null>(null);
   protected readonly highlighted = signal<string | null>(null);
+  /** The sport the list is kept to; `null`: all of them. */
+  protected readonly filter = signal<Activity['sport'] | null>(null);
   /** Files are being dragged over the drop zone. */
   protected readonly dragging = signal(false);
 
@@ -80,6 +83,10 @@ export class ActivitiesPage implements OnInit {
   protected readonly nextOffset = computed(() => this.offset() + PAGE_SIZE);
   protected readonly listedIds = computed(() => this.page().results.map((a) => a.id));
 
+  protected readonly sports = SPORT_CHOICES;
+  protected readonly filterLabel = computed(
+    () => SPORT_CHOICES.find((choice) => choice.value === this.filter())?.label.toLowerCase() ?? '',
+  );
   protected readonly sport = sportLabel;
   protected readonly source = sourceLabel;
   protected readonly distance = formatDistance;
@@ -133,6 +140,16 @@ export class ActivitiesPage implements OnInit {
       return;
     }
     await this.importAll(files);
+  }
+
+  /** Keeps the list to one sport (or, with `null`, shows all): it starts again at the newest. */
+  protected async filterBy(sport: Activity['sport'] | null): Promise<void> {
+    if (this.busy() || this.refreshing()) {
+      return;
+    }
+    this.clearMessages();
+    this.filter.set(sport);
+    await this.refresh(0);
   }
 
   /** A session was entered by hand: the list starts again at the newest activity. */
@@ -246,7 +263,11 @@ export class ActivitiesPage implements OnInit {
 
   private async fetch(offset: number): Promise<'ok' | 'failed' | 'signed_out'> {
     try {
-      const result = await this.api.list(PAGE_SIZE, offset);
+      const sport = this.filter();
+      const result =
+        sport === null
+          ? await this.api.list(PAGE_SIZE, offset)
+          : await this.api.list(PAGE_SIZE, offset, sport);
       if (result.kind === 'forbidden') {
         return 'signed_out';
       }
