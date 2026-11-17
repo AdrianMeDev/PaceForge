@@ -60,14 +60,6 @@ h3 {
   gap: 0.5rem;
 }
 
-.badge {
-  display: inline-block;
-  padding: 0.1rem 0.5rem;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  font-size: 0.85rem;
-}
-
 .badge.current {
   border-color: var(--accent);
   color: var(--accent);
