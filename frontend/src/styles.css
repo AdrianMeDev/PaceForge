@@ -1,3 +1,50 @@
+/*
+ * Tailwind: the theme and the utilities, without its base styles (the reset). The colours stay the
+ * tokens below, which Tailwind reads through `@theme inline`, so light, dark and the theme switch
+ * work for utilities too. Rules that are not in a layer (the ones below and those of the
+ * components) win over utilities; the base styles come in a later step.
+ */
+@layer theme, base, components, utilities;
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities);
+
+/* `dark:` follows the chosen theme, or the system setting while none is chosen. */
+@custom-variant dark {
+  &:where([data-theme='dark'], [data-theme='dark'] *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme='light']), :root:not([data-theme='light']) *) {
+      @slot;
+    }
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-fg: var(--text);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-accent-text: var(--accent-text);
+  --color-danger: var(--danger);
+  --color-danger-bg: var(--danger-bg);
+  --color-info: var(--info);
+  --color-info-bg: var(--info-bg);
+  --color-phase-base: var(--phase-base);
+  --color-phase-build: var(--phase-build);
+  --color-phase-specific: var(--phase-specific);
+  --color-phase-taper: var(--phase-taper);
+  --color-phase-transition: var(--phase-transition);
+  --color-sport-running: var(--sport-running);
+  --color-sport-cycling: var(--sport-cycling);
+  --color-sport-swimming: var(--sport-swimming);
+  --color-sport-strength: var(--sport-strength);
+  --color-sport-other: var(--sport-other);
+  --color-sport-aim: var(--sport-aim);
+}
+
 :root {
   color-scheme: light dark;
   --bg: #f4f6f8;
