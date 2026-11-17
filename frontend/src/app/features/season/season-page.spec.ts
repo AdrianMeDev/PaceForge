@@ -401,11 +401,11 @@ describe('SeasonPage', () => {
     it('lists the versions with their status and marks the one that is shown', async () => {
       await load([DRAFT, CONFIRMED, OLD], plan({ id: CONFIRMED.id, version: 2 }));
 
-      // the time of day depends on the time zone of the host, so only the words are compared
+      // the date is in the accessible name only, so nothing here depends on the time zone
       const items = Array.from(page.querySelectorAll('.versions button')).map((item) =>
-        item.textContent?.replace(/\s+/g, ' ').trim().split(' · ').slice(0, 2).join(' · '),
+        item.textContent?.replace(/\s+/g, ' ').trim(),
       );
-      expect(items).toEqual(['Version 3 · Draft', 'Version 2 · Confirmed', 'Version 1 · Replaced']);
+      expect(items).toEqual(['v3 · Draft', 'v2 · Confirmed', 'v1 · Replaced']);
       expect(query(page, '[data-testid="version-2"]').getAttribute('aria-current')).toBe('true');
       expect(query(page, '[data-testid="version-3"]').getAttribute('aria-current')).toBeNull();
     });

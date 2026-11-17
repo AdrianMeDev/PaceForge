@@ -104,23 +104,13 @@
         }
 
         @if (versions().length > 0) {
-          <ul class="versions" aria-label="Versions of the season plan">
-            @for (version of versions(); track version.id) {
-              <li>
-                <button
-                  type="button"
-                  class="link"
-                  [disabled]="busy()"
-                  [attr.aria-current]="plan()?.id === version.id ? 'true' : null"
-                  [attr.data-testid]="'version-' + version.version"
-                  (click)="open(version.id)"
-                >
-                  Version {{ version.version }} · {{ status[version.status] }} ·
-                  {{ version.created_at | date: 'MMM d, HH:mm' }}
-                </button>
-              </li>
-            }
-          </ul>
+          <app-version-chips
+            label="Versions of the season plan"
+            [versions]="versions()"
+            [selected]="plan()?.id ?? null"
+            [disabled]="busy()"
+            (opened)="open($event)"
+          />
         }
 
         @if (plan(); as filled) {

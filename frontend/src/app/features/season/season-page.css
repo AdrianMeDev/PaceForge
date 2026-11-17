@@ -70,16 +70,6 @@ tr[data-phase='transition'] {
   border: 0;
 }
 
-.versions {
-  margin: 0.75rem 0;
-  padding: 0;
-  list-style: none;
-}
-
-.versions [aria-current='true'] {
-  font-weight: 600;
-}
-
 .total {
   display: block;
   color: var(--muted);

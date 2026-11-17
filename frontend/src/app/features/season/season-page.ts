@@ -1,4 +1,3 @@
-import { DatePipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { CoachApi } from '../../core/coach/coach-api';
@@ -18,6 +17,7 @@ import {
   weekRange,
 } from '../planning/plan-format';
 import { compareSeasons } from './season-compare';
+import { VersionChips } from '../../shared/version-chips';
 import { PageHeader } from '../../shared/page-header';
 import { SeasonChart } from './season-chart';
 import { SeasonTimeline } from './season-timeline';
@@ -74,7 +74,7 @@ const REFRESH_FAILED = 'The list of plans could not be refreshed. Please try aga
  */
 @Component({
   selector: 'app-season-page',
-  imports: [DatePipe, RouterLink, PageHeader, SeasonChart, SeasonTimeline],
+  imports: [RouterLink, PageHeader, SeasonChart, SeasonTimeline, VersionChips],
   templateUrl: './season-page.html',
   styleUrl: './season-page.css',
 })
