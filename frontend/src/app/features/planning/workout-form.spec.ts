@@ -132,7 +132,7 @@ describe('WorkoutForm', () => {
     it('starts as an easy hour of running on the first day of the week', () => {
       setup();
 
-      expect(page.querySelector('h3')?.textContent).toBe('Add a workout');
+      expect(page.querySelector('h3')?.textContent?.trim()).toBe('Add a workout');
       expect(select('workout-day').value).toBe('2026-11-16');
       expect(select('workout-sport').value).toBe('running');
       expect(select('workout-goal').value).toBe('endurance');
@@ -202,7 +202,7 @@ describe('WorkoutForm', () => {
     it('shows what the workout is', () => {
       setup(RIDE);
 
-      expect(page.querySelector('h3')?.textContent).toBe('Change this workout');
+      expect(page.querySelector('h3')?.textContent?.trim()).toBe('Change this workout');
       expect(select('workout-day').value).toBe('2026-11-16');
       expect(select('workout-slot').value).toBe('morning');
       expect(select('workout-sport').value).toBe('cycling');

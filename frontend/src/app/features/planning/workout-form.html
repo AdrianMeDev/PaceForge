@@ -4,9 +4,11 @@
   aria-labelledby="workout-form-title"
   (submit)="$event.preventDefault(); submit()"
 >
-  <h3 id="workout-form-title">{{ isNew() ? 'Add a workout' : 'Change this workout' }}</h3>
+  <h3 id="workout-form-title" class="m-0 mb-3 text-base font-semibold">
+    {{ isNew() ? 'Add a workout' : 'Change this workout' }}
+  </h3>
 
-  <div class="grid">
+  <div class="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
     <div class="field">
       <label for="workout-day">Day</label>
       <select id="workout-day" (change)="dayValue.set(value($event))">
@@ -68,7 +70,7 @@
     }
   </div>
 
-  <div class="grid">
+  <div class="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
     <div class="field">
       <label for="workout-duration">Duration</label>
       @if (keepsStructure()) {
@@ -114,7 +116,7 @@
   </div>
 
   @if (zoneSystems().length > 0) {
-    <div class="grid">
+    <div class="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
       <div class="field">
         <label for="workout-zone-system">Target</label>
         <select id="workout-zone-system" (change)="setZoneSystem(value($event))">
@@ -200,11 +202,16 @@
     }
   </div>
 
-  <div class="actions">
-    <button type="submit" class="primary" data-testid="workout-save">
+  <div class="mt-2 flex flex-wrap gap-2">
+    <button type="submit" class="btn btn-primary" data-testid="workout-save">
       {{ isNew() ? 'Add workout' : 'Save workout' }}
     </button>
-    <button type="button" class="secondary" data-testid="workout-cancel" (click)="cancelled.emit()">
+    <button
+      type="button"
+      class="btn btn-secondary"
+      data-testid="workout-cancel"
+      (click)="cancelled.emit()"
+    >
       Cancel
     </button>
   </div>

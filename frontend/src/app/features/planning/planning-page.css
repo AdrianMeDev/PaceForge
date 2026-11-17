@@ -12,20 +12,6 @@ select {
   font: inherit;
 }
 
-.versions {
-  margin: 0 0 1rem;
-  padding: 0;
-  list-style: none;
-}
-
-.versions li {
-  margin-bottom: 0.25rem;
-}
-
-.versions button[aria-current='true'] {
-  font-weight: 700;
-}
-
 .plan {
   margin-top: 1rem;
   padding: 1rem 1.25rem;
@@ -51,18 +37,6 @@ h2 {
   font-size: 1.15rem;
 }
 
-h3 {
-  margin: 1.25rem 0 0.4rem;
-  font-size: 1rem;
-  color: var(--muted);
-}
-
-h4 {
-  margin: 0 0.25rem 0 0;
-  font-size: 1rem;
-  overflow-wrap: anywhere;
-}
-
 .badge[data-status='confirmed'] {
   border-color: var(--accent);
   color: var(--accent);
@@ -82,40 +56,8 @@ h4 {
   overflow-wrap: anywhere;
 }
 
-.workout {
-  margin-bottom: 0.75rem;
-  padding: 0.6rem 0.8rem;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-}
-
-.meta {
-  margin: 0.3rem 0 0;
-}
-
-.segments {
-  margin: 0.3rem 0 0;
-  padding-left: 1.2rem;
-  color: var(--muted);
-}
-
-.exercises {
-  margin: 0.3rem 0 0;
-  padding-left: 1.4rem;
-}
-
-.exercise-name {
-  font-weight: 600;
-}
-
-.exercise-numbers::before {
-  content: ' – ';
-}
-
-.exercise-what {
-  margin-left: 0.5rem;
-  color: var(--muted);
-  font-size: 0.85rem;
+.findings-box {
+  margin: 0.75rem 0;
 }
 
 .findings,
@@ -135,36 +77,25 @@ h4 {
   margin-top: 1rem;
 }
 
-button.secondary {
-  padding: 0.5rem 0.9rem;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text);
-  cursor: pointer;
+/* The decisions about the plan stay in reach: on a phone the bar sticks above the tab bar. */
+.plan-actions {
+  margin-top: 1rem;
 }
 
-.badge.slot {
-  border-color: var(--accent);
-  color: var(--accent);
+.plan-actions .actions {
+  margin-top: 0.75rem;
 }
 
-.stretching {
-  margin: 0.3rem 0 0;
-  color: var(--muted);
-}
-
-.export {
-  margin: 0.3rem 0 0;
-  color: var(--muted);
-}
-
-.export[data-status='synced'] {
-  color: var(--accent);
-}
-
-.export[data-status='failed'] {
-  color: var(--danger);
+@media (max-width: 39.99rem) {
+  .plan-actions {
+    position: sticky;
+    bottom: calc(3.5rem + env(safe-area-inset-bottom));
+    z-index: 5;
+    margin: 1rem -1.25rem -1rem;
+    padding: 0.75rem 1.25rem;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+  }
 }
 
 .check {
@@ -172,22 +103,6 @@ button.secondary {
   align-items: center;
   gap: 0.5rem;
   margin-top: 0.75rem;
-}
-
-.season-week {
-  margin: 1rem 0;
-  padding: 0.75rem 1rem;
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
-}
-
-.season-week h2 {
-  margin: 0 0 0.5rem;
-  font-size: 1rem;
-}
-
-.season-week p {
-  margin: 0.25rem 0;
 }
 
 .key-sessions {

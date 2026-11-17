@@ -231,6 +231,19 @@ function deferred<T>() {
 }
 
 describe('PlanningPage', () => {
+  // jsdom has no modal dialog: this is what the browser does that the question relies on.
+  beforeAll(() => {
+    HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
+      this.setAttribute('open', '');
+    };
+    HTMLDialogElement.prototype.close = function (this: HTMLDialogElement) {
+      if (this.hasAttribute('open')) {
+        this.removeAttribute('open');
+        this.dispatchEvent(new Event('close'));
+      }
+    };
+  });
+
   let stubs: ReturnType<typeof createStubs>;
   let fixture: ComponentFixture<PlanningPage>;
   let page: HTMLElement;
@@ -311,6 +324,12 @@ describe('PlanningPage', () => {
     await settle(fixture);
   }
 
+  /** "Discard" asks first: this answers the question with "Discard draft". */
+  async function discardAndConfirm() {
+    await click('discard');
+    await click('confirm-dialog-confirm');
+  }
+
   describe('loading', () => {
     it('shows a message while it waits', async () => {
       stubs = createStubs();
@@ -328,7 +347,9 @@ describe('PlanningPage', () => {
       fixture = TestBed.createComponent(PlanningPage);
       await fixture.whenStable();
 
-      expect(fixture.nativeElement.textContent).toContain('Loading…');
+      expect(
+        fixture.nativeElement.querySelector('[role="status"][aria-label="Loading"]'),
+      ).toBeTruthy();
     });
 
     it('offers to try again when the weeks cannot be loaded', async () => {
@@ -339,7 +360,7 @@ describe('PlanningPage', () => {
 
       expect(alerts()).toEqual(['Your plans could not be loaded.']);
 
-      query<HTMLButtonElement>(page, 'button.primary').click();
+      query<HTMLButtonElement>(page, 'button.btn-primary').click();
       await settle(fixture);
 
       expect(alerts()).toEqual([]);
@@ -497,8 +518,9 @@ describe('PlanningPage', () => {
       expect(byId('version-2')?.getAttribute('aria-current')).toBe('true');
       expect(byId('version-1')?.getAttribute('aria-current')).toBeNull();
       // The time depends on the time zone of the machine, so only its shape is checked.
-      expect(byId('version-2')?.textContent?.replace(/\s+/g, ' ').trim()).toMatch(
-        /^Version 2 · Draft · [A-Z][a-z]{2} \d{1,2}, \d{2}:\d{2}$/,
+      expect(byId('version-2')?.textContent?.replace(/\s+/g, ' ').trim()).toBe('v2 · Draft');
+      expect(byId('version-2')?.getAttribute('aria-label')).toMatch(
+        /^Version 2, Draft, [A-Z][a-z]{2} \d{1,2}, \d{2}:\d{2}$/,
       );
 
       await click('version-1');
@@ -731,6 +753,20 @@ describe('PlanningPage', () => {
         'Note · Week: The week has no day without a workout.',
       );
       expect(item.getAttribute('data-severity')).toBe('warning');
+    });
+
+    it('are folded away behind a summary, open when there is an error', async () => {
+      await setup();
+
+      expect(byId('findings-summary')?.textContent?.trim()).toBe('What the checks say: 1 error');
+      expect(query<HTMLDetailsElement>(page, '[data-testid="findings-box"]').open).toBe(true);
+    });
+
+    it('stay folded when there are only notes', async () => {
+      await setup({ plans: { [DRAFT_ID]: { kind: 'ok', plan: WARNED } } });
+
+      expect(byId('findings-summary')?.textContent?.trim()).toBe('What the checks say: 1 note');
+      expect(query<HTMLDetailsElement>(page, '[data-testid="findings-box"]').open).toBe(false);
     });
 
     it('say when there is nothing to point out', async () => {
@@ -1557,7 +1593,40 @@ describe('PlanningPage', () => {
     });
   });
 
+  describe('the bar with the decisions', () => {
+    it('holds confirming, discarding and changing of a draft in one place', async () => {
+      await setup();
+
+      const bar = byId('plan-actions');
+      for (const id of ['confirm', 'discard', 'change-plan', 'send-after-confirm']) {
+        expect(bar?.querySelector(`[data-testid="${id}"]`)).not.toBeNull();
+      }
+    });
+
+    it('is not there for a plan nothing can be done with', async () => {
+      await setup({ weeks: ok(weeks([OLD])) });
+
+      expect(byId('plan-actions')).toBeNull();
+    });
+  });
+
   describe('discarding', () => {
+    it('asks first and discards nothing when the answer is "Cancel"', async () => {
+      await setup();
+
+      await click('discard');
+      const dialog = query<HTMLDialogElement>(page, '[data-testid="confirm-dialog"]');
+      expect(dialog.open).toBe(true);
+      expect(dialog.textContent).toContain('Version 2 will be marked as discarded');
+      expect(stubs.planning.discard).not.toHaveBeenCalled();
+
+      await click('confirm-dialog-cancel');
+
+      expect(dialog.open).toBe(false);
+      expect(stubs.planning.discard).not.toHaveBeenCalled();
+      expect(byId('discard')).not.toBeNull();
+    });
+
     it('discards a draft and shows it as discarded', async () => {
       await setup();
       stubs.planning.discard.mockResolvedValue({
@@ -1565,7 +1634,7 @@ describe('PlanningPage', () => {
         plan: { ...WITH_ERRORS, status: 'discarded', report: null },
       });
 
-      await click('discard');
+      await discardAndConfirm();
 
       expect(stubs.planning.discard).toHaveBeenCalledExactlyOnceWith(DRAFT_ID);
       expect(notice()).toBe('The draft was discarded.');
@@ -1587,7 +1656,7 @@ describe('PlanningPage', () => {
       stubs.planning.discard.mockResolvedValue({ kind: 'not_a_draft' });
       stubs.planning.get.mockResolvedValue({ kind: 'ok', plan: CONFIRMED });
 
-      await click('discard');
+      await discardAndConfirm();
 
       expect(alerts()).toEqual(['That plan is not a draft any more.']);
       expect(byId('status')?.textContent?.trim()).toBe('Confirmed');
@@ -1597,7 +1666,7 @@ describe('PlanningPage', () => {
       await setup();
       stubs.planning.discard.mockResolvedValue({ kind: 'not_found' });
 
-      await click('discard');
+      await discardAndConfirm();
 
       expect(alerts()).toEqual(['That plan does not exist any more.']);
       expect(byId('status')).toBeNull();
@@ -1607,7 +1676,7 @@ describe('PlanningPage', () => {
       await setup();
       stubs.planning.discard.mockResolvedValue({ kind: 'forbidden' });
 
-      await click('discard');
+      await discardAndConfirm();
 
       expect(alerts()).toEqual(['Your session has ended. Please sign in again.']);
     });
@@ -1616,7 +1685,7 @@ describe('PlanningPage', () => {
       await setup();
       stubs.planning.discard.mockRejectedValue(new Error('network'));
 
-      await click('discard');
+      await discardAndConfirm();
 
       expect(alerts()).toEqual(['Something went wrong. Please try again.']);
       expect(button('discard').disabled).toBe(false);
@@ -1715,6 +1784,8 @@ describe('PlanningPage', () => {
 
         button('discard').click();
         await fixture.whenStable();
+        button('confirm-dialog-confirm').click();
+        await fixture.whenStable();
 
         expect(button('change-plan').disabled).toBe(true);
         pending.resolve({ kind: 'ok', plan: plan({ status: 'discarded', report: null }) });
@@ -1730,7 +1801,9 @@ describe('PlanningPage', () => {
 
         expect(editor()).toBeTruthy();
         expect(page.querySelector('article.plan')).toBeNull();
-        expect(page.querySelector('app-plan-editor h2')?.textContent).toBe('Changing version 2');
+        expect(page.querySelector('app-plan-editor h2')?.textContent?.trim()).toBe(
+          'Changing version 2',
+        );
         expect(stubs.planning.check).toHaveBeenCalledTimes(1);
         expect(stubs.planning.check.mock.calls[0][0]).toBe(NEXT);
       });

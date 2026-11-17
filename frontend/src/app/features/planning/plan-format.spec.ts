@@ -9,6 +9,7 @@ import {
   dayLabel,
   exerciseDetail,
   findingPlace,
+  findingsSummary,
   minutesText,
   exportSummaryText,
   exportText,
@@ -144,6 +145,22 @@ describe('rangeText', () => {
 describe('SLOT_LABELS', () => {
   it('names the three times of day in words', () => {
     expect(SLOT_LABELS).toEqual({ morning: 'Morning', afternoon: 'Afternoon', evening: 'Evening' });
+  });
+});
+
+describe('findingsSummary', () => {
+  it('counts the errors and the notes', () => {
+    expect(findingsSummary([{ severity: 'error' }, { severity: 'warning' }])).toBe(
+      '1 error, 1 note',
+    );
+    expect(
+      findingsSummary([{ severity: 'error' }, { severity: 'error' }, { severity: 'warning' }]),
+    ).toBe('2 errors, 1 note');
+  });
+
+  it('leaves out what there is none of', () => {
+    expect(findingsSummary([{ severity: 'warning' }, { severity: 'warning' }])).toBe('2 notes');
+    expect(findingsSummary([])).toBe('');
   });
 });
 

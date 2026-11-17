@@ -20,11 +20,13 @@ import { EditorDay, editorDays, editedFrom, structureText } from './edit-format'
 import {
   GOAL_LABELS,
   SLOT_LABELS,
+  SPORT_ICONS,
   SPORT_LABELS,
   minutesText,
   stretchingText,
   targetText,
 } from './plan-format';
+import { Icon } from '../../shared/icon';
 import { WorkoutForm } from './workout-form';
 
 const FALLBACK = 'Something went wrong. Please try again.';
@@ -51,7 +53,7 @@ type Editing = number | 'new' | null;
  */
 @Component({
   selector: 'app-plan-editor',
-  imports: [WorkoutForm],
+  imports: [Icon, WorkoutForm],
   templateUrl: './plan-editor.html',
   styleUrls: ['../auth/auth-form.css', './plan-editor.css'],
 })
@@ -93,6 +95,7 @@ export class PlanEditor implements OnInit {
   protected readonly notes = computed(() => this.findings().length - this.errors());
 
   protected readonly sport = SPORT_LABELS;
+  protected readonly icon = SPORT_ICONS;
   protected readonly goal = GOAL_LABELS;
   protected readonly slot = SLOT_LABELS;
   protected readonly minutes = minutesText;

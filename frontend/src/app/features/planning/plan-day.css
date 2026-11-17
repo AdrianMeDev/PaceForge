@@ -1,0 +1,22 @@
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.notes {
+  margin: 0.4rem 0 0;
+  color: var(--muted);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.exercise-numbers::before {
+  content: ' – ';
+}
+
+.badge.slot {
+  border-color: var(--accent);
+  color: var(--accent);
+}

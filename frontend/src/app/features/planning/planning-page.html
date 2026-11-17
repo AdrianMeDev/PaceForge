@@ -1,46 +1,52 @@
 <section class="planning">
-  <h1>Week plan</h1>
+  <app-page-header title="Week plan" [subtitle]="subtitle()">
+    @if (view() === 'ready') {
+      <label class="sr-only" for="plan-week">Week</label>
+      <select
+        id="plan-week"
+        [value]="selected()"
+        [disabled]="busy()"
+        (change)="selectWeek($any($event.target).value)"
+      >
+        @for (item of weeks(); track item.week_start) {
+          <option [value]="item.week_start" [selected]="item.week_start === selected()">
+            {{ range(item.week_start) }}
+          </option>
+        }
+      </select>
+    }
+  </app-page-header>
 
   @switch (view()) {
     @case ('loading') {
-      <p role="status">Loading…</p>
+      <div class="grid gap-4" role="status" aria-label="Loading">
+        <div class="skeleton h-12"></div>
+        <div class="skeleton h-28"></div>
+        <div class="skeleton h-40"></div>
+      </div>
     }
     @case ('unreachable') {
       <p class="alert" role="alert">Your plans could not be loaded.</p>
-      <p><button type="button" class="primary" (click)="load()">Try again</button></p>
+      <p><button type="button" class="btn btn-primary" (click)="load()">Try again</button></p>
     }
     @case ('signed_out') {
       <p class="alert" role="alert">Your session has ended. Please sign in again.</p>
       <p><a routerLink="/login">Go to sign in</a></p>
     }
     @case ('ready') {
-      <div class="field">
-        <label for="plan-week">Week</label>
-        <select
-          id="plan-week"
-          [value]="selected()"
-          [disabled]="busy()"
-          (change)="selectWeek($any($event.target).value)"
-        >
-          @for (item of weeks(); track item.week_start) {
-            <option [value]="item.week_start" [selected]="item.week_start === selected()">
-              {{ range(item.week_start) }}
-            </option>
-          }
-        </select>
-      </div>
-
       @if (season(); as aim) {
-        <section class="season-week" data-testid="season-week" aria-label="The season plan">
-          <h2>What the season plan says about this week</h2>
-          <p data-testid="season-phase">
+        <section class="card" data-testid="season-week" aria-label="The season plan">
+          <h2 class="m-0 mb-2 text-base font-semibold">
+            What the season plan says about this week
+          </h2>
+          <p class="my-1" data-testid="season-phase">
             {{ phase[aim.phase] }}
             @if (aim.recovery) {
               <span class="badge" data-testid="season-recovery">Recovery</span>
             }
             · Focus: {{ focus[aim.focus] }}
           </p>
-          <p data-testid="season-minutes">
+          <p class="my-1" data-testid="season-minutes">
             {{ seasonMinutes(aim.minutes) }}
             @if (aim.total_minutes > 0) {
               · {{ minutes(aim.total_minutes) }} in all
@@ -55,12 +61,12 @@
             </ul>
           }
           @for (race of aim.races; track $index) {
-            <p data-testid="season-race">
+            <p class="my-1" data-testid="season-race">
               Race on {{ day(race.date) }} (priority {{ letter[race.priority] }})
             </p>
           }
           @if (aim.reason) {
-            <p class="hint" data-testid="season-reason">{{ aim.reason }}</p>
+            <p class="hint my-1" data-testid="season-reason">{{ aim.reason }}</p>
           }
         </section>
       }
@@ -96,32 +102,34 @@
           <a routerLink="/settings/connections">Set one up</a>
         </p>
       } @else {
-        <div class="field">
-          <label for="draft-note">What should the coach know about this week? (optional)</label>
-          <textarea
-            id="draft-note"
-            rows="2"
-            [attr.maxlength]="noteMax + 100"
-            [value]="draftNote()"
-            [disabled]="busy()"
-            (input)="draftNote.set($any($event.target).value)"
-          ></textarea>
-          <p class="hint">
-            A day without time, a trip, a niggle. Up to {{ noteMax }} characters. The coach reads it
-            as advice; the rules of the plan come first.
+        <div class="card">
+          <div class="field">
+            <label for="draft-note">What should the coach know about this week? (optional)</label>
+            <textarea
+              id="draft-note"
+              rows="2"
+              [attr.maxlength]="noteMax + 100"
+              [value]="draftNote()"
+              [disabled]="busy()"
+              (input)="draftNote.set($any($event.target).value)"
+            ></textarea>
+            <p class="hint">
+              A day without time, a trip, a niggle. Up to {{ noteMax }} characters. The coach reads
+              it as advice; the rules of the plan come first.
+            </p>
+          </div>
+          <p>
+            <button
+              type="button"
+              class="btn btn-primary"
+              data-testid="generate"
+              [disabled]="busy()"
+              (click)="generate()"
+            >
+              {{ versions().length === 0 ? 'Draft a plan with my coach' : 'Draft a new version' }}
+            </button>
           </p>
         </div>
-        <p>
-          <button
-            type="button"
-            class="primary"
-            data-testid="generate"
-            [disabled]="busy()"
-            (click)="generate()"
-          >
-            {{ versions().length === 0 ? 'Draft a plan with my coach' : 'Draft a new version' }}
-          </button>
-        </p>
       }
       @if (work() === 'sending') {
         <p role="status" data-testid="sending">Sending the week to Intervals.icu…</p>
@@ -136,19 +144,29 @@
       }
 
       @if (versions().length > 0) {
-        <ul class="versions" aria-label="Versions of this week">
+        <ul
+          class="versions m-0 mb-4 flex snap-x list-none gap-2 overflow-x-auto p-0 pb-1"
+          aria-label="Versions of this week"
+        >
           @for (version of versions(); track version.id) {
-            <li>
+            <li class="flex-none snap-start">
               <button
                 type="button"
-                class="link"
+                class="cursor-pointer whitespace-nowrap rounded-full border border-border bg-surface px-3 py-1 text-sm text-fg disabled:cursor-progress disabled:opacity-60 aria-[current=true]:border-accent aria-[current=true]:bg-accent-soft aria-[current=true]:font-semibold aria-[current=true]:text-accent"
                 [disabled]="busy()"
                 [attr.aria-current]="plan()?.id === version.id ? 'true' : null"
+                [attr.aria-label]="
+                  'Version ' +
+                  version.version +
+                  ', ' +
+                  status[version.status] +
+                  ', ' +
+                  (version.created_at | date: 'MMM d, HH:mm')
+                "
                 [attr.data-testid]="'version-' + version.version"
                 (click)="open(version.id)"
               >
-                Version {{ version.version }} · {{ status[version.status] }} ·
-                {{ version.created_at | date: 'MMM d, HH:mm' }}
+                v{{ version.version }} · {{ status[version.status] }}
               </button>
             </li>
           }
@@ -182,131 +200,45 @@
               </p>
             }
 
-            @if (canRestore()) {
-              <p class="hint" data-testid="restore-hint">
-                This version is not the plan of the week any more. Restoring copies it as a new
-                draft; nothing is changed or sent before you confirm that draft.
-              </p>
-              <div class="actions">
-                <button
-                  type="button"
-                  class="secondary"
-                  data-testid="restore"
-                  [disabled]="busy()"
-                  (click)="restore()"
-                >
-                  Make this the new draft
-                </button>
-              </div>
-            }
-
-            @if (canChange()) {
-              <div class="actions">
-                <button
-                  type="button"
-                  class="secondary"
-                  data-testid="change-plan"
-                  [disabled]="busy()"
-                  (click)="startChanging()"
-                >
-                  Change this plan
-                </button>
-              </div>
-            }
-
             @if (shown.report; as report) {
               @if (findings().length > 0) {
-                <ul class="findings" aria-label="What the checks say">
-                  @for (finding of findings(); track $index) {
-                    <li [attr.data-severity]="finding.severity">
-                      <strong>{{ finding.severity === 'error' ? 'Error' : 'Note' }}</strong>
-                      · {{ place(finding.path) }}: {{ finding.message }}
-                    </li>
-                  }
-                </ul>
+                <details
+                  class="findings-box"
+                  data-testid="findings-box"
+                  [open]="hasFindingErrors()"
+                >
+                  <summary class="cursor-pointer font-semibold" data-testid="findings-summary">
+                    What the checks say: {{ findingsText() }}
+                  </summary>
+                  <ul class="findings" aria-label="What the checks say">
+                    @for (finding of findings(); track $index) {
+                      <li [attr.data-severity]="finding.severity">
+                        <strong>{{ finding.severity === 'error' ? 'Error' : 'Note' }}</strong>
+                        · {{ place(finding.path) }}: {{ finding.message }}
+                      </li>
+                    }
+                  </ul>
+                </details>
               } @else {
                 <p class="hint" data-testid="all-clear">The checks found nothing to point out.</p>
               }
             }
 
-            @if (shown.export; as summary) {
-              <p class="hint" data-testid="export-summary">{{ sentSummary(summary) }}</p>
-              <div class="actions">
-                <button
-                  type="button"
-                  class="primary"
-                  data-testid="send"
-                  [disabled]="busy()"
-                  (click)="send()"
-                >
-                  {{
-                    summary.synced + summary.failed === 0 ? 'Send to Intervals.icu' : 'Send again'
-                  }}
-                </button>
-              </div>
-            }
-
             @for (day of days(); track day.date) {
-              <h3>{{ day.label }}</h3>
-              @for (entry of day.workouts; track entry.number) {
-                <div class="workout" [attr.data-testid]="'workout-' + entry.number">
-                  <div class="head">
-                    <h4>{{ entry.workout.title }}</h4>
-                    @if (entry.workout.slot; as when) {
-                      <span class="badge slot" data-testid="slot">{{ slot[when] }}</span>
-                    }
-                    <span class="badge">{{ sport[entry.workout.sport] }}</span>
-                    <span class="badge">{{ goal[entry.workout.goal] }}</span>
-                  </div>
-                  <p class="meta" data-testid="meta">
-                    {{ minutes(entry.workout.duration_minutes) }}
-                    @if (
-                      target(entry.workout.zone_system, entry.workout.zone, entry.workout.target);
-                      as text
-                    ) {
-                      · {{ text }}
-                    }
-                  </p>
-                  @if (entry.workout.segments.length > 0) {
-                    <ul class="segments">
-                      @for (part of entry.workout.segments; track $index) {
-                        <li>{{ segment(part) }}</li>
-                      }
-                    </ul>
-                  }
-                  @if (entry.workout.exercises.length > 0) {
-                    <ol class="exercises" data-testid="exercises">
-                      @for (exercise of entry.workout.exercises; track $index) {
-                        <li>
-                          <span class="exercise-name">{{ exercise.name }}</span>
-                          &ngsp;
-                          <span class="exercise-numbers">{{ exerciseNumbers(exercise) }}</span>
-                          &ngsp;
-                          <span class="exercise-what"
-                            >{{ region[exercise.region] }} ·
-                            {{ equipment[exercise.equipment] }}</span
-                          >
-                        </li>
-                      }
-                    </ol>
-                  }
-                  @if (stretching(entry.workout.stretching_minutes); as extra) {
-                    <p class="stretching" data-testid="stretching">{{ extra }}</p>
-                  }
-                  @if (entry.workout.notes) {
-                    <p class="notes">{{ entry.workout.notes }}</p>
-                  }
-                  @if (entry.workout.export; as state) {
-                    <p class="export" [attr.data-status]="state.status" data-testid="export">
-                      {{ sent(state) }}
-                    </p>
-                  }
-                </div>
-              }
+              <app-plan-day [day]="day" />
             } @empty {
               <p class="hint">The plan has no workouts.</p>
             }
 
+            @if (canRestore()) {
+              <p class="hint" data-testid="restore-hint">
+                This version is not the plan of the week any more. Restoring copies it as a new
+                draft; nothing is changed or sent before you confirm that draft.
+              </p>
+            }
+            @if (shown.export; as summary) {
+              <p class="hint" data-testid="export-summary">{{ sentSummary(summary) }}</p>
+            }
             @if (shown.status === 'draft') {
               @if (confirmed(); as before) {
                 <p class="hint" data-testid="replaces">
@@ -318,36 +250,95 @@
                   A plan with errors cannot be confirmed. Draft a new version or discard this one.
                 </p>
               }
-              <label class="check">
-                <input
-                  type="checkbox"
-                  data-testid="send-after-confirm"
-                  [checked]="sendAfterConfirm()"
-                  [disabled]="busy()"
-                  (change)="sendAfterConfirm.set($any($event.target).checked)"
-                />
-                Send the week to Intervals.icu right away
-              </label>
-              <div class="actions">
-                <button
-                  type="button"
-                  class="primary"
-                  data-testid="confirm"
-                  [disabled]="busy() || !canConfirm()"
-                  (click)="confirm()"
-                >
-                  Confirm plan
-                </button>
-                <button
-                  type="button"
-                  class="secondary"
-                  data-testid="discard"
-                  [disabled]="busy()"
-                  (click)="discard()"
-                >
-                  Discard
-                </button>
+            }
+
+            @if (canRestore() || canChange() || shown.export || shown.status === 'draft') {
+              <div class="plan-actions" data-testid="plan-actions">
+                @if (shown.status === 'draft') {
+                  <label class="check">
+                    <input
+                      type="checkbox"
+                      data-testid="send-after-confirm"
+                      [checked]="sendAfterConfirm()"
+                      [disabled]="busy()"
+                      (change)="sendAfterConfirm.set($any($event.target).checked)"
+                    />
+                    Send the week to Intervals.icu right away
+                  </label>
+                }
+                <div class="actions">
+                  @if (shown.status === 'draft') {
+                    <button
+                      type="button"
+                      class="btn btn-primary"
+                      data-testid="confirm"
+                      [disabled]="busy() || !canConfirm()"
+                      (click)="confirm()"
+                    >
+                      Confirm plan
+                    </button>
+                  }
+                  @if (shown.export; as summary) {
+                    <button
+                      type="button"
+                      class="btn btn-primary"
+                      data-testid="send"
+                      [disabled]="busy()"
+                      (click)="send()"
+                    >
+                      {{
+                        summary.synced + summary.failed === 0
+                          ? 'Send to Intervals.icu'
+                          : 'Send again'
+                      }}
+                    </button>
+                  }
+                  @if (canRestore()) {
+                    <button
+                      type="button"
+                      class="btn btn-secondary"
+                      data-testid="restore"
+                      [disabled]="busy()"
+                      (click)="restore()"
+                    >
+                      Make this the new draft
+                    </button>
+                  }
+                  @if (canChange()) {
+                    <button
+                      type="button"
+                      class="btn btn-secondary"
+                      data-testid="change-plan"
+                      [disabled]="busy()"
+                      (click)="startChanging()"
+                    >
+                      Change this plan
+                    </button>
+                  }
+                  @if (shown.status === 'draft') {
+                    <button
+                      type="button"
+                      class="btn btn-secondary"
+                      data-testid="discard"
+                      [disabled]="busy()"
+                      (click)="askToDiscard()"
+                    >
+                      Discard
+                    </button>
+                  }
+                </div>
               </div>
+            }
+            @if (shown.status === 'draft') {
+              <app-confirm-dialog
+                title="Discard this draft?"
+                message="Version {{
+                  shown.version
+                }} will be marked as discarded. You can bring it back later as a new draft."
+                confirmLabel="Discard draft"
+                [danger]="true"
+                (confirmed)="discard()"
+              />
             }
           </article>
         }

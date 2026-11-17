@@ -7,6 +7,7 @@ import {
   PushOutcome,
   Segment,
   SegmentKind,
+  Severity,
   Sport,
   WorkoutExport,
   WorkoutGoal,
@@ -14,12 +15,22 @@ import {
   ZoneSystem,
   ZoneTarget,
 } from '../../core/planning/planning-models';
+import { IconName } from '../../shared/icon';
 
 export const SPORT_LABELS: Record<Sport, string> = {
   running: 'Running',
   cycling: 'Cycling',
   swimming: 'Swimming',
   strength: 'Strength',
+};
+
+/** The icon of a sport; `other` is an activity that was not planned as one of the four. */
+export const SPORT_ICONS: Record<Sport | 'other', IconName> = {
+  running: 'running',
+  cycling: 'bike',
+  swimming: 'waves',
+  strength: 'dumbbell',
+  other: 'activity',
 };
 
 export const GOAL_LABELS: Record<WorkoutGoal, string> = {
@@ -149,6 +160,20 @@ export function segmentText(segment: Segment): string {
   const target = targetText(segment.zone_system, segment.zone, segment.target);
   const text = `${repeat}${length} ${SEGMENT_LABELS[segment.kind]}`;
   return target === '' ? text : `${text}, ${target.charAt(0).toLowerCase()}${target.slice(1)}`;
+}
+
+/** What the checks found in a line: "1 error, 2 notes". */
+export function findingsSummary(findings: { severity: Severity }[]): string {
+  const errors = findings.filter((finding) => finding.severity === 'error').length;
+  const notes = findings.length - errors;
+  const parts: string[] = [];
+  if (errors > 0) {
+    parts.push(errors === 1 ? '1 error' : `${errors} errors`);
+  }
+  if (notes > 0) {
+    parts.push(notes === 1 ? '1 note' : `${notes} notes`);
+  }
+  return parts.join(', ');
 }
 
 /**

@@ -1,5 +1,5 @@
 import { DatePipe } from '@angular/common';
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { CoachApi } from '../../core/coach/coach-api';
 import { PlanningApi } from '../../core/planning/planning-api';
@@ -9,25 +9,15 @@ import {
   PushOutcome,
   Sport,
   WeekPlan,
-  Workout,
 } from '../../core/planning/planning-models';
 import {
-  GOAL_LABELS,
-  SLOT_LABELS,
-  SPORT_LABELS,
   STATUS_LABELS,
   dayLabel,
   exportSummaryText,
-  exportText,
   findingPlace,
+  findingsSummary,
   minutesText,
   pushText,
-  segmentText,
-  exerciseDetail,
-  REGION_LABELS,
-  EQUIPMENT_LABELS,
-  stretchingText,
-  targetText,
   WEEK_NOTE_MAX,
   weekRange,
 } from './plan-format';
@@ -38,7 +28,10 @@ import {
   keySessionText,
   minutesBySport,
 } from '../season/season-format';
+import { ConfirmDialog } from '../../shared/confirm-dialog';
+import { PageHeader } from '../../shared/page-header';
 import { PlanEditor } from './plan-editor';
+import { PlanDay, PlanDayView } from './plan-day';
 
 type View = 'loading' | 'unreachable' | 'ready' | 'signed_out';
 /** What the page is waiting for; one thing at a time. */
@@ -58,13 +51,6 @@ const RESTORE_NOT_PLANNABLE =
   'This week cannot be planned any more, so a version of it cannot be restored.';
 const TOO_MANY_PUSHES = 'Too many sends in a short time. Please wait a minute and try again.';
 
-/** One day of the plan with its workouts, numbered as the checks number them. */
-interface PlanDay {
-  date: string;
-  label: string;
-  workouts: { number: number; workout: Workout }[];
-}
-
 /**
  * The weekly plan: pick a week, let the user's own coach draft it, read the draft with what the
  * checks say about it, then confirm or discard it. Nothing the coach writes is trusted: the
@@ -73,7 +59,7 @@ interface PlanDay {
  */
 @Component({
   selector: 'app-planning-page',
-  imports: [RouterLink, DatePipe, PlanEditor],
+  imports: [RouterLink, DatePipe, ConfirmDialog, PageHeader, PlanEditor, PlanDayView],
   templateUrl: './planning-page.html',
   styleUrls: ['../auth/auth-form.css', './planning-page.css'],
 })
@@ -104,6 +90,10 @@ export class PlanningPage implements OnInit {
   /** Whether confirming a draft also sends the week to Intervals.icu (never without asking). */
   protected readonly sendAfterConfirm = signal(false);
 
+  /** The line under the title: which week is open. */
+  protected readonly subtitle = computed(() =>
+    this.view() === 'ready' && this.selected() ? weekRange(this.selected()) : '',
+  );
   protected readonly week = computed(
     () => this.weeks().find((week) => week.week_start === this.selected()) ?? null,
   );
@@ -116,6 +106,11 @@ export class PlanningPage implements OnInit {
   protected readonly days = computed<PlanDay[]>(() => this.group(this.plan()));
   protected readonly findings = computed(() => this.plan()?.report?.findings ?? []);
   /** The plan is being changed by hand: nothing else may start until that is saved or dropped. */
+  protected readonly findingsText = computed(() => findingsSummary(this.findings()));
+  protected readonly hasFindingErrors = computed(() =>
+    this.findings().some((finding) => finding.severity === 'error'),
+  );
+  private readonly discardDialog = viewChild(ConfirmDialog);
   protected readonly changing = signal(false);
   protected readonly busy = computed(() => this.work() !== null || this.changing());
   /** A draft and a confirmed plan can be changed; a version that was replaced is restored first. */
@@ -130,9 +125,6 @@ export class PlanningPage implements OnInit {
     () => this.plan()?.status === 'draft' && this.plan()?.report?.valid === true,
   );
 
-  protected readonly slot = SLOT_LABELS;
-  protected readonly sport = SPORT_LABELS;
-  protected readonly goal = GOAL_LABELS;
   protected readonly status = STATUS_LABELS;
   protected readonly phase = PHASE_LABELS;
   protected readonly focus = FOCUS_LABELS;
@@ -142,15 +134,8 @@ export class PlanningPage implements OnInit {
     minutesBySport(Object.fromEntries(entries.map((entry) => [entry.sport, entry.minutes])));
   protected readonly range = weekRange;
   protected readonly day = dayLabel;
-  protected readonly stretching = stretchingText;
   protected readonly minutes = minutesText;
-  protected readonly target = targetText;
-  protected readonly segment = segmentText;
-  protected readonly exerciseNumbers = exerciseDetail;
-  protected readonly region = REGION_LABELS;
-  protected readonly equipment = EQUIPMENT_LABELS;
   protected readonly place = findingPlace;
-  protected readonly sent = exportText;
   protected readonly sentSummary = exportSummaryText;
 
   ngOnInit(): Promise<void> {
@@ -419,6 +404,11 @@ export class PlanningPage implements OnInit {
     this.needsConnection.set(
       outcome.problem === 'not_connected' || outcome.problem === 'invalid_key',
     );
+  }
+
+  /** Discarding cannot be taken back with one click: the dialog asks first. */
+  protected askToDiscard(): void {
+    this.discardDialog()?.open();
   }
 
   protected async discard(): Promise<void> {
