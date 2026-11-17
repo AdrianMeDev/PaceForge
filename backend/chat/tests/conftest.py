@@ -1,12 +1,21 @@
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from typing import Any
 
 import pytest
+from django.core.cache import cache
 
 from accounts.models import User
 from coach import services as coach_services
 from planning.tests.scripted import Scripted
 from reviews.tests.conftest import make_user
+
+
+@pytest.fixture(autouse=True)
+def _clear_cache() -> Iterator[None]:
+    """The rate limits live in the cache: every test starts with a fresh count."""
+    cache.clear()
+    yield
+    cache.clear()
 
 
 @pytest.fixture
