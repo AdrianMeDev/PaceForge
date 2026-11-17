@@ -55,6 +55,19 @@ function createApiStub() {
 }
 
 describe('ConnectionsPage', () => {
+  // jsdom has no modal dialog: this is what the browser does that the question relies on.
+  beforeAll(() => {
+    HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
+      this.setAttribute('open', '');
+    };
+    HTMLDialogElement.prototype.close = function (this: HTMLDialogElement) {
+      if (this.hasAttribute('open')) {
+        this.removeAttribute('open');
+        this.dispatchEvent(new Event('close'));
+      }
+    };
+  });
+
   let api: ReturnType<typeof createApiStub>;
   let coach: { get: ReturnType<typeof vi.fn<() => Promise<GetProviderResult>>> };
   let fixture: ComponentFixture<ConnectionsPage>;
@@ -123,7 +136,9 @@ describe('ConnectionsPage', () => {
       fixture = TestBed.createComponent(ConnectionsPage);
       fixture.detectChanges();
 
-      expect(fixture.nativeElement.textContent).toContain('Loading');
+      expect(
+        fixture.nativeElement.querySelector('[role="status"][aria-label="Loading"]'),
+      ).toBeTruthy();
       expect(fixture.nativeElement.querySelector('form')).toBeNull();
     });
 
@@ -490,12 +505,14 @@ describe('ConnectionsPage', () => {
       await setup(connected());
 
       await click('Disconnect');
-      expect(text()).toContain('Remove the connection?');
+      const dialog = query<HTMLDialogElement>(page, '[data-testid="confirm-dialog"]');
+      expect(dialog.open).toBe(true);
       expect(api.disconnect).not.toHaveBeenCalled();
-      await click('Cancel');
+      query<HTMLButtonElement>(page, '[data-testid="confirm-dialog-cancel"]').click();
+      await settle(fixture);
 
       expect(api.disconnect).not.toHaveBeenCalled();
-      expect(text()).not.toContain('Remove the connection?');
+      expect(dialog.open).toBe(false);
       expect(testId('athlete')).toBe('i555');
     });
 
@@ -512,7 +529,7 @@ describe('ConnectionsPage', () => {
       api.disconnect.mockResolvedValue({ kind: 'disconnected' });
 
       await click('Disconnect');
-      await click('Yes, remove');
+      await click('Remove connection');
 
       expect(api.disconnect).toHaveBeenCalledTimes(1);
       expect(text()).toContain('Not connected.');
@@ -525,7 +542,7 @@ describe('ConnectionsPage', () => {
       api.disconnect.mockRejectedValue(new Error('offline'));
 
       await click('Disconnect');
-      await click('Yes, remove');
+      await click('Remove connection');
 
       expect(alerts()).toEqual(['Something went wrong. Please try again.']);
       expect(testId('athlete')).toBe('i555');
@@ -536,7 +553,7 @@ describe('ConnectionsPage', () => {
       api.disconnect.mockResolvedValue({ kind: 'forbidden' });
 
       await click('Disconnect');
-      await click('Yes, remove');
+      await click('Remove connection');
 
       expect(alerts()).toEqual(['Your session has ended. Please sign in again.']);
     });

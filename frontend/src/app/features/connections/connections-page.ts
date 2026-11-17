@@ -1,9 +1,11 @@
 import { DatePipe } from '@angular/common';
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal, viewChild } from '@angular/core';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { IntervalsConnectionApi } from '../../core/integrations/intervals-api';
 import { IntervalsConnection } from '../../core/integrations/intervals-models';
+import { ConfirmDialog } from '../../shared/confirm-dialog';
+import { PageHeader } from '../../shared/page-header';
 import { AiProviderPanel } from './ai-provider-panel';
 
 type View = 'loading' | 'unreachable' | 'ready' | 'signed_out';
@@ -18,7 +20,7 @@ const RATE_LIMIT = 'Too many attempts. Please wait a minute and try again.';
  */
 @Component({
   selector: 'app-connections-page',
-  imports: [ReactiveFormsModule, RouterLink, DatePipe, AiProviderPanel],
+  imports: [ReactiveFormsModule, RouterLink, DatePipe, ConfirmDialog, PageHeader, AiProviderPanel],
   templateUrl: './connections-page.html',
   styleUrls: ['../auth/auth-form.css', './connections-page.css'],
 })
@@ -34,7 +36,7 @@ export class ConnectionsPage implements OnInit {
   protected readonly busy = signal(false);
   protected readonly errors = signal<string[]>([]);
   protected readonly notice = signal<string | null>(null);
-  protected readonly confirmingRemoval = signal(false);
+  private readonly removalDialog = viewChild(ConfirmDialog);
 
   ngOnInit(): Promise<void> {
     return this.load();
@@ -143,11 +145,7 @@ export class ConnectionsPage implements OnInit {
 
   protected askRemoval(): void {
     this.clearMessages();
-    this.confirmingRemoval.set(true);
-  }
-
-  protected cancelRemoval(): void {
-    this.confirmingRemoval.set(false);
+    this.removalDialog()?.open();
   }
 
   protected async remove(): Promise<void> {
@@ -158,7 +156,6 @@ export class ConnectionsPage implements OnInit {
     this.busy.set(true);
     try {
       const result = await this.api.disconnect();
-      this.confirmingRemoval.set(false);
       if (result.kind === 'forbidden') {
         this.view.set('signed_out');
         return;

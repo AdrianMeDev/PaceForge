@@ -93,6 +93,19 @@ function deferred<T>() {
 }
 
 describe('AiProviderPanel', () => {
+  // jsdom has no modal dialog: this is what the browser does that the question relies on.
+  beforeAll(() => {
+    HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
+      this.setAttribute('open', '');
+    };
+    HTMLDialogElement.prototype.close = function (this: HTMLDialogElement) {
+      if (this.hasAttribute('open')) {
+        this.removeAttribute('open');
+        this.dispatchEvent(new Event('close'));
+      }
+    };
+  });
+
   let api: ReturnType<typeof createApiStub>;
   let fixture: ComponentFixture<AiProviderPanel>;
   let panel: HTMLElement;
@@ -155,6 +168,15 @@ describe('AiProviderPanel', () => {
     await settle(fixture);
   }
 
+  describe('the card', () => {
+    it('keeps the one save button in a bar and the state in a list', async () => {
+      await setup();
+
+      expect(query(panel, '.action-bar button[type="submit"]')).toBeTruthy();
+      expect(query(panel, '.card')).toBeTruthy();
+    });
+  });
+
   describe('loading', () => {
     it('shows a loading note until the setup arrives', () => {
       api = createApiStub();
@@ -166,7 +188,9 @@ describe('AiProviderPanel', () => {
       fixture = TestBed.createComponent(AiProviderPanel);
       fixture.detectChanges();
 
-      expect(fixture.nativeElement.textContent).toContain('Loading');
+      expect(
+        fixture.nativeElement.querySelector('[role="status"][aria-label="Loading"]'),
+      ).toBeTruthy();
       expect(fixture.nativeElement.querySelector('form')).toBeNull();
     });
 
@@ -835,18 +859,20 @@ describe('AiProviderPanel', () => {
     it('asks first and removes nothing until confirmed', async () => {
       await click('Remove');
 
-      expect(text()).toContain('Remove the AI provider?');
-      expect(text()).toContain('The stored key is deleted from PaceForge.');
+      const dialog = query<HTMLDialogElement>(panel, '[data-testid="confirm-dialog"]');
+      expect(dialog.open).toBe(true);
+      expect(dialog.textContent).toContain('The stored key is deleted from PaceForge.');
       expect(api.remove).not.toHaveBeenCalled();
     });
 
     it('does nothing when cancelled', async () => {
       await click('Remove');
 
-      await click('Cancel');
+      query<HTMLButtonElement>(panel, '[data-testid="confirm-dialog-cancel"]').click();
+      await settle(fixture);
 
       expect(api.remove).not.toHaveBeenCalled();
-      expect(text()).not.toContain('Remove the AI provider?');
+      expect(query<HTMLDialogElement>(panel, '[data-testid="confirm-dialog"]').open).toBe(false);
       expect(button('Check connection')).toBeTruthy();
     });
 
@@ -855,7 +881,7 @@ describe('AiProviderPanel', () => {
       api.get.mockResolvedValue(ok(NOT_SET_UP));
       await click('Remove');
 
-      await click('Yes, remove');
+      await click('Remove provider');
 
       expect(api.remove).toHaveBeenCalledTimes(1);
       expect(text()).toContain('The AI provider was removed and the stored key deleted.');
@@ -868,7 +894,7 @@ describe('AiProviderPanel', () => {
       api.remove.mockResolvedValue({ kind: 'forbidden' });
       await click('Remove');
 
-      await click('Yes, remove');
+      await click('Remove provider');
 
       expect(events).toEqual(['signedOut']);
     });
@@ -877,7 +903,7 @@ describe('AiProviderPanel', () => {
       api.remove.mockRejectedValue(new Error('offline'));
       await click('Remove');
 
-      await click('Yes, remove');
+      await click('Remove provider');
 
       expect(alerts()).toEqual(['Something went wrong. Please try again.']);
       expect(testId('model')).toBe('claude-sonnet-5-5');
@@ -888,7 +914,7 @@ describe('AiProviderPanel', () => {
       api.get.mockRejectedValue(new Error('offline'));
       await click('Remove');
 
-      await click('Yes, remove');
+      await click('Remove provider');
 
       expect(alerts()).toEqual(['The setup could not be refreshed. Please try again.']);
       expect(text()).toContain('The AI provider was removed');
@@ -899,7 +925,7 @@ describe('AiProviderPanel', () => {
       api.get.mockResolvedValue({ kind: 'forbidden' });
       await click('Remove');
 
-      await click('Yes, remove');
+      await click('Remove provider');
 
       expect(events).toEqual(['signedOut']);
     });
@@ -909,7 +935,7 @@ describe('AiProviderPanel', () => {
       api.remove.mockReturnValue(pending.promise);
       await click('Remove');
 
-      const confirm = button('Yes, remove');
+      const confirm = button('Remove provider');
       confirm.click();
       confirm.click();
       pending.resolve({ kind: 'removed' });
@@ -1226,14 +1252,14 @@ describe('AiProviderPanel', () => {
       api.remove.mockResolvedValue({ kind: 'removed' });
       api.get.mockResolvedValue(ok(NOT_SET_UP));
       await click('Remove');
-      await click('Yes, remove');
+      await click('Remove provider');
       api.save.mockResolvedValue(saved(ANTHROPIC));
       await type('#ai-model', 'claude-sonnet-5-5');
       await type('#ai-key', KEY);
 
       await submit();
 
-      expect(text()).not.toContain('Remove the AI provider?');
+      expect(query<HTMLDialogElement>(panel, '[data-testid="confirm-dialog"]').open).toBe(false);
       expect(button('Check connection')).toBeTruthy();
     });
 
@@ -1244,7 +1270,7 @@ describe('AiProviderPanel', () => {
       await type('#ai-key', KEY);
       await click('Remove');
 
-      await click('Yes, remove');
+      await click('Remove provider');
 
       expect(value('#ai-key')).toBe('');
       expect(panel.innerHTML).not.toContain(KEY);

@@ -1,21 +1,26 @@
 <section class="connections">
-  <h1>Connections</h1>
+  <app-page-header title="Connections" />
 
   @switch (view()) {
     @case ('loading') {
-      <p role="status">Loading…</p>
+      <div class="grid gap-4" role="status" aria-label="Loading">
+        <div class="skeleton h-40"></div>
+        <div class="skeleton h-40"></div>
+      </div>
     }
     @case ('unreachable') {
       <p class="alert" role="alert">Your connections could not be loaded.</p>
-      <p><button type="button" class="primary" (click)="load()">Try again</button></p>
+      <p>
+        <button type="button" class="btn btn-primary btn-sm" (click)="load()">Try again</button>
+      </p>
     }
     @case ('signed_out') {
       <p class="alert" role="alert">Your session has ended. Please sign in again.</p>
       <p><a routerLink="/login">Go to sign in</a></p>
     }
     @case ('ready') {
-      <div class="panel">
-        <h2>Intervals.icu</h2>
+      <div class="card">
+        <h2 class="m-0 mb-3 text-lg font-semibold">Intervals.icu</h2>
 
         @for (message of errors(); track $index) {
           <p class="alert" role="alert">{{ message }}</p>
@@ -25,7 +30,7 @@
         }
 
         @if (connection(); as current) {
-          <dl class="state">
+          <dl class="state state-list mb-4">
             <dt>Status</dt>
             <dd data-testid="status">
               @if (current.status === 'connected') {
@@ -40,29 +45,24 @@
             <dd data-testid="checked">{{ current.last_checked_at | date: 'medium' }}</dd>
           </dl>
 
-          @if (confirmingRemoval()) {
-            <div class="confirm" role="group" aria-label="Remove the connection">
-              <p>
-                Remove the connection? The stored key is deleted from PaceForge. To make the key
-                itself unusable, create a new one in Intervals.icu.
-              </p>
-              <div class="actions">
-                <button type="button" class="primary" [disabled]="busy()" (click)="remove()">
-                  Yes, remove
-                </button>
-                <button type="button" class="link" (click)="cancelRemoval()">Cancel</button>
-              </div>
-            </div>
-          } @else {
-            <div class="actions">
-              <button type="button" class="secondary" [disabled]="busy()" (click)="check()">
-                Check connection
-              </button>
-              <button type="button" class="secondary" [disabled]="busy()" (click)="askRemoval()">
-                Disconnect
-              </button>
-            </div>
-          }
+          <div class="actions">
+            <button
+              type="button"
+              class="btn btn-secondary btn-sm"
+              [disabled]="busy()"
+              (click)="check()"
+            >
+              Check connection
+            </button>
+            <button
+              type="button"
+              class="btn btn-secondary btn-sm"
+              [disabled]="busy()"
+              (click)="askRemoval()"
+            >
+              Disconnect
+            </button>
+          </div>
         } @else {
           <p class="hint">Not connected.</p>
         }
@@ -90,11 +90,19 @@
               is checked with Intervals.icu, stored encrypted and never shown again.
             </p>
           </div>
-          <button type="submit" class="primary" [disabled]="busy()">
+          <button type="submit" class="btn btn-primary w-full sm:w-auto" [disabled]="busy()">
             {{ busy() ? 'Working…' : connection() ? 'Save new key' : 'Connect' }}
           </button>
         </form>
       </div>
+
+      <app-confirm-dialog
+        title="Remove the connection?"
+        message="The stored key is deleted from PaceForge. To make the key itself unusable, create a new one in Intervals.icu."
+        confirmLabel="Remove connection"
+        [danger]="true"
+        (confirmed)="remove()"
+      />
 
       <app-ai-provider-panel (signedOut)="endSession()" />
     }
