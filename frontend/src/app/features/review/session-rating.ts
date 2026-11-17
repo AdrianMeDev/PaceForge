@@ -16,7 +16,7 @@ const NOTES_TOO_LONG = `Use at most ${NOTES_MAX} characters.`;
 @Component({
   selector: 'app-session-rating',
   templateUrl: './session-rating.html',
-  styleUrls: ['../auth/auth-form.css', './session-rating.css'],
+  styleUrl: './session-rating.css',
 })
 export class SessionRating {
   private readonly api = inject(ActivitiesApi);

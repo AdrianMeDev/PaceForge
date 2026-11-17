@@ -44,7 +44,7 @@ const NOTICES: Record<GoalStatus, string> = {
   selector: 'app-goals-page',
   imports: [RouterLink, DatePipe, ConfirmDialog, GoalForm, PageHeader],
   templateUrl: './goals-page.html',
-  styleUrls: ['../auth/auth-form.css', './goals-page.css'],
+  styleUrl: './goals-page.css',
 })
 export class GoalsPage implements OnInit {
   private readonly api = inject(GoalsApi);

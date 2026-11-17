@@ -26,7 +26,7 @@ const TOO_MANY = 'Too many requests. Please wait a minute and try again.';
   selector: 'app-coach-comment',
   imports: [DatePipe, RouterLink],
   templateUrl: './coach-comment.html',
-  styleUrls: ['../auth/auth-form.css', './coach-comment.css'],
+  styleUrl: './coach-comment.css',
 })
 export class CoachComment {
   private readonly api = inject(ReviewApi);

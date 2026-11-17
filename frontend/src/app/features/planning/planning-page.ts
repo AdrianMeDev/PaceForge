@@ -61,7 +61,7 @@ const TOO_MANY_PUSHES = 'Too many sends in a short time. Please wait a minute an
   selector: 'app-planning-page',
   imports: [RouterLink, ConfirmDialog, VersionChips, PageHeader, PlanEditor, PlanDayView],
   templateUrl: './planning-page.html',
-  styleUrls: ['../auth/auth-form.css', './planning-page.css'],
+  styleUrl: './planning-page.css',
 })
 export class PlanningPage implements OnInit {
   private readonly planning = inject(PlanningApi);

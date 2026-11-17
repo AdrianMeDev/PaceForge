@@ -135,12 +135,20 @@ describe('the base styles', () => {
 });
 
 describe('the retired stylesheet of the account pages', () => {
-  it.each(['auth', 'admin', 'security', 'connections', 'athlete', 'availability'])(
-    'is no longer bound in features/%s',
-    (folder) => {
-      for (const file of sourceFiles(`src/app/features/${folder}`)) {
-        expect(readFileSync(file, 'utf-8'), file).not.toContain('auth-form.css');
-      }
-    },
-  );
+  it.each([
+    'auth',
+    'admin',
+    'security',
+    'connections',
+    'athlete',
+    'availability',
+    'goals',
+    'activities',
+    'planning',
+    'review',
+  ])('is no longer bound in features/%s', (folder) => {
+    for (const file of sourceFiles(`src/app/features/${folder}`)) {
+      expect(readFileSync(file, 'utf-8'), file).not.toContain('auth-form.css');
+    }
+  });
 });
