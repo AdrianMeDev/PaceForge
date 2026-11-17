@@ -43,6 +43,17 @@
   --color-sport-strength: var(--sport-strength);
   --color-sport-other: var(--sport-other);
   --color-sport-aim: var(--sport-aim);
+  --color-surface-2: var(--surface-2);
+  --color-accent-soft: var(--accent-soft);
+  --color-success: var(--success);
+  --color-success-bg: var(--success-bg);
+  --color-warning: var(--warning);
+  --color-warning-bg: var(--warning-bg);
+  --radius-sm: var(--r-sm);
+  --radius-md: var(--r-md);
+  --radius-lg: var(--r-lg);
+  --shadow-card: var(--elev-1);
+  --shadow-raised: var(--elev-2);
 }
 
 :root {
@@ -69,6 +80,19 @@
   --sport-strength: #cc79a7;
   --sport-other: #7f7f7f;
   --sport-aim: #8a96a3;
+  /* Surfaces, soft accent and states; every text colour on its background has >= 4.5:1. */
+  --surface-2: #eef1f4;
+  --accent-soft: #e8f0fc;
+  --success: #0f6b3a;
+  --success-bg: #e3f4ea;
+  --warning: #8a5300;
+  --warning-bg: #fdf1dc;
+  /* Corners and elevation (mapped to `rounded-*` and `shadow-card`/`shadow-raised` below). */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 16px;
+  --elev-1: 0 1px 2px rgb(0 0 0 / 0.06), 0 1px 3px rgb(0 0 0 / 0.08);
+  --elev-2: 0 4px 12px rgb(0 0 0 / 0.1), 0 1px 3px rgb(0 0 0 / 0.08);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -95,6 +119,14 @@
     --sport-strength: #e59cc4;
     --sport-other: #aab0b6;
     --sport-aim: #6b7683;
+    --surface-2: #232a33;
+    --accent-soft: #16263d;
+    --success: #7fd8a4;
+    --success-bg: #17301f;
+    --warning: #f0c070;
+    --warning-bg: #3a2c12;
+    --elev-1: 0 1px 2px rgb(0 0 0 / 0.4), 0 1px 3px rgb(0 0 0 / 0.3);
+    --elev-2: 0 4px 12px rgb(0 0 0 / 0.5), 0 1px 3px rgb(0 0 0 / 0.3);
   }
 }
 
