@@ -72,6 +72,7 @@ export const ICONS: Record<string, readonly Shape[]> = {
     { tag: 'rect', attrs: { x: '3', y: '3', width: '18', height: '18', rx: '2' } },
     { tag: 'path', attrs: { d: 'M3 9h18' } },
   ],
+  message: [{ tag: 'path', attrs: { d: 'M7.9 20A9 9 0 1 0 4 16.1L2 22Z' } }],
   'calendar-check': [
     { tag: 'path', attrs: { d: 'M8 2v3' } },
     { tag: 'path', attrs: { d: 'M16 2v3' } },
@@ -270,6 +271,7 @@ export const ICON_NAMES = [
   'more',
   'log-out',
   'trophy',
+  'message',
 ] as const;
 
 export type IconName = (typeof ICON_NAMES)[number];

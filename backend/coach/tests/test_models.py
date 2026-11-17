@@ -323,7 +323,7 @@ class TestUsageRecords:
         ("field", "value"),
         [
             ("provider", "gemini"),
-            ("purpose", "chat"),
+            ("purpose", "gossip"),
             ("outcome", "fine"),
         ],
     )

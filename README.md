@@ -103,7 +103,7 @@ save the recovery codes (see [Two-factor authentication](#two-factor-authenticat
 ## Navigation
 
 The pages are in groups: **Training** (Dashboard, Week plan, Week review, Activities), **Planning**
-(Season, Goals, Training time), **Settings** (Profile, Connections, Security) and, for
+(Season, Goals, Training time, Coach), **Settings** (Profile, Connections, Security) and, for
 administrators, **Admin** (Invitations). Wherever a page says "in the navigation", this is where it
 is:
 
@@ -1219,6 +1219,58 @@ The two `PUT`s and the `POST` answer with the whole week as the `GET` shows it.
 test database and the comment with a provider that answers from a script; it has not been used in a
 browser by the developer, and the comment has not been tried against a real provider. Your first
 real comment is the first real test; please read it critically.
+
+## Coach chat
+
+The **Coach** page (`/coach`, under *Planning*) is a chat with your own coach. Ask a question ("Why
+threshold today?") and the coach answers from your data. Say what should change ("Tuesday I have no
+time", "knee hurts, no running this week", "rain on Saturday, long ride on Sunday") and the coach
+**proposes** changes to the week.
+
+**The coach never writes the plan.** It names actions from a fixed list, `backend/chat/actions.py`
+does them, and the result is stored as a **new draft** of the week (the reason says "Changed in the
+chat"). The answer shows what changed, in sentences the server made from what it did (never the
+coach's words), and **Open the draft** leads to the [Week plan](#week-plan) page, where the usual
+checks are shown and you confirm or discard the draft; confirming can send the week to Intervals.icu
+as there. Nothing is confirmed or sent from the chat. The actions:
+
+| Action            | What it does                                                                  |
+| ----------------- | ----------------------------------------------------------------------------- |
+| `move_workout`    | another day (and part of the day) for a workout                               |
+| `skip_workout`    | takes a workout out                                                           |
+| `swap_sport`      | another sport instead, of the same or a named length                          |
+| `shorten_workout` | a shorter workout (at least 10 minutes)                                       |
+| `reduce_week`     | every workout that can still be changed 5 to 50 % shorter                     |
+| `free_day`        | no training on a day                                                          |
+
+**What can be changed.** One week: the current week, or the next one that has a plan (the newest
+draft or the confirmed version). Workouts before today are never changed, and a day has to be in
+that week. A workout that is shortened or swapped loses its steps and exercises (they were made for
+the old one) and becomes one steady session. For anything else (illness, another week, the season)
+the coach says that it cannot do it yet. If its answer cannot be used, even after being told what
+was wrong once, your message is kept with a fixed answer that says so.
+
+**What is stored and what goes to the provider.** The messages are stored (only you see them) and
+**Delete the conversation** removes them all, after a question; the drafts stay. With each message
+the coach is told: today, the plan of the week with the id of each workout, your time per weekday,
+limits and limitations (your free text about limitations only if you turned that on), your last 10
+messages and the new one, as data, never as instructions. Every message is a request to your
+provider with your key and is **billed to you**, or two if the coach had to correct its answer; they
+are counted in the usage overview (purpose "chat"). Writing is limited to 10 a minute per user and
+waits for the provider inside the request, so the timeouts named under [Week plan](#week-plan)
+apply.
+
+The API (all of it needs a signed-in user):
+
+| Request                      | What it does                                                          |
+| ---------------------------- | --------------------------------------------------------------------- |
+| `GET /api/chat/messages/`    | the conversation, oldest first                                        |
+| `POST /api/chat/messages/`   | `{"text"}`: asks the coach; `201` with the two messages that were stored |
+| `DELETE /api/chat/messages/` | deletes the conversation (`204`)                                      |
+
+**Not verified yet.** It is tested with a provider that answers from a script; it has not been tried
+against a real provider, and a real model may name actions that the strict reader refuses. Your first
+real messages are the first real test; please read the drafts critically.
 
 ## Dashboard
 

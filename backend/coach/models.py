@@ -118,6 +118,7 @@ class AIUsageRecord(OwnedModel):
         WEEKLY_PLAN = "weekly_plan", "Weekly plan"
         WEEK_REVIEW = "week_review", "Week review"
         SEASON_PLAN = "season_plan", "Season plan"
+        CHAT = "chat", "Coach chat"
 
     class Outcome(models.TextChoices):
         SUCCESS = "success", "Success"

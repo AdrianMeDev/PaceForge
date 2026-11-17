@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     "reviews",
     "season",
     "dashboard",
+    "chat",
 ]
 
 MIDDLEWARE = [
@@ -154,6 +155,7 @@ REST_FRAMEWORK = {
         "season_generate": "3/min",
         "planning_push": "10/min",
         "review_comment": "5/min",
+        "chat": "10/min",
     },
 }
 

@@ -32,6 +32,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       { label: 'Season', path: '/season', icon: 'calendar' },
       { label: 'Goals', path: '/goals', icon: 'target' },
       { label: 'Training time', path: '/availability', icon: 'clock' },
+      { label: 'Coach', path: '/coach', icon: 'message' },
     ],
   },
   {
