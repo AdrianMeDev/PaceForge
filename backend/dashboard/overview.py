@@ -22,6 +22,7 @@ from season.done import done_minutes
 from season.skeleton import Phase
 from season.weeks import confirmed_week
 
+from .setup import SetupStep, setup_of
 from .summary import WeekGlance, week_glance
 
 # The weeks of the chart: the current one and the ones before it.
@@ -78,6 +79,7 @@ class Dashboard:
     weeks: tuple[WeekMinutes, ...]
     recent: tuple[RecentActivity, ...]
     usage: UsageSummary
+    setup: tuple[SetupStep, ...]
 
 
 def dashboard_of(user: User) -> Dashboard:
@@ -93,6 +95,7 @@ def dashboard_of(user: User) -> Dashboard:
         weeks=tuple(WeekMinutes(monday, tuple(done[monday])) for monday in mondays),
         recent=_recent(user),
         usage=usage_summary(user),
+        setup=setup_of(user),
     )
 
 
