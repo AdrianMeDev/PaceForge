@@ -43,6 +43,18 @@ class TestWhoMayAsk:
         assert signed_in(alice).call(method, URL, {}).status_code == HTTPStatus.METHOD_NOT_ALLOWED
 
 
+STEPS = [
+    "profile",
+    "training_time",
+    "ai_coach",
+    "intervals",
+    "goal",
+    "activities",
+    "season",
+    "first_week",
+]
+
+
 class TestTheAnswer:
     def test_for_an_empty_account(self, alice: User) -> None:
         response = get(alice)
@@ -69,6 +81,11 @@ class TestTheAnswer:
             ],
             "recent": [],
             "usage": {"calls": 0, "input_tokens": 0, "output_tokens": 0, "days": 30},
+            "setup": {
+                "steps": [
+                    {"key": key, "done": False, "optional": key == "intervals"} for key in STEPS
+                ]
+            },
         }
 
     def test_for_an_account_with_data(self, alice: User) -> None:
@@ -90,6 +107,9 @@ class TestTheAnswer:
         assert data["weeks"][-1]["sports"] == [{"sport": "running", "minutes": 60}]
         assert [item["day"] for item in data["recent"]] == ["2026-11-10"]
         assert data["usage"]["calls"] == 1
+        steps = {step["key"]: step["done"] for step in data["setup"]["steps"]}
+        assert steps["goal"] and steps["activities"] and steps["season"] and steps["first_week"]
+        assert not steps["profile"] and not steps["training_time"]
 
     def test_has_only_the_data_of_the_user(self, alice: User, bob: User) -> None:
         make_plan(bob, workouts=7)

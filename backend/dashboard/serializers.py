@@ -36,6 +36,12 @@ def dashboard_data(found: Dashboard) -> dict[str, Any]:
             "output_tokens": found.usage.output_tokens,
             "days": found.usage.days,
         },
+        "setup": {
+            "steps": [
+                {"key": step.key, "done": step.done, "optional": step.optional}
+                for step in found.setup
+            ]
+        },
     }
 
 

@@ -9,6 +9,7 @@ import {
 } from '../../core/dashboard/dashboard-models';
 import { query, settle } from '../../testing/dom';
 import { DashboardPage } from './dashboard-page';
+import { HIDDEN_KEY } from './setup-checklist';
 
 const MONDAY = '2026-11-09';
 
@@ -48,6 +49,7 @@ function dashboard(
     weeks: [],
     recent: [],
     usage: { calls: 0, input_tokens: 0, output_tokens: 0, days: 30 },
+    setup: [],
     ...rest,
   };
 }
@@ -115,6 +117,66 @@ describe('DashboardPage', () => {
 
     expect(query(page, '[role=alert]').textContent).toContain('session has ended');
     expect(query(page, 'a').getAttribute('href')).toBe('/login');
+  });
+
+  describe('the get-started checklist', () => {
+    const KEYS = [
+      'profile',
+      'training_time',
+      'ai_coach',
+      'intervals',
+      'goal',
+      'activities',
+      'season',
+      'first_week',
+    ] as const;
+    const setup = (done: readonly string[]) =>
+      KEYS.map((key) => ({ key, done: done.includes(key), optional: key === 'intervals' }));
+    const REQUIRED = KEYS.filter((key) => key !== 'intervals');
+
+    afterEach(() => globalThis.localStorage.removeItem(HIDDEN_KEY));
+
+    it('is shown while a required step is open', async () => {
+      const page = await open(ok(dashboard({}, { setup: setup(['profile']) })));
+
+      expect(query(page, '[data-testid=setup-count]').textContent?.trim()).toBe('1 of 7 done');
+    });
+
+    it('is not shown when the answer has no steps or all required ones are done', async () => {
+      const empty = await open(ok(dashboard({}, { setup: [] })));
+      expect(empty.querySelector('[data-testid=setup]')).toBeNull();
+      expect(empty.querySelector('[data-testid=setup-show]')).toBeNull();
+    });
+
+    it('goes away when every required step is done, the optional one open', async () => {
+      const page = await open(ok(dashboard({}, { setup: setup(REQUIRED) })));
+
+      expect(page.querySelector('[data-testid=setup]')).toBeNull();
+      expect(page.querySelector('[data-testid=setup-show]')).toBeNull();
+    });
+
+    it('is hidden on request, kept in the browser, and can be shown again', async () => {
+      const page = await open(ok(dashboard({}, { setup: setup([]) })));
+
+      query<HTMLButtonElement>(page, '[data-testid=setup] button').click();
+      fixture.detectChanges();
+      expect(page.querySelector('[data-testid=setup]')).toBeNull();
+      expect(globalThis.localStorage.getItem(HIDDEN_KEY)).toBe('1');
+
+      query<HTMLButtonElement>(page, '[data-testid=setup-show] button').click();
+      fixture.detectChanges();
+      expect(query(page, '[data-testid=setup]')).toBeTruthy();
+      expect(globalThis.localStorage.getItem(HIDDEN_KEY)).toBeNull();
+    });
+
+    it('stays hidden in a later visit', async () => {
+      globalThis.localStorage.setItem(HIDDEN_KEY, '1');
+
+      const page = await open(ok(dashboard({}, { setup: setup([]) })));
+
+      expect(page.querySelector('[data-testid=setup]')).toBeNull();
+      expect(query(page, '[data-testid=setup-show]')).toBeTruthy();
+    });
   });
 
   describe('the next workout', () => {

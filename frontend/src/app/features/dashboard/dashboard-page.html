@@ -24,6 +24,18 @@
     @if (dashboard(); as shown) {
       <app-page-header title="Dashboard" [subtitle]="'Week of ' + range(shown.week.week_start)" />
 
+      @if (shown.setup.length > 0 && !setupComplete(shown.setup)) {
+        @if (setupHidden()) {
+          <p class="mb-4 text-sm" data-testid="setup-show">
+            <button type="button" class="btn btn-ghost btn-sm" (click)="showSetup()">
+              Show the setup steps
+            </button>
+          </p>
+        } @else {
+          <app-setup-checklist [steps]="shown.setup" (hide)="hideSetup()" />
+        }
+      }
+
       @if (shown.week.close_week; as closing) {
         <div
           class="notice notice-warning flex flex-wrap items-center justify-between gap-2"
