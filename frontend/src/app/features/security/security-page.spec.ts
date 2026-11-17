@@ -121,6 +121,15 @@ describe('SecurityPage', () => {
       (li.textContent ?? '').trim(),
     );
 
+  describe('the page', () => {
+    it('has a header and one card for two-factor authentication', async () => {
+      await setup();
+
+      expect(query(page, 'app-page-header h1').textContent).toBe('Security');
+      expect(query(page, 'section.card h2').textContent?.trim()).toBe('Two-factor authentication');
+    });
+  });
+
   describe('when two-factor authentication is off', () => {
     it('says so and offers the setup, without asking the server anything', async () => {
       await setup();

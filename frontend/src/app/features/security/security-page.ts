@@ -5,6 +5,7 @@ import { AuthApi } from '../../core/auth/auth-api';
 import { RecoveryCodeSet } from '../../core/auth/auth-models';
 import { AuthStore } from '../../core/auth/auth-store';
 import { ActivatedRoute } from '@angular/router';
+import { PageHeader } from '../../shared/page-header';
 import { QrCode } from '../../shared/qr-code';
 
 type View = 'loading' | 'unreachable' | 'off' | 'setup' | 'on' | 'codes';
@@ -40,7 +41,7 @@ function noticeFor(key: string | null): string | null {
  */
 @Component({
   selector: 'app-security-page',
-  imports: [ReactiveFormsModule, QrCode],
+  imports: [ReactiveFormsModule, PageHeader, QrCode],
   templateUrl: './security-page.html',
   styleUrls: ['../auth/auth-form.css', './security-page.css'],
 })
