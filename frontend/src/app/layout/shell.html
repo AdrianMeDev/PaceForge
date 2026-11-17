@@ -47,6 +47,12 @@
     </div>
   </aside>
   <main class="content">
+    @if (!online()) {
+      <p class="notice notice-warning" role="status" data-testid="offline">
+        You are offline. PaceForge needs a connection to load and save.
+      </p>
+    }
+    <app-update-notice />
     <router-outlet />
   </main>
   <nav class="tabs" aria-label="Shortcuts">

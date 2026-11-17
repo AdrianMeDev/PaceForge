@@ -72,6 +72,20 @@ describe('Shell', () => {
       (a.textContent ?? '').trim(),
     );
 
+  it('says when the browser is offline, and stops saying it when it is back', async () => {
+    const { page, fixture } = await setup();
+    expect(page.querySelector('[data-testid="offline"]')).toBeNull();
+
+    window.dispatchEvent(new Event('offline'));
+    fixture.detectChanges();
+    expect(query(page, '[data-testid="offline"]').textContent).toContain('You are offline');
+    expect(query(page, '[data-testid="offline"]').getAttribute('role')).toBe('status');
+
+    window.dispatchEvent(new Event('online'));
+    fixture.detectChanges();
+    expect(page.querySelector('[data-testid="offline"]')).toBeNull();
+  });
+
   it('shows the logo and the name as a link to the start page', async () => {
     const { page } = await setup();
 

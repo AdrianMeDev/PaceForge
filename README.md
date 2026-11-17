@@ -1255,6 +1255,43 @@ A week is a calendar week, Monday to Sunday, on the clock of the time zone of yo
 [profile](#athlete-profile) (UTC without one). The number of database queries does not depend on
 how much data you have, and nothing of another user is ever in the answer.
 
+## Install as an app
+
+PaceForge is a progressive web app: on a phone it can be added to the home screen and then opens in
+a window of its own, with its icon and without the address bar.
+
+- **Android (Chrome):** open the site, menu, **Install app** (or **Add to Home screen**).
+- **iOS (Safari):** open the site, the share button, **Add to Home Screen**.
+- **Desktop (Chrome, Edge):** the install icon at the end of the address bar.
+
+**It needs HTTPS.** A browser only installs an app, and only runs its service worker, from a
+secure address (`https://`) or from `localhost`. An instance that is reached over plain `http://`
+cannot be installed.
+
+**What is stored on the device.** The service worker keeps **only the app itself**: the page, its
+scripts, styles and icons (`frontend/ngsw-config.json`). It never stores an answer of the server:
+your activities, plans, goals and settings are private training and health data, so every request
+under `/api/` goes to the server and nowhere else. Signing out therefore leaves nothing of yours on
+the device. A test pins this (no data groups, `/api/**` is no navigation target).
+
+**Updates.** When a new version has been deployed, the app says "A new version of PaceForge is
+ready." and offers **Reload**. Without a connection the app still opens, shows **You are offline**
+and cannot load or save anything.
+
+**Trying it locally.** The service worker is part of the production build only (`ng serve` does not
+run it). Build and serve it on `localhost`:
+
+```sh
+cd frontend
+npm run build
+npx http-server dist/paceforge/browser -p 4300 --proxy http://localhost:8000
+```
+
+(`http-server` is only an example of a static server, it is not a dependency of the project; the
+`--proxy` option sends `/api` to Django, because the app talks to one origin only.) Then open
+`http://localhost:4300`; in the browser's developer tools, **Application**, **Manifest**
+and **Service Workers** show what the browser found.
+
 ## Instance key
 
 Secrets that the database holds for users are encrypted with a separate instance key
