@@ -247,7 +247,7 @@ describe('ReviewPage', () => {
       create();
       await fixture.whenStable();
 
-      expect(text()).toContain('Loading…');
+      expect(page.querySelector('[role="status"][aria-label="Loading"]')).toBeTruthy();
     });
 
     it('offers to try again when the weeks cannot be loaded', async () => {
@@ -260,7 +260,7 @@ describe('ReviewPage', () => {
 
       expect(alerts()).toEqual(['Your weeks could not be loaded.']);
 
-      query<HTMLButtonElement>(page, 'button.primary').click();
+      query<HTMLButtonElement>(page, 'button.btn-primary').click();
       await settle(fixture);
 
       expect(alerts()).toEqual([]);

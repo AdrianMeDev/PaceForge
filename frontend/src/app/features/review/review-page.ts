@@ -30,6 +30,7 @@ import {
   statusChoiceOf,
   weekOptionText,
 } from './review-format';
+import { PageHeader } from '../../shared/page-header';
 import { CoachComment } from './coach-comment';
 import { SessionRating } from './session-rating';
 import { WeekFeedbackForm } from './week-feedback-form';
@@ -73,7 +74,7 @@ interface ReviewDay {
  */
 @Component({
   selector: 'app-review-page',
-  imports: [RouterLink, SessionRating, WeekFeedbackForm, CoachComment],
+  imports: [RouterLink, PageHeader, SessionRating, WeekFeedbackForm, CoachComment],
   templateUrl: './review-page.html',
   styleUrls: ['../auth/auth-form.css', './review-page.css'],
 })
@@ -91,6 +92,10 @@ export class ReviewPage implements OnInit {
   protected readonly errors = signal<string[]>([]);
   protected readonly notice = signal<string | null>(null);
 
+  /** The line under the title: which week is open. */
+  protected readonly subtitle = computed(() =>
+    this.view() === 'ready' && this.selected() ? weekRange(this.selected()) : '',
+  );
   protected readonly days = computed<ReviewDay[]>(() => this.group(this.review()));
   protected readonly unplanned = computed(
     () => this.review()?.activities.filter((activity) => activity.workout_id === null) ?? [],
