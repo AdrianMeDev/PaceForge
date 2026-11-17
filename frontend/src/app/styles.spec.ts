@@ -95,6 +95,9 @@ describe('the shared building blocks', () => {
     '.field-error',
     '.empty-state',
     '.skeleton',
+    '.auth-card',
+    '.field label',
+    '.check label',
   ])('defines %s in the components layer', (selector) => {
     // a selector is the end of its rule, or one of several before the brace
     expect(components).toMatch(new RegExp(`${selector.replace('.', '\\.')}(,\\s*\\S+)* \\{`));
