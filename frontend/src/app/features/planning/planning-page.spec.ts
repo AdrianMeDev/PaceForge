@@ -1593,6 +1593,23 @@ describe('PlanningPage', () => {
     });
   });
 
+  describe('the bar with the decisions', () => {
+    it('holds confirming, discarding and changing of a draft in one place', async () => {
+      await setup();
+
+      const bar = byId('plan-actions');
+      for (const id of ['confirm', 'discard', 'change-plan', 'send-after-confirm']) {
+        expect(bar?.querySelector(`[data-testid="${id}"]`)).not.toBeNull();
+      }
+    });
+
+    it('is not there for a plan nothing can be done with', async () => {
+      await setup({ weeks: ok(weeks([OLD])) });
+
+      expect(byId('plan-actions')).toBeNull();
+    });
+  });
+
   describe('discarding', () => {
     it('asks first and discards nothing when the answer is "Cancel"', async () => {
       await setup();

@@ -200,38 +200,6 @@
               </p>
             }
 
-            @if (canRestore()) {
-              <p class="hint" data-testid="restore-hint">
-                This version is not the plan of the week any more. Restoring copies it as a new
-                draft; nothing is changed or sent before you confirm that draft.
-              </p>
-              <div class="actions">
-                <button
-                  type="button"
-                  class="btn btn-secondary"
-                  data-testid="restore"
-                  [disabled]="busy()"
-                  (click)="restore()"
-                >
-                  Make this the new draft
-                </button>
-              </div>
-            }
-
-            @if (canChange()) {
-              <div class="actions">
-                <button
-                  type="button"
-                  class="btn btn-secondary"
-                  data-testid="change-plan"
-                  [disabled]="busy()"
-                  (click)="startChanging()"
-                >
-                  Change this plan
-                </button>
-              </div>
-            }
-
             @if (shown.report; as report) {
               @if (findings().length > 0) {
                 <details
@@ -256,29 +224,21 @@
               }
             }
 
-            @if (shown.export; as summary) {
-              <p class="hint" data-testid="export-summary">{{ sentSummary(summary) }}</p>
-              <div class="actions">
-                <button
-                  type="button"
-                  class="btn btn-primary"
-                  data-testid="send"
-                  [disabled]="busy()"
-                  (click)="send()"
-                >
-                  {{
-                    summary.synced + summary.failed === 0 ? 'Send to Intervals.icu' : 'Send again'
-                  }}
-                </button>
-              </div>
-            }
-
             @for (day of days(); track day.date) {
               <app-plan-day [day]="day" />
             } @empty {
               <p class="hint">The plan has no workouts.</p>
             }
 
+            @if (canRestore()) {
+              <p class="hint" data-testid="restore-hint">
+                This version is not the plan of the week any more. Restoring copies it as a new
+                draft; nothing is changed or sent before you confirm that draft.
+              </p>
+            }
+            @if (shown.export; as summary) {
+              <p class="hint" data-testid="export-summary">{{ sentSummary(summary) }}</p>
+            }
             @if (shown.status === 'draft') {
               @if (confirmed(); as before) {
                 <p class="hint" data-testid="replaces">
@@ -290,38 +250,87 @@
                   A plan with errors cannot be confirmed. Draft a new version or discard this one.
                 </p>
               }
-              <label class="check">
-                <input
-                  type="checkbox"
-                  data-testid="send-after-confirm"
-                  [checked]="sendAfterConfirm()"
-                  [disabled]="busy()"
-                  (change)="sendAfterConfirm.set($any($event.target).checked)"
-                />
-                Send the week to Intervals.icu right away
-              </label>
-              <div class="actions">
-                <button
-                  type="button"
-                  class="btn btn-primary"
-                  data-testid="confirm"
-                  [disabled]="busy() || !canConfirm()"
-                  (click)="confirm()"
-                >
-                  Confirm plan
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-secondary"
-                  data-testid="discard"
-                  [disabled]="busy()"
-                  (click)="discardDialog.open()"
-                >
-                  Discard
-                </button>
+            }
+
+            @if (canRestore() || canChange() || shown.export || shown.status === 'draft') {
+              <div class="plan-actions" data-testid="plan-actions">
+                @if (shown.status === 'draft') {
+                  <label class="check">
+                    <input
+                      type="checkbox"
+                      data-testid="send-after-confirm"
+                      [checked]="sendAfterConfirm()"
+                      [disabled]="busy()"
+                      (change)="sendAfterConfirm.set($any($event.target).checked)"
+                    />
+                    Send the week to Intervals.icu right away
+                  </label>
+                }
+                <div class="actions">
+                  @if (shown.status === 'draft') {
+                    <button
+                      type="button"
+                      class="btn btn-primary"
+                      data-testid="confirm"
+                      [disabled]="busy() || !canConfirm()"
+                      (click)="confirm()"
+                    >
+                      Confirm plan
+                    </button>
+                  }
+                  @if (shown.export; as summary) {
+                    <button
+                      type="button"
+                      class="btn btn-primary"
+                      data-testid="send"
+                      [disabled]="busy()"
+                      (click)="send()"
+                    >
+                      {{
+                        summary.synced + summary.failed === 0
+                          ? 'Send to Intervals.icu'
+                          : 'Send again'
+                      }}
+                    </button>
+                  }
+                  @if (canRestore()) {
+                    <button
+                      type="button"
+                      class="btn btn-secondary"
+                      data-testid="restore"
+                      [disabled]="busy()"
+                      (click)="restore()"
+                    >
+                      Make this the new draft
+                    </button>
+                  }
+                  @if (canChange()) {
+                    <button
+                      type="button"
+                      class="btn btn-secondary"
+                      data-testid="change-plan"
+                      [disabled]="busy()"
+                      (click)="startChanging()"
+                    >
+                      Change this plan
+                    </button>
+                  }
+                  @if (shown.status === 'draft') {
+                    <button
+                      type="button"
+                      class="btn btn-secondary"
+                      data-testid="discard"
+                      [disabled]="busy()"
+                      (click)="askToDiscard()"
+                    >
+                      Discard
+                    </button>
+                  }
+                </div>
               </div>
+            }
+            @if (shown.status === 'draft') {
               <app-confirm-dialog
-                #discardDialog
                 title="Discard this draft?"
                 message="Version {{
                   shown.version

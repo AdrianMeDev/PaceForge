@@ -1,5 +1,5 @@
 import { DatePipe } from '@angular/common';
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { CoachApi } from '../../core/coach/coach-api';
 import { PlanningApi } from '../../core/planning/planning-api';
@@ -110,6 +110,7 @@ export class PlanningPage implements OnInit {
   protected readonly hasFindingErrors = computed(() =>
     this.findings().some((finding) => finding.severity === 'error'),
   );
+  private readonly discardDialog = viewChild(ConfirmDialog);
   protected readonly changing = signal(false);
   protected readonly busy = computed(() => this.work() !== null || this.changing());
   /** A draft and a confirmed plan can be changed; a version that was replaced is restored first. */
@@ -403,6 +404,11 @@ export class PlanningPage implements OnInit {
     this.needsConnection.set(
       outcome.problem === 'not_connected' || outcome.problem === 'invalid_key',
     );
+  }
+
+  /** Discarding cannot be taken back with one click: the dialog asks first. */
+  protected askToDiscard(): void {
+    this.discardDialog()?.open();
   }
 
   protected async discard(): Promise<void> {
