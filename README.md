@@ -1203,6 +1203,41 @@ test database and the comment with a provider that answers from a script; it has
 browser by the developer, and the comment has not been tried against a real provider. Your first
 real comment is the first real test; please read it critically.
 
+## Dashboard
+
+The **Dashboard** (`/`, the first page of the navigation) answers "what is next and how is the week
+going" in one look. The server works all of it out from your own data in a single request,
+`GET /api/dashboard/` (read only, nothing is stored), and the page only shows it. Every block that
+has nothing to show says what to do next, with a button.
+
+- **Next workout:** the first workout of the confirmed plan of this week that is today or later and
+  still open; when there is none, the first one of the confirmed plan of next week. It shows the
+  day, the title, the length, the zone and whether it is **sent to Intervals.icu** (it was pushed
+  and the push worked). Without a plan: *This week is not planned yet*, and **Draft the week**.
+- **This week:** three tiles with the minutes done against the minutes planned, the workouts done
+  against all workouts of the plan (the statuses of the [week review](#week-review)) and the
+  average RPE of the activities of the week that have one (a dash while none is rated).
+- **Close the week:** a hint above everything, with a link to the week review, while a week waits to
+  be looked back on: the current week on a Sunday, when it has a plan or an activity and no
+  feedback yet; otherwise last week, when it has something to look back on and no feedback. The
+  current week wins on a Sunday. The week review opens on the latest week with a plan: choose the
+  week there.
+- **Season:** the phase of this week in the confirmed [season plan](#season) (a recovery week says
+  so) and the minutes it aims for.
+- **Main goal:** the title of the active main goal, its date, the whole weeks left and how
+  realistic it is (the same rating as on the [Goals](#goals) page).
+- **Last 8 weeks:** the minutes you trained in each of the last 8 weeks, this one included, as
+  stacked bars per sport (`CHART_WEEKS` in `backend/dashboard/overview.py`). Every bar has its
+  numbers as text, and the legend names the colours. Below it the latest 3 activities
+  (`RECENT_ACTIVITIES` in the same file).
+- **Coach:** how many calls the coach made in the last 30 days and how many tokens they used (the
+  numbers of the [AI coach](#ai-coach-bring-your-own-key) section; there are no costs, because
+  there is no price list).
+
+A week is a calendar week, Monday to Sunday, on the clock of the time zone of your
+[profile](#athlete-profile) (UTC without one). The number of database queries does not depend on
+how much data you have, and nothing of another user is ever in the answer.
+
 ## Instance key
 
 Secrets that the database holds for users are encrypted with a separate instance key
