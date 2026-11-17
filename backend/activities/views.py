@@ -29,6 +29,7 @@ NO_FILE = "No file was uploaded."
 EMPTY_FILE = "The file is empty."
 TOO_LARGE = "The file is too large."
 DUPLICATE = "This activity has already been imported."
+UNKNOWN_SPORT = "Unknown sport."
 
 
 def _user(request: Request) -> User:
@@ -54,8 +55,21 @@ class ActivityViewSet(OwnedModelViewSet):
 
     def get_queryset(self) -> QuerySet[Any]:
         queryset = super().get_queryset()
+        if self.action != "list":
+            return queryset
+        sport = self.request.query_params.get("sport")
+        if sport is not None:
+            queryset = queryset.filter(sport=sport)
         # The laps are only needed for one activity.
-        return queryset.defer("laps") if self.action == "list" else queryset
+        return queryset.defer("laps")
+
+    def list(self, request: Request, *args: Any, **kwargs: Any) -> Response:
+        """The list, newest first; ``?sport=`` keeps one sport (count and pages follow)."""
+        sport = request.query_params.get("sport")
+        if sport is not None and sport not in Activity.Sport.values:
+            # The value is not repeated: it is the caller's text.
+            return _refused(UNKNOWN_SPORT, HTTPStatus.BAD_REQUEST)
+        return super().list(request, *args, **kwargs)
 
     def partial_update(self, request: Request, *args: Any, **kwargs: Any) -> Response:
         activity = self.get_object()

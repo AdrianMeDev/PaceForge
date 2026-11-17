@@ -319,6 +319,67 @@ class TestRefusals:
         assert "CANARY" not in caplog.text
 
 
+class TestFilterBySport:
+    def make(self, owner: User, sport: str, count: int, offset: int = 0) -> None:
+        Activity.objects.bulk_create(
+            Activity(
+                owner=owner,
+                source=Activity.Source.FIT_FILE,
+                source_hash=f"{sport}-{n + offset}".ljust(64, "0"),
+                sport=sport,
+                start_time=START + timedelta(minutes=n + offset),
+            )
+            for n in range(count)
+        )
+
+    def test_the_list_keeps_one_sport_and_counts_only_it(self, alice: User) -> None:
+        self.make(alice, Activity.Sport.RUNNING, 3)
+        self.make(alice, Activity.Sport.CYCLING, 2, offset=10)
+
+        listed = body(signed_in(alice).call("GET", f"{LIST}?sport=cycling"))
+
+        assert listed["count"] == 2
+        assert {a["sport"] for a in listed["results"]} == {"cycling"}
+
+    def test_the_pages_follow_the_filter(self, alice: User) -> None:
+        self.make(alice, Activity.Sport.RUNNING, 3)
+        self.make(alice, Activity.Sport.CYCLING, 5, offset=10)
+
+        listed = body(signed_in(alice).call("GET", f"{LIST}?sport=cycling&limit=2&offset=4"))
+
+        assert listed["count"] == 5
+        assert len(listed["results"]) == 1
+
+    def test_without_a_sport_everything_is_listed(self, alice: User) -> None:
+        self.make(alice, Activity.Sport.RUNNING, 3)
+        self.make(alice, Activity.Sport.STRENGTH, 2, offset=10)
+
+        assert body(signed_in(alice).call("GET", LIST))["count"] == 5
+
+    def test_the_activities_of_someone_else_stay_out(self, alice: User, bob: User) -> None:
+        self.make(bob, Activity.Sport.RUNNING, 4)
+
+        assert body(signed_in(alice).call("GET", f"{LIST}?sport=running"))["count"] == 0
+
+    def test_an_unknown_sport_is_refused_and_not_repeated(self, alice: User) -> None:
+        response = signed_in(alice).call("GET", f"{LIST}?sport=<script>")
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert body(response) == {"detail": "Unknown sport."}
+
+    def test_the_filter_does_not_change_the_number_of_queries(self, alice: User) -> None:
+        self.make(alice, Activity.Sport.RUNNING, 3)
+        api = signed_in(alice)
+        api.call("GET", LIST)  # the session and the user are loaded once
+
+        with CaptureQueriesContext(connection) as plain:
+            api.call("GET", LIST)
+        with CaptureQueriesContext(connection) as filtered:
+            api.call("GET", f"{LIST}?sport=running")
+
+        assert len(filtered) == len(plain)
+
+
 class TestIsolation:
     def test_each_user_sees_only_their_own_activities(self, alice: User, bob: User) -> None:
         alices = signed_in(alice)
