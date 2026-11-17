@@ -100,6 +100,86 @@
           />
         </div>
       </section>
+
+      <div class="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+        <section aria-labelledby="season-heading">
+          <h2 id="season-heading" class="mb-2 text-lg font-semibold">Season</h2>
+          @if (shown.season; as season) {
+            <div
+              class="h-full rounded-md border border-border bg-surface p-4 shadow-card"
+              data-testid="season"
+            >
+              <p class="flex flex-wrap items-center gap-2 text-lg font-semibold">
+                <span class="size-3 rounded-full" [class]="phaseDots[season.phase]"></span>
+                <span data-testid="season-phase">{{ phaseLabels[season.phase] }}</span>
+                @if (season.recovery) {
+                  <span class="badge" data-testid="season-recovery">Recovery week</span>
+                }
+              </p>
+              <p class="mt-1 text-muted" data-testid="season-aim">
+                The season plan aims for {{ minutes(season.target_minutes) }} this week.
+              </p>
+              <p class="mt-2"><a routerLink="/season">Open the season</a></p>
+            </div>
+          } @else {
+            <div class="empty-state" data-testid="season-empty">
+              <p>There is no confirmed season plan yet.</p>
+              <a routerLink="/season" class="btn btn-secondary">Plan the season</a>
+            </div>
+          }
+        </section>
+
+        <section aria-labelledby="goal-heading">
+          <h2 id="goal-heading" class="mb-2 text-lg font-semibold">Main goal</h2>
+          @if (shown.main_goal; as goal) {
+            <div
+              class="h-full rounded-md border border-border bg-surface p-4 shadow-card"
+              data-testid="goal"
+            >
+              <p class="break-words text-lg font-semibold" data-testid="goal-title">
+                {{ goal.title }}
+              </p>
+              <p class="text-muted" data-testid="goal-when">
+                {{ kindLabels[goal.kind] }}
+                @if (goal.target_date; as targetDate) {
+                  · {{ day(targetDate) }}
+                  @if (goal.weeks_left !== null) {
+                    · {{ weeksLeft(goal.weeks_left) }}
+                  }
+                }
+              </p>
+              <p class="mt-2">
+                <span class="badge" [class]="ratingBadges[goal.rating]" data-testid="goal-rating">
+                  {{ ratingLabels[goal.rating] }}
+                </span>
+              </p>
+              <p class="mt-2"><a routerLink="/goals">Open the goals</a></p>
+            </div>
+          } @else {
+            <div class="empty-state" data-testid="goal-empty">
+              <p>You have no main goal yet.</p>
+              <a routerLink="/goals" class="btn btn-secondary">Set a goal</a>
+            </div>
+          }
+        </section>
+      </div>
+
+      <section class="mb-6" aria-labelledby="coach-heading">
+        <h2 id="coach-heading" class="mb-2 text-lg font-semibold">Coach</h2>
+        @if (shown.usage.calls > 0) {
+          <p class="text-muted" data-testid="usage">
+            {{ shown.usage.calls }}
+            {{ shown.usage.calls === 1 ? 'call' : 'calls' }} in the last {{ shown.usage.days }} days
+            · {{ tokens(shown.usage.input_tokens) }} tokens in,
+            {{ tokens(shown.usage.output_tokens) }} out
+          </p>
+        } @else {
+          <div class="empty-state" data-testid="usage-empty">
+            <p>Your coach has not been asked anything in the last {{ shown.usage.days }} days.</p>
+            <a routerLink="/settings/connections" class="btn btn-secondary">Set up the coach</a>
+          </div>
+        }
+      </section>
     }
   }
 }

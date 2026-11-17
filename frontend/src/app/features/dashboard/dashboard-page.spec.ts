@@ -31,7 +31,10 @@ const FIGURES: WeekFigures = {
   average_rpe: 5.5,
 };
 
-function dashboard(changes: Partial<Dashboard['week']> = {}): Dashboard {
+function dashboard(
+  changes: Partial<Dashboard['week']> = {},
+  rest: Partial<Omit<Dashboard, 'week'>> = {},
+): Dashboard {
   return {
     week: {
       week_start: MONDAY,
@@ -45,6 +48,7 @@ function dashboard(changes: Partial<Dashboard['week']> = {}): Dashboard {
     weeks: [],
     recent: [],
     usage: { calls: 0, input_tokens: 0, output_tokens: 0, days: 30 },
+    ...rest,
   };
 }
 
@@ -210,6 +214,117 @@ describe('DashboardPage', () => {
       expect(hint.textContent).toContain('2 Nov – 8 Nov');
       expect(query(hint, 'a').getAttribute('href')).toBe('/review');
       expect(query(hint, 'a').textContent).toContain('Close the week');
+    });
+  });
+
+  describe('the season', () => {
+    it('offers to plan one when there is none', async () => {
+      const page = await open(ok(dashboard()));
+
+      const empty = query(page, '[data-testid=season-empty]');
+      expect(query(empty, 'a').getAttribute('href')).toBe('/season');
+      expect(page.querySelector('[data-testid=season]')).toBeNull();
+    });
+
+    it('shows the phase and what the week aims for', async () => {
+      const page = await open(
+        ok(dashboard({}, { season: { phase: 'build', recovery: false, target_minutes: 270 } })),
+      );
+
+      expect(text(page, '[data-testid=season-phase]')).toBe('Build');
+      expect(text(page, '[data-testid=season-aim]')).toContain('4 h 30 min');
+      expect(page.querySelector('[data-testid=season-recovery]')).toBeNull();
+      expect(page.querySelector('[data-testid=season-empty]')).toBeNull();
+    });
+
+    it('says that it is a recovery week', async () => {
+      const page = await open(
+        ok(dashboard({}, { season: { phase: 'base', recovery: true, target_minutes: 120 } })),
+      );
+
+      expect(text(page, '[data-testid=season-recovery]')).toBe('Recovery week');
+    });
+  });
+
+  describe('the main goal', () => {
+    const goal = {
+      id: 'g1',
+      title: '<i>My</i> 10k',
+      kind: 'race' as const,
+      target_date: '2027-01-02',
+      weeks_left: 7,
+      rating: 'ambitious' as const,
+    };
+
+    it('offers to set one when there is none', async () => {
+      const page = await open(ok(dashboard()));
+
+      const empty = query(page, '[data-testid=goal-empty]');
+      expect(query(empty, 'a').getAttribute('href')).toBe('/goals');
+    });
+
+    it('shows the title as text, the date, the weeks left and the rating as the goals do', async () => {
+      const page = await open(ok(dashboard({}, { main_goal: goal })));
+
+      expect(text(page, '[data-testid=goal-title]')).toBe('<i>My</i> 10k');
+      expect(page.querySelector('[data-testid=goal-title] i')).toBeNull();
+      expect(text(page, '[data-testid=goal-when]')).toBe('Race · Sat 2 Jan · 7 weeks to go');
+      expect(text(page, '[data-testid=goal-rating]')).toBe('Ambitious');
+      expect(query(page, '[data-testid=goal-rating]').classList).toContain('text-info');
+    });
+
+    it.each([
+      [1, '1 week to go'],
+      [0, 'Less than a week to go'],
+    ])('counts %s weeks left', async (weeks, said) => {
+      const page = await open(ok(dashboard({}, { main_goal: { ...goal, weeks_left: weeks } })));
+
+      expect(text(page, '[data-testid=goal-when]')).toContain(said);
+    });
+
+    it('leaves out the date and the weeks of a goal without them', async () => {
+      const page = await open(
+        ok(dashboard({}, { main_goal: { ...goal, target_date: null, weeks_left: null } })),
+      );
+
+      expect(text(page, '[data-testid=goal-when]')).toBe('Race');
+    });
+
+    it('says when it cannot be judged yet', async () => {
+      const page = await open(ok(dashboard({}, { main_goal: { ...goal, rating: 'unknown' } })));
+
+      expect(text(page, '[data-testid=goal-rating]')).toBe('Cannot be judged yet');
+    });
+  });
+
+  describe('the coach', () => {
+    it('offers to set it up when it has not been used', async () => {
+      const page = await open(ok(dashboard()));
+
+      const empty = query(page, '[data-testid=usage-empty]');
+      expect(empty.textContent).toContain('last 30 days');
+      expect(query(empty, 'a').getAttribute('href')).toBe('/settings/connections');
+    });
+
+    it('shows the calls and the tokens', async () => {
+      const page = await open(
+        ok(
+          dashboard({}, { usage: { calls: 3, input_tokens: 12345, output_tokens: 678, days: 30 } }),
+        ),
+      );
+
+      expect(text(page, '[data-testid=usage]')).toBe(
+        '3 calls in the last 30 days · 12,345 tokens in, 678 out',
+      );
+      expect(page.querySelector('[data-testid=usage-empty]')).toBeNull();
+    });
+
+    it('counts one call as one call', async () => {
+      const page = await open(
+        ok(dashboard({}, { usage: { calls: 1, input_tokens: 5, output_tokens: 4, days: 30 } })),
+      );
+
+      expect(text(page, '[data-testid=usage]')).toContain('1 call in');
     });
   });
 });
