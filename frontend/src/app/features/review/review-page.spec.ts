@@ -1,5 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { Router, provideRouter } from '@angular/router';
+import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angular/router';
 import { ActivitiesApi } from '../../core/activities/activities-api';
 import { RateActivityResult } from '../../core/activities/activities-models';
 import { PlanningApi } from '../../core/planning/planning-api';
@@ -179,19 +179,30 @@ describe('ReviewPage', () => {
   let fixture: ComponentFixture<ReviewPage>;
   let page: HTMLElement;
 
-  async function setup(options: { weeks?: ListReviewWeeksResult; shown?: GetReviewResult } = {}) {
+  async function setup(
+    options: { weeks?: ListReviewWeeksResult; shown?: GetReviewResult; address?: string } = {},
+  ) {
     stubs = createStubs();
     stubs.api.weeks.mockResolvedValue(options.weeks ?? weeksOk());
     stubs.api.week.mockResolvedValue(options.shown ?? ok());
-    create();
+    create(options.address);
     await settle(fixture);
   }
 
-  function create() {
+  /** `address` is the `week` of the query string of the page, if it has one. */
+  function create(address?: string) {
     TestBed.configureTestingModule({
       imports: [ReviewPage],
       providers: [
         provideRouter([]),
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            snapshot: {
+              queryParamMap: convertToParamMap(address === undefined ? {} : { week: address }),
+            },
+          },
+        },
         { provide: ReviewApi, useValue: stubs.api },
         { provide: ActivitiesApi, useValue: stubs.activities },
         { provide: PlanningApi, useValue: stubs.planning },
@@ -293,6 +304,20 @@ describe('ReviewPage', () => {
 
       expect(weekSelect().value).toBe(SECOND);
       expect(stubs.api.week).toHaveBeenCalledExactlyOnceWith(SECOND);
+    });
+
+    it('opens the week the address names', async () => {
+      await setup({ address: '2026-10-19' });
+
+      expect(weekSelect().value).toBe('2026-10-19');
+      expect(stubs.api.week).toHaveBeenCalledExactlyOnceWith('2026-10-19');
+    });
+
+    it('ignores a week in the address that is not in the list', async () => {
+      await setup({ address: '2026-01-05' });
+
+      expect(weekSelect().value).toBe(FIRST);
+      expect(stubs.api.week).toHaveBeenCalledExactlyOnceWith(FIRST);
     });
 
     it('works without any week', async () => {

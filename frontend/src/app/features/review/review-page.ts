@@ -1,5 +1,5 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { PlanningApi } from '../../core/planning/planning-api';
 import { ReviewApi } from '../../core/review/review-api';
 import {
@@ -81,6 +81,7 @@ export class ReviewPage implements OnInit {
   private readonly api = inject(ReviewApi);
   private readonly planning = inject(PlanningApi);
   private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
 
   protected readonly view = signal<View>('loading');
   protected readonly weeks = signal<ReviewableWeek[]>([]);
@@ -126,9 +127,14 @@ export class ReviewPage implements OnInit {
         return;
       }
       this.weeks.set(weeks.weeks);
-      // The latest week with a plan; the current week if none has one.
+      // The week the address names (the dashboard sends the week to close); else the latest week
+      // with a plan, or the current week if none has one.
+      const wanted = this.route.snapshot.queryParamMap.get('week');
+      const named = weeks.weeks.find((week) => week.week_start === wanted);
       const planned = [...weeks.weeks].reverse().find((week) => week.has_plan);
-      this.selected.set((planned ?? weeks.weeks[weeks.weeks.length - 1])?.week_start ?? '');
+      this.selected.set(
+        (named ?? planned ?? weeks.weeks[weeks.weeks.length - 1])?.week_start ?? '',
+      );
       this.view.set('ready');
     } catch {
       this.view.set('unreachable');
