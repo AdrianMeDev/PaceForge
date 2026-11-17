@@ -361,14 +361,16 @@ Strava is imported with one command: see [The whole Strava history](#the-whole-s
      Archive**; it can take hours or days to arrive. Do not unpack it: the ZIP goes to
      [one command](#the-whole-strava-history). A single file of it, also a compressed one
      (`.fit.gz`), can be chosen on the page as it is.
-2. Open **Activities**, press the file chooser and select the files. Each file is sent on its own
+2. Open **Activities**, drop the files on the drop zone or press the file chooser and select them
+   (the chooser is the way on a phone). Each file is sent on its own
    and gets its own line: *Imported*, *Already imported*, the reason it was refused, or *too
    large*. The list below shows date, sport, duration, distance, average heart rate, RPE, load and
-   source, newest first, 20 per page.
+   source, newest first, 20 per page; on a phone each activity is a card. The chips above the list
+   keep it to one sport (the server filters, so the count and the pages follow).
 3. **Enter a session** by hand for what no watch recorded (strength training, a session that only
    Strava has): sport, day, the time it started, the duration in minutes, and optionally the
    distance, how hard it felt and a note. See [Sessions entered by hand](#sessions-entered-by-hand).
-4. **Delete** (with a confirmation) removes the activity and the file that was stored with it, if
+4. **Delete** (a dialog asks first) removes the activity and the file that was stored with it, if
    it has one.
 
 What you should know:
