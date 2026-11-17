@@ -1,0 +1,18 @@
+<fieldset class="panel" data-testid="appearance">
+  <legend>Appearance</legend>
+  <p class="hint">Applies at once. The choice is kept in this browser only.</p>
+  <div class="options">
+    @for (item of choices; track item.value) {
+      <label class="option">
+        <input
+          type="radio"
+          name="theme"
+          [value]="item.value"
+          [checked]="choice() === item.value"
+          (change)="choose(item.value)"
+        />
+        {{ item.label }}
+      </label>
+    }
+  </div>
+</fieldset>

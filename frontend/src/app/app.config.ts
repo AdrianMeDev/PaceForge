@@ -7,6 +7,7 @@ import {
 import { provideRouter } from '@angular/router';
 import { provideApiClient } from './core/api/api-providers';
 import { AuthStore } from './core/auth/auth-store';
+import { ThemeStore } from './core/theme/theme-store';
 import { routes } from './app.routes';
 
 export const appConfig: ApplicationConfig = {
@@ -14,6 +15,7 @@ export const appConfig: ApplicationConfig = {
     provideBrowserGlobalErrorListeners(),
     provideRouter(routes),
     provideApiClient(),
+    provideAppInitializer(() => inject(ThemeStore).initialize()),
     provideAppInitializer(() => inject(AuthStore).initialize()),
   ],
 };

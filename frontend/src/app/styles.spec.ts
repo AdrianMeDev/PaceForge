@@ -24,9 +24,9 @@ function ruleBody(css: string, selector: string, from = 0): string {
 
 describe('the stylesheet', () => {
   const light = tokens(ruleBody(styles, ':root'));
-  const dark = tokens(
-    ruleBody(styles, ':root', styles.lastIndexOf('prefers-color-scheme: dark) {')),
-  );
+  // The dark colours are written twice: for the chosen theme and for a device that is dark.
+  const chosenDark = tokens(ruleBody(styles, ":root[data-theme='dark']"));
+  const deviceDark = tokens(ruleBody(styles, ":root:not([data-theme='light'])"));
 
   it('has the new surface, state and elevation tokens', () => {
     for (const name of [
@@ -48,7 +48,18 @@ describe('the stylesheet', () => {
 
   it('defines in the dark theme every colour and elevation of the light one', () => {
     const shared = (name: string) => !name.startsWith('--r-');
-    expect(dark).toEqual(light.filter(shared));
+    expect(chosenDark).toEqual(light.filter(shared));
+  });
+
+  it('gives a device that is dark the same colours as the dark choice', () => {
+    expect(deviceDark).toEqual(chosenDark);
+    const values = (selector: string) => ruleBody(styles, selector).replace(/\s+/g, ' ').trim();
+    expect(values(":root:not([data-theme='light'])")).toBe(values(":root[data-theme='dark']"));
+  });
+
+  it('tells the browser which scheme a chosen theme is', () => {
+    expect(styles).toMatch(/:root\[data-theme='light'\] \{\s*color-scheme: light;/);
+    expect(styles).toMatch(/:root\[data-theme='dark'\] \{\s*color-scheme: dark;/);
   });
 
   it('maps every colour token for Tailwind', () => {
