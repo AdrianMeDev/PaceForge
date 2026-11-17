@@ -361,15 +361,17 @@
                   [attr.data-testid]="'week-' + index"
                 >
                   <th scope="row">{{ range(week.week_start) }}</th>
-                  <td>
+                  <td data-label="Phase">
                     {{ phaseLabel[week.phase] }}
                     @if (week.recovery) {
                       <span class="badge recovery" data-testid="recovery">Recovery</span>
                     }
                   </td>
-                  <td data-testid="aim">{{ minutes(week.target_minutes) }}</td>
-                  <td data-testid="offer">{{ minutes(week.capacity_minutes) }}</td>
-                  <td>
+                  <td data-label="Aim" data-testid="aim">{{ minutes(week.target_minutes) }}</td>
+                  <td data-label="Time on offer" data-testid="offer">
+                    {{ minutes(week.capacity_minutes) }}
+                  </td>
+                  <td data-label="Races">
                     @for (item of week.races; track $index) {
                       <span class="badge" [attr.data-priority]="item.priority" data-testid="race">{{
                         race(item)
@@ -378,20 +380,22 @@
                   </td>
                   @if (plan(); as filled) {
                     @let filledWeek = filled.weeks[index];
-                    <td data-testid="plan-minutes">
+                    <td data-label="Plan" data-testid="plan-minutes">
                       {{ bySport(filledWeek.minutes) }}
                       @if (filledWeek.total_minutes > 0) {
                         <span class="total">{{ minutes(filledWeek.total_minutes) }}</span>
                       }
                     </td>
-                    <td data-testid="plan-focus">{{ focusLabel[filledWeek.focus] }}</td>
-                    <td data-testid="plan-sessions">
+                    <td data-label="Focus" data-testid="plan-focus">
+                      {{ focusLabel[filledWeek.focus] }}
+                    </td>
+                    <td data-label="Key sessions" data-testid="plan-sessions">
                       @for (item of filledWeek.key_sessions; track $index) {
                         <span class="session">{{ session(item) }}</span>
                       }
                     </td>
                     @if (hasDone()) {
-                      <td data-testid="plan-done">
+                      <td data-label="Done" data-testid="plan-done">
                         @if (filledWeek.done; as made) {
                           {{ done(made) }}
                         }

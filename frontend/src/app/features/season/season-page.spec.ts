@@ -226,6 +226,16 @@ describe('SeasonPage', () => {
       expect(query(page, '[data-testid=subtitle]').textContent).toMatch(/^\d+ weeks?$/);
     });
 
+    it('gives every value of a week the name of its column, for the card of a phone', async () => {
+      await setup();
+
+      const row = query(page, '[data-testid="week-0"]');
+      const labels = Array.from(row.querySelectorAll('td[data-label]')).map((cell) =>
+        cell.getAttribute('data-label'),
+      );
+      expect(labels).toEqual(['Phase', 'Aim', 'Time on offer', 'Races']);
+    });
+
     it('offers a retry when the season cannot be loaded', async () => {
       await setup(new Error('offline'));
       expect(text()).toContain('Your season could not be loaded.');
