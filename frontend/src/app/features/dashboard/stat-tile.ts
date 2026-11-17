@@ -9,10 +9,10 @@ import { ChangeDetectionStrategy, Component, computed, input } from '@angular/co
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="h-full rounded-md border border-border bg-surface p-4 shadow-card">
-      <p class="text-sm text-muted" data-testid="label">{{ label() }}</p>
-      <p class="mt-1 text-2xl font-semibold" data-testid="value">{{ value() }}</p>
+      <p class="m-0 text-sm text-muted" data-testid="label">{{ label() }}</p>
+      <p class="m-0 mt-1 text-2xl font-semibold" data-testid="value">{{ value() }}</p>
       @if (detail(); as text) {
-        <p class="text-sm text-muted" data-testid="detail">{{ text }}</p>
+        <p class="m-0 text-sm text-muted" data-testid="detail">{{ text }}</p>
       }
       @if (width(); as percent) {
         <div

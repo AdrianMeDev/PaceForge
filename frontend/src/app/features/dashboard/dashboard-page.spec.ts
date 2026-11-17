@@ -327,4 +327,62 @@ describe('DashboardPage', () => {
       expect(text(page, '[data-testid=usage]')).toContain('1 call in');
     });
   });
+
+  describe('the last weeks', () => {
+    const weeks = [
+      { week_start: '2026-11-02', sports: [{ sport: 'running' as const, minutes: 120 }] },
+      { week_start: '2026-11-09', sports: [] },
+    ];
+
+    it('says so when nothing was trained', async () => {
+      const page = await open(ok(dashboard({}, { weeks: [{ week_start: MONDAY, sports: [] }] })));
+
+      expect(text(page, '[data-testid=weeks-empty]')).toBe(
+        'You have not trained in the last 8 weeks.',
+      );
+      expect(page.querySelector('app-minutes-chart')).toBeNull();
+    });
+
+    it('draws the chart with the weeks', async () => {
+      const page = await open(ok(dashboard({}, { weeks })));
+
+      expect(page.querySelectorAll('app-minutes-chart g[data-testid^=bar-]')).toHaveLength(2);
+      expect(page.querySelector('[data-testid=weeks-empty]')).toBeNull();
+    });
+  });
+
+  describe('the latest activities', () => {
+    it('offers to add one when there is none', async () => {
+      const page = await open(ok(dashboard()));
+
+      const empty = query(page, '[data-testid=recent-empty]');
+      expect(query(empty, 'a').getAttribute('href')).toBe('/activities');
+      expect(page.querySelector('[data-testid=recent]')).toBeNull();
+    });
+
+    it('lists them with the sport, the day and the minutes', async () => {
+      const page = await open(
+        ok(
+          dashboard(
+            {},
+            {
+              recent: [
+                { id: 'a1', day: '2026-11-13', sport: 'cycling', minutes: 75 },
+                { id: 'a2', day: '2026-11-12', sport: 'other', minutes: null },
+              ],
+            },
+          ),
+        ),
+      );
+
+      const items = Array.from(page.querySelectorAll('[data-testid=recent-item]')).map((item) =>
+        Array.from(item.querySelectorAll('span')).map((span) => (span.textContent ?? '').trim()),
+      );
+      expect(items).toEqual([
+        ['Cycling', 'Fri 13 Nov', '1 h 15 min'],
+        ['Other', 'Thu 12 Nov', 'no duration'],
+      ]);
+      expect(page.querySelector('[data-testid=recent-empty]')).toBeNull();
+    });
+  });
 });

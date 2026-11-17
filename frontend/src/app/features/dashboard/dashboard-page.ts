@@ -1,7 +1,12 @@
 import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { DashboardApi } from '../../core/dashboard/dashboard-api';
-import { Dashboard, NextWorkout } from '../../core/dashboard/dashboard-models';
+import {
+  Dashboard,
+  NextWorkout,
+  RecentActivity,
+  WeekMinutes,
+} from '../../core/dashboard/dashboard-models';
 import { Rating } from '../../core/goals/goals-models';
 import { SeasonPhase } from '../../core/season/season-models';
 import { IconName, Icon } from '../../shared/icon';
@@ -15,15 +20,17 @@ import {
   weekRange,
 } from '../planning/plan-format';
 import { PHASE_LABELS } from '../season/season-format';
+import { MinutesChart } from './minutes-chart';
 import { StatTile } from './stat-tile';
 
 type View = 'loading' | 'unreachable' | 'ready' | 'signed_out';
 
-const SPORT_ICONS: Record<NextWorkout['sport'], IconName> = {
+const SPORT_ICONS: Record<NextWorkout['sport'] | RecentActivity['sport'], IconName> = {
   running: 'running',
   cycling: 'bike',
   swimming: 'waves',
   strength: 'dumbbell',
+  other: 'activity',
 };
 
 /** The colour of the dot of a phase, as everywhere in the season. */
@@ -51,7 +58,7 @@ const RATING_BADGES: Record<Rating, string> = {
 @Component({
   selector: 'app-dashboard-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Icon, PageHeader, RouterLink, StatTile],
+  imports: [Icon, MinutesChart, PageHeader, RouterLink, StatTile],
   templateUrl: './dashboard-page.html',
 })
 export class DashboardPage implements OnInit {
@@ -60,7 +67,7 @@ export class DashboardPage implements OnInit {
   protected readonly view = signal<View>('loading');
   protected readonly dashboard = signal<Dashboard | null>(null);
 
-  protected readonly sportLabels = SPORT_LABELS;
+  protected readonly sportLabels = { ...SPORT_LABELS, other: 'Other' };
   protected readonly sportIcons = SPORT_ICONS;
   protected readonly day = dayLabel;
   protected readonly minutes = minutesText;
@@ -111,5 +118,10 @@ export class DashboardPage implements OnInit {
   /** The tokens of a call count, with thousands separated: "12,345". */
   protected tokens(count: number): string {
     return count.toLocaleString('en');
+  }
+
+  /** Whether any of the weeks has minutes: else there is nothing to draw. */
+  protected anyMinutes(weeks: readonly WeekMinutes[]): boolean {
+    return weeks.some((week) => week.sports.length > 0);
   }
 }
