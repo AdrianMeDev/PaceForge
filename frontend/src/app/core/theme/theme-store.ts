@@ -1,5 +1,5 @@
 import { DOCUMENT } from '@angular/common';
-import { Injectable, inject, signal } from '@angular/core';
+import { Injectable, computed, inject, signal } from '@angular/core';
 
 export type ThemeChoice = 'system' | 'light' | 'dark';
 
@@ -20,10 +20,28 @@ export class ThemeStore {
 
   readonly choice = signal<ThemeChoice>('system');
 
+  private readonly deviceDark = signal(deviceIsDark());
+
+  /** What is on the screen now: the choice, or the device's setting while none is chosen. */
+  readonly shown = computed<'light' | 'dark'>(() => {
+    const choice = this.choice();
+    return choice === 'system' ? (this.deviceDark() ? 'dark' : 'light') : choice;
+  });
+
   /** Reads the stored choice and shows it; called once when the app starts. */
   initialize(): void {
     this.choice.set(read());
     this.apply();
+    this.deviceDark.set(deviceIsDark());
+    // The device may change from light to dark by itself (at night) while the app is open.
+    globalThis.matchMedia?.('(prefers-color-scheme: dark)')?.addEventListener('change', (event) => {
+      this.deviceDark.set(event.matches);
+    });
+  }
+
+  /** Switches to the opposite of what is shown now (from "system" too). */
+  toggle(): void {
+    this.set(this.shown() === 'dark' ? 'light' : 'dark');
   }
 
   set(choice: ThemeChoice): void {
@@ -43,6 +61,10 @@ export class ThemeStore {
       this.root.setAttribute('data-theme', choice);
     }
   }
+}
+
+function deviceIsDark(): boolean {
+  return globalThis.matchMedia?.('(prefers-color-scheme: dark)')?.matches ?? false;
 }
 
 function read(): ThemeChoice {

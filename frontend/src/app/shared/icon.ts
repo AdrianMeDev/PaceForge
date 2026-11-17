@@ -53,6 +53,10 @@ export interface Shape {
 }
 
 export const ICONS: Record<string, readonly Shape[]> = {
+  mail: [
+    { tag: 'path', attrs: { d: 'm22 7-8.991 5.727a2 2 0 0 1-2.009 0L2 7' } },
+    { tag: 'rect', attrs: { x: '2', y: '4', width: '20', height: '16', rx: '2' } },
+  ],
   home: [
     { tag: 'path', attrs: { d: 'M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8' } },
     {
@@ -238,6 +242,7 @@ export const ICONS: Record<string, readonly Shape[]> = {
 };
 
 export const ICON_NAMES = [
+  'mail',
   'home',
   'calendar',
   'calendar-check',

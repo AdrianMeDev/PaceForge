@@ -1,41 +1,120 @@
-<header class="bar">
-  <span class="brand">PaceForge</span>
-  <nav class="nav" aria-label="Main">
-    <a
-      routerLink="/"
-      routerLinkActive="active"
-      ariaCurrentWhenActive="page"
-      [routerLinkActiveOptions]="{ exact: true }"
-      >Dashboard</a
-    >
-    <a routerLink="/activities" routerLinkActive="active" ariaCurrentWhenActive="page"
-      >Activities</a
-    >
-    <a routerLink="/goals" routerLinkActive="active" ariaCurrentWhenActive="page">Goals</a>
-    <a routerLink="/availability" routerLinkActive="active" ariaCurrentWhenActive="page"
-      >Training time</a
-    >
-    <a routerLink="/season" routerLinkActive="active" ariaCurrentWhenActive="page">Season</a>
-    <a routerLink="/planning" routerLinkActive="active" ariaCurrentWhenActive="page">Week plan</a>
-    <a routerLink="/review" routerLinkActive="active" ariaCurrentWhenActive="page">Week review</a>
-    <a routerLink="/settings/profile" routerLinkActive="active" ariaCurrentWhenActive="page"
-      >Profile</a
-    >
-    <a routerLink="/settings/security" routerLinkActive="active" ariaCurrentWhenActive="page"
-      >Security</a
-    >
-    <a routerLink="/settings/connections" routerLinkActive="active" ariaCurrentWhenActive="page"
-      >Connections</a
-    >
-    @if (isStaff()) {
-      <a routerLink="/admin/invitations" routerLinkActive="active" ariaCurrentWhenActive="page"
-        >Invitations</a
+<div class="shell">
+  <aside class="side">
+    <span class="brand">PaceForge</span>
+    <nav aria-label="Main">
+      @for (group of groups(); track group.label) {
+        <div class="group" [attr.data-group]="group.label">
+          <h2 class="group-title sr-only lg:not-sr-only">{{ group.label }}</h2>
+          <ul>
+            @for (item of group.items; track item.path) {
+              <li>
+                <a
+                  [routerLink]="item.path"
+                  routerLinkActive="active"
+                  ariaCurrentWhenActive="page"
+                  [routerLinkActiveOptions]="{ exact: item.exact === true }"
+                  [attr.title]="item.label"
+                >
+                  <app-icon [name]="item.icon" />
+                  <span class="sr-only lg:not-sr-only">{{ item.label }}</span>
+                </a>
+              </li>
+            }
+          </ul>
+        </div>
+      }
+    </nav>
+    <div class="who">
+      <span class="user sr-only lg:not-sr-only" data-testid="user-label">{{ userLabel() }}</span>
+      <button
+        type="button"
+        class="theme"
+        data-testid="theme-toggle"
+        [attr.aria-label]="
+          shownTheme() === 'dark' ? 'Switch to the light theme' : 'Switch to the dark theme'
+        "
+        (click)="toggleTheme()"
       >
+        <app-icon [name]="shownTheme() === 'dark' ? 'sun' : 'moon'" />
+      </button>
+      <button type="button" class="signout" data-testid="sign-out" (click)="logout()">
+        <app-icon name="log-out" />
+        <span class="sr-only lg:not-sr-only">Sign out</span>
+      </button>
+    </div>
+  </aside>
+  <main class="content">
+    <router-outlet />
+  </main>
+  <nav class="tabs" aria-label="Shortcuts">
+    @for (item of tabs; track item.path) {
+      <a
+        [routerLink]="item.path"
+        routerLinkActive="active"
+        ariaCurrentWhenActive="page"
+        [routerLinkActiveOptions]="{ exact: item.exact === true }"
+      >
+        <app-icon [name]="item.icon" />
+        <span>{{ item.label }}</span>
+      </a>
     }
+    <button
+      type="button"
+      data-testid="more"
+      aria-haspopup="dialog"
+      [attr.aria-expanded]="moreOpen()"
+      (click)="openMore()"
+    >
+      <app-icon name="more" />
+      <span>More</span>
+    </button>
   </nav>
-  <span class="user" data-testid="user-label">{{ userLabel() }}</span>
-  <button type="button" class="link" (click)="logout()">Sign out</button>
-</header>
-<main class="content">
-  <router-outlet />
-</main>
+  <dialog #sheet class="sheet" aria-labelledby="sheet-title" data-testid="sheet" (close)="closed()">
+    <div class="sheet-head">
+      <h2 id="sheet-title">More</h2>
+      <button type="button" data-testid="sheet-close" aria-label="Close" (click)="closeMore()">
+        <app-icon name="x" />
+      </button>
+    </div>
+    <nav aria-label="More pages">
+      @for (group of more(); track group.label) {
+        <div class="group" [attr.data-group]="group.label">
+          <h3 class="group-title">{{ group.label }}</h3>
+          <ul>
+            @for (item of group.items; track item.path) {
+              <li>
+                <a
+                  [routerLink]="item.path"
+                  routerLinkActive="active"
+                  ariaCurrentWhenActive="page"
+                  (click)="closeMore()"
+                >
+                  <app-icon [name]="item.icon" />
+                  <span>{{ item.label }}</span>
+                </a>
+              </li>
+            }
+          </ul>
+        </div>
+      }
+    </nav>
+    <div class="sheet-who">
+      <span class="user" data-testid="sheet-user">{{ userLabel() }}</span>
+      <button
+        type="button"
+        class="theme"
+        data-testid="sheet-theme-toggle"
+        [attr.aria-label]="
+          shownTheme() === 'dark' ? 'Switch to the light theme' : 'Switch to the dark theme'
+        "
+        (click)="toggleTheme()"
+      >
+        <app-icon [name]="shownTheme() === 'dark' ? 'sun' : 'moon'" />
+      </button>
+      <button type="button" class="signout" data-testid="sheet-sign-out" (click)="logout()">
+        <app-icon name="log-out" />
+        <span>Sign out</span>
+      </button>
+    </div>
+  </dialog>
+</div>

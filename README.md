@@ -96,6 +96,21 @@ two-factor authentication before they can use anything else, so the first sign-i
 security page: scan the QR code with an authenticator app, enter the code, confirm your password and
 save the recovery codes (see [Two-factor authentication](#two-factor-authentication)).
 
+## Navigation
+
+The pages are in groups: **Training** (Dashboard, Week plan, Week review, Activities), **Planning**
+(Season, Goals, Training time), **Settings** (Profile, Connections, Security) and, for
+administrators, **Admin** (Invitations). Wherever a page says "in the navigation", this is where it
+is:
+
+- **Wide screens (64 rem and more):** a sidebar with the groups, your name and **Sign out**.
+- **Tablets (40 to 64 rem):** the same as a narrow rail of icons (the name of a page is its tooltip).
+- **Phones (under 40 rem):** a bar at the bottom with the four **Training** pages and **More**,
+  which opens a sheet from the bottom with the other groups, your name and **Sign out**. Escape, the
+  close button, a tap beside the sheet or following a link closes it.
+- **Light or dark:** the sun or moon button next to your name switches between the two; the third
+  choice, following the device, is on the [Profile](#athlete-profile) page, under *Appearance*.
+
 ## Manual walkthrough: invitation to working account
 
 Administrators create invitations on the **Invitations** page. Nothing is sent by email: you get a
