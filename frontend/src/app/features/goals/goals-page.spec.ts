@@ -504,7 +504,9 @@ describe('GoalsPage', () => {
 
       // the buttons of the dialog are not the page's: the dialog is closed
       const pageButtons = () =>
-        Array.from(page.querySelectorAll('button:not(app-confirm-dialog button)'));
+        Array.from(
+          page.querySelectorAll<HTMLButtonElement>('button:not(app-confirm-dialog button)'),
+        );
       expect(pageButtons().every((b) => b.disabled)).toBe(true);
       pending.resolve(updated(FTP));
       await settle(fixture);
