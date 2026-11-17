@@ -12,20 +12,6 @@ select {
   font: inherit;
 }
 
-.versions {
-  margin: 0 0 1rem;
-  padding: 0;
-  list-style: none;
-}
-
-.versions li {
-  margin-bottom: 0.25rem;
-}
-
-.versions button[aria-current='true'] {
-  font-weight: 700;
-}
-
 .plan {
   margin-top: 1rem;
   padding: 1rem 1.25rem;

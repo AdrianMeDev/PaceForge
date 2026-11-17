@@ -144,19 +144,29 @@
       }
 
       @if (versions().length > 0) {
-        <ul class="versions" aria-label="Versions of this week">
+        <ul
+          class="versions m-0 mb-4 flex snap-x list-none gap-2 overflow-x-auto p-0 pb-1"
+          aria-label="Versions of this week"
+        >
           @for (version of versions(); track version.id) {
-            <li>
+            <li class="flex-none snap-start">
               <button
                 type="button"
-                class="link"
+                class="cursor-pointer whitespace-nowrap rounded-full border border-border bg-surface px-3 py-1 text-sm text-fg disabled:cursor-progress disabled:opacity-60 aria-[current=true]:border-accent aria-[current=true]:bg-accent-soft aria-[current=true]:font-semibold aria-[current=true]:text-accent"
                 [disabled]="busy()"
                 [attr.aria-current]="plan()?.id === version.id ? 'true' : null"
+                [attr.aria-label]="
+                  'Version ' +
+                  version.version +
+                  ', ' +
+                  status[version.status] +
+                  ', ' +
+                  (version.created_at | date: 'MMM d, HH:mm')
+                "
                 [attr.data-testid]="'version-' + version.version"
                 (click)="open(version.id)"
               >
-                Version {{ version.version }} · {{ status[version.status] }} ·
-                {{ version.created_at | date: 'MMM d, HH:mm' }}
+                v{{ version.version }} · {{ status[version.status] }}
               </button>
             </li>
           }

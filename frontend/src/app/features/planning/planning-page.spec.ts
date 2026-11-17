@@ -499,8 +499,9 @@ describe('PlanningPage', () => {
       expect(byId('version-2')?.getAttribute('aria-current')).toBe('true');
       expect(byId('version-1')?.getAttribute('aria-current')).toBeNull();
       // The time depends on the time zone of the machine, so only its shape is checked.
-      expect(byId('version-2')?.textContent?.replace(/\s+/g, ' ').trim()).toMatch(
-        /^Version 2 · Draft · [A-Z][a-z]{2} \d{1,2}, \d{2}:\d{2}$/,
+      expect(byId('version-2')?.textContent?.replace(/\s+/g, ' ').trim()).toBe('v2 · Draft');
+      expect(byId('version-2')?.getAttribute('aria-label')).toMatch(
+        /^Version 2, Draft, [A-Z][a-z]{2} \d{1,2}, \d{2}:\d{2}$/,
       );
 
       await click('version-1');
