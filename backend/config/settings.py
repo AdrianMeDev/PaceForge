@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     "planning",
     "reviews",
     "season",
+    "dashboard",
 ]
 
 MIDDLEWARE = [

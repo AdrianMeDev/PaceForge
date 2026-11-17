@@ -1,0 +1,227 @@
+@switch (view()) {
+  @case ('loading') {
+    <app-page-header title="Dashboard" />
+    <div class="grid gap-4" role="status" aria-label="Loading">
+      <div class="skeleton h-28"></div>
+      <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div class="skeleton h-24"></div>
+        <div class="skeleton h-24"></div>
+        <div class="skeleton h-24"></div>
+      </div>
+    </div>
+  }
+  @case ('unreachable') {
+    <app-page-header title="Dashboard" />
+    <p class="alert" role="alert">Your dashboard could not be loaded.</p>
+    <button type="button" class="btn btn-primary" (click)="load()">Try again</button>
+  }
+  @case ('signed_out') {
+    <app-page-header title="Dashboard" />
+    <p class="alert" role="alert">Your session has ended. Please sign in again.</p>
+    <a routerLink="/login">Go to sign in</a>
+  }
+  @case ('ready') {
+    @if (dashboard(); as shown) {
+      <app-page-header title="Dashboard" [subtitle]="'Week of ' + range(shown.week.week_start)" />
+
+      @if (shown.week.close_week; as closing) {
+        <div
+          class="notice notice-warning flex flex-wrap items-center justify-between gap-2"
+          data-testid="close-week"
+        >
+          <span> The week of {{ range(closing) }} is over. Look back on it and close it. </span>
+          <a routerLink="/review" class="btn no-underline btn-secondary btn-sm">Close the week</a>
+        </div>
+      }
+
+      <section class="mb-6" aria-labelledby="next-heading">
+        <h2 id="next-heading" class="m-0 mb-2 text-lg font-semibold">Next workout</h2>
+        @if (shown.week.next_workout; as next) {
+          <div
+            class="flex items-start gap-4 rounded-md border border-border bg-surface p-4 shadow-card"
+            data-testid="next-workout"
+          >
+            <span
+              class="grid size-10 flex-none place-items-center rounded-full bg-surface-2 text-xl"
+            >
+              <app-icon [name]="sportIcons[next.sport]" [label]="sportLabels[next.sport]" />
+            </span>
+            <div class="min-w-0 flex-1">
+              <p class="m-0 text-sm text-muted" data-testid="next-day">{{ day(next.day) }}</p>
+              <p class="m-0 break-words text-lg font-semibold" data-testid="next-title">
+                {{ next.title }}
+              </p>
+              <p class="m-0 text-muted" data-testid="next-details">
+                {{ minutes(next.minutes) }}
+                @if (target(next.zone_system, next.zone); as zone) {
+                  · {{ zone }}
+                }
+              </p>
+              <p class="m-0 mt-2">
+                @if (next.sent) {
+                  <span class="badge" data-testid="next-sent">Sent to Intervals.icu</span>
+                } @else {
+                  <span class="badge text-muted" data-testid="next-not-sent">
+                    Not sent to Intervals.icu
+                  </span>
+                }
+              </p>
+            </div>
+          </div>
+        } @else {
+          <div class="empty-state" data-testid="next-empty">
+            <p class="m-0">This week is not planned yet.</p>
+            <a routerLink="/planning" class="btn no-underline btn-primary">Draft the week</a>
+          </div>
+        }
+      </section>
+
+      <section class="mb-6" aria-labelledby="week-heading">
+        <h2 id="week-heading" class="m-0 mb-2 text-lg font-semibold">This week</h2>
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <app-stat-tile
+            label="Minutes"
+            [value]="minutes(shown.week.figures.done_minutes)"
+            [detail]="'of ' + minutes(shown.week.figures.planned_minutes) + ' planned'"
+            [progress]="share(shown.week.figures.done_minutes, shown.week.figures.planned_minutes)"
+          />
+          <app-stat-tile
+            label="Workouts"
+            [value]="shown.week.figures.workouts_done + ' of ' + shown.week.figures.workouts_total"
+            detail="done"
+            [progress]="share(shown.week.figures.workouts_done, shown.week.figures.workouts_total)"
+          />
+          <app-stat-tile
+            label="Average RPE"
+            [value]="rpe(shown.week.figures.average_rpe)"
+            [detail]="
+              shown.week.figures.average_rpe === null ? 'No activity rated yet' : 'out of 10'
+            "
+          />
+        </div>
+      </section>
+
+      <div class="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+        <section class="flex flex-col" aria-labelledby="season-heading">
+          <h2 id="season-heading" class="m-0 mb-2 text-lg font-semibold">Season</h2>
+          @if (shown.season; as season) {
+            <div
+              class="flex-1 rounded-md border border-border bg-surface p-4 shadow-card"
+              data-testid="season"
+            >
+              <p class="m-0 flex flex-wrap items-center gap-2 text-lg font-semibold">
+                <span class="size-3 rounded-full" [class]="phaseDots[season.phase]"></span>
+                <span data-testid="season-phase">{{ phaseLabels[season.phase] }}</span>
+                @if (season.recovery) {
+                  <span class="badge" data-testid="season-recovery">Recovery week</span>
+                }
+              </p>
+              <p class="m-0 mt-1 text-muted" data-testid="season-aim">
+                The season plan aims for {{ minutes(season.target_minutes) }} this week.
+              </p>
+              <p class="m-0 mt-2"><a routerLink="/season">Open the season</a></p>
+            </div>
+          } @else {
+            <div class="empty-state" data-testid="season-empty">
+              <p class="m-0">There is no confirmed season plan yet.</p>
+              <a routerLink="/season" class="btn no-underline btn-secondary">Plan the season</a>
+            </div>
+          }
+        </section>
+
+        <section class="flex flex-col" aria-labelledby="goal-heading">
+          <h2 id="goal-heading" class="m-0 mb-2 text-lg font-semibold">Main goal</h2>
+          @if (shown.main_goal; as goal) {
+            <div
+              class="flex-1 rounded-md border border-border bg-surface p-4 shadow-card"
+              data-testid="goal"
+            >
+              <p class="m-0 break-words text-lg font-semibold" data-testid="goal-title">
+                {{ goal.title }}
+              </p>
+              <p class="m-0 text-muted" data-testid="goal-when">
+                {{ kindLabels[goal.kind] }}
+                @if (goal.target_date; as targetDate) {
+                  · {{ day(targetDate) }}
+                  @if (goal.weeks_left !== null) {
+                    · {{ weeksLeft(goal.weeks_left) }}
+                  }
+                }
+              </p>
+              <p class="m-0 mt-2">
+                <span class="badge" [class]="ratingBadges[goal.rating]" data-testid="goal-rating">
+                  {{ ratingLabels[goal.rating] }}
+                </span>
+              </p>
+              <p class="m-0 mt-2"><a routerLink="/goals">Open the goals</a></p>
+            </div>
+          } @else {
+            <div class="empty-state" data-testid="goal-empty">
+              <p class="m-0">You have no main goal yet.</p>
+              <a routerLink="/goals" class="btn no-underline btn-secondary">Set a goal</a>
+            </div>
+          }
+        </section>
+      </div>
+
+      <section class="mb-6" aria-labelledby="weeks-heading">
+        <h2 id="weeks-heading" class="m-0 mb-2 text-lg font-semibold">Last 8 weeks</h2>
+        @if (anyMinutes(shown.weeks)) {
+          <div class="rounded-md border border-border bg-surface p-4 shadow-card">
+            <app-minutes-chart [weeks]="shown.weeks" />
+          </div>
+        } @else {
+          <div class="empty-state" data-testid="weeks-empty">
+            <p class="m-0">You have not trained in the last 8 weeks.</p>
+          </div>
+        }
+
+        <h3 class="m-0 mt-4 mb-2 font-semibold">Latest activities</h3>
+        @if (shown.recent.length > 0) {
+          <ul
+            class="m-0 list-none divide-y divide-border rounded-md border border-border bg-surface p-0 shadow-card"
+            data-testid="recent"
+          >
+            @for (item of shown.recent; track item.id) {
+              <li class="flex items-center gap-3 px-4 py-3" data-testid="recent-item">
+                <app-icon [name]="sportIcons[item.sport]" [label]="sportLabels[item.sport]" />
+                <span class="flex-1">{{ sportLabels[item.sport] }}</span>
+                <span class="whitespace-nowrap text-muted">{{ day(item.day) }}</span>
+                <span class="min-w-20 whitespace-nowrap text-right">
+                  {{ item.minutes === null ? 'no duration' : minutes(item.minutes) }}
+                </span>
+              </li>
+            }
+          </ul>
+          <p class="m-0 mt-2"><a routerLink="/activities">All activities</a></p>
+        } @else {
+          <div class="empty-state" data-testid="recent-empty">
+            <p class="m-0">You have no activities yet.</p>
+            <a routerLink="/activities" class="btn no-underline btn-secondary">Add an activity</a>
+          </div>
+        }
+      </section>
+
+      <section class="mb-6" aria-labelledby="coach-heading">
+        <h2 id="coach-heading" class="m-0 mb-2 text-lg font-semibold">Coach</h2>
+        @if (shown.usage.calls > 0) {
+          <p class="m-0 text-muted" data-testid="usage">
+            {{ shown.usage.calls }}
+            {{ shown.usage.calls === 1 ? 'call' : 'calls' }} in the last {{ shown.usage.days }} days
+            · {{ tokens(shown.usage.input_tokens) }} tokens in,
+            {{ tokens(shown.usage.output_tokens) }} out
+          </p>
+        } @else {
+          <div class="empty-state" data-testid="usage-empty">
+            <p class="m-0">
+              Your coach has not been asked anything in the last {{ shown.usage.days }} days.
+            </p>
+            <a routerLink="/settings/connections" class="btn no-underline btn-secondary"
+              >Set up the coach</a
+            >
+          </div>
+        }
+      </section>
+    }
+  }
+}
