@@ -1094,9 +1094,12 @@ The **Week review** page (`/review`, in the navigation) shows how a week went ag
 confirmed. It reads the plan and what you did; it never changes the plan. Choose the **week**: the
 current week and the four before it can be reviewed (`REVIEW_WEEKS` in
 `backend/reviews/services.py`), and the page starts with the latest of them that has a confirmed
-plan. A week is a calendar week, Monday to Sunday, on the clock of the time zone of your
+plan. The address can name a week (`/review?week=2026-11-02`, the Monday): the
+[Dashboard](#dashboard) sends the week to close that way; a week that is not in the list is ignored.
+A week is a calendar week, Monday to Sunday, on the clock of the time zone of your
 [profile](#athlete-profile) (UTC without one), so a session just after midnight belongs to the day
-you lived it. A week without a confirmed plan shows what you did and a link to the plan page.
+you lived it. A week without a confirmed plan shows what you did and a link to the plan page. On a
+phone the figures of *Planned and done* are one tile per sport instead of a table.
 
 **Which activity belongs to which workout.** PaceForge matches them by itself:
 
