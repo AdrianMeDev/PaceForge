@@ -36,3 +36,11 @@
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+/* On a phone the heads are short and the cells close, so five columns fit. */
+@media (max-width: 39.99rem) {
+  .options th,
+  .options td {
+    padding: 0.35rem 0.2rem;
+  }
+}

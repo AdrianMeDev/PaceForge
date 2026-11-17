@@ -64,6 +64,20 @@ describe('DayOptions', () => {
     await settle(fixture);
   }
 
+  it('gives every column a short head for a phone and the whole text for assistive technology', () => {
+    const heads = Array.from(element.querySelectorAll('thead th')).map((th) => ({
+      long: th.querySelector('span:not([aria-hidden])')?.textContent?.trim(),
+      short: th.querySelector('span[aria-hidden="true"]')?.textContent?.trim(),
+    }));
+
+    expect(heads.slice(1)).toEqual([
+      { long: 'Morning', short: 'Morn.' },
+      { long: 'Afternoon', short: 'Aft.' },
+      { long: 'Evening', short: 'Eve.' },
+      { long: 'Two sessions', short: '2×' },
+    ]);
+  });
+
   it('has a row for every weekday with the three parts of the day and two sessions', () => {
     const rows = Array.from(element.querySelectorAll('tbody tr'));
 

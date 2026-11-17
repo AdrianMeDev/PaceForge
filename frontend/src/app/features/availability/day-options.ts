@@ -3,10 +3,10 @@ import { AvailabilitySlot } from '../../core/availability/availability-models';
 import { WEEKDAY_NAMES } from './availability-format';
 
 /** The parts of a day, earliest first: the order the server keeps them in. */
-export const SLOT_CHOICES: { value: AvailabilitySlot; label: string }[] = [
-  { value: 'morning', label: 'Morning' },
-  { value: 'afternoon', label: 'Afternoon' },
-  { value: 'evening', label: 'Evening' },
+export const SLOT_CHOICES: { value: AvailabilitySlot; label: string; short: string }[] = [
+  { value: 'morning', label: 'Morning', short: 'Morn.' },
+  { value: 'afternoon', label: 'Afternoon', short: 'Aft.' },
+  { value: 'evening', label: 'Evening', short: 'Eve.' },
 ];
 
 export const NO_WINDOW = 'Choose at least one part of the day.';
