@@ -328,7 +328,9 @@ describe('PlanningPage', () => {
       fixture = TestBed.createComponent(PlanningPage);
       await fixture.whenStable();
 
-      expect(fixture.nativeElement.textContent).toContain('Loading…');
+      expect(
+        fixture.nativeElement.querySelector('[role="status"][aria-label="Loading"]'),
+      ).toBeTruthy();
     });
 
     it('offers to try again when the weeks cannot be loaded', async () => {
@@ -339,7 +341,7 @@ describe('PlanningPage', () => {
 
       expect(alerts()).toEqual(['Your plans could not be loaded.']);
 
-      query<HTMLButtonElement>(page, 'button.primary').click();
+      query<HTMLButtonElement>(page, 'button.btn-primary').click();
       await settle(fixture);
 
       expect(alerts()).toEqual([]);

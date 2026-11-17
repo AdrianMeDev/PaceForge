@@ -1,46 +1,52 @@
 <section class="planning">
-  <h1>Week plan</h1>
+  <app-page-header title="Week plan" [subtitle]="subtitle()">
+    @if (view() === 'ready') {
+      <label class="sr-only" for="plan-week">Week</label>
+      <select
+        id="plan-week"
+        [value]="selected()"
+        [disabled]="busy()"
+        (change)="selectWeek($any($event.target).value)"
+      >
+        @for (item of weeks(); track item.week_start) {
+          <option [value]="item.week_start" [selected]="item.week_start === selected()">
+            {{ range(item.week_start) }}
+          </option>
+        }
+      </select>
+    }
+  </app-page-header>
 
   @switch (view()) {
     @case ('loading') {
-      <p role="status">Loading…</p>
+      <div class="grid gap-4" role="status" aria-label="Loading">
+        <div class="skeleton h-12"></div>
+        <div class="skeleton h-28"></div>
+        <div class="skeleton h-40"></div>
+      </div>
     }
     @case ('unreachable') {
       <p class="alert" role="alert">Your plans could not be loaded.</p>
-      <p><button type="button" class="primary" (click)="load()">Try again</button></p>
+      <p><button type="button" class="btn btn-primary" (click)="load()">Try again</button></p>
     }
     @case ('signed_out') {
       <p class="alert" role="alert">Your session has ended. Please sign in again.</p>
       <p><a routerLink="/login">Go to sign in</a></p>
     }
     @case ('ready') {
-      <div class="field">
-        <label for="plan-week">Week</label>
-        <select
-          id="plan-week"
-          [value]="selected()"
-          [disabled]="busy()"
-          (change)="selectWeek($any($event.target).value)"
-        >
-          @for (item of weeks(); track item.week_start) {
-            <option [value]="item.week_start" [selected]="item.week_start === selected()">
-              {{ range(item.week_start) }}
-            </option>
-          }
-        </select>
-      </div>
-
       @if (season(); as aim) {
-        <section class="season-week" data-testid="season-week" aria-label="The season plan">
-          <h2>What the season plan says about this week</h2>
-          <p data-testid="season-phase">
+        <section class="card" data-testid="season-week" aria-label="The season plan">
+          <h2 class="m-0 mb-2 text-base font-semibold">
+            What the season plan says about this week
+          </h2>
+          <p class="my-1" data-testid="season-phase">
             {{ phase[aim.phase] }}
             @if (aim.recovery) {
               <span class="badge" data-testid="season-recovery">Recovery</span>
             }
             · Focus: {{ focus[aim.focus] }}
           </p>
-          <p data-testid="season-minutes">
+          <p class="my-1" data-testid="season-minutes">
             {{ seasonMinutes(aim.minutes) }}
             @if (aim.total_minutes > 0) {
               · {{ minutes(aim.total_minutes) }} in all
@@ -55,12 +61,12 @@
             </ul>
           }
           @for (race of aim.races; track $index) {
-            <p data-testid="season-race">
+            <p class="my-1" data-testid="season-race">
               Race on {{ day(race.date) }} (priority {{ letter[race.priority] }})
             </p>
           }
           @if (aim.reason) {
-            <p class="hint" data-testid="season-reason">{{ aim.reason }}</p>
+            <p class="hint my-1" data-testid="season-reason">{{ aim.reason }}</p>
           }
         </section>
       }
@@ -96,32 +102,34 @@
           <a routerLink="/settings/connections">Set one up</a>
         </p>
       } @else {
-        <div class="field">
-          <label for="draft-note">What should the coach know about this week? (optional)</label>
-          <textarea
-            id="draft-note"
-            rows="2"
-            [attr.maxlength]="noteMax + 100"
-            [value]="draftNote()"
-            [disabled]="busy()"
-            (input)="draftNote.set($any($event.target).value)"
-          ></textarea>
-          <p class="hint">
-            A day without time, a trip, a niggle. Up to {{ noteMax }} characters. The coach reads it
-            as advice; the rules of the plan come first.
+        <div class="card">
+          <div class="field">
+            <label for="draft-note">What should the coach know about this week? (optional)</label>
+            <textarea
+              id="draft-note"
+              rows="2"
+              [attr.maxlength]="noteMax + 100"
+              [value]="draftNote()"
+              [disabled]="busy()"
+              (input)="draftNote.set($any($event.target).value)"
+            ></textarea>
+            <p class="hint">
+              A day without time, a trip, a niggle. Up to {{ noteMax }} characters. The coach reads
+              it as advice; the rules of the plan come first.
+            </p>
+          </div>
+          <p>
+            <button
+              type="button"
+              class="btn btn-primary"
+              data-testid="generate"
+              [disabled]="busy()"
+              (click)="generate()"
+            >
+              {{ versions().length === 0 ? 'Draft a plan with my coach' : 'Draft a new version' }}
+            </button>
           </p>
         </div>
-        <p>
-          <button
-            type="button"
-            class="primary"
-            data-testid="generate"
-            [disabled]="busy()"
-            (click)="generate()"
-          >
-            {{ versions().length === 0 ? 'Draft a plan with my coach' : 'Draft a new version' }}
-          </button>
-        </p>
       }
       @if (work() === 'sending') {
         <p role="status" data-testid="sending">Sending the week to Intervals.icu…</p>
@@ -190,7 +198,7 @@
               <div class="actions">
                 <button
                   type="button"
-                  class="secondary"
+                  class="btn btn-secondary"
                   data-testid="restore"
                   [disabled]="busy()"
                   (click)="restore()"
@@ -204,7 +212,7 @@
               <div class="actions">
                 <button
                   type="button"
-                  class="secondary"
+                  class="btn btn-secondary"
                   data-testid="change-plan"
                   [disabled]="busy()"
                   (click)="startChanging()"
@@ -234,7 +242,7 @@
               <div class="actions">
                 <button
                   type="button"
-                  class="primary"
+                  class="btn btn-primary"
                   data-testid="send"
                   [disabled]="busy()"
                   (click)="send()"
@@ -276,7 +284,7 @@
               <div class="actions">
                 <button
                   type="button"
-                  class="primary"
+                  class="btn btn-primary"
                   data-testid="confirm"
                   [disabled]="busy() || !canConfirm()"
                   (click)="confirm()"
@@ -285,7 +293,7 @@
                 </button>
                 <button
                   type="button"
-                  class="secondary"
+                  class="btn btn-secondary"
                   data-testid="discard"
                   [disabled]="busy()"
                   (click)="discard()"

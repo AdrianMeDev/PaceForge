@@ -27,6 +27,7 @@ import {
   keySessionText,
   minutesBySport,
 } from '../season/season-format';
+import { PageHeader } from '../../shared/page-header';
 import { PlanEditor } from './plan-editor';
 import { PlanDay, PlanDayView } from './plan-day';
 
@@ -56,7 +57,7 @@ const TOO_MANY_PUSHES = 'Too many sends in a short time. Please wait a minute an
  */
 @Component({
   selector: 'app-planning-page',
-  imports: [RouterLink, DatePipe, PlanEditor, PlanDayView],
+  imports: [RouterLink, DatePipe, PageHeader, PlanEditor, PlanDayView],
   templateUrl: './planning-page.html',
   styleUrls: ['../auth/auth-form.css', './planning-page.css'],
 })
@@ -87,6 +88,10 @@ export class PlanningPage implements OnInit {
   /** Whether confirming a draft also sends the week to Intervals.icu (never without asking). */
   protected readonly sendAfterConfirm = signal(false);
 
+  /** The line under the title: which week is open. */
+  protected readonly subtitle = computed(() =>
+    this.view() === 'ready' && this.selected() ? weekRange(this.selected()) : '',
+  );
   protected readonly week = computed(
     () => this.weeks().find((week) => week.week_start === this.selected()) ?? null,
   );
