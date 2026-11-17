@@ -21,7 +21,7 @@ const REFRESH_FAILED = 'The list could not be refreshed. Please try again.';
   selector: 'app-periods-panel',
   imports: [DatePipe, ConfirmDialog, PeriodForm],
   templateUrl: './periods-panel.html',
-  styleUrls: ['../auth/auth-form.css', './periods-panel.css'],
+  styleUrl: './periods-panel.css',
 })
 export class PeriodsPanel implements OnInit {
   private readonly api = inject(AvailabilityApi);

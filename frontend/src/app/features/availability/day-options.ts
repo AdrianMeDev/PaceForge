@@ -33,7 +33,7 @@ export function windowErrors(windows: readonly (readonly AvailabilitySlot[])[]):
 @Component({
   selector: 'app-day-options',
   templateUrl: './day-options.html',
-  styleUrls: ['../auth/auth-form.css', './day-options.css'],
+  styleUrl: './day-options.css',
 })
 export class DayOptions {
   readonly doubleDays = model.required<boolean[]>();

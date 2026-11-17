@@ -100,7 +100,7 @@ function chosen(text: string, low: number, high: number): number | null | undefi
 @Component({
   selector: 'app-week-wishes',
   templateUrl: './week-wishes.html',
-  styleUrls: ['../auth/auth-form.css', './week-wishes.css'],
+  styleUrl: './week-wishes.css',
 })
 export class WeekWishes {
   readonly wishes = model.required<WishTexts>();

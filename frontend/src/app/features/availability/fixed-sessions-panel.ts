@@ -49,7 +49,7 @@ export function sessionText(session: FixedSession): string {
   selector: 'app-fixed-sessions-panel',
   imports: [ConfirmDialog],
   templateUrl: './fixed-sessions-panel.html',
-  styleUrls: ['../auth/auth-form.css', './fixed-sessions-panel.css'],
+  styleUrl: './fixed-sessions-panel.css',
 })
 export class FixedSessionsPanel implements OnInit {
   private readonly api = inject(AvailabilityApi);

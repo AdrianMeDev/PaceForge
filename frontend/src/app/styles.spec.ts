@@ -135,7 +135,7 @@ describe('the base styles', () => {
 });
 
 describe('the retired stylesheet of the account pages', () => {
-  it.each(['auth', 'admin', 'security', 'connections', 'athlete'])(
+  it.each(['auth', 'admin', 'security', 'connections', 'athlete', 'availability'])(
     'is no longer bound in features/%s',
     (folder) => {
       for (const file of sourceFiles(`src/app/features/${folder}`)) {

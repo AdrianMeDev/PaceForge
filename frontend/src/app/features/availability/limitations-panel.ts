@@ -58,7 +58,7 @@ export function sportsText(sports: readonly AvailabilitySport[]): string {
   selector: 'app-limitations-panel',
   imports: [ConfirmDialog],
   templateUrl: './limitations-panel.html',
-  styleUrls: ['../auth/auth-form.css', './limitations-panel.css'],
+  styleUrl: './limitations-panel.css',
 })
 export class LimitationsPanel implements OnInit {
   private readonly api = inject(AvailabilityApi);
