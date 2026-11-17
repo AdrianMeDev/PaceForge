@@ -79,42 +79,38 @@
               }
 
               <div class="actions flex flex-wrap items-center gap-2">
-                @if (confirming() === period.id) {
-                  <span class="confirm" role="group" aria-label="Delete this period">
-                    Delete this period?
-                    <button
-                      type="button"
-                      class="btn btn-primary btn-sm"
-                      [disabled]="busy()"
-                      (click)="delete(period)"
-                    >
-                      Yes, delete
-                    </button>
-                    <button type="button" class="btn btn-ghost btn-sm" (click)="cancelDelete()">
-                      Cancel
-                    </button>
-                  </span>
-                } @else {
-                  <button
-                    type="button"
-                    class="btn btn-ghost btn-sm"
-                    [disabled]="busy()"
-                    [attr.aria-label]="
-                      'Delete ' +
-                      kindLabel[period.kind].toLowerCase() +
-                      ' from ' +
-                      period.start_date
-                    "
-                    (click)="askDelete(period)"
-                  >
-                    Delete
-                  </button>
-                }
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-sm"
+                  [disabled]="busy()"
+                  [attr.aria-label]="
+                    'Delete ' + kindLabel[period.kind].toLowerCase() + ' from ' + period.start_date
+                  "
+                  (click)="askDelete(period)"
+                >
+                  Delete
+                </button>
               </div>
             </li>
           }
         </ul>
       }
+      @let doomed = confirming();
+      <app-confirm-dialog
+        title="Delete this period?"
+        [message]="
+          doomed
+            ? 'Delete the ' +
+              kindLabel[doomed.kind].toLowerCase() +
+              ' from ' +
+              (doomed.start_date | date: 'mediumDate') +
+              '?'
+            : ''
+        "
+        confirmLabel="Delete period"
+        [danger]="true"
+        (confirmed)="delete()"
+      />
     }
   }
 </div>

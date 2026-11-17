@@ -64,9 +64,31 @@ function deferred<T>() {
 }
 
 describe('PeriodsPanel', () => {
+  // jsdom has no modal dialog: this is what the browser does that the question relies on.
+  beforeAll(() => {
+    HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
+      this.setAttribute('open', '');
+    };
+    HTMLDialogElement.prototype.close = function (this: HTMLDialogElement) {
+      if (this.hasAttribute('open')) {
+        this.removeAttribute('open');
+        this.dispatchEvent(new Event('close'));
+      }
+    };
+  });
+
   let api: ReturnType<typeof createApiStub>;
   let fixture: ComponentFixture<PeriodsPanel>;
   let panel: HTMLElement;
+
+  const dialog = () => query<HTMLDialogElement>(panel, '[data-testid="confirm-dialog"]');
+  const confirmButton = () =>
+    query<HTMLButtonElement>(panel, '[data-testid="confirm-dialog-confirm"]');
+  const cancelButton = () =>
+    query<HTMLButtonElement>(panel, '[data-testid="confirm-dialog-cancel"]');
+  // the buttons of the dialog are not the panel's: the dialog is closed
+  const pageButtons = () =>
+    Array.from(panel.querySelectorAll<HTMLButtonElement>('button:not(app-confirm-dialog button)'));
   let events: string[];
 
   async function setup(first: ListPeriodsResult = ok(GOING_ON, COMING, OVER)) {
@@ -292,21 +314,12 @@ describe('PeriodsPanel', () => {
     it('clears an earlier message when the form opens', async () => {
       api.deletePeriod.mockRejectedValue(new Error('offline'));
       await click(labelled('Delete vacation from 2026-11-23'));
-      await click(buttonWithText('Yes, delete'));
+      await click(confirmButton());
       expect(alerts()).toEqual(['Something went wrong. Please try again.']);
 
       await click(buttonWithText('Add period'));
 
       expect(alerts()).toEqual([]);
-    });
-
-    it('closes an open delete question when the form opens', async () => {
-      await click(labelled('Delete vacation from 2026-11-23'));
-      expect(text()).toContain('Delete this period?');
-
-      await click(buttonWithText('Add period'));
-
-      expect(text()).not.toContain('Delete this period?');
     });
   });
 
@@ -316,17 +329,18 @@ describe('PeriodsPanel', () => {
     it('asks first and deletes nothing until confirmed', async () => {
       await click(labelled('Delete vacation from 2026-11-23'));
 
-      expect(text()).toContain('Delete this period?');
+      expect(dialog().open).toBe(true);
+      expect(dialog().textContent).toContain('Delete the vacation from');
       expect(api.deletePeriod).not.toHaveBeenCalled();
     });
 
     it('does nothing when cancelled', async () => {
       await click(labelled('Delete vacation from 2026-11-23'));
 
-      await click(buttonWithText('Cancel'));
+      await click(cancelButton());
 
       expect(api.deletePeriod).not.toHaveBeenCalled();
-      expect(text()).not.toContain('Delete this period?');
+      expect(dialog().open).toBe(false);
       expect(api.listPeriods).toHaveBeenCalledTimes(1);
     });
 
@@ -334,8 +348,8 @@ describe('PeriodsPanel', () => {
       await click(labelled('Delete vacation from 2026-11-23'));
       await click(labelled('Delete illness from 2026-11-12'));
 
-      expect(panel.querySelectorAll('.confirm')).toHaveLength(1);
-      expect(card('on').querySelector('.confirm')).not.toBeNull();
+      expect(panel.querySelectorAll('[data-testid="confirm-dialog"]')).toHaveLength(1);
+      expect(dialog().textContent).toContain('Delete the illness from');
     });
 
     it('deletes the confirmed period, says so and fetches the list again', async () => {
@@ -343,7 +357,7 @@ describe('PeriodsPanel', () => {
       api.listPeriods.mockResolvedValue(ok(GOING_ON));
       await click(labelled('Delete vacation from 2026-11-23'));
 
-      await click(buttonWithText('Yes, delete'));
+      await click(confirmButton());
 
       expect(api.deletePeriod).toHaveBeenCalledExactlyOnceWith('coming');
       expect(ids()).toEqual(['on']);
@@ -355,7 +369,7 @@ describe('PeriodsPanel', () => {
       api.listPeriods.mockResolvedValue(ok(GOING_ON));
       await click(labelled('Delete vacation from 2026-11-23'));
 
-      await click(buttonWithText('Yes, delete'));
+      await click(confirmButton());
 
       expect(text()).toContain('That period does not exist any more.');
       expect(ids()).toEqual(['on']);
@@ -366,7 +380,7 @@ describe('PeriodsPanel', () => {
       api.listPeriods.mockResolvedValue(ok());
       await click(labelled('Delete vacation from 2026-11-23'));
 
-      await click(buttonWithText('Yes, delete'));
+      await click(confirmButton());
 
       expect(text()).toContain('You have not entered any period yet.');
     });
@@ -375,7 +389,7 @@ describe('PeriodsPanel', () => {
       api.deletePeriod.mockResolvedValue({ kind: 'forbidden' });
       await click(labelled('Delete vacation from 2026-11-23'));
 
-      await click(buttonWithText('Yes, delete'));
+      await click(confirmButton());
 
       expect(events).toEqual(['signedOut']);
     });
@@ -384,7 +398,7 @@ describe('PeriodsPanel', () => {
       api.deletePeriod.mockRejectedValue(new Error('offline'));
       await click(labelled('Delete vacation from 2026-11-23'));
 
-      await click(buttonWithText('Yes, delete'));
+      await click(confirmButton());
 
       expect(alerts()).toEqual(['Something went wrong. Please try again.']);
       expect(ids()).toEqual(['on', 'coming']);
@@ -395,12 +409,12 @@ describe('PeriodsPanel', () => {
       api.listPeriods.mockRejectedValue(new Error('offline'));
       await click(labelled('Delete vacation from 2026-11-23'));
 
-      await click(buttonWithText('Yes, delete'));
+      await click(confirmButton());
 
       expect(alerts()).toEqual(['The list could not be refreshed. Please try again.']);
       expect(ids()).toEqual(['on', 'coming']);
       expect(text()).toContain('The period was deleted.');
-      expect(text()).not.toContain('Delete this period?');
+      expect(dialog().open).toBe(false);
     });
 
     it('tells the page when the refresh finds the session gone', async () => {
@@ -408,7 +422,7 @@ describe('PeriodsPanel', () => {
       api.listPeriods.mockResolvedValue({ kind: 'forbidden' });
       await click(labelled('Delete vacation from 2026-11-23'));
 
-      await click(buttonWithText('Yes, delete'));
+      await click(confirmButton());
 
       expect(events).toEqual(['signedOut']);
     });
@@ -418,7 +432,7 @@ describe('PeriodsPanel', () => {
       api.deletePeriod.mockReturnValue(pending.promise);
       await click(labelled('Delete vacation from 2026-11-23'));
 
-      const confirm = buttonWithText('Yes, delete');
+      const confirm = confirmButton();
       confirm.click();
       confirm.click();
       pending.resolve({ kind: 'deleted' });
@@ -432,23 +446,19 @@ describe('PeriodsPanel', () => {
       api.deletePeriod.mockReturnValue(pending.promise);
       await click(labelled('Delete vacation from 2026-11-23'));
 
-      buttonWithText('Yes, delete').click();
+      confirmButton().click();
       fixture.detectChanges();
 
-      expect(
-        Array.from(panel.querySelectorAll('button'))
-          .filter((b) => b.textContent?.trim() !== 'Cancel')
-          .every((b) => b.disabled),
-      ).toBe(true);
+      expect(pageButtons().every((b) => b.disabled)).toBe(true);
       pending.resolve({ kind: 'deleted' });
       await settle(fixture);
-      expect(Array.from(panel.querySelectorAll('button')).some((b) => b.disabled)).toBe(false);
+      expect(pageButtons().some((b) => b.disabled)).toBe(false);
     });
 
     it('clears an earlier message when it asks', async () => {
       api.deletePeriod.mockRejectedValue(new Error('offline'));
       await click(labelled('Delete vacation from 2026-11-23'));
-      await click(buttonWithText('Yes, delete'));
+      await click(confirmButton());
       expect(alerts()).toHaveLength(1);
 
       await click(labelled('Delete illness from 2026-11-12'));
