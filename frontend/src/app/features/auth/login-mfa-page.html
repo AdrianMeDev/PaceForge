@@ -1,5 +1,5 @@
 <main class="auth-card">
-  <h1>Two-factor authentication</h1>
+  <h1 class="m-0 mb-4 text-2xl font-semibold">Two-factor authentication</h1>
   <p>Enter the code from your authenticator app, or one of your recovery codes.</p>
 
   @for (message of errors(); track $index) {
@@ -26,11 +26,11 @@
       }
     </div>
 
-    <button type="submit" class="primary" [disabled]="submitting()">
+    <button type="submit" class="btn btn-primary" [disabled]="submitting()">
       {{ submitting() ? 'Checking…' : 'Continue' }}
     </button>
   </form>
   <p class="links">
-    <button type="button" class="link" (click)="cancel()">Back to sign in</button>
+    <button type="button" class="btn btn-ghost btn-sm" (click)="cancel()">Back to sign in</button>
   </p>
 </main>

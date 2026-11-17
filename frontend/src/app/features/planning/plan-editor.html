@@ -22,7 +22,11 @@
   }
 
   @if (!checking() && weekFindings().length > 0) {
-    <ul class="findings" aria-label="What the checks say about the week" data-testid="editor-week">
+    <ul
+      class="list-disc findings"
+      aria-label="What the checks say about the week"
+      data-testid="editor-week"
+    >
       @for (finding of weekFindings(); track $index) {
         <li [attr.data-severity]="finding.severity">
           <strong>{{ finding.severity === 'error' ? 'Error' : 'Note' }}</strong>
@@ -36,7 +40,11 @@
     <p class="alert" role="alert" data-testid="editor-message">{{ text }}</p>
   }
   @if (problems().length > 0) {
-    <ul class="problems" aria-label="What was wrong with the plan" data-testid="editor-problems">
+    <ul
+      class="list-disc problems"
+      aria-label="What was wrong with the plan"
+      data-testid="editor-problems"
+    >
       @for (problem of problems(); track $index) {
         <li>{{ problem.message }}</li>
       }
@@ -88,7 +96,7 @@
               <p class="notes">{{ item.workout.notes }}</p>
             }
             @if (!checking() && findingsOf(item.index).length > 0) {
-              <ul class="findings" [attr.data-testid]="'editor-findings-' + item.index">
+              <ul class="list-disc findings" [attr.data-testid]="'editor-findings-' + item.index">
                 @for (finding of findingsOf(item.index); track $index) {
                   <li [attr.data-severity]="finding.severity">
                     <strong>{{ finding.severity === 'error' ? 'Error' : 'Note' }}</strong>

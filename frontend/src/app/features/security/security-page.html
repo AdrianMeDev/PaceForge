@@ -74,7 +74,7 @@
         }
         @case ('setup') {
           @if (setupInfo(); as info) {
-            <ol class="steps">
+            <ol class="list-decimal steps">
               <li>
                 <p>
                   Scan this QR code with an authenticator app (for example your phone's password
@@ -178,7 +178,7 @@
               <span data-testid="code-count">{{ set.unused }} of {{ set.total }}</span> recovery
               codes are unused.
             </p>
-            <ul class="codes" data-testid="recovery-codes">
+            <ul class="list-none codes" data-testid="recovery-codes">
               @for (code of set.codes; track code) {
                 <li>{{ code }}</li>
               }

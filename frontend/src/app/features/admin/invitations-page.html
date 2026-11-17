@@ -1,13 +1,18 @@
 <section class="invitations">
-  <h1>Invitations</h1>
+  <app-page-header title="Invitations" />
 
   @switch (view()) {
     @case ('loading') {
-      <p role="status">Loading…</p>
+      <div class="grid gap-4" role="status" aria-label="Loading">
+        <div class="skeleton h-40"></div>
+        <div class="skeleton h-28"></div>
+      </div>
     }
     @case ('unreachable') {
       <p class="alert" role="alert">The invitations could not be loaded.</p>
-      <p><button type="button" class="primary" (click)="load()">Try again</button></p>
+      <p>
+        <button type="button" class="btn btn-primary btn-sm" (click)="load()">Try again</button>
+      </p>
     }
     @case ('mfa_required') {
       <p class="alert" role="alert">
@@ -19,8 +24,8 @@
       <p class="alert" role="alert">You are not allowed to manage invitations.</p>
     }
     @case ('ready') {
-      <div class="panel">
-        <h2>Invite someone</h2>
+      <div class="card">
+        <h2 class="m-0 mb-3 text-lg font-semibold">Invite someone</h2>
         <p>
           Enter the email address of the person. You will get a link to hand on yourself; no email
           is sent. The link works once, for 7 days, and only for that address.
@@ -47,15 +52,15 @@
               <p class="field-error" id="email-error">Enter a valid email address.</p>
             }
           </div>
-          <button type="submit" class="primary" [disabled]="busy()">
+          <button type="submit" class="btn btn-primary" [disabled]="busy()">
             {{ busy() ? 'Working…' : 'Create invitation' }}
           </button>
         </form>
       </div>
 
       @if (issued(); as link) {
-        <div class="panel issued" role="region" aria-label="New invitation link">
-          <h2>Invitation for {{ link.email }}</h2>
+        <div class="card issued" role="region" aria-label="New invitation link">
+          <h2 class="m-0 mb-3 text-lg font-semibold">Invitation for {{ link.email }}</h2>
           <p>
             This link is shown <strong>only now</strong>. Send it to the person yourself. If you
             lose it, revoke the invitation and create a new one.
@@ -68,9 +73,11 @@
             [value]="link.url"
             (focus)="select($event)"
           />
-          <div class="actions">
-            <button type="button" class="primary" (click)="copy()">Copy link</button>
-            <button type="button" class="secondary" (click)="dismissLink()">Done</button>
+          <div class="actions mt-3 flex flex-wrap items-center gap-2">
+            <button type="button" class="btn btn-primary btn-sm" (click)="copy()">Copy link</button>
+            <button type="button" class="btn btn-secondary btn-sm" (click)="dismissLink()">
+              Done
+            </button>
             @switch (copied()) {
               @case ('copied') {
                 <span role="status">Copied.</span>
@@ -85,7 +92,7 @@
         </div>
       }
 
-      <h2 class="list-title">All invitations</h2>
+      <h2 class="mb-3 mt-8 text-lg font-semibold">All invitations</h2>
       @if (invitations().length === 0) {
         <p class="hint">No invitations yet.</p>
       } @else {
@@ -122,20 +129,24 @@
                           Revoke this invitation?
                           <button
                             type="button"
-                            class="primary"
+                            class="btn btn-primary btn-sm"
                             [disabled]="busy()"
                             (click)="revoke(invitation)"
                           >
                             Yes, revoke
                           </button>
-                          <button type="button" class="link" (click)="cancelRevoke()">
+                          <button
+                            type="button"
+                            class="btn btn-ghost btn-sm"
+                            (click)="cancelRevoke()"
+                          >
                             Cancel
                           </button>
                         </span>
                       } @else {
                         <button
                           type="button"
-                          class="secondary"
+                          class="btn btn-secondary btn-sm"
                           [attr.aria-label]="'Revoke invitation for ' + invitation.email"
                           (click)="ask(invitation)"
                         >

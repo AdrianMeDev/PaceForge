@@ -8,7 +8,7 @@
       @for (group of groups(); track group.label) {
         <div class="group" [attr.data-group]="group.label">
           <h2 class="group-title sr-only lg:not-sr-only">{{ group.label }}</h2>
-          <ul>
+          <ul class="list-none">
             @for (item of group.items; track item.path) {
               <li>
                 <a
@@ -74,7 +74,7 @@
   </nav>
   <dialog #sheet class="sheet" aria-labelledby="sheet-title" data-testid="sheet" (close)="closed()">
     <div class="sheet-head">
-      <h2 id="sheet-title">More</h2>
+      <h2 id="sheet-title" class="font-semibold">More</h2>
       <button type="button" data-testid="sheet-close" aria-label="Close" (click)="closeMore()">
         <app-icon name="x" />
       </button>
@@ -83,7 +83,7 @@
       @for (group of more(); track group.label) {
         <div class="group" [attr.data-group]="group.label">
           <h3 class="group-title">{{ group.label }}</h3>
-          <ul>
+          <ul class="list-none">
             @for (item of group.items; track item.path) {
               <li>
                 <a

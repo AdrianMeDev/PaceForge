@@ -187,7 +187,7 @@ describe('LoginMfaPage', () => {
     it('ends the half-finished sign-in and returns to the password step, keeping the target', async () => {
       await setup({ returnUrl: '/training' });
 
-      query<HTMLButtonElement>(page, 'button.link').click();
+      query<HTMLButtonElement>(page, 'button.btn-ghost').click();
       await settle(fixture);
 
       expect(store.logout).toHaveBeenCalledTimes(1);
@@ -200,7 +200,7 @@ describe('LoginMfaPage', () => {
       await setup();
       store.logout.mockRejectedValue(new Error('network down'));
 
-      query<HTMLButtonElement>(page, 'button.link').click();
+      query<HTMLButtonElement>(page, 'button.btn-ghost').click();
       await settle(fixture);
 
       expect(navigate).toHaveBeenCalledExactlyOnceWith(['/login'], { queryParams: {} });

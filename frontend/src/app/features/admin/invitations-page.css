@@ -2,15 +2,6 @@
   max-width: 52rem;
 }
 
-h2 {
-  margin: 0 0 0.75rem;
-  font-size: 1.15rem;
-}
-
-.list-title {
-  margin-top: 2rem;
-}
-
 .issued {
   border-color: var(--accent);
 }
@@ -18,23 +9,6 @@ h2 {
 #invite-link {
   font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace;
   font-size: 0.9rem;
-}
-
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.75rem;
-  margin-top: 0.75rem;
-}
-
-button.secondary {
-  padding: 0.6rem 1rem;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text);
-  cursor: pointer;
 }
 
 .table-wrap {

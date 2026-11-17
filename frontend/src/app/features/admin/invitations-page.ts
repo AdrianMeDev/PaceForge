@@ -4,6 +4,7 @@ import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angula
 import { RouterLink } from '@angular/router';
 import { InvitationsApi } from '../../core/admin/invitations-api';
 import { Invitation, InvitationStatus } from '../../core/admin/invitations-models';
+import { PageHeader } from '../../shared/page-header';
 
 type View = 'loading' | 'unreachable' | 'ready' | 'mfa_required' | 'forbidden';
 type Copied = 'idle' | 'copied' | 'failed';
@@ -31,7 +32,7 @@ const STATUS_LABELS: Record<InvitationStatus, string> = {
  */
 @Component({
   selector: 'app-invitations-page',
-  imports: [ReactiveFormsModule, RouterLink, DatePipe],
+  imports: [ReactiveFormsModule, RouterLink, DatePipe, PageHeader],
   templateUrl: './invitations-page.html',
   styleUrls: ['../auth/auth-form.css', './invitations-page.css'],
 })

@@ -55,7 +55,7 @@
           <p role="status">Importing {{ name }}…</p>
         }
         @if (results().length) {
-          <ul class="results" aria-label="Import results">
+          <ul class="list-none results" aria-label="Import results">
             @for (result of results(); track $index) {
               <li [attr.data-kind]="result.outcome.kind">
                 <strong>{{ result.name }}</strong>:
@@ -69,7 +69,7 @@
                     @if (isListed(result.outcome.existingId)) {
                       <button
                         type="button"
-                        class="link"
+                        class="btn btn-ghost btn-sm"
                         (click)="showRow(result.outcome.existingId)"
                       >
                         Show it in the list
