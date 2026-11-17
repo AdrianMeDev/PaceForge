@@ -1,11 +1,12 @@
 /*
- * Tailwind: the theme and the utilities, without its base styles (the reset). The colours stay the
- * tokens below, which Tailwind reads through `@theme inline`, so light, dark and the theme switch
- * work for utilities too. Rules that are not in a layer (the ones below and those of the
- * components) win over utilities; the base styles come in a later step.
+ * Tailwind: the theme, its base styles (the full reset, "preflight") and the utilities. The colours
+ * stay the tokens below, which Tailwind reads through `@theme inline`, so light, dark and the theme
+ * switch work for utilities too. Rules that are not in a layer (the ones below and those of the
+ * components) win over the reset and over utilities.
  */
 @layer theme, base, components, utilities;
 @import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/preflight.css' layer(base);
 @import 'tailwindcss/utilities.css' layer(utilities);
 
 /* `dark:` follows the chosen theme, or the system setting while none is chosen. */
@@ -221,113 +222,24 @@ button.primary:disabled {
 }
 
 /*
- * The safe part of Tailwind's base styles (its "preflight"): fixes for differences between browsers
- * that change nothing the pages look like today. The rest of it (no margin, padding or border on
- * any element, plain headings, lists and links, buttons and inputs without their own look) is NOT
- * on yet: it would change every page at once. A page gets it when it is reworked (see UI_PLAN.md,
- * M3), by writing what it needs as utilities.
+ * What the project adds to the reset. The reset takes the spacing, the list styles and the colour
+ * of links away; the pages were written for the browser's own paragraph spacing and for links in
+ * the accent colour, so those two are put back here, in the base layer: a utility (`m-0`, `mt-2`,
+ * `no-underline`) or a rule of a component still wins.
  */
 @layer base {
-  html {
-    -webkit-text-size-adjust: 100%;
-    tab-size: 4;
-    -webkit-tap-highlight-color: transparent;
+  p {
+    margin-block: 1em;
   }
 
-  abbr:where([title]) {
-    text-decoration: underline dotted;
+  a {
+    color: var(--accent);
+    text-decoration: underline;
   }
 
-  b,
-  strong {
-    font-weight: bolder;
-  }
-
-  code,
-  kbd,
-  samp,
-  pre {
-    font-size: 1em;
-  }
-
-  small {
-    font-size: 80%;
-  }
-
-  sub,
-  sup {
-    font-size: 75%;
-    line-height: 0;
-    position: relative;
-    vertical-align: baseline;
-  }
-
-  sub {
-    bottom: -0.25em;
-  }
-
-  sup {
-    top: -0.5em;
-  }
-
-  table {
-    text-indent: 0;
-    border-color: inherit;
-  }
-
-  progress {
-    vertical-align: baseline;
-  }
-
-  summary {
-    display: list-item;
-  }
-
-  button,
-  input,
-  select,
-  optgroup,
-  textarea {
-    letter-spacing: inherit;
-  }
-
-  ::placeholder {
-    opacity: 1;
-  }
-
-  textarea {
-    resize: vertical;
-  }
-
-  ::-webkit-date-and-time-value {
-    min-height: 1lh;
-    text-align: inherit;
-  }
-
-  ::-webkit-datetime-edit {
-    display: inline-flex;
-  }
-
-  ::-webkit-datetime-edit-fields-wrapper {
-    padding: 0;
-  }
-
-  ::-webkit-calendar-picker-indicator {
-    line-height: 1;
-  }
-
-  :-moz-ui-invalid {
-    box-shadow: none;
-  }
-
-  ::-webkit-inner-spin-button,
-  ::-webkit-outer-spin-button {
-    height: auto;
-  }
-
-  /* An element with the `hidden` attribute stays hidden, whatever display a rule gives it. */
-  [hidden]:where(:not([hidden='until-found'])) {
-    display: none !important;
+  /* A native dialog is not coloured by the page: say it. */
+  dialog {
+    color: inherit;
   }
 }
 

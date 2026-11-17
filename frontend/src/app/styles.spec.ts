@@ -108,14 +108,18 @@ describe('the shared building blocks', () => {
 describe('the base styles', () => {
   const base = styles.slice(styles.indexOf('@layer base {'), styles.indexOf('@layer components {'));
 
-  it('keeps an element with the hidden attribute hidden', () => {
-    expect(base).toContain("[hidden]:where(:not([hidden='until-found']))");
-    expect(base).toContain('display: none !important');
+  it("takes Tailwind's full reset (preflight) into the base layer, once", () => {
+    const imports = styles.match(/@import\s+'tailwindcss\/preflight\.css'\s+layer\(base\);/g);
+    expect(imports).toHaveLength(1);
   });
 
-  it('does not reset the margin, padding or border of every element (not yet)', () => {
-    expect(styles).not.toMatch(/@import\s+['"]tailwindcss\/preflight/);
-    expect(base).not.toMatch(/(^|\n)\s*\*\s*[,{]/);
+  it('puts back the spacing of paragraphs and the colour of links that the reset takes away', () => {
+    expect(ruleBody(base, 'p')).toContain('margin-block: 1em');
+    expect(ruleBody(base, 'a')).toContain('color: var(--accent)');
+  });
+
+  it('does not copy the reset by hand any more', () => {
+    expect(base).not.toContain('-webkit-text-size-adjust');
     expect(base).not.toMatch(/border:\s*0 solid/);
   });
 });
