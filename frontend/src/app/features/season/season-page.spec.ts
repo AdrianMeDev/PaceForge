@@ -112,6 +112,19 @@ function plan(changes: Partial<SeasonPlan> = {}): SeasonPlan {
 }
 
 describe('SeasonPage', () => {
+  // jsdom has no modal dialog: this is what the browser does that the question relies on.
+  beforeAll(() => {
+    HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
+      this.setAttribute('open', '');
+    };
+    HTMLDialogElement.prototype.close = function (this: HTMLDialogElement) {
+      if (this.hasAttribute('open')) {
+        this.removeAttribute('open');
+        this.dispatchEvent(new Event('close'));
+      }
+    };
+  });
+
   let fixture: ComponentFixture<SeasonPage>;
   let page: HTMLElement;
   let get: ReturnType<typeof vi.fn<() => Promise<GetSeasonResult>>>;
@@ -859,10 +872,32 @@ describe('SeasonPage', () => {
         Array.from(page.querySelectorAll('[role="alert"]')).map((alert) =>
           alert.textContent?.replace(/\s+/g, ' ').trim(),
         );
+      /** "Discard" asks first: this answers the question with "Discard draft". */
       const click = async (testId: string) => {
         query<HTMLButtonElement>(page, `[data-testid="${testId}"]`).click();
         await settle(fixture);
+        if (testId === 'discard') {
+          query<HTMLButtonElement>(page, '[data-testid="confirm-dialog-confirm"]').click();
+          await settle(fixture);
+        }
       };
+
+      it('asks first and discards nothing when the answer is "Cancel"', async () => {
+        await load([DRAFT_VERSION, CONFIRMED], draft());
+
+        query<HTMLButtonElement>(page, '[data-testid="discard"]').click();
+        await settle(fixture);
+        const dialog = query<HTMLDialogElement>(page, '[data-testid="confirm-dialog"]');
+        expect(dialog.open).toBe(true);
+        expect(dialog.textContent).toContain('will be marked as discarded');
+        expect(discard).not.toHaveBeenCalled();
+
+        query<HTMLButtonElement>(page, '[data-testid="confirm-dialog-cancel"]').click();
+        await settle(fixture);
+
+        expect(dialog.open).toBe(false);
+        expect(discard).not.toHaveBeenCalled();
+      });
 
       it('confirms a draft that the checks passed, and says what it replaces', async () => {
         await load([DRAFT_VERSION, CONFIRMED], draft());

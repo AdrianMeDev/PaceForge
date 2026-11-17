@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { CoachApi } from '../../core/coach/coach-api';
 import { SeasonApi } from '../../core/season/season-api';
@@ -18,6 +18,7 @@ import {
   weekRange,
 } from '../planning/plan-format';
 import { compareSeasons } from './season-compare';
+import { ConfirmDialog } from '../../shared/confirm-dialog';
 import { VersionChips } from '../../shared/version-chips';
 import { PageHeader } from '../../shared/page-header';
 import { SeasonChart } from './season-chart';
@@ -75,7 +76,7 @@ const REFRESH_FAILED = 'The list of plans could not be refreshed. Please try aga
  */
 @Component({
   selector: 'app-season-page',
-  imports: [RouterLink, PageHeader, SeasonChart, SeasonTimeline, VersionChips],
+  imports: [RouterLink, ConfirmDialog, PageHeader, SeasonChart, SeasonTimeline, VersionChips],
   templateUrl: './season-page.html',
   styleUrl: './season-page.css',
 })
@@ -114,6 +115,7 @@ export class SeasonPage implements OnInit {
       ? ''
       : `${weeks} ${weeks === 1 ? 'week' : 'weeks'}`;
   });
+  private readonly discardDialog = viewChild(ConfirmDialog);
   protected readonly shown = computed(() => this.plan()?.skeleton ?? this.season());
 
   /** The version has the minutes done for some of its weeks. */
@@ -413,6 +415,11 @@ export class SeasonPage implements OnInit {
     } finally {
       this.work.set(null);
     }
+  }
+
+  /** Discarding cannot be taken back with one click: the dialog asks first. */
+  protected askToDiscard(): void {
+    this.discardDialog()?.open();
   }
 
   protected async discard(): Promise<void> {

@@ -246,11 +246,20 @@
                 class="btn btn-secondary btn-sm"
                 data-testid="discard"
                 [disabled]="busy()"
-                (click)="discard()"
+                (click)="askToDiscard()"
               >
                 Discard
               </button>
             </div>
+            <app-confirm-dialog
+              title="Discard this draft?"
+              message="Version {{
+                filled.version
+              }} will be marked as discarded. You can bring it back later as a new draft."
+              confirmLabel="Discard draft"
+              [danger]="true"
+              (confirmed)="discard()"
+            />
           }
         }
 
