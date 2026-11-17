@@ -70,3 +70,15 @@ li[data-current='true'] {
   color: var(--surface);
   font-weight: 700;
 }
+
+/* On a phone the row swipes week by week. */
+@media (max-width: 39.99rem) {
+  :host {
+    scroll-snap-type: x proximity;
+  }
+
+  li {
+    flex-basis: 2.75rem;
+    scroll-snap-align: center;
+  }
+}
