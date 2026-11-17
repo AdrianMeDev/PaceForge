@@ -1,11 +1,9 @@
 import { Sport as ActivitySport } from '../activities/activities-models';
 import { Forbidden, GoalKind, Rating } from '../goals/goals-models';
 import { Sport as PlannedSport, ZoneSystem } from '../planning/planning-models';
+import { SeasonPhase } from '../season/season-models';
 
 export type { Forbidden };
-
-/** The phase of a week in the season plan. */
-export type SeasonPhase = 'base' | 'build' | 'specific' | 'taper' | 'transition';
 
 /** The next workout: today's or a later one that is still open, else the first of next week. */
 export interface NextWorkout {

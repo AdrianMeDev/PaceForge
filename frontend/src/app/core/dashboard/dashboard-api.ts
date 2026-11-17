@@ -5,6 +5,7 @@ import { Sport as ActivitySport } from '../activities/activities-models';
 import { API_BASE } from '../api/api-providers';
 import { GoalKind, Rating } from '../goals/goals-models';
 import { Sport as PlannedSport, ZoneSystem } from '../planning/planning-models';
+import { SeasonPhase } from '../season/season-models';
 import {
   CoachUsage,
   Dashboard,
@@ -13,7 +14,6 @@ import {
   NextWorkout,
   RecentActivity,
   SeasonGlance,
-  SeasonPhase,
   SportMinutes,
   WeekFigures,
   WeekGlance,

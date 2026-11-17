@@ -1,0 +1,105 @@
+@switch (view()) {
+  @case ('loading') {
+    <app-page-header title="Dashboard" />
+    <div class="grid gap-4" role="status" aria-label="Loading">
+      <div class="skeleton h-28"></div>
+      <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div class="skeleton h-24"></div>
+        <div class="skeleton h-24"></div>
+        <div class="skeleton h-24"></div>
+      </div>
+    </div>
+  }
+  @case ('unreachable') {
+    <app-page-header title="Dashboard" />
+    <p class="alert" role="alert">Your dashboard could not be loaded.</p>
+    <button type="button" class="btn btn-primary" (click)="load()">Try again</button>
+  }
+  @case ('signed_out') {
+    <app-page-header title="Dashboard" />
+    <p class="alert" role="alert">Your session has ended. Please sign in again.</p>
+    <a routerLink="/login">Go to sign in</a>
+  }
+  @case ('ready') {
+    @if (dashboard(); as shown) {
+      <app-page-header title="Dashboard" [subtitle]="'Week of ' + range(shown.week.week_start)" />
+
+      @if (shown.week.close_week; as closing) {
+        <div
+          class="notice notice-warning flex flex-wrap items-center justify-between gap-2"
+          data-testid="close-week"
+        >
+          <span> The week of {{ range(closing) }} is over. Look back on it and close it. </span>
+          <a routerLink="/review" class="btn btn-secondary btn-sm">Close the week</a>
+        </div>
+      }
+
+      <section class="mb-6" aria-labelledby="next-heading">
+        <h2 id="next-heading" class="mb-2 text-lg font-semibold">Next workout</h2>
+        @if (shown.week.next_workout; as next) {
+          <div
+            class="flex items-start gap-4 rounded-md border border-border bg-surface p-4 shadow-card"
+            data-testid="next-workout"
+          >
+            <span
+              class="grid size-10 flex-none place-items-center rounded-full bg-surface-2 text-xl"
+            >
+              <app-icon [name]="sportIcons[next.sport]" [label]="sportLabels[next.sport]" />
+            </span>
+            <div class="min-w-0 flex-1">
+              <p class="text-sm text-muted" data-testid="next-day">{{ day(next.day) }}</p>
+              <p class="break-words text-lg font-semibold" data-testid="next-title">
+                {{ next.title }}
+              </p>
+              <p class="text-muted" data-testid="next-details">
+                {{ minutes(next.minutes) }}
+                @if (target(next.zone_system, next.zone); as zone) {
+                  · {{ zone }}
+                }
+              </p>
+              <p class="mt-2">
+                @if (next.sent) {
+                  <span class="badge" data-testid="next-sent">Sent to Intervals.icu</span>
+                } @else {
+                  <span class="badge text-muted" data-testid="next-not-sent">
+                    Not sent to Intervals.icu
+                  </span>
+                }
+              </p>
+            </div>
+          </div>
+        } @else {
+          <div class="empty-state" data-testid="next-empty">
+            <p>This week is not planned yet.</p>
+            <a routerLink="/planning" class="btn btn-primary">Draft the week</a>
+          </div>
+        }
+      </section>
+
+      <section class="mb-6" aria-labelledby="week-heading">
+        <h2 id="week-heading" class="mb-2 text-lg font-semibold">This week</h2>
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <app-stat-tile
+            label="Minutes"
+            [value]="minutes(shown.week.figures.done_minutes)"
+            [detail]="'of ' + minutes(shown.week.figures.planned_minutes) + ' planned'"
+            [progress]="share(shown.week.figures.done_minutes, shown.week.figures.planned_minutes)"
+          />
+          <app-stat-tile
+            label="Workouts"
+            [value]="shown.week.figures.workouts_done + ' of ' + shown.week.figures.workouts_total"
+            detail="done"
+            [progress]="share(shown.week.figures.workouts_done, shown.week.figures.workouts_total)"
+          />
+          <app-stat-tile
+            label="Average RPE"
+            [value]="rpe(shown.week.figures.average_rpe)"
+            [detail]="
+              shown.week.figures.average_rpe === null ? 'No activity rated yet' : 'out of 10'
+            "
+          />
+        </div>
+      </section>
+    }
+  }
+}
