@@ -1015,6 +1015,17 @@ describe('AvailabilityPage', () => {
     });
   });
 
+  describe('the save bar', () => {
+    it('holds the one save button, after the last card', async () => {
+      await setup();
+
+      const bar = query(page, '[data-testid="save-bar"]');
+      expect(bar.classList).toContain('action-bar');
+      expect(bar.querySelector('button[type="submit"]')?.textContent?.trim()).toBe('Save');
+      expect(bar.previousElementSibling?.classList).toContain('card');
+    });
+  });
+
   describe('what the server says', () => {
     beforeEach(() => setup(ok(NOTHING)));
 
