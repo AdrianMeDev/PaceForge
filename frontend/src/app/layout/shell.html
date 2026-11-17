@@ -35,4 +35,17 @@
   <main class="content">
     <router-outlet />
   </main>
+  <nav class="tabs" aria-label="Shortcuts">
+    @for (item of tabs; track item.path) {
+      <a
+        [routerLink]="item.path"
+        routerLinkActive="active"
+        ariaCurrentWhenActive="page"
+        [routerLinkActiveOptions]="{ exact: item.exact === true }"
+      >
+        <app-icon [name]="item.icon" />
+        <span>{{ item.label }}</span>
+      </a>
+    }
+  </nav>
 </div>

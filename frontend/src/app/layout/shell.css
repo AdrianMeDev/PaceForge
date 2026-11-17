@@ -88,10 +88,47 @@ a.active {
 .content {
   max-width: 64rem;
   margin: 0 auto;
-  padding: 1.5rem 1.25rem;
+  padding: 1.5rem 1.25rem calc(5.5rem + env(safe-area-inset-bottom));
+}
+
+/* The bar of the pages used every day, fixed at the bottom of a small screen. */
+.tabs {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 10;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  padding-bottom: env(safe-area-inset-bottom);
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.tabs a {
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.15rem;
+  min-height: 3.5rem;
+  padding: 0.35rem 0.25rem;
+  border-radius: 0;
+  font-size: 0.7rem;
+}
+
+.tabs a.active {
+  background: transparent;
 }
 
 @media (min-width: 40rem) {
+  .tabs {
+    display: none;
+  }
+
+  .content {
+    padding-bottom: 1.5rem;
+  }
+
   .shell {
     display: grid;
     grid-template-columns: 4.5rem minmax(0, 1fr);

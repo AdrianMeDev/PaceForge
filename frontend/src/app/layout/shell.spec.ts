@@ -44,16 +44,18 @@ describe('Shell', () => {
   }
 
   const groups = (page: HTMLElement) =>
-    Array.from(page.querySelectorAll<HTMLElement>('nav [data-group]')).map((group) => [
-      group.getAttribute('data-group'),
-      Array.from(group.querySelectorAll<HTMLAnchorElement>('a')).map((a) => [
-        (a.textContent ?? '').trim(),
-        a.getAttribute('href'),
-      ]),
-    ]);
+    Array.from(page.querySelectorAll<HTMLElement>('nav[aria-label="Main"] [data-group]')).map(
+      (group) => [
+        group.getAttribute('data-group'),
+        Array.from(group.querySelectorAll<HTMLAnchorElement>('a')).map((a) => [
+          (a.textContent ?? '').trim(),
+          a.getAttribute('href'),
+        ]),
+      ],
+    );
 
   const current = (page: HTMLElement) =>
-    Array.from(page.querySelectorAll('nav a[aria-current="page"]')).map((a) =>
+    Array.from(page.querySelectorAll('nav[aria-label="Main"] a[aria-current="page"]')).map((a) =>
       (a.textContent ?? '').trim(),
     );
 
@@ -112,16 +114,18 @@ describe('Shell', () => {
     it('is a labelled navigation with the pages in three groups', async () => {
       const { page } = await setup();
 
-      expect(page.querySelector('nav')?.getAttribute('aria-label')).toBe('Main');
+      expect(page.querySelector('nav[aria-label="Main"]')?.getAttribute('aria-label')).toBe('Main');
       expect(groups(page)).toEqual(MEMBER);
     });
 
     it('names every group with a heading', async () => {
       const { page } = await setup();
 
-      expect(Array.from(page.querySelectorAll('nav h2')).map((h) => h.textContent?.trim())).toEqual(
-        ['Training', 'Planning', 'Settings'],
-      );
+      expect(
+        Array.from(page.querySelectorAll('nav[aria-label="Main"] h2')).map((h) =>
+          h.textContent?.trim(),
+        ),
+      ).toEqual(['Training', 'Planning', 'Settings']);
     });
 
     it('shows the invitations in a group of their own to administrators', async () => {
@@ -145,7 +149,9 @@ describe('Shell', () => {
     it('draws an icon for every page and gives the link its label as a tooltip', async () => {
       const { page } = await setup();
 
-      const links = Array.from(page.querySelectorAll<HTMLAnchorElement>('nav a'));
+      const links = Array.from(
+        page.querySelectorAll<HTMLAnchorElement>('nav[aria-label="Main"] a'),
+      );
       expect(links.length).toBe(10);
       for (const link of links) {
         expect(link.querySelector('app-icon svg')).toBeTruthy();
@@ -167,7 +173,47 @@ describe('Shell', () => {
       const { fixture, page, navigate } = await setup();
       await open(fixture, navigate, '/settings/security');
 
-      expect(query(page, 'nav a').classList.contains('active')).toBe(false);
+      expect(query(page, 'nav[aria-label="Main"] a').classList.contains('active')).toBe(false);
+    });
+  });
+
+  describe('tab bar', () => {
+    const tabs = (page: HTMLElement) =>
+      Array.from(page.querySelectorAll<HTMLAnchorElement>('nav[aria-label="Shortcuts"] a'));
+
+    it('holds the four pages used every day, with an icon and a label each', async () => {
+      const { page } = await setup();
+
+      expect(tabs(page).map((a) => [(a.textContent ?? '').trim(), a.getAttribute('href')])).toEqual(
+        [
+          ['Dashboard', '/'],
+          ['Week plan', '/planning'],
+          ['Week review', '/review'],
+          ['Activities', '/activities'],
+        ],
+      );
+      expect(tabs(page).every((a) => a.querySelector('app-icon svg'))).toBe(true);
+    });
+
+    it('is the same for administrators', async () => {
+      const { page } = await setup({ ...ADA, is_staff: true });
+
+      expect(tabs(page).length).toBe(4);
+    });
+
+    it('marks the page that is open, and only that', async () => {
+      const { fixture, page, navigate } = await setup();
+      await open(fixture, navigate, '/review');
+
+      const marked = tabs(page).filter((a) => a.getAttribute('aria-current') === 'page');
+      expect(marked.map((a) => (a.textContent ?? '').trim())).toEqual(['Week review']);
+    });
+
+    it('marks nothing while a page that is not in the bar is open', async () => {
+      const { fixture, page, navigate } = await setup();
+      await open(fixture, navigate, '/goals');
+
+      expect(tabs(page).some((a) => a.hasAttribute('aria-current'))).toBe(false);
     });
   });
 });
