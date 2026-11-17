@@ -4,12 +4,12 @@
   aria-labelledby="feedback-title"
   (submit)="$event.preventDefault(); submit(false)"
 >
-  <h2 id="feedback-title">How the week felt</h2>
+  <h2 id="feedback-title" class="m-0 text-lg font-semibold">How the week felt</h2>
   <p class="hint">
     Your note stays with you: the coach is told only the three scales and how you judge the week.
   </p>
 
-  <div class="grid">
+  <div class="mt-3 grid grid-cols-1 gap-x-4 sm:grid-cols-2">
     @for (scale of scales; track scale.field) {
       <div class="field">
         <label [for]="'feedback-' + scale.field">{{ scale.label }}</label>
@@ -76,7 +76,7 @@
   }
   <button
     type="submit"
-    class="primary"
+    class="btn btn-primary w-full sm:w-auto"
     data-testid="feedback-save"
     [disabled]="disabled() || saving()"
   >
@@ -107,7 +107,7 @@
     </div>
     <button
       type="button"
-      class="primary"
+      class="btn btn-primary w-full sm:w-auto"
       data-testid="feedback-close"
       [disabled]="disabled() || saving()"
       (click)="submit(true)"

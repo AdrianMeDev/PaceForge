@@ -294,6 +294,20 @@ describe('ReviewPage', () => {
     });
   });
 
+  describe('the end of the week', () => {
+    it('sets the coach and the feedback apart as cards with buttons that fill a phone', async () => {
+      await setup();
+
+      expect(query(page, 'app-coach-comment section').classList).toContain('card');
+      expect(query(page, 'app-week-feedback-form form').classList).toContain('panel');
+      for (const id of ['ask', 'feedback-save', 'feedback-close']) {
+        const button = query(page, `[data-testid="${id}"]`);
+        expect(button.classList).toContain('btn-primary');
+        expect(button.classList).toContain('w-full');
+      }
+    });
+  });
+
   describe('the weeks', () => {
     it('lists the weeks with what each holds', async () => {
       await setup();

@@ -1,5 +1,5 @@
-<section class="coach" aria-labelledby="coach-title">
-  <h2 id="coach-title">What your coach says</h2>
+<section class="coach card mt-6" aria-labelledby="coach-title">
+  <h2 id="coach-title" class="m-0 mb-3 text-lg font-semibold">What your coach says</h2>
 
   @if (comment(); as shown) {
     <p class="text" data-testid="coach-text">{{ shown.comment }}</p>
@@ -44,7 +44,7 @@
 
   <button
     type="button"
-    class="primary"
+    class="btn btn-primary mt-3 w-full sm:w-auto"
     data-testid="ask"
     [disabled]="disabled() || asking()"
     (click)="ask()"
