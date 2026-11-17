@@ -48,6 +48,7 @@ import {
   WishTexts,
   readWishes,
 } from './week-wishes';
+import { PageHeader } from '../../shared/page-header';
 import { PeriodsPanel } from './periods-panel';
 import { UNKNOWN_PROVIDER, providerLine } from './provider-line';
 
@@ -91,6 +92,7 @@ function dayMinutes(text: string): Parsed<number> {
   selector: 'app-availability-page',
   imports: [
     RouterLink,
+    PageHeader,
     PeriodsPanel,
     FixedSessionsPanel,
     LimitationsPanel,
@@ -165,6 +167,11 @@ export class AvailabilityPage implements OnInit {
       sum += minutes.value;
     }
     return sum;
+  });
+  /** The line under the title: what the days add up to. */
+  protected readonly subtitle = computed(() => {
+    const sum = this.totalText();
+    return this.view() === 'ready' && sum ? `${sum} per week` : '';
   });
   protected readonly totalText = computed(() => {
     const total = this.total();

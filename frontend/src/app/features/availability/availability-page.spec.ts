@@ -227,7 +227,9 @@ describe('AvailabilityPage', () => {
       fixture = TestBed.createComponent(AvailabilityPage);
       fixture.detectChanges();
 
-      expect(fixture.nativeElement.textContent).toContain('Loading');
+      expect(
+        fixture.nativeElement.querySelector('[role="status"][aria-label="Loading"]'),
+      ).toBeTruthy();
       expect(fixture.nativeElement.querySelector('form')).toBeNull();
     });
 
@@ -254,7 +256,7 @@ describe('AvailabilityPage', () => {
       await settle(fixture);
       expect(alerts()).toEqual(['Your training time could not be loaded.']);
 
-      query<HTMLButtonElement>(page, 'button.primary').click();
+      query<HTMLButtonElement>(page, 'button.btn-primary').click();
       await settle(fixture);
 
       expect(alerts()).toEqual([]);
@@ -998,6 +1000,21 @@ describe('AvailabilityPage', () => {
     });
   });
 
+  describe('the page as cards', () => {
+    it('says what the days add up to under the title', async () => {
+      await setup();
+
+      expect(query(page, '[data-testid=subtitle]').textContent).toMatch(/ per week$/);
+    });
+
+    it('has the sections as cards of one form with one save button', async () => {
+      await setup();
+
+      expect(page.querySelectorAll('form > .card').length).toBeGreaterThanOrEqual(7);
+      expect(page.querySelectorAll('form > .actions button[type="submit"]')).toHaveLength(1);
+    });
+  });
+
   describe('what the server says', () => {
     beforeEach(() => setup(ok(NOTHING)));
 
@@ -1011,7 +1028,9 @@ describe('AvailabilityPage', () => {
       await save();
 
       expect(alerts()).toEqual(['Enter seven numbers of minutes, Monday first.']);
-      expect(query(page, '.panel > .field-error').textContent).toContain('seven numbers');
+      expect(query(page, 'form > .card:first-child > .field-error').textContent).toContain(
+        'seven numbers',
+      );
     });
 
     it('shows a message about the budget next to it', async () => {

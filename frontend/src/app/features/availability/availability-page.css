@@ -2,15 +2,6 @@
   max-width: 48rem;
 }
 
-h2 {
-  margin: 1.25rem 0 0.5rem;
-  font-size: 1.15rem;
-}
-
-h2:first-child {
-  margin-top: 0;
-}
-
 .days {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr));
@@ -20,21 +11,6 @@ h2:first-child {
 .total {
   margin: 0.25rem 0 0.5rem;
   font-weight: 600;
-}
-
-textarea {
-  width: 100%;
-  padding: 0.55rem 0.7rem;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg);
-  color: var(--text);
-  font: inherit;
-  resize: vertical;
-}
-
-textarea[aria-invalid='true'] {
-  border-color: var(--danger);
 }
 
 .actions {
