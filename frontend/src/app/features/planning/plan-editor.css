@@ -6,23 +6,6 @@
   background: var(--surface);
 }
 
-h2 {
-  margin: 0 0 0.5rem;
-  font-size: 1.15rem;
-}
-
-h3 {
-  margin: 1.25rem 0 0.4rem;
-  font-size: 1rem;
-  color: var(--muted);
-}
-
-h4 {
-  margin: 0 0.25rem 0 0;
-  font-size: 1rem;
-  overflow-wrap: anywhere;
-}
-
 .head {
   display: flex;
   flex-wrap: wrap;
@@ -33,17 +16,6 @@ h4 {
 .badge.slot {
   border-color: var(--accent);
   color: var(--accent);
-}
-
-.workout {
-  margin-bottom: 0.75rem;
-  padding: 0.6rem 0.8rem;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-}
-
-.meta {
-  margin: 0.3rem 0 0;
 }
 
 .notes {
@@ -70,16 +42,22 @@ h4 {
   margin-top: 0.75rem;
 }
 
-button.secondary {
-  padding: 0.5rem 0.9rem;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text);
-  cursor: pointer;
+/* Saving and leaving stay in reach: on a phone the bar sticks above the tab bar. */
+.editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 0.75rem;
 }
 
-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
+@media (max-width: 39.99rem) {
+  .editor-actions {
+    position: sticky;
+    bottom: calc(3.5rem + env(safe-area-inset-bottom));
+    z-index: 5;
+    margin: 1rem -1.25rem -1rem;
+    padding: 0.75rem 1.25rem;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+  }
 }

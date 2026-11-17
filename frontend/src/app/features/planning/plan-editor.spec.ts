@@ -177,12 +177,24 @@ describe('PlanEditor', () => {
     it('shows the version and the workouts by day', async () => {
       await setup();
 
-      expect(page.querySelector('h2')?.textContent).toBe('Changing version 2');
+      expect(page.querySelector('h2')?.textContent?.trim()).toBe('Changing version 2');
       expect(days()).toEqual(['Mon 16 Nov', 'Wed 18 Nov', 'Fri 20 Nov']);
       expect(titles()).toEqual(['Endurance ride', 'Easy run', 'Intervals']);
       expect(text()).toContain('Morning');
       expect(text()).toContain('Power zone 2');
       expect(text()).toContain('Interval structure with 1 part');
+    });
+
+    it('keeps saving and leaving together in one bar, and marks each workout with its sport', async () => {
+      await setup();
+
+      const bar = query(page, '[data-testid="editor-actions"]');
+      expect(bar.querySelector('[data-testid="save-version"]')).not.toBeNull();
+      expect(bar.querySelector('[data-testid="discard-changes"]')).not.toBeNull();
+      const sports = Array.from(page.querySelectorAll('app-icon')).map((icon) =>
+        icon.getAttribute('aria-label'),
+      );
+      expect(sports).toEqual(['Cycling', 'Running', 'Running']);
     });
 
     it('shows the notes of a workout as text', async () => {
@@ -596,7 +608,9 @@ describe('PlanEditor', () => {
       await setup();
 
       await click('add-workout');
-      expect(page.querySelector('h3#workout-form-title')?.textContent).toBe('Add a workout');
+      expect(page.querySelector('h3#workout-form-title')?.textContent?.trim()).toBe(
+        'Add a workout',
+      );
       type('workout-title', 'Swim');
       choose('workout-sport', 'swimming');
       choose('workout-day', '2026-11-22');

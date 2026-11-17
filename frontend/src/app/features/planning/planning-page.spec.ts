@@ -1801,7 +1801,9 @@ describe('PlanningPage', () => {
 
         expect(editor()).toBeTruthy();
         expect(page.querySelector('article.plan')).toBeNull();
-        expect(page.querySelector('app-plan-editor h2')?.textContent).toBe('Changing version 2');
+        expect(page.querySelector('app-plan-editor h2')?.textContent?.trim()).toBe(
+          'Changing version 2',
+        );
         expect(stubs.planning.check).toHaveBeenCalledTimes(1);
         expect(stubs.planning.check.mock.calls[0][0]).toBe(NEXT);
       });
