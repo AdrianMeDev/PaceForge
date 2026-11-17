@@ -182,6 +182,24 @@ describe('ActivitiesPage', () => {
       expect(query(page, '[data-testid=subtitle]').textContent).toBe('1 activity');
     });
 
+    it('gives every value the name of its column, for the card of a phone', async () => {
+      await setup(ok([RUN]));
+
+      const labels = Array.from(rows()[0].querySelectorAll('td[data-label]')).map((cell) =>
+        cell.getAttribute('data-label'),
+      );
+      expect(labels).toEqual([
+        'Date',
+        'Sport',
+        'Duration',
+        'Distance',
+        'Avg. heart rate',
+        'RPE',
+        'Load',
+        'Source',
+      ]);
+    });
+
     it('shows an empty state', async () => {
       await setup(ok([]));
 
