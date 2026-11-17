@@ -41,11 +41,44 @@ describe('PlanDayView', () => {
       workouts: [{ number: 1, workout: workout({}) }],
     });
 
-    expect(query(page, 'h3').textContent).toBe('Monday, Nov 16');
+    expect(query(page, 'h3').textContent?.trim()).toBe('Monday, Nov 16');
     expect(query(page, '.workout h4').textContent).toBe('Endurance ride');
     expect(query(page, '[data-testid=slot]').textContent).toBe('Morning');
     expect(query(page, '[data-testid=meta]').textContent).toContain('1 h');
     expect(query(page, '[data-testid=workout-1]')).toBeTruthy();
+  });
+
+  it('marks each workout with the icon of its sport', () => {
+    const page = show({
+      date: '2026-11-16',
+      label: 'Monday, Nov 16',
+      workouts: [
+        { number: 1, workout: workout({ sport: 'running' }) },
+        { number: 2, workout: workout({ sport: 'swimming' }) },
+      ],
+    });
+
+    const icons = Array.from(page.querySelectorAll('app-icon')).map((icon) =>
+      icon.getAttribute('aria-label'),
+    );
+    expect(icons).toEqual(['Running', 'Swimming']);
+  });
+
+  it('colours the state of a send', () => {
+    const page = show({
+      date: '2026-11-16',
+      label: 'Monday, Nov 16',
+      workouts: [
+        {
+          number: 1,
+          workout: workout({
+            export: { status: 'failed', error_code: 'rejected', pushed_at: null },
+          }),
+        },
+      ],
+    });
+
+    expect(query(page, '[data-testid=export]').className).toContain('text-danger');
   });
 
   it('lists the exercises of a strength workout and its stretching', () => {
@@ -84,7 +117,7 @@ describe('PlanDayView', () => {
   it('shows only the heading for a day without workouts', () => {
     const page = show({ date: '2026-11-18', label: 'Wednesday, Nov 18', workouts: [] });
 
-    expect(query(page, 'h3').textContent).toBe('Wednesday, Nov 18');
+    expect(query(page, 'h3').textContent?.trim()).toBe('Wednesday, Nov 18');
     expect(page.querySelectorAll('.workout')).toHaveLength(0);
   });
 });

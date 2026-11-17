@@ -14,12 +14,22 @@ import {
   ZoneSystem,
   ZoneTarget,
 } from '../../core/planning/planning-models';
+import { IconName } from '../../shared/icon';
 
 export const SPORT_LABELS: Record<Sport, string> = {
   running: 'Running',
   cycling: 'Cycling',
   swimming: 'Swimming',
   strength: 'Strength',
+};
+
+/** The icon of a sport; `other` is an activity that was not planned as one of the four. */
+export const SPORT_ICONS: Record<Sport | 'other', IconName> = {
+  running: 'running',
+  cycling: 'bike',
+  swimming: 'waves',
+  strength: 'dumbbell',
+  other: 'activity',
 };
 
 export const GOAL_LABELS: Record<WorkoutGoal, string> = {

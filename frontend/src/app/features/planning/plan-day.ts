@@ -1,10 +1,12 @@
 import { Component, input } from '@angular/core';
+import { Icon } from '../../shared/icon';
 import { Workout } from '../../core/planning/planning-models';
 import {
   EQUIPMENT_LABELS,
   GOAL_LABELS,
   REGION_LABELS,
   SLOT_LABELS,
+  SPORT_ICONS,
   SPORT_LABELS,
   exerciseDetail,
   exportText,
@@ -24,6 +26,7 @@ export interface PlanDay {
 /** One day of a plan: its heading and the workouts of that day. */
 @Component({
   selector: 'app-plan-day',
+  imports: [Icon],
   templateUrl: './plan-day.html',
   styleUrls: ['../auth/auth-form.css', './plan-day.css'],
 })
@@ -32,6 +35,7 @@ export class PlanDayView {
 
   protected readonly slot = SLOT_LABELS;
   protected readonly sport = SPORT_LABELS;
+  protected readonly icon = SPORT_ICONS;
   protected readonly goal = GOAL_LABELS;
   protected readonly region = REGION_LABELS;
   protected readonly equipment = EQUIPMENT_LABELS;

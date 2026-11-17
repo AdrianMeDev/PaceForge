@@ -12,73 +12,11 @@
   overflow-wrap: anywhere;
 }
 
-h3 {
-  margin: 1.25rem 0 0.4rem;
-  font-size: 1rem;
-  color: var(--muted);
-}
-
-h4 {
-  margin: 0 0.25rem 0 0;
-  font-size: 1rem;
-  overflow-wrap: anywhere;
-}
-
-.workout {
-  margin-bottom: 0.75rem;
-  padding: 0.6rem 0.8rem;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-}
-
-.meta {
-  margin: 0.3rem 0 0;
-}
-
-.segments {
-  margin: 0.3rem 0 0;
-  padding-left: 1.2rem;
-  color: var(--muted);
-}
-
-.exercises {
-  margin: 0.3rem 0 0;
-  padding-left: 1.4rem;
-}
-
-.exercise-name {
-  font-weight: 600;
-}
-
 .exercise-numbers::before {
   content: ' – ';
-}
-
-.exercise-what {
-  margin-left: 0.5rem;
-  color: var(--muted);
-  font-size: 0.85rem;
 }
 
 .badge.slot {
   border-color: var(--accent);
   color: var(--accent);
-}
-
-.stretching {
-  margin: 0.3rem 0 0;
-  color: var(--muted);
-}
-
-.export {
-  margin: 0.3rem 0 0;
-  color: var(--muted);
-}
-
-.export[data-status='synced'] {
-  color: var(--accent);
-}
-
-.export[data-status='failed'] {
-  color: var(--danger);
 }

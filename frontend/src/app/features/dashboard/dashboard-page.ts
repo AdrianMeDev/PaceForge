@@ -1,15 +1,10 @@
 import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { DashboardApi } from '../../core/dashboard/dashboard-api';
-import {
-  Dashboard,
-  NextWorkout,
-  RecentActivity,
-  WeekMinutes,
-} from '../../core/dashboard/dashboard-models';
+import { Dashboard, WeekMinutes } from '../../core/dashboard/dashboard-models';
 import { Rating } from '../../core/goals/goals-models';
 import { SeasonPhase } from '../../core/season/season-models';
-import { IconName, Icon } from '../../shared/icon';
+import { Icon } from '../../shared/icon';
 import { PageHeader } from '../../shared/page-header';
 import { KIND_LABELS, RATING_LABELS } from '../goals/goal-format';
 import {
@@ -17,6 +12,7 @@ import {
   dayLabel,
   minutesText,
   targetText,
+  SPORT_ICONS,
   weekRange,
 } from '../planning/plan-format';
 import { PHASE_LABELS } from '../season/season-format';
@@ -24,14 +20,6 @@ import { MinutesChart } from './minutes-chart';
 import { StatTile } from './stat-tile';
 
 type View = 'loading' | 'unreachable' | 'ready' | 'signed_out';
-
-const SPORT_ICONS: Record<NextWorkout['sport'] | RecentActivity['sport'], IconName> = {
-  running: 'running',
-  cycling: 'bike',
-  swimming: 'waves',
-  strength: 'dumbbell',
-  other: 'activity',
-};
 
 /** The colour of the dot of a phase, as everywhere in the season. */
 const PHASE_DOTS: Record<SeasonPhase, string> = {
