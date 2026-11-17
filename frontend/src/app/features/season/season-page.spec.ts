@@ -195,7 +195,9 @@ describe('SeasonPage', () => {
       fixture = TestBed.createComponent(SeasonPage);
       fixture.detectChanges();
 
-      expect(fixture.nativeElement.textContent).toContain('Loading');
+      expect(
+        fixture.nativeElement.querySelector('[role="status"][aria-label="Loading"]'),
+      ).toBeTruthy();
       expect(fixture.nativeElement.querySelector('table')).toBeNull();
     });
 
@@ -205,11 +207,17 @@ describe('SeasonPage', () => {
       expect(get).toHaveBeenCalledTimes(1);
     });
 
+    it('says how long the skeleton is under the title', async () => {
+      await setup();
+
+      expect(query(page, '[data-testid=subtitle]').textContent).toMatch(/^\d+ weeks?$/);
+    });
+
     it('offers a retry when the season cannot be loaded', async () => {
       await setup(new Error('offline'));
       expect(text()).toContain('Your season could not be loaded.');
 
-      query<HTMLButtonElement>(page, 'button.primary').click();
+      query<HTMLButtonElement>(page, 'button.btn-primary').click();
       await settle(fixture);
 
       expect(rows()).toHaveLength(4);

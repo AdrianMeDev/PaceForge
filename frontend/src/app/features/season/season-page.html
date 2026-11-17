@@ -1,13 +1,17 @@
 <section class="season">
-  <h1>Season</h1>
+  <app-page-header title="Season" [subtitle]="subtitle()" />
 
   @switch (view()) {
     @case ('loading') {
-      <p role="status">Loading…</p>
+      <div class="grid gap-4" role="status" aria-label="Loading">
+        <div class="skeleton h-16"></div>
+        <div class="skeleton h-28"></div>
+        <div class="skeleton h-40"></div>
+      </div>
     }
     @case ('unreachable') {
       <p class="alert" role="alert">Your season could not be loaded.</p>
-      <p><button type="button" class="primary" (click)="load()">Try again</button></p>
+      <p><button type="button" class="btn btn-primary" (click)="load()">Try again</button></p>
     }
     @case ('signed_out') {
       <p class="alert" role="alert">Your session has ended. Please sign in again.</p>
@@ -64,24 +68,26 @@
             <a routerLink="/settings/connections">Set one up</a>
           </p>
         } @else {
-          <p>
-            <button
-              type="button"
-              class="primary"
-              data-testid="generate"
-              [disabled]="busy()"
-              (click)="generate()"
-            >
-              {{
-                versions().length === 0 ? 'Draft the season with my coach' : 'Draft a new version'
-              }}
-            </button>
-          </p>
-          <p class="hint" data-testid="cost">
-            The season is the biggest thing your coach is asked: it costs several times as much as a
-            week, and the coach may need up to three tries, so it can take a few minutes. At most 3
-            requests a minute.
-          </p>
+          <div class="card">
+            <p>
+              <button
+                type="button"
+                class="btn btn-primary"
+                data-testid="generate"
+                [disabled]="busy()"
+                (click)="generate()"
+              >
+                {{
+                  versions().length === 0 ? 'Draft the season with my coach' : 'Draft a new version'
+                }}
+              </button>
+            </p>
+            <p class="hint" data-testid="cost">
+              The season is the biggest thing your coach is asked: it costs several times as much as
+              a week, and the coach may need up to three tries, so it can take a few minutes. At
+              most 3 requests a minute.
+            </p>
+          </div>
         }
         @if (work() === 'changing') {
           <p role="status" data-testid="changing">
@@ -210,7 +216,7 @@
             <div class="actions">
               <button
                 type="button"
-                class="secondary"
+                class="btn btn-secondary btn-sm"
                 data-testid="restore"
                 [disabled]="busy()"
                 (click)="restore()"
@@ -233,7 +239,7 @@
             <div class="actions">
               <button
                 type="button"
-                class="primary"
+                class="btn btn-primary"
                 data-testid="confirm"
                 [disabled]="busy() || !canConfirm()"
                 (click)="confirm()"
@@ -242,7 +248,7 @@
               </button>
               <button
                 type="button"
-                class="secondary"
+                class="btn btn-secondary btn-sm"
                 data-testid="discard"
                 [disabled]="busy()"
                 (click)="discard()"
@@ -281,7 +287,7 @@
               </p>
               <button
                 type="button"
-                class="secondary"
+                class="btn btn-secondary btn-sm"
                 data-testid="change-submit"
                 [disabled]="busy() || !requestFilled()"
                 (click)="change()"
@@ -298,7 +304,7 @@
         }
 
         @if (shown.main_race; as main) {
-          <p class="summary" data-testid="main-race">
+          <p class="card" data-testid="main-race">
             Main race: <strong>{{ race(main) }}</strong> on {{ day(main.date) }}. Highest week:
             <strong data-testid="peak">{{ minutes(shown.peak_minutes) }}</strong>.
           </p>

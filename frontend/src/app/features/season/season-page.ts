@@ -18,6 +18,7 @@ import {
   weekRange,
 } from '../planning/plan-format';
 import { compareSeasons } from './season-compare';
+import { PageHeader } from '../../shared/page-header';
 import { SeasonChart } from './season-chart';
 import { SeasonTimeline } from './season-timeline';
 import {
@@ -73,7 +74,7 @@ const REFRESH_FAILED = 'The list of plans could not be refreshed. Please try aga
  */
 @Component({
   selector: 'app-season-page',
-  imports: [DatePipe, RouterLink, SeasonChart, SeasonTimeline],
+  imports: [DatePipe, RouterLink, PageHeader, SeasonChart, SeasonTimeline],
   templateUrl: './season-page.html',
   styleUrl: './season-page.css',
 })
@@ -105,6 +106,13 @@ export class SeasonPage implements OnInit {
   protected readonly noTime = signal(false);
 
   /** The skeleton in the table: the one of the shown version, else today's. */
+  /** The line under the title: how long the skeleton is. */
+  protected readonly subtitle = computed(() => {
+    const weeks = this.shown()?.weeks.length ?? 0;
+    return this.view() !== 'ready' || weeks === 0
+      ? ''
+      : `${weeks} ${weeks === 1 ? 'week' : 'weeks'}`;
+  });
   protected readonly shown = computed(() => this.plan()?.skeleton ?? this.season());
 
   /** The version has the minutes done for some of its weeks. */
