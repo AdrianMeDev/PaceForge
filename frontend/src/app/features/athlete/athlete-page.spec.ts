@@ -256,7 +256,9 @@ describe('AthletePage', () => {
       fixture = TestBed.createComponent(AthletePage);
       fixture.detectChanges();
 
-      expect(fixture.nativeElement.textContent).toContain('Loading');
+      expect(
+        fixture.nativeElement.querySelector('[role="status"][aria-label="Loading"]'),
+      ).toBeTruthy();
       expect(fixture.nativeElement.querySelector('table')).toBeNull();
     });
 
@@ -447,6 +449,16 @@ describe('AthletePage', () => {
   });
 
   describe('the time zone', () => {
+    it('names the time zone under the title, and nothing when there is none', async () => {
+      await setup(ok({ timezone: 'Asia/Tokyo' }));
+      expect(query(page, '[data-testid=subtitle]').textContent).toBe('Asia/Tokyo');
+    });
+
+    it('says nothing under the title without a time zone', async () => {
+      await setup(ok({ timezone: '' }));
+      expect(page.querySelector('[data-testid=subtitle]')).toBeNull();
+    });
+
     it('shows the saved time zone in the field', async () => {
       await setup(ok({ timezone: 'Asia/Tokyo' }));
 

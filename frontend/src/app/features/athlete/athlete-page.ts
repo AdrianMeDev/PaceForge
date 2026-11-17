@@ -20,6 +20,7 @@ import {
   parseThreshold,
 } from './athlete-format';
 import { BestTimesPanel } from './best-times-panel';
+import { PageHeader } from '../../shared/page-header';
 import { AppearancePanel } from './appearance-panel';
 import { BodyDataPanel } from './body-data-panel';
 import { UNKNOWN_PROVIDER, providerLine } from '../availability/provider-line';
@@ -91,7 +92,7 @@ const RUN_ROWS: Row[] = [
  */
 @Component({
   selector: 'app-athlete-page',
-  imports: [RouterLink, DatePipe, AppearancePanel, BestTimesPanel, BodyDataPanel],
+  imports: [RouterLink, DatePipe, PageHeader, AppearancePanel, BestTimesPanel, BodyDataPanel],
   templateUrl: './athlete-page.html',
   styleUrls: ['../auth/auth-form.css', './athlete-page.css'],
 })
@@ -124,6 +125,12 @@ export class AthletePage implements OnInit {
     const text = this.profile()?.intervals.synced_at;
     const time = text ? Date.parse(text) : Number.NaN;
     return Number.isNaN(time) ? null : new Date(time);
+  });
+
+  /** The line under the title: the time zone, if one is set. */
+  protected readonly subtitle = computed(() => {
+    const zone = this.profile()?.timezone ?? '';
+    return this.view() === 'ready' && zone ? zone : '';
   });
 
   protected readonly sections = computed<SectionView[]>(() => {
