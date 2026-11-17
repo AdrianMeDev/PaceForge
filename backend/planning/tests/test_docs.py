@@ -416,7 +416,7 @@ class TestTheReadmeOnTheTypicalWeek:
     def test_the_form_label_is_the_one_of_the_page(self) -> None:
         page = (ROOT / "frontend/src/app/features/availability/availability-page.html").read_text()
 
-        assert "<h2>A normal week</h2>" in page
+        assert re.search(r"<h2[^>]*>\s*A normal week\s*</h2>", page)
         assert "**A normal week.**" in FLAT_README
         assert "enter **A normal week**" in FLAT_README
 
@@ -525,7 +525,7 @@ class TestTheReadmeOnSportsAndDoubleDays:
         options = (ROOT / "frontend/src/app/features/availability/day-options.html").read_text()
         script = (ROOT / "frontend/src/app/features/availability/day-options.ts").read_text()
 
-        assert "<h2>Parts of the day and two sessions</h2>" in self.PAGE
+        assert re.search(r"<h2[^>]*>\s*Parts of the day and two sessions\s*</h2>", self.PAGE)
         assert "**Parts of the day and two sessions.**" in FLAT_README
         assert "Two sessions" in options and "**Two sessions**" in FLAT_README
         for label in ("Morning", "Afternoon", "Evening"):

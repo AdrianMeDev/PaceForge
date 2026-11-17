@@ -664,7 +664,8 @@ Not there yet: training phases.
 The **Training time** page (`/availability`, also in the navigation) tells PaceForge how much time
 you can train. It does not plan anything itself; the [Week plan](#week-plan) checks its sessions
 against it. Everything here is personal: every user sees and changes only their own, an
-administrator included.
+administrator included. The settings are cards of one form with one **Save**, which stays above the
+tab bar on a phone; the weekday table uses short heads there (Morn., Aft., Eve., 2×).
 
 **Per weekday.** Seven fields, Monday first. Enter minutes (`90`) or hours and minutes (`1:30`,
 the minutes always with two digits and below 60); at most 24:00 (1440 minutes) per day. A field you
@@ -779,7 +780,7 @@ date, the sport, the minutes and the part of the day, nothing else. A plan witho
 (no workout of that sport on that day, in that part of the day if you named one) gets the warning
 "…has no … workout…" on the [Week plan](#week-plan) page; you can still confirm it. Nothing is said
 for a day of vacation or illness or a day without time. The minutes are not checked against the
-workout. **Delete** removes an entry after a question; to change one, delete it and add it again
+workout. **Delete** removes an entry after a question in a dialog; to change one, delete it and add it again
 (the API can change it). You can have at most 14 entries. They repeat every week: a session on one
 date only belongs to "Not available" (below) or to the wishes for a week.
 
@@ -791,7 +792,7 @@ as the body part and the sports, nothing else (the newest 10; the coach is told 
 more), and the page names the provider it goes to. A session in an affected sport gets the
 warning "…your … limitation affects …" on the [Week plan](#week-plan) page: you can still confirm
 the plan. **Mark as healed** keeps an entry as a record without sending or checking it any more,
-**Current again** brings it back, and **Delete** removes it after a question. You can have at most
+**Current again** brings it back, and **Delete** removes it after a question in a dialog. You can have at most
 50 entries. These entries are sent to your provider as soon as they are current, as decided for
 health data: your own instance, your own provider, your own choice of what to enter.
 
@@ -809,7 +810,7 @@ follows it while it is empty. Periods may overlap, may lie in the past (they sta
 there can be at most 100 of them. Going-on and coming periods come first, the nearest first; past
 ones follow, the latest first, marked **Past**; the one that is going on is marked **Now**. Which
 day it is today depends on the time zone in your [profile](#athlete-profile), as with the goals.
-**Delete** removes a period after a question. Changing a period is possible through the API but
+**Delete** removes a period after a question in a dialog. Changing a period is possible through the API but
 not yet on the page: delete it and add it again.
 
 **What a day or a week offers.** A day inside any period offers no time; every other day offers the
