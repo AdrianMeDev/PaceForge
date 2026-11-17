@@ -1,5 +1,5 @@
-<div class="panel">
-  <h2>About you</h2>
+<div class="card">
+  <h2 class="m-0 mb-2 text-lg font-semibold">About you</h2>
   <p class="hint">
     All optional. Your AI coach is told your age (worked out from the year, which is not sent), sex,
     weight, resting heart rate, years of training, strength experience and equipment with every plan
@@ -15,7 +15,7 @@
   }
 
   <form class="form" novalidate (submit)="save($event)">
-    <div class="grid">
+    <div class="form-grid">
       <div class="field">
         <label for="body-birth-year">Year of birth</label>
         <input
@@ -86,7 +86,7 @@
 
     <fieldset class="group">
       <legend>Years of training</legend>
-      <div class="grid">
+      <div class="form-grid">
         @for (entry of sports; track entry[0]) {
           <div class="field">
             <label [for]="'body-years-' + entry[0]">{{ entry[1] }}</label>
@@ -144,8 +144,8 @@
       }
     </fieldset>
 
-    <div class="actions">
-      <button type="submit" class="primary" [disabled]="busy()">
+    <div class="action-bar" data-testid="save-bar">
+      <button type="submit" class="btn btn-primary w-full sm:w-auto" [disabled]="busy()">
         {{ busy() ? 'Saving…' : 'Save' }}
       </button>
     </div>
