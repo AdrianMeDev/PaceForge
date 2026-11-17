@@ -25,6 +25,7 @@ const EMPTY = {
   weeks: [{ week_start: WEEK, sports: [] }],
   recent: [],
   usage: { calls: 0, input_tokens: 0, output_tokens: 0, days: 30 },
+  setup: { steps: [] },
 };
 
 const FULL = {
@@ -76,6 +77,12 @@ const FULL = {
     },
   ],
   usage: { calls: 3, input_tokens: 1200, output_tokens: 300, days: 30 },
+  setup: {
+    steps: [
+      { key: 'profile', done: true, optional: false },
+      { key: 'intervals', done: false, optional: true },
+    ],
+  },
 };
 
 describe('DashboardApi', () => {
@@ -115,7 +122,7 @@ describe('DashboardApi', () => {
   }
 
   it('reads an account that has nothing yet', async () => {
-    expect(await answer(EMPTY)).toEqual({ kind: 'ok', dashboard: EMPTY });
+    expect(await answer(EMPTY)).toEqual({ kind: 'ok', dashboard: { ...EMPTY, setup: [] } });
   });
 
   it('reads a full answer and takes over only the rating of the goal', async () => {
@@ -139,6 +146,10 @@ describe('DashboardApi', () => {
     expect(result.dashboard.weeks[0].sports).toHaveLength(2);
     expect(result.dashboard.recent[0].minutes).toBeNull();
     expect(result.dashboard.usage.calls).toBe(3);
+    expect(result.dashboard.setup).toEqual([
+      { key: 'profile', done: true, optional: false },
+      { key: 'intervals', done: false, optional: true },
+    ]);
   });
 
   it('reads no zone as null', async () => {
@@ -195,6 +206,16 @@ describe('DashboardApi', () => {
     ['weeks left below zero', changed((c) => (c.main_goal.weeks_left = -1))],
     ['an empty title', changed((c) => (c.main_goal.title = ''))],
     ['usage that is missing', { ...EMPTY, usage: null }],
+    ['setup that is missing', { ...EMPTY, setup: null }],
+    ['setup steps that are no list', { ...EMPTY, setup: { steps: 'profile' } }],
+    [
+      'a setup step that is not known',
+      { ...EMPTY, setup: { steps: [{ key: 'tour', done: true, optional: false }] } },
+    ],
+    [
+      'a setup step without a done flag',
+      { ...EMPTY, setup: { steps: [{ key: 'goal', done: 'yes', optional: false }] } },
+    ],
   ])('rejects %s', async (_name, reply) => {
     await refuses(reply);
   });

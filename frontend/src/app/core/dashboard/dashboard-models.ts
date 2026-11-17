@@ -81,6 +81,24 @@ export interface CoachUsage {
   days: number;
 }
 
+/** The steps of the setup, in the order a new account takes them. */
+export type SetupKey =
+  | 'profile'
+  | 'training_time'
+  | 'ai_coach'
+  | 'intervals'
+  | 'goal'
+  | 'activities'
+  | 'season'
+  | 'first_week';
+
+/** One step; an `optional` step is not needed for the setup to count as done. */
+export interface SetupStep {
+  key: SetupKey;
+  done: boolean;
+  optional: boolean;
+}
+
 export interface Dashboard {
   week: WeekGlance;
   season: SeasonGlance | null;
@@ -90,6 +108,8 @@ export interface Dashboard {
   /** The latest activities, the newest first. */
   recent: RecentActivity[];
   usage: CoachUsage;
+  /** The steps of the setup, in order. */
+  setup: SetupStep[];
 }
 
 export type GetDashboardResult = { kind: 'ok'; dashboard: Dashboard } | Forbidden;

@@ -14,6 +14,8 @@ import {
   NextWorkout,
   RecentActivity,
   SeasonGlance,
+  SetupKey,
+  SetupStep,
   SportMinutes,
   WeekFigures,
   WeekGlance,
@@ -29,6 +31,16 @@ const PLANNED_SPORTS: readonly string[] = ['running', 'cycling', 'swimming', 'st
 const ZONE_SYSTEMS: readonly string[] = ['power', 'heart_rate', 'pace'];
 const PHASES: readonly string[] = ['base', 'build', 'specific', 'taper', 'transition'];
 const GOAL_KINDS: readonly string[] = ['race', 'threshold', 'general'];
+const SETUP_KEYS: readonly string[] = [
+  'profile',
+  'training_time',
+  'ai_coach',
+  'intervals',
+  'goal',
+  'activities',
+  'season',
+  'first_week',
+];
 const RATINGS: readonly string[] = ['realistic', 'ambitious', 'unrealistic', 'unknown'];
 
 interface Reply {
@@ -84,6 +96,7 @@ function toDashboard(body: unknown, reply: Reply): Dashboard {
     weeks: list(item['weeks'], reply).map((raw) => toWeekMinutes(raw, reply)),
     recent: list(item['recent'], reply).map((raw) => toRecent(raw, reply)),
     usage: toUsage(item['usage'], reply),
+    setup: toSetup(item['setup'], reply),
   };
 }
 
@@ -191,6 +204,18 @@ function toUsage(raw: unknown, reply: Reply): CoachUsage {
     output_tokens: count(item['output_tokens'], reply),
     days: count(item['days'], reply),
   };
+}
+
+function toSetup(raw: unknown, reply: Reply): SetupStep[] {
+  const item = object(raw, reply);
+  return list(item['steps'], reply).map((entry) => {
+    const step = object(entry, reply);
+    return {
+      key: oneOf(step['key'], SETUP_KEYS, reply) as SetupKey,
+      done: flag(step['done'], reply),
+      optional: flag(step['optional'], reply),
+    };
+  });
 }
 
 function object(value: unknown, reply: Reply): Raw {

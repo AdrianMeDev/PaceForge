@@ -48,6 +48,7 @@ function dashboard(
     weeks: [],
     recent: [],
     usage: { calls: 0, input_tokens: 0, output_tokens: 0, days: 30 },
+    setup: [],
     ...rest,
   };
 }
