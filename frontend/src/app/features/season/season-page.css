@@ -86,6 +86,10 @@ tr.reason td {
   font-size: 0.9rem;
 }
 
+.findings-box {
+  margin: 0.75rem 0;
+}
+
 .findings,
 .problems {
   margin: 0.75rem 0;

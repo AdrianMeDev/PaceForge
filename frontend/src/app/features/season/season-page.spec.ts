@@ -688,6 +688,31 @@ describe('SeasonPage', () => {
         ]);
       });
 
+      it('folds the checks behind a summary, open when there is an error', async () => {
+        await load([CONFIRMED], plan({ id: CONFIRMED.id, version: 2 }));
+        generate.mockResolvedValue({
+          kind: 'ok',
+          plan: {
+            ...DRAFT_PLAN(),
+            report: {
+              valid: false,
+              findings: [
+                { severity: 'error' as const, code: 'x', message: 'Bad.', path: '' },
+                { severity: 'warning' as const, code: 'y', message: 'Hm.', path: '' },
+              ],
+            },
+          },
+        });
+        plans.mockResolvedValue({ kind: 'ok', plans: [DRAFT, CONFIRMED] });
+
+        await click('generate');
+
+        expect(query(page, '[data-testid="findings-summary"]').textContent?.trim()).toBe(
+          'What the checks say: 1 error, 1 note',
+        );
+        expect(query<HTMLDetailsElement>(page, '[data-testid="findings-box"]').open).toBe(true);
+      });
+
       it('says that the working takes a while, and allows nothing else meanwhile', async () => {
         await load([DRAFT, CONFIRMED], plan({ id: CONFIRMED.id, version: 2 }));
         let finish: (value: GenerateSeasonResult) => void = () => undefined;

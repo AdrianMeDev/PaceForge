@@ -13,6 +13,7 @@ import {
   SPORT_LABELS,
   STATUS_LABELS,
   dayLabel,
+  findingsSummary,
   minutesText,
   weekRange,
 } from '../planning/plan-format';
@@ -120,6 +121,10 @@ export class SeasonPage implements OnInit {
     () => this.plan()?.weeks.some((week) => week.done !== null) ?? false,
   );
   protected readonly findings = computed(() => this.plan()?.report?.findings ?? []);
+  protected readonly findingsText = computed(() => findingsSummary(this.findings()));
+  protected readonly hasFindingErrors = computed(() =>
+    this.findings().some((finding) => finding.severity === 'error'),
+  );
   /** A version that was replaced or discarded can be brought back as a new draft. */
   protected readonly canRestore = computed(
     () => this.plan()?.status === 'superseded' || this.plan()?.status === 'discarded',
