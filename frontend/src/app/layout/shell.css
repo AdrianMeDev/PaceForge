@@ -13,8 +13,13 @@
 }
 
 .brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: inherit;
   font-weight: 700;
   font-size: 1.1rem;
+  text-decoration: none;
 }
 
 nav {
@@ -239,6 +244,8 @@ a.active {
   }
 
   .brand {
+    flex-direction: column;
+    gap: 0.25rem;
     font-size: 0.7rem;
   }
 

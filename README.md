@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="frontend/public/logo.png" alt="PaceForge logo" width="120" height="120" />
+</p>
+
 # PaceForge
 
 A self-hostable, AI-assisted endurance coach for running, cycling, swimming and strength training.
