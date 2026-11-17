@@ -1,5 +1,5 @@
 <form class="form" novalidate (submit)="submit($event)">
-  <h3>Add a period</h3>
+  <h3 class="m-0 mb-3 text-base font-semibold">Add a period</h3>
 
   @if (errors()['form']; as message) {
     <p class="alert" role="alert">{{ message }}</p>
@@ -17,7 +17,7 @@
     }
   </div>
 
-  <div class="dates">
+  <div class="form-grid">
     <div class="field">
       <label for="period-start">First day</label>
       <input
@@ -64,10 +64,10 @@
     }
   </div>
 
-  <div class="actions">
-    <button type="submit" class="primary" [disabled]="busy()">
+  <div class="action-bar flex flex-wrap items-center gap-2">
+    <button type="submit" class="btn btn-primary btn-sm" [disabled]="busy()">
       {{ busy() ? 'Saving…' : 'Add period' }}
     </button>
-    <button type="button" class="link" (click)="cancel()">Cancel</button>
+    <button type="button" class="btn btn-ghost btn-sm" (click)="cancel()">Cancel</button>
   </div>
 </form>

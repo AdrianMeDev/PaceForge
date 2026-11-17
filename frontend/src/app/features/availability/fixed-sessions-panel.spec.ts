@@ -43,6 +43,19 @@ describe('sessionText', () => {
 });
 
 describe('FixedSessionsPanel', () => {
+  // jsdom has no modal dialog: this is what the browser does that the question relies on.
+  beforeAll(() => {
+    HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
+      this.setAttribute('open', '');
+    };
+    HTMLDialogElement.prototype.close = function (this: HTMLDialogElement) {
+      if (this.hasAttribute('open')) {
+        this.removeAttribute('open');
+        this.dispatchEvent(new Event('close'));
+      }
+    };
+  });
+
   let api: ReturnType<typeof createApiStub>;
   let fixture: ComponentFixture<FixedSessionsPanel>;
   let panel: HTMLElement;
@@ -93,16 +106,13 @@ describe('FixedSessionsPanel', () => {
     await settle(fixture);
   }
 
-  const button = (within: Element, text: string) =>
-    Array.from(within.querySelectorAll('button')).find((b) => b.textContent?.trim() === text);
-
   describe('loading', () => {
     it('shows a loading note until the answer arrives', () => {
       create(ok());
       api.listFixedSessions.mockReturnValue(new Promise<never>(() => undefined));
       fixture.detectChanges();
 
-      expect(panel.textContent).toContain('Loading');
+      expect(panel.querySelector('[role="status"][aria-label="Loading"]')).toBeTruthy();
     });
 
     it('says so and offers to try again when the list cannot be loaded', async () => {
@@ -110,7 +120,7 @@ describe('FixedSessionsPanel', () => {
 
       expect(alerts()).toEqual(['Your fixed appointments could not be loaded.']);
 
-      await click(query(panel, 'button.primary'));
+      await click(query(panel, 'button.btn-primary'));
 
       expect(ids()).toEqual(['ride']);
     });
@@ -275,16 +285,18 @@ describe('FixedSessionsPanel', () => {
 
     const deleteButton = () =>
       query<HTMLButtonElement>(panel, 'button[aria-label^="Delete: Tuesday"]');
-    const card = () => query(panel, '[data-testid="fixed-club"]');
 
     it('asks first and does nothing when cancelled', async () => {
       await click(deleteButton());
 
-      expect(card().textContent).toContain('Delete this entry?');
+      expect(query<HTMLDialogElement>(panel, '[data-testid="confirm-dialog"]').open).toBe(true);
+      expect(
+        query<HTMLDialogElement>(panel, '[data-testid="confirm-dialog"]').textContent,
+      ).toContain('Delete this appointment: ');
 
-      await click(button(card(), 'Cancel'));
+      await click(query<HTMLButtonElement>(panel, '[data-testid="confirm-dialog-cancel"]'));
 
-      expect(card().textContent).not.toContain('Delete this entry?');
+      expect(query<HTMLDialogElement>(panel, '[data-testid="confirm-dialog"]').open).toBe(false);
       expect(api.deleteFixedSession).not.toHaveBeenCalled();
     });
 
@@ -293,7 +305,7 @@ describe('FixedSessionsPanel', () => {
       api.listFixedSessions.mockResolvedValue(ok(RIDE));
       await click(deleteButton());
 
-      await click(button(card(), 'Yes, delete'));
+      await click(query<HTMLButtonElement>(panel, '[data-testid="confirm-dialog-confirm"]'));
 
       expect(api.deleteFixedSession).toHaveBeenCalledExactlyOnceWith('club');
       expect(ids()).toEqual(['ride']);
@@ -305,7 +317,7 @@ describe('FixedSessionsPanel', () => {
       api.listFixedSessions.mockResolvedValue(ok(RIDE));
       await click(deleteButton());
 
-      await click(button(card(), 'Yes, delete'));
+      await click(query<HTMLButtonElement>(panel, '[data-testid="confirm-dialog-confirm"]'));
 
       expect(notice()).toBe('That entry does not exist any more.');
     });
@@ -316,7 +328,7 @@ describe('FixedSessionsPanel', () => {
       fixture.componentInstance.signedOut.subscribe(() => gone++);
       await click(deleteButton());
 
-      await click(button(card(), 'Yes, delete'));
+      await click(query<HTMLButtonElement>(panel, '[data-testid="confirm-dialog-confirm"]'));
 
       expect(gone).toBe(1);
     });
@@ -326,7 +338,7 @@ describe('FixedSessionsPanel', () => {
       api.listFixedSessions.mockRejectedValue(new Error('offline'));
       await click(deleteButton());
 
-      await click(button(card(), 'Yes, delete'));
+      await click(query<HTMLButtonElement>(panel, '[data-testid="confirm-dialog-confirm"]'));
 
       expect(alerts()).toEqual(['The list could not be refreshed. Please try again.']);
     });
@@ -335,7 +347,7 @@ describe('FixedSessionsPanel', () => {
       api.deleteFixedSession.mockRejectedValue(new Error('offline'));
       await click(deleteButton());
 
-      await click(button(card(), 'Yes, delete'));
+      await click(query<HTMLButtonElement>(panel, '[data-testid="confirm-dialog-confirm"]'));
 
       expect(alerts()).toEqual(['Something went wrong. Please try again.']);
     });

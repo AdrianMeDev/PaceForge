@@ -1,13 +1,17 @@
 <section class="availability">
-  <h1>Training time</h1>
+  <app-page-header title="Training time" [subtitle]="subtitle()" />
 
   @switch (view()) {
     @case ('loading') {
-      <p role="status">Loading…</p>
+      <div class="grid gap-4" role="status" aria-label="Loading">
+        <div class="skeleton h-40"></div>
+        <div class="skeleton h-28"></div>
+        <div class="skeleton h-28"></div>
+      </div>
     }
     @case ('unreachable') {
       <p class="alert" role="alert">Your training time could not be loaded.</p>
-      <p><button type="button" class="primary" (click)="load()">Try again</button></p>
+      <p><button type="button" class="btn btn-primary" (click)="load()">Try again</button></p>
     }
     @case ('signed_out') {
       <p class="alert" role="alert">Your session has ended. Please sign in again.</p>
@@ -21,108 +25,113 @@
         <p class="notice" role="status">{{ text }}</p>
       }
 
-      <form class="panel" novalidate (submit)="save($event)">
-        <h2>Per weekday</h2>
-        <p class="hint">
-          How much time can you usually train on each day? Enter minutes (90) or hours and minutes
-          (1:30). A day you leave empty counts as no time.
-        </p>
-        @if (weekdaysError(); as message) {
-          <p class="field-error" role="alert">{{ message }}</p>
-        }
-
-        <div class="days">
-          @for (index of indexes; track index) {
-            <div class="field">
-              <label [for]="'day-' + index">{{ names[index] }}</label>
-              <input
-                type="text"
-                inputmode="numeric"
-                autocomplete="off"
-                [id]="'day-' + index"
-                [value]="days()[index]"
-                [attr.aria-invalid]="dayErrors()[index] ? true : null"
-                [attr.aria-describedby]="dayErrors()[index] ? 'day-' + index + '-error' : null"
-                (input)="setDay(index, read($event))"
-              />
-              @if (dayErrors()[index]; as message) {
-                <p class="field-error" role="alert" [id]="'day-' + index + '-error'">
-                  {{ message }}
-                </p>
-              }
-            </div>
-          }
-        </div>
-
-        @if (totalText(); as sum) {
-          <p class="total" data-testid="total">Together: {{ sum }} per week</p>
-        }
-        @if (capNote(); as text) {
-          <p class="hint" data-testid="cap-note">{{ text }}</p>
-        }
-
-        <h2>Parts of the day and two sessions</h2>
-        <p class="hint">
-          Tick the parts of the day you can train in on each weekday, and the days on which two
-          sessions are fine. Your coach keeps to this, and the checks refuse a plan that does not.
-        </p>
-        @if (dayOptionsError(); as message) {
-          <p class="field-error" role="alert">{{ message }}</p>
-        }
-        <app-day-options
-          [(doubleDays)]="doubleDays"
-          [(timeWindows)]="timeWindows"
-          [errors]="windowErrors()"
-        />
-
-        <h2>Weekly budget</h2>
-        <div class="field">
-          <label for="budget">Most you want to train in a week (optional)</label>
-          <input
-            id="budget"
-            type="text"
-            inputmode="numeric"
-            autocomplete="off"
-            aria-describedby="budget-hint"
-            [value]="budget()"
-            [attr.aria-invalid]="budgetError() ? true : null"
-            (input)="budget.set(read($event))"
-          />
-          @if (budgetError(); as message) {
+      <form novalidate (submit)="save($event)">
+        <section class="card">
+          <h2 class="m-0 mb-3 text-lg font-semibold">Per weekday</h2>
+          <p class="hint">
+            How much time can you usually train on each day? Enter minutes (90) or hours and minutes
+            (1:30). A day you leave empty counts as no time.
+          </p>
+          @if (weekdaysError(); as message) {
             <p class="field-error" role="alert">{{ message }}</p>
           }
-          <p class="hint" id="budget-hint">
-            Caps what the days add up to. Leave it empty for no cap.
+
+          <div class="days">
+            @for (index of indexes; track index) {
+              <div class="field">
+                <label [for]="'day-' + index">{{ names[index] }}</label>
+                <input
+                  type="text"
+                  inputmode="numeric"
+                  autocomplete="off"
+                  [id]="'day-' + index"
+                  [value]="days()[index]"
+                  [attr.aria-invalid]="dayErrors()[index] ? true : null"
+                  [attr.aria-describedby]="dayErrors()[index] ? 'day-' + index + '-error' : null"
+                  (input)="setDay(index, read($event))"
+                />
+                @if (dayErrors()[index]; as message) {
+                  <p class="field-error" role="alert" [id]="'day-' + index + '-error'">
+                    {{ message }}
+                  </p>
+                }
+              </div>
+            }
+          </div>
+
+          @if (totalText(); as sum) {
+            <p class="total" data-testid="total">Together: {{ sum }} per week</p>
+          }
+          @if (capNote(); as text) {
+            <p class="hint" data-testid="cap-note">{{ text }}</p>
+          }
+        </section>
+        <section class="card">
+          <h2 class="m-0 mb-3 text-lg font-semibold">Parts of the day and two sessions</h2>
+          <p class="hint">
+            Tick the parts of the day you can train in on each weekday, and the days on which two
+            sessions are fine. Your coach keeps to this, and the checks refuse a plan that does not.
           </p>
-        </div>
-
-        <h2>Your week</h2>
-        <app-week-wishes [(wishes)]="wishes" [errors]="wishErrors()" />
-
-        <h2>A normal week</h2>
-        <div class="field">
-          <label for="typical">What a normal week of training is for you (optional)</label>
-          <input
-            id="typical"
-            type="text"
-            inputmode="numeric"
-            autocomplete="off"
-            aria-describedby="typical-hint"
-            [value]="typical()"
-            [attr.aria-invalid]="typicalError() ? true : null"
-            (input)="typical.set(read($event))"
-          />
-          @if (typicalError(); as message) {
+          @if (dayOptionsError(); as message) {
             <p class="field-error" role="alert">{{ message }}</p>
           }
-          <p class="hint" id="typical-hint">
-            Hours and minutes per week, for example 6:00. After a break your coach uses it to see
-            how far you can build up again; the plan still starts gently. It adds no time to your
-            days and is no promise. Leave it empty if you would rather not say.
-          </p>
-        </div>
-
-        <h2>Sports and stretching</h2>
+          <app-day-options
+            [(doubleDays)]="doubleDays"
+            [(timeWindows)]="timeWindows"
+            [errors]="windowErrors()"
+          />
+        </section>
+        <section class="card">
+          <h2 class="m-0 mb-3 text-lg font-semibold">Weekly budget</h2>
+          <div class="field">
+            <label for="budget">Most you want to train in a week (optional)</label>
+            <input
+              id="budget"
+              type="text"
+              inputmode="numeric"
+              autocomplete="off"
+              aria-describedby="budget-hint"
+              [value]="budget()"
+              [attr.aria-invalid]="budgetError() ? true : null"
+              (input)="budget.set(read($event))"
+            />
+            @if (budgetError(); as message) {
+              <p class="field-error" role="alert">{{ message }}</p>
+            }
+            <p class="hint" id="budget-hint">
+              Caps what the days add up to. Leave it empty for no cap.
+            </p>
+          </div>
+        </section>
+        <section class="card">
+          <h2 class="m-0 mb-3 text-lg font-semibold">Your week</h2>
+          <app-week-wishes [(wishes)]="wishes" [errors]="wishErrors()" />
+        </section>
+        <section class="card">
+          <h2 class="m-0 mb-3 text-lg font-semibold">A normal week</h2>
+          <div class="field">
+            <label for="typical">What a normal week of training is for you (optional)</label>
+            <input
+              id="typical"
+              type="text"
+              inputmode="numeric"
+              autocomplete="off"
+              aria-describedby="typical-hint"
+              [value]="typical()"
+              [attr.aria-invalid]="typicalError() ? true : null"
+              (input)="typical.set(read($event))"
+            />
+            @if (typicalError(); as message) {
+              <p class="field-error" role="alert">{{ message }}</p>
+            }
+            <p class="hint" id="typical-hint">
+              Hours and minutes per week, for example 6:00. After a break your coach uses it to see
+              how far you can build up again; the plan still starts gently. It adds no time to your
+              days and is no promise. Leave it empty if you would rather not say.
+            </p>
+          </div>
+        </section>
+        <h2 class="m-0 mb-3 text-lg font-semibold">Sports and stretching</h2>
         <h3 class="sub">What each sport is for</h3>
         <app-sport-preferences
           [(form)]="preferences"
@@ -174,54 +183,56 @@
         </div>
 
         @if (levelLimits(); as levels) {
-          <h2>Intensity</h2>
-          <app-intensity-settings
-            [(level)]="intensityLevel"
-            [(own)]="ownLimits"
-            [levelLimits]="levels"
-            [errors]="intensityErrors()"
-          />
-        }
-
-        <h2>Limitations</h2>
-        <div class="field">
-          <label for="limitations">Anything the plan should respect (optional)</label>
-          <textarea
-            id="limitations"
-            rows="4"
-            [value]="limitations()"
-            [attr.aria-invalid]="limitationsError() ? true : null"
-            (input)="limitations.set(read($event))"
-          ></textarea>
-          @if (limitationsError(); as message) {
-            <p class="field-error" role="alert">{{ message }}</p>
-          }
-        </div>
-        <div class="field">
-          <div class="check">
-            <input
-              id="share-limitations"
-              type="checkbox"
-              aria-describedby="share-limitations-hint"
-              [checked]="shareText()"
-              [attr.aria-invalid]="shareTextError() ? true : null"
-              (change)="shareText.set(isChecked($event))"
+          <section class="card">
+            <h2 class="m-0 mb-3 text-lg font-semibold">Intensity</h2>
+            <app-intensity-settings
+              [(level)]="intensityLevel"
+              [(own)]="ownLimits"
+              [levelLimits]="levels"
+              [errors]="intensityErrors()"
             />
-            <label for="share-limitations">Send this text to my AI coach</label>
+          </section>
+        }
+        <section class="card">
+          <h2 class="m-0 mb-3 text-lg font-semibold">Limitations</h2>
+          <div class="field">
+            <label for="limitations">Anything the plan should respect (optional)</label>
+            <textarea
+              id="limitations"
+              rows="4"
+              [value]="limitations()"
+              [attr.aria-invalid]="limitationsError() ? true : null"
+              (input)="limitations.set(read($event))"
+            ></textarea>
+            @if (limitationsError(); as message) {
+              <p class="field-error" role="alert">{{ message }}</p>
+            }
           </div>
-          @if (shareTextError(); as message) {
-            <p class="field-error" role="alert">{{ message }}</p>
-          }
-          <p class="hint" id="share-limitations-hint">
-            Off unless you switch it on: nothing you write here leaves PaceForge by default. If it
-            is on, the first {{ textTold }} characters go to {{ provider() }} with every plan
-            request. Your coach reads them as information about you, never as instructions. The
-            injuries you list further down are sent as a body part and sports either way.
-          </p>
-        </div>
-
-        <div class="actions">
-          <button type="submit" class="primary" [disabled]="busy()">
+          <div class="field">
+            <div class="check">
+              <input
+                id="share-limitations"
+                type="checkbox"
+                aria-describedby="share-limitations-hint"
+                [checked]="shareText()"
+                [attr.aria-invalid]="shareTextError() ? true : null"
+                (change)="shareText.set(isChecked($event))"
+              />
+              <label for="share-limitations">Send this text to my AI coach</label>
+            </div>
+            @if (shareTextError(); as message) {
+              <p class="field-error" role="alert">{{ message }}</p>
+            }
+            <p class="hint" id="share-limitations-hint">
+              Off unless you switch it on: nothing you write here leaves PaceForge by default. If it
+              is on, the first {{ textTold }} characters go to {{ provider() }} with every plan
+              request. Your coach reads them as information about you, never as instructions. The
+              injuries you list further down are sent as a body part and sports either way.
+            </p>
+          </div>
+        </section>
+        <div class="actions action-bar" data-testid="save-bar">
+          <button type="submit" class="btn btn-primary w-full sm:w-auto" [disabled]="busy()">
             {{ busy() ? 'Saving…' : 'Save' }}
           </button>
         </div>

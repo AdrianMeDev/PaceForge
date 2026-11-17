@@ -6,9 +6,15 @@
     <tr>
       <th scope="col">Day</th>
       @for (slot of slots; track slot.value) {
-        <th scope="col">{{ slot.label }}</th>
+        <th scope="col">
+          <span class="max-sm:sr-only">{{ slot.label }}</span>
+          <span class="sm:hidden" aria-hidden="true">{{ slot.short }}</span>
+        </th>
       }
-      <th scope="col">Two sessions</th>
+      <th scope="col">
+        <span class="max-sm:sr-only">Two sessions</span>
+        <span class="sm:hidden" aria-hidden="true">2×</span>
+      </th>
     </tr>
   </thead>
   <tbody>

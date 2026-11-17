@@ -1,8 +1,9 @@
 import { DatePipe } from '@angular/common';
-import { Component, OnInit, inject, output, signal } from '@angular/core';
+import { Component, OnInit, inject, output, signal, viewChild } from '@angular/core';
 import { AvailabilityApi } from '../../core/availability/availability-api';
 import { Period } from '../../core/availability/availability-models';
 import { PERIOD_KIND_LABELS, formatPeriodLength } from './availability-format';
+import { ConfirmDialog } from '../../shared/confirm-dialog';
 import { PeriodForm } from './period-form';
 
 type View = 'loading' | 'unreachable' | 'ready';
@@ -18,7 +19,7 @@ const REFRESH_FAILED = 'The list could not be refreshed. Please try again.';
  */
 @Component({
   selector: 'app-periods-panel',
-  imports: [DatePipe, PeriodForm],
+  imports: [DatePipe, ConfirmDialog, PeriodForm],
   templateUrl: './periods-panel.html',
   styleUrls: ['../auth/auth-form.css', './periods-panel.css'],
 })
@@ -35,7 +36,9 @@ export class PeriodsPanel implements OnInit {
   protected readonly errors = signal<string[]>([]);
   protected readonly notice = signal<string | null>(null);
   /** The id of the period that is about to be deleted, waiting for the answer to the question. */
-  protected readonly confirming = signal<string | null>(null);
+  /** The period the dialog asks about. */
+  protected readonly confirming = signal<Period | null>(null);
+  private readonly deleteDialog = viewChild(ConfirmDialog);
 
   protected readonly kindLabel = PERIOD_KIND_LABELS;
   protected readonly lengthText = formatPeriodLength;
@@ -78,15 +81,14 @@ export class PeriodsPanel implements OnInit {
 
   protected askDelete(period: Period): void {
     this.clearMessages();
-    this.confirming.set(period.id);
+    this.confirming.set(period);
+    this.deleteDialog()?.open();
   }
 
-  protected cancelDelete(): void {
-    this.confirming.set(null);
-  }
-
-  protected async delete(period: Period): Promise<void> {
-    if (this.busy()) {
+  /** The dialog was answered with "Delete period". */
+  protected async delete(): Promise<void> {
+    const period = this.confirming();
+    if (this.busy() || period === null) {
       return;
     }
     this.clearMessages();
