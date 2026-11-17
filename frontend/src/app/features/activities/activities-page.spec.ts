@@ -191,6 +191,58 @@ describe('ActivitiesPage', () => {
     });
   });
 
+  describe('the drop zone', () => {
+    /** A drop (or a drag) as the browser sends it, with the files it carries. */
+    function drag(type: 'dragover' | 'dragleave' | 'drop', ...files: File[]): Event {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(event, 'dataTransfer', { value: { files } });
+      query(page, '[data-testid="drop-zone"]').dispatchEvent(event);
+      return event;
+    }
+
+    it('imports dropped files one after the other, like chosen ones', async () => {
+      await setup(ok([]));
+      api.import.mockResolvedValue({ kind: 'imported', activity: RUN });
+
+      const event = drag('drop', new File(['a'], 'a.fit'), new File(['b'], 'b.tcx'));
+      await settle(fixture);
+
+      expect(event.defaultPrevented).toBe(true);
+      expect(api.import.mock.calls.map(([sent]) => sent.name)).toEqual(['a.fit', 'b.tcx']);
+      expect(results()).toHaveLength(2);
+    });
+
+    it('ignores a drop without files and one while an import runs', async () => {
+      await setup(ok([]));
+      let finish!: (result: ImportActivityResult) => void;
+      api.import.mockReturnValue(new Promise<ImportActivityResult>((r) => (finish = r)));
+
+      drag('drop');
+      expect(api.import).not.toHaveBeenCalled();
+
+      drag('drop', new File(['a'], 'a.fit'));
+      await fixture.whenStable();
+      drag('drop', new File(['b'], 'b.fit'));
+      expect(api.import).toHaveBeenCalledTimes(1);
+
+      finish({ kind: 'imported', activity: RUN });
+      await settle(fixture);
+    });
+
+    it('is highlighted while files are over it, and not while it is busy', async () => {
+      await setup(ok([]));
+      const zone = () => query(page, '[data-testid="drop-zone"]');
+
+      expect(drag('dragover').defaultPrevented).toBe(true);
+      fixture.detectChanges();
+      expect(zone().getAttribute('data-dragging')).toBe('true');
+
+      drag('dragleave');
+      fixture.detectChanges();
+      expect(zone().getAttribute('data-dragging')).toBe('false');
+    });
+  });
+
   describe('the file input', () => {
     it('offers the formats the server reads, compressed ones too', async () => {
       await setup(ok([]));

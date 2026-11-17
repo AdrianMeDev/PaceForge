@@ -16,6 +16,7 @@ import {
   sourceLabel,
   sportLabel,
 } from './activity-format';
+import { Icon } from '../../shared/icon';
 import { PageHeader } from '../../shared/page-header';
 import { ManualActivityForm } from './manual-activity-form';
 
@@ -40,7 +41,7 @@ const REFRESH_FAILED = 'The list could not be refreshed. Please try again.';
  */
 @Component({
   selector: 'app-activities-page',
-  imports: [RouterLink, DatePipe, PageHeader, ManualActivityForm],
+  imports: [RouterLink, DatePipe, Icon, PageHeader, ManualActivityForm],
   templateUrl: './activities-page.html',
   styleUrls: ['../auth/auth-form.css', './activities-page.css'],
 })
@@ -61,6 +62,8 @@ export class ActivitiesPage implements OnInit {
   protected readonly notice = signal<string | null>(null);
   protected readonly confirming = signal<string | null>(null);
   protected readonly highlighted = signal<string | null>(null);
+  /** Files are being dragged over the drop zone. */
+  protected readonly dragging = signal(false);
 
   /** The line under the title: how many activities there are. */
   protected readonly subtitle = computed(() => {
@@ -102,6 +105,30 @@ export class ActivitiesPage implements OnInit {
     const input = event.target as HTMLInputElement;
     const files = Array.from(input.files ?? []);
     input.value = ''; // so that the same file can be chosen again
+    if (files.length === 0 || this.busy()) {
+      return;
+    }
+    await this.importAll(files);
+  }
+
+  /** Files over the zone: the browser must be told that they may be dropped, or it opens them. */
+  protected dragOver(event: DragEvent): void {
+    event.preventDefault();
+    this.dragging.set(!this.busy());
+  }
+
+  protected dragLeave(event: DragEvent): void {
+    const zone = event.currentTarget as HTMLElement;
+    if (!(event.relatedTarget instanceof Node) || !zone.contains(event.relatedTarget)) {
+      this.dragging.set(false);
+    }
+  }
+
+  /** Dropped files go the way chosen ones go; while something runs they are ignored. */
+  protected async drop(event: DragEvent): Promise<void> {
+    event.preventDefault();
+    this.dragging.set(false);
+    const files = Array.from(event.dataTransfer?.files ?? []);
     if (files.length === 0 || this.busy()) {
       return;
     }

@@ -22,8 +22,18 @@
     @case ('ready') {
       <div class="card">
         <h2 class="m-0 mb-3 text-lg font-semibold">Import</h2>
-        <div class="field">
-          <label for="file">FIT, TCX or GPX files</label>
+        <div
+          class="drop-zone field rounded-md border-2 border-dashed border-border p-4 text-center transition-colors"
+          data-testid="drop-zone"
+          [class.border-accent]="dragging()"
+          [class.bg-accent-soft]="dragging()"
+          [attr.data-dragging]="dragging()"
+          (dragover)="dragOver($event)"
+          (dragleave)="dragLeave($event)"
+          (drop)="drop($event)"
+        >
+          <app-icon name="upload" class="text-2xl text-muted" />
+          <label for="file" class="mt-1">Drop FIT, TCX or GPX files here, or choose them</label>
           <input
             id="file"
             type="file"
