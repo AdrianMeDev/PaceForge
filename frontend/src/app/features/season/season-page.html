@@ -1,13 +1,17 @@
 <section class="season">
-  <h1>Season</h1>
+  <app-page-header title="Season" [subtitle]="subtitle()" />
 
   @switch (view()) {
     @case ('loading') {
-      <p role="status">Loading…</p>
+      <div class="grid gap-4" role="status" aria-label="Loading">
+        <div class="skeleton h-16"></div>
+        <div class="skeleton h-28"></div>
+        <div class="skeleton h-40"></div>
+      </div>
     }
     @case ('unreachable') {
       <p class="alert" role="alert">Your season could not be loaded.</p>
-      <p><button type="button" class="primary" (click)="load()">Try again</button></p>
+      <p><button type="button" class="btn btn-primary" (click)="load()">Try again</button></p>
     }
     @case ('signed_out') {
       <p class="alert" role="alert">Your session has ended. Please sign in again.</p>
@@ -64,24 +68,26 @@
             <a routerLink="/settings/connections">Set one up</a>
           </p>
         } @else {
-          <p>
-            <button
-              type="button"
-              class="primary"
-              data-testid="generate"
-              [disabled]="busy()"
-              (click)="generate()"
-            >
-              {{
-                versions().length === 0 ? 'Draft the season with my coach' : 'Draft a new version'
-              }}
-            </button>
-          </p>
-          <p class="hint" data-testid="cost">
-            The season is the biggest thing your coach is asked: it costs several times as much as a
-            week, and the coach may need up to three tries, so it can take a few minutes. At most 3
-            requests a minute.
-          </p>
+          <div class="card">
+            <p>
+              <button
+                type="button"
+                class="btn btn-primary"
+                data-testid="generate"
+                [disabled]="busy()"
+                (click)="generate()"
+              >
+                {{
+                  versions().length === 0 ? 'Draft the season with my coach' : 'Draft a new version'
+                }}
+              </button>
+            </p>
+            <p class="hint" data-testid="cost">
+              The season is the biggest thing your coach is asked: it costs several times as much as
+              a week, and the coach may need up to three tries, so it can take a few minutes. At
+              most 3 requests a minute.
+            </p>
+          </div>
         }
         @if (work() === 'changing') {
           <p role="status" data-testid="changing">
@@ -98,23 +104,13 @@
         }
 
         @if (versions().length > 0) {
-          <ul class="versions" aria-label="Versions of the season plan">
-            @for (version of versions(); track version.id) {
-              <li>
-                <button
-                  type="button"
-                  class="link"
-                  [disabled]="busy()"
-                  [attr.aria-current]="plan()?.id === version.id ? 'true' : null"
-                  [attr.data-testid]="'version-' + version.version"
-                  (click)="open(version.id)"
-                >
-                  Version {{ version.version }} · {{ status[version.status] }} ·
-                  {{ version.created_at | date: 'MMM d, HH:mm' }}
-                </button>
-              </li>
-            }
-          </ul>
+          <app-version-chips
+            label="Versions of the season plan"
+            [versions]="versions()"
+            [selected]="plan()?.id ?? null"
+            [disabled]="busy()"
+            (opened)="open($event)"
+          />
         }
 
         @if (plan(); as filled) {
@@ -190,14 +186,19 @@
           }
           @if (filled.report; as report) {
             @if (findings().length > 0) {
-              <ul class="findings" aria-label="What the checks say">
-                @for (finding of findings(); track $index) {
-                  <li [attr.data-severity]="finding.severity">
-                    <strong>{{ finding.severity === 'error' ? 'Error' : 'Note' }}</strong>
-                    · {{ place(finding.path) }}: {{ finding.message }}
-                  </li>
-                }
-              </ul>
+              <details class="findings-box" data-testid="findings-box" [open]="hasFindingErrors()">
+                <summary class="cursor-pointer font-semibold" data-testid="findings-summary">
+                  What the checks say: {{ findingsText() }}
+                </summary>
+                <ul class="findings" aria-label="What the checks say">
+                  @for (finding of findings(); track $index) {
+                    <li [attr.data-severity]="finding.severity">
+                      <strong>{{ finding.severity === 'error' ? 'Error' : 'Note' }}</strong>
+                      · {{ place(finding.path) }}: {{ finding.message }}
+                    </li>
+                  }
+                </ul>
+              </details>
             } @else {
               <p class="hint" data-testid="all-clear">The checks found nothing to point out.</p>
             }
@@ -210,7 +211,7 @@
             <div class="actions">
               <button
                 type="button"
-                class="secondary"
+                class="btn btn-secondary btn-sm"
                 data-testid="restore"
                 [disabled]="busy()"
                 (click)="restore()"
@@ -233,7 +234,7 @@
             <div class="actions">
               <button
                 type="button"
-                class="primary"
+                class="btn btn-primary"
                 data-testid="confirm"
                 [disabled]="busy() || !canConfirm()"
                 (click)="confirm()"
@@ -242,14 +243,23 @@
               </button>
               <button
                 type="button"
-                class="secondary"
+                class="btn btn-secondary btn-sm"
                 data-testid="discard"
                 [disabled]="busy()"
-                (click)="discard()"
+                (click)="askToDiscard()"
               >
                 Discard
               </button>
             </div>
+            <app-confirm-dialog
+              title="Discard this draft?"
+              message="Version {{
+                filled.version
+              }} will be marked as discarded. You can bring it back later as a new draft."
+              confirmLabel="Discard draft"
+              [danger]="true"
+              (confirmed)="discard()"
+            />
           }
         }
 
@@ -281,7 +291,7 @@
               </p>
               <button
                 type="button"
-                class="secondary"
+                class="btn btn-secondary btn-sm"
                 data-testid="change-submit"
                 [disabled]="busy() || !requestFilled()"
                 (click)="change()"
@@ -298,7 +308,7 @@
         }
 
         @if (shown.main_race; as main) {
-          <p class="summary" data-testid="main-race">
+          <p class="card" data-testid="main-race">
             Main race: <strong>{{ race(main) }}</strong> on {{ day(main.date) }}. Highest week:
             <strong data-testid="peak">{{ minutes(shown.peak_minutes) }}</strong>.
           </p>
@@ -351,15 +361,17 @@
                   [attr.data-testid]="'week-' + index"
                 >
                   <th scope="row">{{ range(week.week_start) }}</th>
-                  <td>
+                  <td data-label="Phase">
                     {{ phaseLabel[week.phase] }}
                     @if (week.recovery) {
                       <span class="badge recovery" data-testid="recovery">Recovery</span>
                     }
                   </td>
-                  <td data-testid="aim">{{ minutes(week.target_minutes) }}</td>
-                  <td data-testid="offer">{{ minutes(week.capacity_minutes) }}</td>
-                  <td>
+                  <td data-label="Aim" data-testid="aim">{{ minutes(week.target_minutes) }}</td>
+                  <td data-label="Time on offer" data-testid="offer">
+                    {{ minutes(week.capacity_minutes) }}
+                  </td>
+                  <td data-label="Races">
                     @for (item of week.races; track $index) {
                       <span class="badge" [attr.data-priority]="item.priority" data-testid="race">{{
                         race(item)
@@ -368,20 +380,22 @@
                   </td>
                   @if (plan(); as filled) {
                     @let filledWeek = filled.weeks[index];
-                    <td data-testid="plan-minutes">
+                    <td data-label="Plan" data-testid="plan-minutes">
                       {{ bySport(filledWeek.minutes) }}
                       @if (filledWeek.total_minutes > 0) {
                         <span class="total">{{ minutes(filledWeek.total_minutes) }}</span>
                       }
                     </td>
-                    <td data-testid="plan-focus">{{ focusLabel[filledWeek.focus] }}</td>
-                    <td data-testid="plan-sessions">
+                    <td data-label="Focus" data-testid="plan-focus">
+                      {{ focusLabel[filledWeek.focus] }}
+                    </td>
+                    <td data-label="Key sessions" data-testid="plan-sessions">
                       @for (item of filledWeek.key_sessions; track $index) {
                         <span class="session">{{ session(item) }}</span>
                       }
                     </td>
                     @if (hasDone()) {
-                      <td data-testid="plan-done">
+                      <td data-label="Done" data-testid="plan-done">
                         @if (filledWeek.done; as made) {
                           {{ done(made) }}
                         }

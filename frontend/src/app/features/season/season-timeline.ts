@@ -1,4 +1,4 @@
-import { Component, computed, input } from '@angular/core';
+import { Component, ElementRef, afterNextRender, computed, inject, input } from '@angular/core';
 import { Season, SeasonPhase } from '../../core/season/season-models';
 import { weekRange } from '../planning/plan-format';
 import { PHASE_LABELS, PRIORITY_LETTERS } from './season-format';
@@ -65,6 +65,11 @@ function sundayOf(monday: string): string {
   return new Date(Date.UTC(year, month - 1, day + 6)).toISOString().slice(0, 10);
 }
 
+/** Where to scroll the row so that a cell is in the middle of it (never before the start). */
+export function centeredScroll(rowWidth: number, cellLeft: number, cellWidth: number): number {
+  return Math.max(0, cellLeft - (rowWidth - cellWidth) / 2);
+}
+
 /**
  * The weeks of a season in a row: the phase of each week by colour and two letters, recovery weeks
  * marked, the races as their letter, the current week outlined. Every cell has the whole story as
@@ -103,4 +108,18 @@ export class SeasonTimeline {
   readonly today = input.required<string>();
 
   protected readonly cells = computed(() => timelineCells(this.season(), this.today()));
+
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+
+  constructor() {
+    // A season has up to 52 weeks: the row starts with this week in the middle. The row is moved
+    // itself (not `scrollIntoView`), so the page does not jump when the row is below the fold.
+    afterNextRender(() => {
+      const row = this.host.nativeElement;
+      const current = row.querySelector<HTMLElement>('[data-current="true"]');
+      if (current) {
+        row.scrollLeft = centeredScroll(row.clientWidth, current.offsetLeft, current.offsetWidth);
+      }
+    });
+  }
 }

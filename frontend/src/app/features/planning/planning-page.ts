@@ -1,4 +1,3 @@
-import { DatePipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { CoachApi } from '../../core/coach/coach-api';
@@ -28,6 +27,7 @@ import {
   keySessionText,
   minutesBySport,
 } from '../season/season-format';
+import { VersionChips } from '../../shared/version-chips';
 import { ConfirmDialog } from '../../shared/confirm-dialog';
 import { PageHeader } from '../../shared/page-header';
 import { PlanEditor } from './plan-editor';
@@ -59,7 +59,7 @@ const TOO_MANY_PUSHES = 'Too many sends in a short time. Please wait a minute an
  */
 @Component({
   selector: 'app-planning-page',
-  imports: [RouterLink, DatePipe, ConfirmDialog, PageHeader, PlanEditor, PlanDayView],
+  imports: [RouterLink, ConfirmDialog, VersionChips, PageHeader, PlanEditor, PlanDayView],
   templateUrl: './planning-page.html',
   styleUrls: ['../auth/auth-form.css', './planning-page.css'],
 })

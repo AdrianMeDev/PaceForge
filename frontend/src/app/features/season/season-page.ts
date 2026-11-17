@@ -1,5 +1,4 @@
-import { DatePipe } from '@angular/common';
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { CoachApi } from '../../core/coach/coach-api';
 import { SeasonApi } from '../../core/season/season-api';
@@ -14,10 +13,14 @@ import {
   SPORT_LABELS,
   STATUS_LABELS,
   dayLabel,
+  findingsSummary,
   minutesText,
   weekRange,
 } from '../planning/plan-format';
 import { compareSeasons } from './season-compare';
+import { ConfirmDialog } from '../../shared/confirm-dialog';
+import { VersionChips } from '../../shared/version-chips';
+import { PageHeader } from '../../shared/page-header';
 import { SeasonChart } from './season-chart';
 import { SeasonTimeline } from './season-timeline';
 import {
@@ -73,7 +76,7 @@ const REFRESH_FAILED = 'The list of plans could not be refreshed. Please try aga
  */
 @Component({
   selector: 'app-season-page',
-  imports: [DatePipe, RouterLink, SeasonChart, SeasonTimeline],
+  imports: [RouterLink, ConfirmDialog, PageHeader, SeasonChart, SeasonTimeline, VersionChips],
   templateUrl: './season-page.html',
   styleUrl: './season-page.css',
 })
@@ -105,6 +108,14 @@ export class SeasonPage implements OnInit {
   protected readonly noTime = signal(false);
 
   /** The skeleton in the table: the one of the shown version, else today's. */
+  /** The line under the title: how long the skeleton is. */
+  protected readonly subtitle = computed(() => {
+    const weeks = this.shown()?.weeks.length ?? 0;
+    return this.view() !== 'ready' || weeks === 0
+      ? ''
+      : `${weeks} ${weeks === 1 ? 'week' : 'weeks'}`;
+  });
+  private readonly discardDialog = viewChild(ConfirmDialog);
   protected readonly shown = computed(() => this.plan()?.skeleton ?? this.season());
 
   /** The version has the minutes done for some of its weeks. */
@@ -112,6 +123,10 @@ export class SeasonPage implements OnInit {
     () => this.plan()?.weeks.some((week) => week.done !== null) ?? false,
   );
   protected readonly findings = computed(() => this.plan()?.report?.findings ?? []);
+  protected readonly findingsText = computed(() => findingsSummary(this.findings()));
+  protected readonly hasFindingErrors = computed(() =>
+    this.findings().some((finding) => finding.severity === 'error'),
+  );
   /** A version that was replaced or discarded can be brought back as a new draft. */
   protected readonly canRestore = computed(
     () => this.plan()?.status === 'superseded' || this.plan()?.status === 'discarded',
@@ -400,6 +415,11 @@ export class SeasonPage implements OnInit {
     } finally {
       this.work.set(null);
     }
+  }
+
+  /** Discarding cannot be taken back with one click: the dialog asks first. */
+  protected askToDiscard(): void {
+    this.discardDialog()?.open();
   }
 
   protected async discard(): Promise<void> {

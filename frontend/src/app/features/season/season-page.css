@@ -70,16 +70,6 @@ tr[data-phase='transition'] {
   border: 0;
 }
 
-.versions {
-  margin: 0.75rem 0;
-  padding: 0;
-  list-style: none;
-}
-
-.versions [aria-current='true'] {
-  font-weight: 600;
-}
-
 .total {
   display: block;
   color: var(--muted);
@@ -90,10 +80,91 @@ tr[data-phase='transition'] {
   display: block;
 }
 
+/* Below 40rem a week is a card: the head of the table is hidden, each value carries its column,
+   what is empty is left out and the reason of the coach is the foot of the card. */
+@media (max-width: 39.99rem) {
+  .table-wrap {
+    overflow: visible;
+  }
+
+  table,
+  tbody {
+    display: block;
+  }
+
+  thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  tr {
+    display: block;
+    margin-bottom: 0.75rem;
+    padding: 0.5rem 0.8rem;
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    background: var(--surface);
+  }
+
+  tr[data-phase='taper'] {
+    background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  }
+
+  tr:has(+ tr.reason) {
+    margin-bottom: 0;
+    padding-bottom: 0.25rem;
+    border-bottom: 0;
+    border-bottom-right-radius: 0;
+    border-bottom-left-radius: 0;
+  }
+
+  tr.reason {
+    padding-top: 0;
+    border-top: 0;
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+  }
+
+  th,
+  td {
+    display: block;
+    padding: 0.25rem 0;
+    border: 0;
+  }
+
+  th[scope='row'] {
+    font-weight: 600;
+  }
+
+  td[data-label] {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    text-align: right;
+  }
+
+  td[data-label]::before {
+    content: attr(data-label);
+    color: var(--muted);
+    text-align: left;
+  }
+
+  td:empty {
+    display: none;
+  }
+}
+
 tr.reason td {
   padding-top: 0;
   color: var(--muted);
   font-size: 0.9rem;
+}
+
+.findings-box {
+  margin: 0.75rem 0;
 }
 
 .findings,

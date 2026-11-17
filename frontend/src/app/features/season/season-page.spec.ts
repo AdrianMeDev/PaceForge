@@ -112,6 +112,19 @@ function plan(changes: Partial<SeasonPlan> = {}): SeasonPlan {
 }
 
 describe('SeasonPage', () => {
+  // jsdom has no modal dialog: this is what the browser does that the question relies on.
+  beforeAll(() => {
+    HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
+      this.setAttribute('open', '');
+    };
+    HTMLDialogElement.prototype.close = function (this: HTMLDialogElement) {
+      if (this.hasAttribute('open')) {
+        this.removeAttribute('open');
+        this.dispatchEvent(new Event('close'));
+      }
+    };
+  });
+
   let fixture: ComponentFixture<SeasonPage>;
   let page: HTMLElement;
   let get: ReturnType<typeof vi.fn<() => Promise<GetSeasonResult>>>;
@@ -195,7 +208,9 @@ describe('SeasonPage', () => {
       fixture = TestBed.createComponent(SeasonPage);
       fixture.detectChanges();
 
-      expect(fixture.nativeElement.textContent).toContain('Loading');
+      expect(
+        fixture.nativeElement.querySelector('[role="status"][aria-label="Loading"]'),
+      ).toBeTruthy();
       expect(fixture.nativeElement.querySelector('table')).toBeNull();
     });
 
@@ -205,11 +220,27 @@ describe('SeasonPage', () => {
       expect(get).toHaveBeenCalledTimes(1);
     });
 
+    it('says how long the skeleton is under the title', async () => {
+      await setup();
+
+      expect(query(page, '[data-testid=subtitle]').textContent).toMatch(/^\d+ weeks?$/);
+    });
+
+    it('gives every value of a week the name of its column, for the card of a phone', async () => {
+      await setup();
+
+      const row = query(page, '[data-testid="week-0"]');
+      const labels = Array.from(row.querySelectorAll('td[data-label]')).map((cell) =>
+        cell.getAttribute('data-label'),
+      );
+      expect(labels).toEqual(['Phase', 'Aim', 'Time on offer', 'Races']);
+    });
+
     it('offers a retry when the season cannot be loaded', async () => {
       await setup(new Error('offline'));
       expect(text()).toContain('Your season could not be loaded.');
 
-      query<HTMLButtonElement>(page, 'button.primary').click();
+      query<HTMLButtonElement>(page, 'button.btn-primary').click();
       await settle(fixture);
 
       expect(rows()).toHaveLength(4);
@@ -393,11 +424,11 @@ describe('SeasonPage', () => {
     it('lists the versions with their status and marks the one that is shown', async () => {
       await load([DRAFT, CONFIRMED, OLD], plan({ id: CONFIRMED.id, version: 2 }));
 
-      // the time of day depends on the time zone of the host, so only the words are compared
+      // the date is in the accessible name only, so nothing here depends on the time zone
       const items = Array.from(page.querySelectorAll('.versions button')).map((item) =>
-        item.textContent?.replace(/\s+/g, ' ').trim().split(' · ').slice(0, 2).join(' · '),
+        item.textContent?.replace(/\s+/g, ' ').trim(),
       );
-      expect(items).toEqual(['Version 3 · Draft', 'Version 2 · Confirmed', 'Version 1 · Replaced']);
+      expect(items).toEqual(['v3 · Draft', 'v2 · Confirmed', 'v1 · Replaced']);
       expect(query(page, '[data-testid="version-2"]').getAttribute('aria-current')).toBe('true');
       expect(query(page, '[data-testid="version-3"]').getAttribute('aria-current')).toBeNull();
     });
@@ -680,6 +711,31 @@ describe('SeasonPage', () => {
         ]);
       });
 
+      it('folds the checks behind a summary, open when there is an error', async () => {
+        await load([CONFIRMED], plan({ id: CONFIRMED.id, version: 2 }));
+        generate.mockResolvedValue({
+          kind: 'ok',
+          plan: {
+            ...DRAFT_PLAN(),
+            report: {
+              valid: false,
+              findings: [
+                { severity: 'error' as const, code: 'x', message: 'Bad.', path: '' },
+                { severity: 'warning' as const, code: 'y', message: 'Hm.', path: '' },
+              ],
+            },
+          },
+        });
+        plans.mockResolvedValue({ kind: 'ok', plans: [DRAFT, CONFIRMED] });
+
+        await click('generate');
+
+        expect(query(page, '[data-testid="findings-summary"]').textContent?.trim()).toBe(
+          'What the checks say: 1 error, 1 note',
+        );
+        expect(query<HTMLDetailsElement>(page, '[data-testid="findings-box"]').open).toBe(true);
+      });
+
       it('says that the working takes a while, and allows nothing else meanwhile', async () => {
         await load([DRAFT, CONFIRMED], plan({ id: CONFIRMED.id, version: 2 }));
         let finish: (value: GenerateSeasonResult) => void = () => undefined;
@@ -826,10 +882,32 @@ describe('SeasonPage', () => {
         Array.from(page.querySelectorAll('[role="alert"]')).map((alert) =>
           alert.textContent?.replace(/\s+/g, ' ').trim(),
         );
+      /** "Discard" asks first: this answers the question with "Discard draft". */
       const click = async (testId: string) => {
         query<HTMLButtonElement>(page, `[data-testid="${testId}"]`).click();
         await settle(fixture);
+        if (testId === 'discard') {
+          query<HTMLButtonElement>(page, '[data-testid="confirm-dialog-confirm"]').click();
+          await settle(fixture);
+        }
       };
+
+      it('asks first and discards nothing when the answer is "Cancel"', async () => {
+        await load([DRAFT_VERSION, CONFIRMED], draft());
+
+        query<HTMLButtonElement>(page, '[data-testid="discard"]').click();
+        await settle(fixture);
+        const dialog = query<HTMLDialogElement>(page, '[data-testid="confirm-dialog"]');
+        expect(dialog.open).toBe(true);
+        expect(dialog.textContent).toContain('will be marked as discarded');
+        expect(discard).not.toHaveBeenCalled();
+
+        query<HTMLButtonElement>(page, '[data-testid="confirm-dialog-cancel"]').click();
+        await settle(fixture);
+
+        expect(dialog.open).toBe(false);
+        expect(discard).not.toHaveBeenCalled();
+      });
 
       it('confirms a draft that the checks passed, and says what it replaces', async () => {
         await load([DRAFT_VERSION, CONFIRMED], draft());

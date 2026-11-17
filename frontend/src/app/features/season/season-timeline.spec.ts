@@ -1,6 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Season, SeasonRace, SeasonWeek } from '../../core/season/season-models';
-import { SeasonTimeline, timelineCells } from './season-timeline';
+import { SeasonTimeline, centeredScroll, timelineCells } from './season-timeline';
 
 const MAIN: SeasonRace = {
   date: '2027-02-28',
@@ -109,6 +109,16 @@ describe('timelineCells', () => {
   });
 });
 
+describe('centeredScroll', () => {
+  it('puts the cell in the middle of the row', () => {
+    expect(centeredScroll(300, 500, 40)).toBe(370);
+  });
+
+  it('never scrolls before the start', () => {
+    expect(centeredScroll(300, 20, 40)).toBe(0);
+  });
+});
+
 describe('SeasonTimeline', () => {
   let fixture: ComponentFixture<SeasonTimeline>;
   let host: HTMLElement;
@@ -188,5 +198,41 @@ describe('SeasonTimeline', () => {
     expect(host.querySelector('ol')?.getAttribute('aria-label')).toBe(
       'The weeks of the season by phase',
     );
+  });
+
+  describe('the start position', () => {
+    let scrolled: number | null;
+
+    async function renderScrolled(today: string) {
+      scrolled = null;
+      fixture = TestBed.createComponent(SeasonTimeline);
+      fixture.componentRef.setInput('season', SEASON);
+      fixture.componentRef.setInput('today', today);
+      host = fixture.nativeElement as HTMLElement;
+      Object.defineProperty(host, 'scrollLeft', {
+        configurable: true,
+        get: () => 0,
+        set: (value: number) => (scrolled = value),
+      });
+      await fixture.whenStable();
+    }
+
+    afterEach(() => vi.restoreAllMocks());
+
+    it('moves the row so that this week is in the middle', async () => {
+      vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(300);
+      vi.spyOn(HTMLElement.prototype, 'offsetLeft', 'get').mockReturnValue(500);
+      vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(40);
+
+      await renderScrolled('2026-11-24');
+
+      expect(scrolled).toBe(370);
+    });
+
+    it('leaves the row alone when no week of the season is this week', async () => {
+      await renderScrolled('2030-01-01');
+
+      expect(scrolled).toBeNull();
+    });
   });
 });
