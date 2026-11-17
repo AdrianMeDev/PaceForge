@@ -49,6 +49,30 @@ function createApiStub() {
 }
 
 describe('SecurityPage', () => {
+  // jsdom has no modal dialog: this is what the browser does that the question relies on.
+  beforeAll(() => {
+    HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
+      this.setAttribute('open', '');
+    };
+    HTMLDialogElement.prototype.close = function (this: HTMLDialogElement) {
+      if (this.hasAttribute('open')) {
+        this.removeAttribute('open');
+        this.dispatchEvent(new Event('close'));
+      }
+    };
+  });
+
+  const dialog = () => query<HTMLDialogElement>(page, '[data-testid="confirm-dialog"]');
+  /** Answers the question of the dialog with its confirm button. */
+  async function confirmDialog(): Promise<void> {
+    query<HTMLButtonElement>(page, '[data-testid="confirm-dialog-confirm"]').click();
+    await settle(fixture);
+  }
+  async function cancelDialog(): Promise<void> {
+    query<HTMLButtonElement>(page, '[data-testid="confirm-dialog-cancel"]').click();
+    await settle(fixture);
+  }
+
   let api: ReturnType<typeof createApiStub>;
   let store: ReturnType<typeof createAuthStoreStub>;
   let fixture: ComponentFixture<SecurityPage>;
@@ -484,16 +508,18 @@ describe('SecurityPage', () => {
         await click('Generate new recovery codes');
 
         expect(api.regenerateRecoveryCodes).not.toHaveBeenCalled();
-        expect(alerts()[0]).toContain('old codes stop working');
+        expect(dialog().open).toBe(true);
+        expect(dialog().textContent).toContain('old codes stop working');
       });
 
       it('keeps the old codes when the confirmation is cancelled', async () => {
         await setup(MEMBER_ON);
         await click('Generate new recovery codes');
 
-        await click('Cancel');
+        await cancelDialog();
 
         expect(api.regenerateRecoveryCodes).not.toHaveBeenCalled();
+        expect(dialog().open).toBe(false);
         expect(hasButton('Show recovery codes')).toBe(true);
       });
 
@@ -502,7 +528,7 @@ describe('SecurityPage', () => {
         api.regenerateRecoveryCodes.mockResolvedValue({ kind: 'regenerated', ...ALL_SET });
         await click('Generate new recovery codes');
 
-        await click('Generate new codes');
+        await confirmDialog();
 
         expect(api.regenerateRecoveryCodes).toHaveBeenCalledTimes(1);
         expect(shownCodes()).toEqual(CODES);
@@ -516,7 +542,7 @@ describe('SecurityPage', () => {
           .mockResolvedValueOnce({ kind: 'regenerated', ...ALL_SET });
         api.reauthenticate.mockResolvedValue({ kind: 'confirmed' });
         await click('Generate new recovery codes');
-        await click('Generate new codes');
+        await confirmDialog();
 
         await enterPassword('correct-horse');
 
@@ -531,8 +557,10 @@ describe('SecurityPage', () => {
 
         await click('Turn off');
         expect(api.deactivateTotp).not.toHaveBeenCalled();
-        expect(alerts()[0]).toContain('removes your authenticator and your recovery codes');
-        await click('Cancel');
+        expect(dialog().textContent).toContain(
+          'removes your authenticator and your recovery codes',
+        );
+        await cancelDialog();
 
         expect(api.deactivateTotp).not.toHaveBeenCalled();
         expect(hasButton('Show recovery codes')).toBe(true);
@@ -543,7 +571,7 @@ describe('SecurityPage', () => {
         api.deactivateTotp.mockResolvedValue({ kind: 'deactivated' });
         await click('Turn off');
 
-        await click('Turn off');
+        await confirmDialog();
 
         expect(api.deactivateTotp).toHaveBeenCalledTimes(1);
         expect(store.reloadUser).toHaveBeenCalledTimes(1);
@@ -558,7 +586,7 @@ describe('SecurityPage', () => {
           .mockResolvedValueOnce({ kind: 'deactivated' });
         api.reauthenticate.mockResolvedValue({ kind: 'confirmed' });
         await click('Turn off');
-        await click('Turn off');
+        await confirmDialog();
 
         await enterPassword('correct-horse');
 
@@ -571,7 +599,7 @@ describe('SecurityPage', () => {
         api.deactivateTotp.mockRejectedValue(new Error('boom'));
         await click('Turn off');
 
-        await click('Turn off');
+        await confirmDialog();
 
         expect(alerts()).toContain('Something went wrong. Please try again.');
         expect(store.reloadUser).not.toHaveBeenCalled();

@@ -133,64 +133,38 @@
         @case ('on') {
           <p>Two-factor authentication is <strong>on</strong>{{ statusDetail() }}</p>
 
-          @if (confirming() === 'regenerate') {
-            <p class="alert" role="alert">
-              New recovery codes replace all your old ones; the old codes stop working.
-            </p>
-            <div class="actions flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                class="btn btn-primary"
-                [disabled]="busy()"
-                (click)="confirmAction()"
-              >
-                Generate new codes
-              </button>
-              <button type="button" class="btn btn-ghost" (click)="cancelConfirmation()">
-                Cancel
-              </button>
-            </div>
-          } @else if (confirming() === 'deactivate') {
-            <p class="alert" role="alert">
-              Turning it off removes your authenticator and your recovery codes. Your account will
-              be protected by the password alone.
-            </p>
-            <div class="actions flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                class="btn btn-primary"
-                [disabled]="busy()"
-                (click)="confirmAction()"
-              >
+          <div class="actions flex flex-wrap items-center gap-2">
+            <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="showCodes()">
+              Show recovery codes
+            </button>
+            <button type="button" class="btn btn-secondary" (click)="ask('regenerate')">
+              Generate new recovery codes
+            </button>
+            @if (!isStaff()) {
+              <button type="button" class="btn btn-secondary" (click)="ask('deactivate')">
                 Turn off
               </button>
-              <button type="button" class="btn btn-ghost" (click)="cancelConfirmation()">
-                Cancel
-              </button>
-            </div>
-          } @else {
-            <div class="actions flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                class="btn btn-primary"
-                [disabled]="busy()"
-                (click)="showCodes()"
-              >
-                Show recovery codes
-              </button>
-              <button type="button" class="btn btn-secondary" (click)="ask('regenerate')">
-                Generate new recovery codes
-              </button>
-              @if (!isStaff()) {
-                <button type="button" class="btn btn-secondary" (click)="ask('deactivate')">
-                  Turn off
-                </button>
-              }
-            </div>
-            @if (isStaff()) {
-              <p class="hint">Administrators have to keep two-factor authentication turned on.</p>
             }
+          </div>
+          @if (isStaff()) {
+            <p class="hint">Administrators have to keep two-factor authentication turned on.</p>
           }
+          @let pending = confirming();
+          <app-confirm-dialog
+            [title]="
+              pending === 'deactivate'
+                ? 'Turn off two-factor authentication?'
+                : 'Generate new recovery codes?'
+            "
+            [message]="
+              pending === 'deactivate'
+                ? 'Turning it off removes your authenticator and your recovery codes. Your account will be protected by the password alone.'
+                : 'New recovery codes replace all your old ones; the old codes stop working.'
+            "
+            [confirmLabel]="pending === 'deactivate' ? 'Turn off' : 'Generate new codes'"
+            [danger]="true"
+            (confirmed)="confirmAction()"
+          />
         }
         @case ('codes') {
           @if (codes(); as set) {

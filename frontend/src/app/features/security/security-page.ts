@@ -1,10 +1,11 @@
 import { formatDate } from '@angular/common';
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AuthApi } from '../../core/auth/auth-api';
 import { RecoveryCodeSet } from '../../core/auth/auth-models';
 import { AuthStore } from '../../core/auth/auth-store';
 import { ActivatedRoute } from '@angular/router';
+import { ConfirmDialog } from '../../shared/confirm-dialog';
 import { PageHeader } from '../../shared/page-header';
 import { QrCode } from '../../shared/qr-code';
 
@@ -41,7 +42,7 @@ function noticeFor(key: string | null): string | null {
  */
 @Component({
   selector: 'app-security-page',
-  imports: [ReactiveFormsModule, PageHeader, QrCode],
+  imports: [ReactiveFormsModule, ConfirmDialog, PageHeader, QrCode],
   templateUrl: './security-page.html',
   styleUrls: ['../auth/auth-form.css', './security-page.css'],
 })
@@ -72,6 +73,7 @@ export class SecurityPage implements OnInit {
   /** Codes that were just created: the user has to save them now. */
   protected readonly freshCodes = signal(false);
   protected readonly confirming = signal<Confirmation | null>(null);
+  private readonly confirmDialog = viewChild(ConfirmDialog);
   /** The action waiting for the password. */
   protected readonly reauthFor = signal<Action | null>(null);
 
@@ -155,10 +157,7 @@ export class SecurityPage implements OnInit {
   protected ask(confirmation: Confirmation): void {
     this.errors.set([]);
     this.confirming.set(confirmation);
-  }
-
-  protected cancelConfirmation(): void {
-    this.confirming.set(null);
+    this.confirmDialog()?.open();
   }
 
   protected async confirmAction(): Promise<void> {
