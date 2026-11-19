@@ -20,6 +20,47 @@
       <p><a routerLink="/login">Go to sign in</a></p>
     }
     @case ('ready') {
+      @if (connection() !== undefined) {
+        <div class="card" aria-labelledby="intervals-heading">
+          <h2 id="intervals-heading" class="m-0 mb-3 text-lg font-semibold">Intervals.icu</h2>
+          @if (connection(); as connected) {
+            @if (connected.status === 'connected') {
+              <button
+                type="button"
+                class="btn btn-primary btn-sm"
+                [disabled]="busy() || refreshing()"
+                (click)="syncFromIntervals()"
+              >
+                Sync from Intervals.icu
+              </button>
+              <p class="hint">
+                Strava activities cannot be read through the Intervals.icu API and are skipped.
+                Import their files or enter them by hand instead.
+              </p>
+            } @else {
+              <p>
+                Intervals.icu did not accept the stored key.
+                <a routerLink="/settings/connections">Update it on Connections</a> to sync
+                activities.
+              </p>
+            }
+            <p class="hint" data-testid="intervals-last-sync">
+              Last successful sync:
+              @if (connected.last_sync_at; as timestamp) {
+                {{ timestamp | date: 'medium' }}
+              } @else {
+                Never
+              }
+            </p>
+          } @else {
+            <p>
+              <a routerLink="/settings/connections">Connect Intervals.icu on Connections</a> to sync
+              your activities.
+            </p>
+          }
+        </div>
+      }
+
       <div class="card">
         <h2 class="m-0 mb-3 text-lg font-semibold">Import</h2>
         <div

@@ -1,5 +1,13 @@
 import { DOCUMENT, DatePipe } from '@angular/common';
-import { Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  OnInit,
+  computed,
+  inject,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { ActivitiesApi } from '../../core/activities/activities-api';
 import {
@@ -7,6 +15,8 @@ import {
   ActivityPage,
   ImportActivityResult,
 } from '../../core/activities/activities-models';
+import { IntervalsConnectionApi } from '../../core/integrations/intervals-api';
+import { IntervalsConnection } from '../../core/integrations/intervals-models';
 import {
   SPORT_CHOICES,
   formatDistance,
@@ -46,16 +56,20 @@ const REFRESH_FAILED = 'The list could not be refreshed. Please try again.';
   imports: [RouterLink, DatePipe, ConfirmDialog, Icon, PageHeader, ManualActivityForm],
   templateUrl: './activities-page.html',
   styleUrl: './activities-page.css',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ActivitiesPage implements OnInit {
   private readonly api = inject(ActivitiesApi);
+  private readonly intervals = inject(IntervalsConnectionApi);
   private readonly document = inject(DOCUMENT);
 
   protected readonly view = signal<View>('loading');
   protected readonly page = signal<ActivityPage>({ count: 0, results: [] });
   protected readonly offset = signal(0);
-  /** An import or a deletion is running: nothing else may start. */
+  /** An import, sync or deletion is running: nothing else may start. */
   protected readonly busy = signal(false);
+  /** Undefined until the optional connection status is known; null means not connected. */
+  protected readonly connection = signal<IntervalsConnection | null | undefined>(undefined);
   /** The list is being fetched again (paging, after an import or a deletion). */
   protected readonly refreshing = signal(false);
   protected readonly currentFile = signal<string | null>(null);
@@ -100,7 +114,19 @@ export class ActivitiesPage implements OnInit {
     formatDuration(activity.timer_seconds ?? activity.elapsed_seconds);
 
   ngOnInit(): Promise<void> {
+    void this.loadConnection();
     return this.load();
+  }
+
+  private async loadConnection(): Promise<void> {
+    try {
+      const result = await this.intervals.get();
+      if (result.kind !== 'forbidden') {
+        this.connection.set(result.kind === 'connected' ? result.connection : null);
+      }
+    } catch {
+      // The activity list and file imports remain usable without connection status.
+    }
   }
 
   protected async load(): Promise<void> {
@@ -119,6 +145,59 @@ export class ActivitiesPage implements OnInit {
       return;
     }
     await this.importAll(files);
+  }
+
+  protected async syncFromIntervals(): Promise<void> {
+    if (this.busy() || this.refreshing() || this.connection()?.status !== 'connected') {
+      return;
+    }
+    this.clearMessages();
+    this.busy.set(true);
+    try {
+      const result = await this.api.syncFromIntervals();
+      switch (result.kind) {
+        case 'ok':
+          this.connection.update((connection) =>
+            connection
+              ? { ...connection, last_sync_at: result.last_sync_at, last_sync_error: '' }
+              : connection,
+          );
+          this.notice.set(
+            `Intervals.icu sync: ${result.imported} imported; ${result.skipped_duplicates} duplicates skipped; ${result.skipped_strava} Strava activities skipped; ${result.skipped_invalid} invalid activities skipped.`,
+          );
+          if (result.imported > 0) {
+            await this.refresh(0);
+          }
+          break;
+        case 'not_connected':
+          this.connection.set(null);
+          this.errors.set(['Intervals.icu is no longer connected. Connect it on Connections.']);
+          break;
+        case 'invalid_key':
+          this.connection.update((connection) =>
+            connection
+              ? { ...connection, status: 'invalid', last_sync_error: 'invalid_key' }
+              : connection,
+          );
+          this.errors.set([
+            'Intervals.icu did not accept the stored key. Update it on Connections.',
+          ]);
+          break;
+        case 'rate_limited':
+          this.errors.set(['Too many sync attempts. Please wait a minute and try again.']);
+          break;
+        case 'unavailable':
+          this.errors.set([result.message]);
+          break;
+        case 'forbidden':
+          this.view.set('signed_out');
+          break;
+      }
+    } catch {
+      this.errors.set([FALLBACK]);
+    } finally {
+      this.busy.set(false);
+    }
   }
 
   /** Files over the zone: the browser must be told that they may be dropped, or it opens them. */
