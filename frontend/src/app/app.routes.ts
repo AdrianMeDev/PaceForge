@@ -115,6 +115,12 @@ export const routes: Routes = [
           import('./features/connections/connections-page').then((m) => m.ConnectionsPage),
       },
       {
+        path: 'settings/automation',
+        title: 'Automation',
+        loadComponent: () =>
+          import('./features/automation/automation-page').then((m) => m.AutomationPage),
+      },
+      {
         path: 'admin/invitations',
         title: 'Invitations',
         canActivate: [staffGuard],

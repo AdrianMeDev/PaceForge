@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     "season",
     "dashboard",
     "chat",
+    "jobs",
 ]
 
 MIDDLEWARE = [
@@ -126,6 +127,19 @@ if urlsplit(INTERVALS_API_BASE_URL).scheme not in {"http", "https"}:
 INTERVALS_SYNC_WEEKS = env.int("INTERVALS_SYNC_WEEKS", default=12)
 if not 8 <= INTERVALS_SYNC_WEEKS <= 12:
     raise ImproperlyConfigured("INTERVALS_SYNC_WEEKS must be a whole number from 8 to 12")
+
+# The background jobs. The scheduler syncs each user every JOBS_SYNC_HOURS hours. From
+# JOBS_SUNDAY_HOUR o'clock on Sunday (in the user's time zone) it reviews the week and drafts the
+# next one. It looks for due jobs every JOBS_INTERVAL_MINUTES minutes.
+JOBS_SYNC_HOURS = env.int("JOBS_SYNC_HOURS", default=6)
+if not 1 <= JOBS_SYNC_HOURS <= 24:
+    raise ImproperlyConfigured("JOBS_SYNC_HOURS must be a whole number from 1 to 24")
+JOBS_SUNDAY_HOUR = env.int("JOBS_SUNDAY_HOUR", default=18)
+if not 0 <= JOBS_SUNDAY_HOUR <= 23:
+    raise ImproperlyConfigured("JOBS_SUNDAY_HOUR must be a whole number from 0 to 23")
+JOBS_INTERVAL_MINUTES = env.int("JOBS_INTERVAL_MINUTES", default=15)
+if not 1 <= JOBS_INTERVAL_MINUTES <= 60:
+    raise ImproperlyConfigured("JOBS_INTERVAL_MINUTES must be a whole number from 1 to 60")
 
 # The AI providers: the OpenAI-compatible addresses (OpenAI itself, Ollama, llama.cpp ...) that
 # users may choose from. Empty: none. Users cannot enter addresses of their own, so that the

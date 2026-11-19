@@ -144,6 +144,7 @@ describe('Shell', () => {
         [
           ['Profile', '/settings/profile'],
           ['Connections', '/settings/connections'],
+          ['Automation', '/settings/automation'],
           ['Security', '/settings/security'],
         ],
       ],
@@ -190,7 +191,7 @@ describe('Shell', () => {
       const links = Array.from(
         page.querySelectorAll<HTMLAnchorElement>('nav[aria-label="Main"] a'),
       );
-      expect(links.length).toBe(11);
+      expect(links.length).toBe(12);
       for (const link of links) {
         expect(link.querySelector('app-icon svg')).toBeTruthy();
         expect(link.getAttribute('title')).toBe((link.textContent ?? '').trim());
@@ -295,6 +296,7 @@ describe('Shell', () => {
         'Coach',
         'Profile',
         'Connections',
+        'Automation',
         'Security',
       ]);
       expect(query(page, '[data-testid="sheet-user"]').textContent).toBe('Ada');

@@ -40,6 +40,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     items: [
       { label: 'Profile', path: '/settings/profile', icon: 'user' },
       { label: 'Connections', path: '/settings/connections', icon: 'link' },
+      { label: 'Automation', path: '/settings/automation', icon: 'settings' },
       { label: 'Security', path: '/settings/security', icon: 'shield' },
     ],
   },
