@@ -62,6 +62,10 @@ class TestTheSystemPrompt:
         assert 'any one week in "weeks"' in SYSTEM_PROMPT
         assert 'only the first week in "weeks"' not in SYSTEM_PROMPT
 
+    def test_forbids_changing_more_than_one_week_in_one_answer(self) -> None:
+        assert "One week per answer" in SYSTEM_PROMPT
+        assert "several weeks" in SYSTEM_PROMPT
+
 
 class TestTheFirstMessage:
     def test_holds_the_data_the_conversation_and_the_message_as_data(self) -> None:

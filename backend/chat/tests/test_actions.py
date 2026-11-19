@@ -6,6 +6,7 @@ from uuid import UUID
 import pytest
 
 from chat.actions import (
+    OTHER_WEEK_PROBLEM,
     ActionFormatError,
     FreeDay,
     MarkSick,
@@ -23,11 +24,13 @@ from planning.rules import EASY_UP_TO_ZONE, Intensity, intensity_of
 from planning.schema import Goal, Segment, SegmentKind, Slot, Sport, WeekPlan, Workout, ZoneSystem
 
 MONDAY = date(2026, 11, 16)
+NEXT_MONDAY = date(2026, 11, 23)
 TODAY = date(2026, 11, 17)  # a Tuesday: Monday is over
 RUN = UUID("0195f3a0-0000-7000-8000-000000000001")
 RIDE = UUID("0195f3a0-0000-7000-8000-000000000002")
 OLD = UUID("0195f3a0-0000-7000-8000-000000000003")
 STRENGTH = UUID("0195f3a0-0000-7000-8000-000000000004")
+NEXT_RUN = UUID("0195f3a0-0000-7000-8000-000000000005")
 
 
 def day(n: int) -> date:
@@ -60,6 +63,18 @@ def make_plan() -> WeekPlan:
             Workout(day(5), Sport.STRENGTH, "Legs", Goal.STRENGTH, 40, lineage=STRENGTH),
         ),
         "Rationale.",
+    )
+
+
+def make_next_plan() -> WeekPlan:
+    return WeekPlan(
+        NEXT_MONDAY,
+        (
+            Workout(
+                date(2026, 11, 24), Sport.RUNNING, "Next run", Goal.ENDURANCE, 50, lineage=NEXT_RUN
+            ),
+        ),
+        "Next week.",
     )
 
 
@@ -240,6 +255,70 @@ class TestWhatIsRefused:
 
         assert "actions[2]" in found
         assert "mark_sick" in found["actions[2]"]
+
+    def test_a_workout_from_another_week_reports_one_week_per_answer(self) -> None:
+        with pytest.raises(ActionFormatError) as caught:
+            read_actions(
+                [
+                    {"tool": "skip_workout", "id": str(RUN)},
+                    {"tool": "skip_workout", "id": str(NEXT_RUN)},
+                ],
+                make_plan(),
+                TODAY,
+                other_weeks=[make_next_plan()],
+            )
+
+        found = {problem.path: problem.message for problem in caught.value.problems}
+        assert found == {"actions[1].id": OTHER_WEEK_PROBLEM}
+        assert OTHER_WEEK_PROBLEM == "One week per answer: this is in another week."
+
+    def test_a_day_from_another_week_reports_one_week_per_answer(self) -> None:
+        with pytest.raises(ActionFormatError) as caught:
+            read_actions(
+                [
+                    {"tool": "move_workout", "id": str(RUN), "day": "2026-11-24"},
+                    {"tool": "free_day", "day": "2026-11-29"},
+                ],
+                make_plan(),
+                TODAY,
+                other_weeks=[make_next_plan()],
+            )
+
+        found = {problem.path: problem.message for problem in caught.value.problems}
+        assert found == {
+            "actions[0].day": OTHER_WEEK_PROBLEM,
+            "actions[1].day": OTHER_WEEK_PROBLEM,
+        }
+
+    def test_unknown_id_or_day_outside_all_briefed_weeks_keeps_plain_error(self) -> None:
+        stranger = "0195f3a0-0000-7000-8000-0000000000ff"
+        with pytest.raises(ActionFormatError) as caught:
+            read_actions(
+                [
+                    {"tool": "skip_workout", "id": stranger},
+                    {"tool": "free_day", "day": "2026-12-02"},
+                ],
+                make_plan(),
+                TODAY,
+                other_weeks=[make_next_plan()],
+            )
+
+        found = {problem.path: problem.message for problem in caught.value.problems}
+        assert found["actions[0].id"] == "This is not a workout of the plan."
+        assert found["actions[1].day"] == "This day is not in the week of the plan."
+
+    def test_single_week_actions_still_succeed_when_other_weeks_are_present(self) -> None:
+        actions = read_actions(
+            [
+                {"tool": "move_workout", "id": str(RUN), "day": day(2).isoformat()},
+                {"tool": "skip_workout", "id": str(RIDE)},
+            ],
+            make_plan(),
+            TODAY,
+            other_weeks=[make_plan(), make_next_plan()],
+        )
+
+        assert actions == (MoveWorkout(RUN, day(2), None), SkipWorkout(RIDE))
 
 
 class TestApplyingThem:

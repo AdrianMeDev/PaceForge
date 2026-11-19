@@ -32,7 +32,7 @@ from planning.generation import plannable_weeks
 from planning.models import WeeklyPlan
 from planning.schema import Problem, WeekPlan
 
-from .actions import ActionFormatError, MarkSick, apply, read_actions
+from .actions import OTHER_WEEK_PROBLEM, ActionFormatError, MarkSick, apply, read_actions
 from .briefing import build_briefing
 from .models import USER_TEXT_MAX, ChatMessage
 from .prompt import SYSTEM_PROMPT, AnswerNotUsable, extract_answer, first_message, repair_message
@@ -54,6 +54,11 @@ DOCTOR_HINT = (
 NOT_USABLE = (
     "I could not turn that into a change of your plan. Please try again, "
     "or change the plan yourself on the Week plan page."
+)
+# What the athlete is told when the coach still tried to change more than one week at once.
+ONE_WEEK_ONLY = (
+    "I can only change one week at a time. Please tell me which week to change first, "
+    "then ask for the next one."
 )
 
 
@@ -138,7 +143,12 @@ def send(user: User, text: str) -> Sent:
         if attempt < ATTEMPTS:
             answer = completion.text if completion.text.strip() else "(no answer)"
             messages = [messages[0], Message("assistant", answer), repair_message(problems)]
-    return _store(user, text, NOT_USABLE, None, None, (), None, today)
+    fallback = ONE_WEEK_ONLY if _names_other_week(problems) else NOT_USABLE
+    return _store(user, text, fallback, None, None, (), None, today)
+
+
+def _names_other_week(problems: Sequence[Problem]) -> bool:
+    return any(problem.message == OTHER_WEEK_PROBLEM for problem in problems)
 
 
 def _understand(
@@ -152,7 +162,8 @@ def _understand(
     stored, plan = _pick_week(found.week, available, today)
     if not found.actions:
         return found.reply, None, None, (), None
-    actions = read_actions(found.actions, plan, today)
+    others = [other for _, other in available if other.week_start != plan.week_start]
+    actions = read_actions(found.actions, plan, today, other_weeks=others)
     sick = next((action for action in actions if isinstance(action, MarkSick)), None)
     changed, changes = apply(plan, actions, today)
     if changed == plan:

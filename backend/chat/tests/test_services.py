@@ -9,12 +9,14 @@ from django.core.exceptions import ValidationError
 from accounts.models import User
 from availability.models import UnavailablePeriod, WeekdayMinutes
 from chat import services
+from chat.actions import OTHER_WEEK_PROBLEM
 from chat.models import USER_TEXT_MAX, ChatMessage
 from chat.services import (
     ATTEMPTS,
     DOCTOR_HINT,
     HISTORY_TOLD,
     NOT_USABLE,
+    ONE_WEEK_ONLY,
     REASON,
     clean_text,
     clear,
@@ -488,6 +490,134 @@ class TestAChange:
         assert drafts(bob) == []
         assert PlannedWorkout.objects.for_user(bob).filter(plan=bob_plan).count() == 2
         assert len(provider.calls) == ATTEMPTS
+
+    def test_touching_two_weeks_by_workout_is_repaired_once_then_refused_with_one_week_only(
+        self, athlete: User, provide: Callable[..., Scripted]
+    ) -> None:
+        next_monday = MONDAY + timedelta(weeks=1)
+        next_plan = make_plan(athlete, next_monday, status="confirmed", workouts=2)
+        this_workout = saturday_workout(athlete)
+        next_workout = PlannedWorkout.objects.for_user(athlete).filter(plan=next_plan).first()
+        assert next_workout is not None
+        both_weeks = said(
+            "Skipped both.",
+            [
+                {"tool": "skip_workout", "id": str(this_workout.lineage)},
+                {"tool": "skip_workout", "id": str(next_workout.lineage)},
+            ],
+        )
+        provider = provide(both_weeks, both_weeks)
+
+        sent = send(athlete, "Skip Saturday this week and Monday next week")
+
+        assert sent.athlete.text == "Skip Saturday this week and Monday next week"
+        assert sent.coach.text == ONE_WEEK_ONLY
+        assert sent.coach.plan is None
+        assert sent.coach.changes == []
+        assert drafts(athlete) == []
+        assert len(provider.calls) == ATTEMPTS
+        assert OTHER_WEEK_PROBLEM in provider.calls[1][1][-1].content
+        assert PlannedWorkout.objects.for_user(athlete).filter(plan=next_plan).count() == 2
+
+    def test_touching_two_weeks_by_day_is_repaired_once_then_refused_with_one_week_only(
+        self, athlete: User, provide: Callable[..., Scripted]
+    ) -> None:
+        next_monday = MONDAY + timedelta(weeks=1)
+        make_plan(athlete, next_monday, status="confirmed", workouts=2)
+        this_workout = saturday_workout(athlete)
+        cross_week = said(
+            "Moved it to Monday next week.",
+            [
+                {
+                    "tool": "move_workout",
+                    "id": str(this_workout.lineage),
+                    "day": next_monday.isoformat(),
+                }
+            ],
+        )
+        provider = provide(cross_week, cross_week)
+
+        sent = send(athlete, "Move Saturday to next Monday")
+
+        assert sent.athlete.text == "Move Saturday to next Monday"
+        assert sent.coach.text == ONE_WEEK_ONLY
+        assert sent.coach.plan is None
+        assert drafts(athlete) == []
+        assert len(provider.calls) == ATTEMPTS
+        assert OTHER_WEEK_PROBLEM in provider.calls[1][1][-1].content
+
+    def test_touching_two_weeks_with_a_named_week_is_refused_with_one_week_only(
+        self, athlete: User, provide: Callable[..., Scripted]
+    ) -> None:
+        next_monday = MONDAY + timedelta(weeks=1)
+        next_plan = make_plan(athlete, next_monday, status="confirmed", workouts=2)
+        this_workout = saturday_workout(athlete)
+        next_workout = PlannedWorkout.objects.for_user(athlete).filter(plan=next_plan).first()
+        assert next_workout is not None
+        both_weeks = said(
+            "Skipped both.",
+            [
+                {"tool": "skip_workout", "id": str(next_workout.lineage)},
+                {"tool": "skip_workout", "id": str(this_workout.lineage)},
+            ],
+            week=next_monday.isoformat(),
+        )
+        provider = provide(both_weeks, both_weeks)
+
+        sent = send(athlete, "Skip Monday next week and Saturday this week")
+
+        assert sent.coach.text == ONE_WEEK_ONLY
+        assert sent.coach.plan is None
+        assert drafts(athlete) == []
+        assert len(provider.calls) == ATTEMPTS
+        assert OTHER_WEEK_PROBLEM in provider.calls[1][1][-1].content
+
+    def test_touching_two_weeks_can_be_repaired_into_a_plain_reply(
+        self, athlete: User, provide: Callable[..., Scripted]
+    ) -> None:
+        next_monday = MONDAY + timedelta(weeks=1)
+        next_plan = make_plan(athlete, next_monday, status="confirmed", workouts=2)
+        this_workout = saturday_workout(athlete)
+        next_workout = PlannedWorkout.objects.for_user(athlete).filter(plan=next_plan).first()
+        assert next_workout is not None
+        provider = provide(
+            said(
+                "Skipped both.",
+                [
+                    {"tool": "skip_workout", "id": str(this_workout.lineage)},
+                    {"tool": "skip_workout", "id": str(next_workout.lineage)},
+                ],
+            ),
+            said("I can only change one week at a time. Should we start with this week?"),
+        )
+
+        sent = send(athlete, "Skip Saturday and next Monday")
+
+        assert (
+            sent.coach.text
+            == "I can only change one week at a time. Should we start with this week?"
+        )
+        assert sent.coach.plan is None
+        assert drafts(athlete) == []
+        assert len(provider.calls) == ATTEMPTS
+        assert OTHER_WEEK_PROBLEM in provider.calls[1][1][-1].content
+
+    def test_another_users_workout_does_not_trigger_one_week_only(
+        self, athlete: User, bob: User, provide: Callable[..., Scripted]
+    ) -> None:
+        next_monday = MONDAY + timedelta(weeks=1)
+        bob_plan = make_plan(bob, next_monday, status="confirmed", workouts=2)
+        bob_workout = PlannedWorkout.objects.for_user(bob).filter(plan=bob_plan).first()
+        assert bob_workout is not None
+        bad = said("Skipped.", [{"tool": "skip_workout", "id": str(bob_workout.lineage)}])
+        provide(bad, bad)
+
+        sent = send(athlete, "Skip that workout")
+
+        assert sent.coach.text == NOT_USABLE
+        assert sent.coach.plan is None
+        assert drafts(athlete) == []
+        assert drafts(bob) == []
 
 
 class TestAnAnswerThatCannotBeUsed:

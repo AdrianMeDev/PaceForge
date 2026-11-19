@@ -90,6 +90,9 @@ that chosen week.
 - "id" is the "id" of a workout in the chosen week's "workouts". Only workouts with \
 "changeable": true and days from "today" on can be changed. A day must be in that week \
 ("week_start" to its Sunday).
+- One week per answer: never mix workouts or days from different weeks in one answer. If the \
+athlete asks to change several weeks at once, say so in the reply (ask which week to change \
+first) and propose no action ("actions": []).
 - If the athlete asks to change a week that is not in "weeks" (a past week or a week without a \
 plan yet), or for anything that none of the actions can do (a new plan, a different season), say \
 so in the reply and propose no action.
