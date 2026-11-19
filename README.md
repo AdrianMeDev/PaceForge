@@ -1200,9 +1200,14 @@ feedback stays saved and the note stays in the form. The note belongs to the dra
 with it; it is not part of the feedback. Nothing runs by itself: there is no automatic weekly
 run.
 
-**Planned and done.** A table per sport and for the week: the planned workouts and minutes, the
-activities done and their minutes (every activity of the week counts, planned or not), and the sum
-of the activity loads, with "(1 of 2 rated)" where not every session is rated.
+**Planned and done.** Mobile tiles and a desktop table compare planned workouts, minutes and
+estimated load against activities done, minutes and done load, per sport and for the week.
+Every activity of the week counts, planned or not. Done load shows "(1 of 2 with load)" when
+some sessions have no known load, or a dash when none have load. Known zero is shown as zero points.
+Each workout shows estimated load next to its planned minutes. Matched and unplanned activities
+show load points with their source, including Intervals.icu load without an RPE rating.
+Planned load is an estimate. Done load uses Intervals.icu training load when available, otherwise
+duration in hours times RPE times 10.
 The review API also returns `estimated_load` for each workout and `load_source` for each activity
 (`intervals`, `rpe` or `null`). Its comparison includes `planned_load`, `load`, `loaded_count` and
 `rated_count` per sport and for the week. `loaded_count` counts activities with a known load,

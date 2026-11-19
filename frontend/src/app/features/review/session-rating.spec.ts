@@ -18,6 +18,7 @@ function activity(changes: Partial<ReviewActivity> = {}): ReviewActivity {
     rpe: null,
     notes: '',
     load: null,
+    load_source: null,
     workout_id: 'w1',
     ...changes,
   };
@@ -94,6 +95,19 @@ describe('SessionRating', () => {
     expect(options[1]).toEqual(['1', '1 – Very easy']);
     expect(options[10]).toEqual(['10', '10 – Maximal']);
     expect(options.length).toBe(11);
+  });
+
+  it('offers to rate an unrated session even when Intervals supplies its load', async () => {
+    setup(activity({ source: 'intervals_icu', load: 80, load_source: 'intervals' }));
+    expect(page.querySelector('summary')?.textContent?.trim()).toBe('Rate this session');
+    expect(select().value).toBe('');
+    rate.mockResolvedValue({ kind: 'ok', activity: {} as never });
+    fill('6', 'Steady');
+
+    await submit();
+
+    expect(rate).toHaveBeenCalledExactlyOnceWith('a1', { rpe: 6, notes: 'Steady' });
+    expect(rated).toHaveBeenCalledTimes(1);
   });
 
   it('shows what is stored', () => {

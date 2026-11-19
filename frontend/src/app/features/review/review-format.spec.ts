@@ -18,9 +18,11 @@ import {
 const FIGURES = {
   planned_count: 2,
   planned_minutes: 120,
+  planned_load: 110,
   actual_count: 2,
   actual_minutes: 100,
-  load: 360,
+  load: 60,
+  loaded_count: 2,
   rated_count: 2,
 };
 
@@ -36,7 +38,8 @@ function activity(changes: Partial<ReviewActivity> = {}): ReviewActivity {
     distance_m: 10400,
     rpe: 6,
     notes: '',
-    load: 360,
+    load: 60,
+    load_source: 'rpe',
     workout_id: null,
     ...changes,
   };
@@ -51,6 +54,7 @@ function workout(changes: Partial<ReviewWorkout> = {}): ReviewWorkout {
     title: 'Easy run',
     goal: 'endurance',
     duration_minutes: 60,
+    estimated_load: 55,
     slot: null,
     notes: '',
     status: 'done',
@@ -113,21 +117,26 @@ describe('review-format', () => {
       expect(activityChoiceText(activity({ sport: 'other', distance_m: null }))).toContain('Other');
     });
 
-    it.each([
-      [{}, 'RPE 6 · 360 AU'],
+    it.each<[Partial<ReviewActivity>, string]>([
+      [{}, 'RPE 6 · 60 pts (RPE estimate)'],
       [{ load: null }, 'RPE 6'],
       [{ rpe: null, load: null }, 'Not rated'],
+      [{ rpe: null, load: 80, load_source: 'intervals' }, 'Not rated · 80 pts (Intervals.icu)'],
+      [{ rpe: 6, load: 80, load_source: 'intervals' }, 'RPE 6 · 80 pts (Intervals.icu)'],
+      [{ rpe: null, load: 0, load_source: 'intervals' }, 'Not rated · 0 pts (Intervals.icu)'],
     ])('says how it was rated (%j)', (changes, expected) => {
       expect(ratingText(activity(changes))).toBe(expected);
     });
   });
 
   describe('figures', () => {
-    it('shows the load, and how many sessions it comes from when not all are rated', () => {
-      expect(loadText(FIGURES)).toBe('360 AU');
-      expect(loadText({ ...FIGURES, rated_count: 1 })).toBe('360 AU (1 of 2 rated)');
-      expect(loadText({ ...FIGURES, rated_count: 0, load: 0 })).toBe('–');
-      expect(loadText({ ...FIGURES, actual_count: 0, rated_count: 0, load: 0 })).toBe('–');
+    it('shows known load and its coverage independently of ratings', () => {
+      expect(loadText(FIGURES)).toBe('60 pts');
+      expect(loadText({ ...FIGURES, loaded_count: 1 })).toBe('60 pts (1 of 2 with load)');
+      expect(loadText({ ...FIGURES, rated_count: 0 })).toBe('60 pts');
+      expect(loadText({ ...FIGURES, loaded_count: 0, load: 0 })).toBe('–');
+      expect(loadText({ ...FIGURES, actual_count: 0, loaded_count: 0, load: 0 })).toBe('–');
+      expect(loadText({ ...FIGURES, rated_count: 0, load: 0 })).toBe('0 pts');
     });
 
     it('writes a count with its minutes', () => {

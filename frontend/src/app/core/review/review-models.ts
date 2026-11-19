@@ -1,4 +1,8 @@
-import { ActivitySource, Sport as ActivitySport } from '../activities/activities-models';
+import {
+  ActivitySource,
+  LoadSource,
+  Sport as ActivitySport,
+} from '../activities/activities-models';
 import { Forbidden } from '../goals/goals-models';
 import { RateLimited } from '../integrations/intervals-models';
 import {
@@ -49,6 +53,8 @@ export interface ReviewWorkout {
   title: string;
   goal: WorkoutGoal;
   duration_minutes: number;
+  /** Estimated load points, using the same scale as activity load. */
+  estimated_load: number;
   slot: WorkoutSlot | null;
   notes: string;
   status: WorkoutStatus;
@@ -59,8 +65,8 @@ export interface ReviewWorkout {
 
 /**
  * An activity of the week. `day` is its local day; `workout_id` is the workout it belongs to
- * (`null`: it was not planned). `notes` is free text: show it as text only. `load` is minutes
- * times RPE in arbitrary units (not TSS), `null` without a rating or a duration.
+ * (`null`: it was not planned). `notes` is free text: show it as text only. `load` uses Intervals
+ * training load when present, otherwise hours × RPE × 10; `null` when unknown.
  */
 export interface ReviewActivity {
   id: string;
@@ -74,6 +80,7 @@ export interface ReviewActivity {
   rpe: number | null;
   notes: string;
   load: number | null;
+  load_source: LoadSource | null;
   workout_id: string | null;
 }
 
@@ -81,10 +88,13 @@ export interface ReviewActivity {
 export interface Figures {
   planned_count: number;
   planned_minutes: number;
+  planned_load: number;
   actual_count: number;
   actual_minutes: number;
-  /** Sum of the loads of the rated sessions (AU, not TSS); `rated_count` says how many. */
+  /** Sum of known activity load points; `loaded_count` says how many. */
   load: number;
+  loaded_count: number;
+  /** Count of RPE ratings, independent of whether load is known. */
   rated_count: number;
 }
 

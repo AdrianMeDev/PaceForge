@@ -554,6 +554,13 @@ and `rated_count`. Every activity in the user's local week counts, including unp
 Missing activity load adds zero. Planned estimates count all workouts of the confirmed plan.
 The review coach briefing includes both loads and both counts within its 8,000-byte limit.
 
+The Week review page shows each workout's estimated load next to its planned minutes.
+Matched and unplanned activities show load points and their source, even without an RPE rating.
+Mobile tiles and the desktop table compare planned and done load per sport and in total.
+Done load coverage uses the count of sessions with known load, independently of RPE ratings.
+It shows a dash when no activity has known load, and zero points for known zero load.
+The hint explains planned estimates and the Intervals.icu or RPE source of done load.
+
 Errors have a fixed text and a `code`; nothing the provider or the coach said is in one. A 429
 without a code is the limit of PaceForge itself.
 
