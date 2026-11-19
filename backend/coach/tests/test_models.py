@@ -1,3 +1,4 @@
+from decimal import Decimal
 from typing import Any
 
 import pytest
@@ -6,7 +7,14 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, connection, transaction
 
 from accounts.models import User
-from coach.models import BASE_URL_MAX, MODEL_MAX, AIProviderConfiguration, AIUsageRecord
+from coach.models import (
+    BASE_URL_MAX,
+    MODEL_MAX,
+    PRICE_MAX,
+    AIModelPrice,
+    AIProviderConfiguration,
+    AIUsageRecord,
+)
 from core.encryption import PREFIX
 
 pytestmark = pytest.mark.django_db
@@ -244,6 +252,36 @@ class TestTheKey:
         assert AIProviderConfiguration._meta.get_field("api_key").editable is False
 
 
+class TestWeekAndChatModels:
+    @pytest.mark.parametrize("field", ["week_model", "chat_model"])
+    def test_they_are_optional_and_valid_names_pass(self, alice: User, field: str) -> None:
+        check(alice, **anthropic())
+        check(alice, **anthropic(**{field: "claude-haiku-5-5"}))
+
+    @pytest.mark.parametrize("field", ["week_model", "chat_model"])
+    @pytest.mark.parametrize("name", ["-bad", "has space", "x" * (MODEL_MAX + 1), "ü"])
+    def test_a_name_that_cannot_be_a_model_is_refused(
+        self, alice: User, field: str, name: str
+    ) -> None:
+        refused(alice, field, **anthropic(**{field: name}))
+
+    def test_each_purpose_gets_its_own_model_and_falls_back_to_the_normal_one(
+        self, alice: User
+    ) -> None:
+        plain = AIProviderConfiguration(owner=alice, **anthropic())
+        special = AIProviderConfiguration(
+            owner=alice, **anthropic(week_model="w", chat_model="c", season_model="s")
+        )
+        purpose = AIUsageRecord.Purpose
+
+        assert {p: plain.model_for(p) for p in purpose} == dict.fromkeys(purpose, plain.model)
+        assert special.model_for(purpose.WEEKLY_PLAN) == "w"
+        assert special.model_for(purpose.CHAT) == "c"
+        assert special.model_for(purpose.SEASON_PLAN) == "s"
+        assert special.model_for(purpose.CHECK) == special.model
+        assert special.model_for(purpose.WEEK_REVIEW) == special.model
+
+
 class TestOwnership:
     def test_for_user_shows_only_the_own_configuration(self, alice: User, bob: User) -> None:
         mine = AIProviderConfiguration.objects.create(owner=alice, **anthropic())
@@ -371,3 +409,81 @@ class TestUsageRecords:
 
         alice.delete()
         assert AIUsageRecord.objects.count() == 1
+
+
+class TestTheModelPrice:
+    def price(self, owner: User, **fields: Any) -> AIModelPrice:
+        data: dict[str, Any] = {
+            "model": "claude-sonnet-5-5",
+            "input_per_million": Decimal("3"),
+            "output_per_million": Decimal("15"),
+            **fields,
+        }
+        return AIModelPrice.objects.create(owner=owner, **data)
+
+    def test_the_cached_price_is_optional(self, alice: User) -> None:
+        assert self.price(alice).cached_per_million is None
+
+    def test_a_model_has_one_price_per_user(self, alice: User, bob: User) -> None:
+        self.price(alice)
+        self.price(bob)
+
+        with pytest.raises(IntegrityError), transaction.atomic():
+            self.price(alice)
+
+    @pytest.mark.parametrize(
+        "field", ["input_per_million", "output_per_million", "cached_per_million"]
+    )
+    def test_the_database_refuses_a_negative_price(self, alice: User, field: str) -> None:
+        with pytest.raises(IntegrityError), transaction.atomic():
+            self.price(alice, **{field: Decimal("-0.0001")})
+
+    def test_zero_is_a_valid_price(self, alice: User) -> None:
+        price = self.price(
+            alice,
+            input_per_million=Decimal(0),
+            output_per_million=Decimal(0),
+            cached_per_million=Decimal(0),
+        )
+
+        price.full_clean(exclude=["owner"])
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("model", "has space"),
+            ("model", ""),
+            ("model", "x" * (MODEL_MAX + 1)),
+            ("input_per_million", Decimal("-1")),
+            ("output_per_million", PRICE_MAX + Decimal("1")),
+            ("cached_per_million", Decimal("-1")),
+        ],
+    )
+    def test_validation_refuses_bad_values(self, alice: User, field: str, value: Any) -> None:
+        price = AIModelPrice(
+            owner=alice,
+            model="m",
+            input_per_million=Decimal(1),
+            output_per_million=Decimal(1),
+        )
+        setattr(price, field, value)
+
+        with pytest.raises(ValidationError) as raised:
+            price.full_clean(exclude=["owner"])
+
+        assert field in raised.value.message_dict
+
+    def test_for_user_shows_only_the_own_prices(self, alice: User, bob: User) -> None:
+        mine = self.price(alice)
+        self.price(bob)
+
+        assert list(AIModelPrice.objects.for_user(alice)) == [mine]
+        assert not AIModelPrice.objects.for_user(AnonymousUser()).exists()
+
+    def test_prices_go_with_the_user(self, alice: User, bob: User) -> None:
+        self.price(alice)
+        self.price(bob)
+
+        alice.delete()
+
+        assert AIModelPrice.objects.count() == 1

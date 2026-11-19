@@ -26,6 +26,8 @@ const NOT_SET_UP: AiProviderState = {
   provider: null,
   model: '',
   season_model: '',
+  week_model: '',
+  chat_model: '',
   base_url: null,
   has_key: false,
   status: null,
@@ -122,6 +124,7 @@ describe('AiProviderPanel', () => {
     fixture = TestBed.createComponent(AiProviderPanel);
     events = [];
     fixture.componentInstance.signedOut.subscribe(() => events.push('signedOut'));
+    fixture.componentInstance.usageChanged.subscribe(() => events.push('usageChanged'));
     panel = fixture.nativeElement as HTMLElement;
     await settle(fixture);
   }
@@ -280,6 +283,8 @@ describe('AiProviderPanel', () => {
         provider: 'anthropic',
         model: 'claude-sonnet-5-5',
         season_model: '',
+        week_model: '',
+        chat_model: '',
         api_key: KEY,
       });
       expect(value('#ai-key')).toBe(''); // gone while the request is still running
@@ -430,6 +435,8 @@ describe('AiProviderPanel', () => {
       ['provider', '#ai-provider'],
       ['model', '#ai-model'],
       ['api_key', '#ai-key'],
+      ['week_model', '#ai-week-model'],
+      ['chat_model', '#ai-chat-model'],
     ])('places a message for "%s" at its field', async (field, selector) => {
       api.save.mockResolvedValue({
         kind: 'invalid',
@@ -638,6 +645,46 @@ describe('AiProviderPanel', () => {
       ]);
     });
 
+    it('shows the week and chat models, or that the normal model is used', async () => {
+      expect(testId('week-model')).toBe('The normal model');
+      expect(testId('chat-model')).toBe('The normal model');
+      await setup(
+        ok({ ...CONNECTED, week_model: 'claude-haiku-5-5', chat_model: 'claude-sonnet-5-5' }),
+      );
+
+      expect(testId('week-model')).toBe('claude-haiku-5-5');
+      expect(testId('chat-model')).toBe('claude-sonnet-5-5');
+      expect(value('#ai-week-model')).toBe('claude-haiku-5-5');
+      expect(value('#ai-chat-model')).toBe('claude-sonnet-5-5');
+    });
+
+    it('sends the week and chat models, trimmed, and cleared ones as empty texts', async () => {
+      api.save.mockResolvedValue(saved(ANTHROPIC));
+      await type('#ai-week-model', ' claude-haiku-5-5 ');
+      await type('#ai-chat-model', 'claude-opus-5-5');
+      await submit();
+      await type('#ai-week-model', '');
+      await type('#ai-chat-model', '');
+      await submit();
+
+      expect(api.save.mock.calls.map(([input]) => [input.week_model, input.chat_model])).toEqual([
+        ['claude-haiku-5-5', 'claude-opus-5-5'],
+        ['', ''],
+      ]);
+    });
+
+    it.each([
+      ['week', '#ai-week-model'],
+      ['chat', '#ai-chat-model'],
+    ])('refuses a bad %s model and sends nothing', async (_name, selector) => {
+      await type(selector, 'a b');
+
+      await submit();
+
+      expect(api.save).not.toHaveBeenCalled();
+      expect(query(panel, selector).getAttribute('aria-invalid')).toBe('true');
+    });
+
     it.each(['-gpt', 'a b', 'model<script>', 'm'.repeat(101)])(
       'refuses "%s" as a season model and sends nothing',
       async (model) => {
@@ -660,6 +707,8 @@ describe('AiProviderPanel', () => {
         provider: 'anthropic',
         model: 'claude-opus-5-5',
         season_model: '',
+        week_model: '',
+        chat_model: '',
       });
       expect(Object.keys(api.save.mock.calls[0][0])).not.toContain('api_key');
     });
@@ -674,6 +723,8 @@ describe('AiProviderPanel', () => {
         provider: 'anthropic',
         model: 'claude-sonnet-5-5',
         season_model: '',
+        week_model: '',
+        chat_model: '',
         api_key: OTHER_KEY,
       });
     });
@@ -753,6 +804,24 @@ describe('AiProviderPanel', () => {
       await click('Check connection');
 
       expect(alerts()).toEqual(['Slow down.']);
+    });
+
+    it('tells that the usage changed after a check, and not after a refused one', async () => {
+      api.check.mockResolvedValue({
+        kind: 'checked',
+        state: CONNECTED,
+        check: { ok: true, problem: null, message: '', retry_after: null },
+      });
+
+      await click('Check connection');
+
+      expect(events).toEqual(['usageChanged']);
+
+      events.length = 0;
+      api.check.mockResolvedValue({ kind: 'rate_limited' });
+      await click('Check connection');
+
+      expect(events).toEqual([]);
     });
 
     it('explains when there were too many checks', async () => {
@@ -842,6 +911,15 @@ describe('AiProviderPanel', () => {
 
     it('treats another season model as unsaved', async () => {
       await type('#ai-season-model', 'claude-opus-5-5');
+
+      expect(has('[data-testid="unsaved"]')).toBe(true);
+    });
+
+    it.each([
+      ['week', '#ai-week-model'],
+      ['chat', '#ai-chat-model'],
+    ])('treats another %s model as unsaved', async (_name, selector) => {
+      await type(selector, 'claude-haiku-5-5');
 
       expect(has('[data-testid="unsaved"]')).toBe(true);
     });
@@ -1005,6 +1083,8 @@ describe('AiProviderPanel', () => {
         provider: 'openai_compatible',
         model: 'deepseek-model',
         season_model: '',
+        week_model: '',
+        chat_model: '',
         base_url: DEEPSEEK,
         api_key: KEY,
       });
@@ -1033,6 +1113,8 @@ describe('AiProviderPanel', () => {
         provider: 'openai_compatible',
         model: 'gpt-4o',
         season_model: '',
+        week_model: '',
+        chat_model: '',
         base_url: OPENAI,
       });
     });
@@ -1050,6 +1132,8 @@ describe('AiProviderPanel', () => {
         provider: 'openai_compatible',
         model: 'llama3.1:8b',
         season_model: '',
+        week_model: '',
+        chat_model: '',
         base_url: LOCAL,
         api_key: KEY,
       });
@@ -1067,7 +1151,7 @@ describe('AiProviderPanel', () => {
       await submit();
 
       expect(Object.keys(api.save.mock.calls[0][0]).sort()).toEqual(
-        ['api_key', 'model', 'provider', 'season_model'].sort(),
+        ['api_key', 'chat_model', 'model', 'provider', 'season_model', 'week_model'].sort(),
       );
     });
 
@@ -1172,6 +1256,8 @@ describe('AiProviderPanel', () => {
         provider: 'openai_compatible',
         model: 'llama3.1:8b',
         season_model: '',
+        week_model: '',
+        chat_model: '',
         base_url: LOCAL,
         api_key: '',
       });
@@ -1223,6 +1309,8 @@ describe('AiProviderPanel', () => {
         provider: 'anthropic',
         model: 'claude-sonnet-5-5',
         season_model: '',
+        week_model: '',
+        chat_model: '',
         api_key: KEY,
       });
     });

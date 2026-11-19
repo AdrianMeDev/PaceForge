@@ -6,6 +6,7 @@ import { IntervalsConnectionApi } from '../../core/integrations/intervals-api';
 import { IntervalsConnection, SyncErrorCode } from '../../core/integrations/intervals-models';
 import { ConfirmDialog } from '../../shared/confirm-dialog';
 import { PageHeader } from '../../shared/page-header';
+import { AiCostsPanel } from './ai-costs-panel';
 import { AiProviderPanel } from './ai-provider-panel';
 
 type View = 'loading' | 'unreachable' | 'ready' | 'signed_out';
@@ -27,7 +28,15 @@ const SYNC_ERROR_MESSAGE: Record<Exclude<SyncErrorCode, ''>, string> = {
  */
 @Component({
   selector: 'app-connections-page',
-  imports: [ReactiveFormsModule, RouterLink, DatePipe, ConfirmDialog, PageHeader, AiProviderPanel],
+  imports: [
+    ReactiveFormsModule,
+    RouterLink,
+    DatePipe,
+    ConfirmDialog,
+    PageHeader,
+    AiProviderPanel,
+    AiCostsPanel,
+  ],
   templateUrl: './connections-page.html',
   styleUrl: './connections-page.css',
 })
@@ -44,6 +53,7 @@ export class ConnectionsPage implements OnInit {
   protected readonly errors = signal<string[]>([]);
   protected readonly notice = signal<string | null>(null);
   private readonly removalDialog = viewChild(ConfirmDialog);
+  private readonly costsPanel = viewChild(AiCostsPanel);
 
   ngOnInit(): Promise<void> {
     return this.load();
@@ -145,7 +155,12 @@ export class ConnectionsPage implements OnInit {
     }
   }
 
-  /** The AI provider panel found the session gone. */
+  /** A connection check of the AI provider made a call: the monthly costs are fetched again. */
+  protected refreshCosts(): void {
+    void this.costsPanel()?.reload();
+  }
+
+  /** The AI provider or costs panel found the session gone. */
   protected endSession(): void {
     this.view.set('signed_out');
   }

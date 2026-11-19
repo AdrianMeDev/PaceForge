@@ -1,7 +1,13 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { CoachApi } from '../../core/coach/coach-api';
-import { AiProviderState, GetProviderResult } from '../../core/coach/coach-models';
+import {
+  AiCostsState,
+  AiProviderState,
+  CheckProviderResult,
+  GetCostsResult,
+  GetProviderResult,
+} from '../../core/coach/coach-models';
 import { IntervalsConnectionApi } from '../../core/integrations/intervals-api';
 import {
   CheckConnectionResult,
@@ -32,6 +38,8 @@ const NO_AI: AiProviderState = {
   provider: null,
   model: '',
   season_model: '',
+  week_model: '',
+  chat_model: '',
   base_url: null,
   has_key: false,
   status: null,
@@ -47,6 +55,8 @@ const NO_AI: AiProviderState = {
     days: 30,
   },
 };
+
+const NO_COSTS: AiCostsState = { prices: [], months: [] };
 
 function createApiStub() {
   return {
@@ -72,7 +82,11 @@ describe('ConnectionsPage', () => {
   });
 
   let api: ReturnType<typeof createApiStub>;
-  let coach: { get: ReturnType<typeof vi.fn<() => Promise<GetProviderResult>>> };
+  let coach: {
+    get: ReturnType<typeof vi.fn<() => Promise<GetProviderResult>>>;
+    getCosts: ReturnType<typeof vi.fn<() => Promise<GetCostsResult>>>;
+    check: ReturnType<typeof vi.fn<() => Promise<CheckProviderResult>>>;
+  };
   let fixture: ComponentFixture<ConnectionsPage>;
   let page: HTMLElement;
 
@@ -82,7 +96,13 @@ describe('ConnectionsPage', () => {
   ) {
     api = createApiStub();
     api.get.mockResolvedValue(first);
-    coach = { get: vi.fn<() => Promise<GetProviderResult>>().mockResolvedValue(ai) };
+    coach = {
+      get: vi.fn<() => Promise<GetProviderResult>>().mockResolvedValue(ai),
+      getCosts: vi
+        .fn<() => Promise<GetCostsResult>>()
+        .mockResolvedValue({ kind: 'ok', state: NO_COSTS }),
+      check: vi.fn<() => Promise<CheckProviderResult>>(),
+    };
     TestBed.configureTestingModule({
       imports: [ConnectionsPage],
       providers: [
@@ -133,7 +153,13 @@ describe('ConnectionsPage', () => {
         providers: [
           provideRouter([]),
           { provide: IntervalsConnectionApi, useValue: api },
-          { provide: CoachApi, useValue: { get: () => new Promise<never>(() => undefined) } },
+          {
+            provide: CoachApi,
+            useValue: {
+              get: () => new Promise<never>(() => undefined),
+              getCosts: () => new Promise<never>(() => undefined),
+            },
+          },
         ],
       });
       fixture = TestBed.createComponent(ConnectionsPage);
@@ -250,6 +276,7 @@ describe('ConnectionsPage', () => {
       await settle(fixture);
 
       expect(page.querySelector('app-ai-provider-panel')).toBeNull();
+      expect(page.querySelector('app-ai-costs-panel')).toBeNull();
     });
 
     it('ends the session of the page when the panel finds it gone', async () => {
@@ -258,6 +285,77 @@ describe('ConnectionsPage', () => {
       expect(alerts()).toEqual(['Your session has ended. Please sign in again.']);
       expect(page.querySelector('app-ai-provider-panel')).toBeNull();
       expect(page.querySelector('form')).toBeNull();
+    });
+  });
+
+  describe('the AI costs', () => {
+    const CONFIGURED: AiProviderState = {
+      ...NO_AI,
+      configured: true,
+      provider: 'anthropic',
+      model: 'claude-sonnet-5-5',
+      has_key: true,
+      status: 'untested',
+    };
+    const WITH_COSTS: AiCostsState = {
+      prices: [],
+      months: [
+        {
+          month: '2026-11',
+          calls: 3,
+          input_tokens: 100,
+          output_tokens: 20,
+          cache_read_tokens: 0,
+          cache_write_tokens: 0,
+          cost: '0.0123',
+          unpriced_models: [],
+        },
+      ],
+    };
+
+    it('has its section below the AI provider one, loaded once', async () => {
+      await setup();
+
+      const section = query(page, 'app-ai-costs-panel');
+      expect(section.textContent).toContain('AI coach costs');
+      expect(
+        query(page, 'app-ai-provider-panel').compareDocumentPosition(section) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(coach.getCosts).toHaveBeenCalledTimes(1);
+    });
+
+    it('is fetched again when a connection check has run', async () => {
+      await setup({ kind: 'not_connected' }, { kind: 'ok', state: CONFIGURED });
+      coach.check.mockResolvedValue({
+        kind: 'checked',
+        state: { ...CONFIGURED, status: 'connected' },
+        check: { ok: true, problem: null, message: '', retry_after: null },
+      });
+      coach.getCosts.mockResolvedValue({ kind: 'ok', state: WITH_COSTS });
+
+      const checkButtons = Array.from(page.querySelectorAll('app-ai-provider-panel button'));
+      const check = required(
+        checkButtons.find((b) => (b.textContent ?? '').includes('Check connection')),
+        'the check button of the AI provider',
+      );
+      (check as HTMLButtonElement).click();
+      await settle(fixture);
+
+      expect(coach.check).toHaveBeenCalledTimes(1);
+      expect(coach.getCosts).toHaveBeenCalledTimes(2);
+      expect(query(page, 'app-ai-costs-panel').textContent).toContain('November 2026');
+    });
+
+    it('ends the session of the page when the costs panel finds it gone', async () => {
+      await setup();
+      coach.getCosts.mockResolvedValue({ kind: 'forbidden' });
+      const costsPanel = fixture.debugElement.query((e) => e.name === 'app-ai-costs-panel');
+      await (costsPanel.componentInstance as { reload(): Promise<void> }).reload();
+      await settle(fixture);
+
+      expect(alerts()).toEqual(['Your session has ended. Please sign in again.']);
+      expect(page.querySelector('app-ai-costs-panel')).toBeNull();
     });
   });
 

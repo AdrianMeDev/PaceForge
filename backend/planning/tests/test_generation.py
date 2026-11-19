@@ -219,6 +219,17 @@ class TestADraftFromTheFirstAnswer:
         assert (record.purpose, record.outcome) == ("weekly_plan", "success")
         assert (record.input_tokens, record.output_tokens) == (100, 50)
 
+    def test_the_week_model_is_used_and_recorded_if_there_is_one(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        AIProviderConfiguration.objects.filter(owner=alice).update(week_model="claude-haiku-5-5")
+        provide(good())
+
+        generate(alice, MONDAY)
+
+        (record,) = records(alice)
+        assert (record.purpose, record.model) == ("weekly_plan", "claude-haiku-5-5")
+
     def test_a_code_fence_around_the_answer_does_no_harm(
         self, alice: User, provide: Callable[..., Scripted]
     ) -> None:

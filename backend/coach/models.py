@@ -1,8 +1,9 @@
 import re
+from decimal import Decimal
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.core.validators import RegexValidator
+from django.core.validators import MaxValueValidator, MinValueValidator, RegexValidator
 from django.db import models
 from django.db.models import Q
 
@@ -17,6 +18,11 @@ MODEL_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._:/-]*\Z"
 # A key travels in an HTTP header: visible ASCII only, no spaces, no line breaks.
 KEY_MAX = 500
 KEY_PATTERN = re.compile(r"[\x21-\x7e]+")
+# The largest price per million tokens (max_digits=10, decimal_places=4) and the number of prices
+# one user may keep.
+PRICE_MAX = Decimal("999999.9999")
+MAX_MODEL_PRICES = 50
+PRICE_VALIDATORS = [MinValueValidator(Decimal(0)), MaxValueValidator(PRICE_MAX)]
 
 
 class AIProviderConfiguration(OwnedModel):
@@ -52,6 +58,18 @@ class AIProviderConfiguration(OwnedModel):
         blank=True,
         validators=[RegexValidator(MODEL_PATTERN, "Enter a model name.")],
     )
+    # The models for the weekly plan and for the coach chat, tasks that may call for a cheaper
+    # one. Empty: the normal model. Same provider, same key.
+    week_model = models.CharField(
+        max_length=MODEL_MAX,
+        blank=True,
+        validators=[RegexValidator(MODEL_PATTERN, "Enter a model name.")],
+    )
+    chat_model = models.CharField(
+        max_length=MODEL_MAX,
+        blank=True,
+        validators=[RegexValidator(MODEL_PATTERN, "Enter a model name.")],
+    )
     api_key = EncryptedTextField(editable=False)
     base_url = models.CharField(max_length=BASE_URL_MAX, blank=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.UNTESTED)
@@ -76,11 +94,14 @@ class AIProviderConfiguration(OwnedModel):
         return f"{self.get_provider_display()} configuration of user {self.owner_id}"
 
     def model_for(self, purpose: str) -> str:
-        """The model that does ``purpose``: the season model for the season plan if one is set, the
-        normal model for everything else."""
-        if purpose == AIUsageRecord.Purpose.SEASON_PLAN and self.season_model:
-            return self.season_model
-        return self.model
+        """The model that does ``purpose``: the season, week or chat model for its task if one is
+        set, the normal model for everything else."""
+        special: dict[str, str] = {
+            AIUsageRecord.Purpose.SEASON_PLAN: self.season_model,
+            AIUsageRecord.Purpose.WEEKLY_PLAN: self.week_model,
+            AIUsageRecord.Purpose.CHAT: self.chat_model,
+        }
+        return special.get(purpose) or self.model
 
     def clean(self) -> None:
         super().clean()
@@ -146,3 +167,43 @@ class AIUsageRecord(OwnedModel):
 
     def __str__(self) -> str:
         return f"{self.purpose} call of user {self.owner_id} ({self.outcome})"
+
+
+class AIModelPrice(OwnedModel):
+    """What a user pays their provider for one model, in USD per million tokens.
+
+    Optional and entered by the user: prices change and differ per contract, so the app ships
+    none. ``cached_per_million`` is the price of input read from the prompt cache; ``None``
+    means the normal input price applies.
+    """
+
+    model = models.CharField(
+        max_length=MODEL_MAX, validators=[RegexValidator(MODEL_PATTERN, "Enter a model name.")]
+    )
+    input_per_million = models.DecimalField(
+        max_digits=10, decimal_places=4, validators=PRICE_VALIDATORS
+    )
+    output_per_million = models.DecimalField(
+        max_digits=10, decimal_places=4, validators=PRICE_VALIDATORS
+    )
+    cached_per_million = models.DecimalField(
+        max_digits=10, decimal_places=4, null=True, blank=True, validators=PRICE_VALIDATORS
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["owner", "model"], name="coach_one_price_per_model"),
+            models.CheckConstraint(
+                condition=Q(input_per_million__gte=0), name="coach_price_input_not_negative"
+            ),
+            models.CheckConstraint(
+                condition=Q(output_per_million__gte=0), name="coach_price_output_not_negative"
+            ),
+            models.CheckConstraint(
+                condition=Q(cached_per_million__isnull=True) | Q(cached_per_million__gte=0),
+                name="coach_price_cached_not_negative",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"Price of a model of user {self.owner_id}"

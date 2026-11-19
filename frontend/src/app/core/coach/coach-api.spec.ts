@@ -6,7 +6,13 @@ import {
 import { TestBed } from '@angular/core/testing';
 import { provideApiClient } from '../api/api-providers';
 import { CoachApi } from './coach-api';
-import { AiProviderInput, AiProviderState, CheckOutcome } from './coach-models';
+import {
+  AiCostsState,
+  AiProviderInput,
+  AiProviderState,
+  CheckOutcome,
+  ModelPriceInput,
+} from './coach-models';
 
 const URL = '/api/coach/provider/';
 const CHECK_URL = '/api/coach/provider/check/';
@@ -27,6 +33,8 @@ const NOT_SET_UP = {
   provider: null,
   model: '',
   season_model: '',
+  week_model: '',
+  chat_model: '',
   base_url: null,
   has_key: false,
   status: null,
@@ -77,6 +85,42 @@ const CHECK_SLOW = {
   problem: 'rate_limited',
   message: 'The provider is asking to slow down. Please try again in a moment.',
   retry_after: 30,
+};
+
+const COSTS_URL = '/api/coach/costs/';
+const PRICES_URL = '/api/coach/costs/prices/';
+const COSTS = {
+  prices: [
+    {
+      id: 7,
+      model: 'claude-sonnet-5-5',
+      input_per_million: '3.0000',
+      output_per_million: '15.0000',
+      cached_per_million: null,
+    },
+  ],
+  months: [
+    {
+      month: '2026-11',
+      calls: 3,
+      input_tokens: 1000,
+      output_tokens: 200,
+      cache_read_tokens: 100,
+      cache_write_tokens: 50,
+      cost: '0.0060',
+      unpriced_models: ['llama3.1:8b'],
+    },
+    {
+      month: '2026-10',
+      calls: 0,
+      input_tokens: 0,
+      output_tokens: 0,
+      cache_read_tokens: 0,
+      cache_write_tokens: 0,
+      cost: null,
+      unpriced_models: [],
+    },
+  ],
 };
 
 const NO_SESSION = { detail: 'Authentication credentials were not provided.' };
@@ -156,6 +200,10 @@ describe('CoachApi', () => {
     ['null as model', altered(ANTHROPIC, [['model'], null])],
     ['no season model', altered(ANTHROPIC, [['season_model'], REMOVE])],
     ['null as season model', altered(ANTHROPIC, [['season_model'], null])],
+    ['no week model', altered(ANTHROPIC, [['week_model'], REMOVE])],
+    ['null as week model', altered(ANTHROPIC, [['week_model'], null])],
+    ['no chat model', altered(ANTHROPIC, [['chat_model'], REMOVE])],
+    ['a number as chat model', altered(ANTHROPIC, [['chat_model'], 5])],
     ['a number as address', altered(COMPATIBLE, [['base_url'], 5])],
     ['no key flag', altered(ANTHROPIC, [['has_key'], REMOVE])],
     ['a text as key flag', altered(ANTHROPIC, [['has_key'], 'true'])],
@@ -582,6 +630,139 @@ describe('CoachApi', () => {
 
     it.each([201, 400, 500])('rejects the unexpected status %i', async (status) => {
       await runFailing(api.check(), 'POST', CHECK_URL, 'oops', status);
+    });
+  });
+  describe('costs', () => {
+    const WRONG_COSTS: [string, unknown][] = [
+      ['no body', null],
+      ['a list as body', []],
+      ['no prices', altered(COSTS, [['prices'], REMOVE])],
+      ['an object as prices', altered(COSTS, [['prices'], {}])],
+      ['no months', altered(COSTS, [['months'], REMOVE])],
+      ['a price without id', altered(COSTS, [['prices', 0, 'id'], REMOVE])],
+      ['a text as price id', altered(COSTS, [['prices', 0, 'id'], '7'])],
+      ['an empty model name', altered(COSTS, [['prices', 0, 'model'], ''])],
+      ['a number as input price', altered(COSTS, [['prices', 0, 'input_per_million'], 3])],
+      ['a text that is no price', altered(COSTS, [['prices', 0, 'output_per_million'], 'free'])],
+      ['a negative price', altered(COSTS, [['prices', 0, 'input_per_million'], '-3.0000'])],
+      ['no cached price', altered(COSTS, [['prices', 0, 'cached_per_million'], REMOVE])],
+      ['a number as cached price', altered(COSTS, [['prices', 0, 'cached_per_million'], 1])],
+      ['a month that is no month', altered(COSTS, [['months', 0, 'month'], 'November'])],
+      ['month thirteen', altered(COSTS, [['months', 0, 'month'], '2026-13'])],
+      ['a fraction as calls', altered(COSTS, [['months', 0, 'calls'], 1.5])],
+      ['negative output tokens', altered(COSTS, [['months', 0, 'output_tokens'], -1])],
+      ['no cached read count', altered(COSTS, [['months', 0, 'cache_read_tokens'], REMOVE])],
+      ['more cached tokens than input', altered(COSTS, [['months', 0, 'cache_read_tokens'], 990])],
+      ['a number as cost', altered(COSTS, [['months', 0, 'cost'], 0.006])],
+      ['no cost', altered(COSTS, [['months', 0, 'cost'], REMOVE])],
+      ['no unpriced models', altered(COSTS, [['months', 0, 'unpriced_models'], REMOVE])],
+      ['a number among unpriced models', altered(COSTS, [['months', 0, 'unpriced_models'], [5]])],
+    ];
+
+    it('gets the prices and the months', async () => {
+      const { result } = await run(api.getCosts(), 'GET', COSTS_URL, COSTS, 200);
+
+      expect(result).toEqual({ kind: 'ok', state: COSTS satisfies AiCostsState });
+    });
+
+    it('takes over the known fields only', async () => {
+      const extra = altered(COSTS, [['prices', 0, 'api_key'], KEY], [['secret'], 'x']);
+
+      const { result } = await run(api.getCosts(), 'GET', COSTS_URL, extra as object, 200);
+
+      expect(result).toEqual({ kind: 'ok', state: COSTS });
+    });
+
+    it.each(WRONG_COSTS)('rejects an answer with %s', async (_name, reply) => {
+      await runFailing(api.getCosts(), 'GET', COSTS_URL, reply as object | null, 200);
+    });
+
+    it.each([401, 403])('returns forbidden for status %s', async (status) => {
+      const { result } = await run(api.getCosts(), 'GET', COSTS_URL, NO_SESSION, status);
+
+      expect(result).toEqual({ kind: 'forbidden' });
+    });
+
+    it('rejects other server errors', async () => {
+      await runFailing(api.getCosts(), 'GET', COSTS_URL, 'boom', 500);
+    });
+
+    describe('savePrice', () => {
+      const INPUT: ModelPriceInput = {
+        model: 'claude-sonnet-5-5',
+        input_per_million: 3,
+        output_per_million: 15,
+        cached_per_million: null,
+      };
+
+      it('puts the price as it is and returns the costs', async () => {
+        const { result, request } = await run(api.savePrice(INPUT), 'PUT', PRICES_URL, COSTS, 200);
+
+        expect(request.request.body).toEqual(INPUT);
+        expect(result).toEqual({ kind: 'ok', state: COSTS });
+      });
+
+      it('returns the messages by field', async () => {
+        const { result } = await run(
+          api.savePrice(INPUT),
+          'PUT',
+          PRICES_URL,
+          { input_per_million: ['Enter a price from 0 to 100000.'] },
+          400,
+        );
+
+        expect(result).toEqual({
+          kind: 'invalid',
+          errors: ['Enter a price from 0 to 100000.'],
+          fields: { input_per_million: ['Enter a price from 0 to 100000.'] },
+        });
+      });
+
+      it('rejects an answer of the wrong shape', async () => {
+        await runFailing(api.savePrice(INPUT), 'PUT', PRICES_URL, { prices: [] }, 200);
+      });
+
+      it.each([401, 403])('returns forbidden for status %s', async (status) => {
+        const { result } = await run(api.savePrice(INPUT), 'PUT', PRICES_URL, NO_SESSION, status);
+
+        expect(result).toEqual({ kind: 'forbidden' });
+      });
+
+      it('rejects other server errors', async () => {
+        await runFailing(api.savePrice(INPUT), 'PUT', PRICES_URL, 'boom', 500);
+      });
+    });
+
+    describe('deletePrice', () => {
+      const URL_7 = `${PRICES_URL}7/`;
+
+      it('deletes one price', async () => {
+        const { result } = await run(api.deletePrice(7), 'DELETE', URL_7, null, 204);
+
+        expect(result).toEqual({ kind: 'deleted' });
+      });
+
+      it('says when the price does not exist', async () => {
+        const { result } = await run(
+          api.deletePrice(7),
+          'DELETE',
+          URL_7,
+          { detail: 'Not found.' },
+          404,
+        );
+
+        expect(result).toEqual({ kind: 'not_found' });
+      });
+
+      it.each([401, 403])('returns forbidden for status %s', async (status) => {
+        const { result } = await run(api.deletePrice(7), 'DELETE', URL_7, NO_SESSION, status);
+
+        expect(result).toEqual({ kind: 'forbidden' });
+      });
+
+      it('rejects other server errors', async () => {
+        await runFailing(api.deletePrice(7), 'DELETE', URL_7, 'boom', 500);
+      });
     });
   });
 });

@@ -73,6 +73,8 @@ def save_configuration(
     base_url: str,
     api_key: str | None,
     season_model: str = "",
+    week_model: str = "",
+    chat_model: str = "",
 ) -> AIProviderConfiguration:
     """Create or change the user's configuration.
 
@@ -86,7 +88,9 @@ def save_configuration(
     for attempt in (1, 2):
         try:
             with transaction.atomic():
-                return _save(user, provider, model, base_url, api_key, season_model)
+                return _save(
+                    user, provider, model, base_url, api_key, season_model, week_model, chat_model
+                )
         except IntegrityError:
             # A second request created the row first; the next round changes that one.
             if attempt == 2:
@@ -101,6 +105,8 @@ def _save(
     base_url: str,
     api_key: str | None,
     season_model: str = "",
+    week_model: str = "",
+    chat_model: str = "",
 ) -> AIProviderConfiguration:
     existing = _own(user).select_for_update().first()
     configuration = existing or AIProviderConfiguration(owner=user)
@@ -124,11 +130,14 @@ def _save(
         existing is None
         or key_written
         or (existing.provider, existing.model, existing.base_url) != (provider, model, base_url)
-        or existing.season_model != season_model
+        or (existing.season_model, existing.week_model, existing.chat_model)
+        != (season_model, week_model, chat_model)
     )
     configuration.provider = provider
     configuration.model = model
     configuration.season_model = season_model
+    configuration.week_model = week_model
+    configuration.chat_model = chat_model
     configuration.base_url = base_url
     # Not ``full_clean``: its constraint check would repeat every message of ``clean``.
     errors = _problems(configuration)
@@ -142,7 +151,7 @@ def _save(
     if existing is None:
         configuration.save()
     else:
-        fields = ["provider", "model", "season_model", "base_url"]
+        fields = ["provider", "model", "season_model", "week_model", "chat_model", "base_url"]
         if key_written:
             fields.append("api_key")
         if changed:

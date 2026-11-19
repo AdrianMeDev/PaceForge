@@ -8,7 +8,8 @@ from rest_framework.views import APIView
 
 from accounts.models import User
 
-from . import services
+from . import pricing, services
+from .models import AIModelPrice
 from .providers.base import (
     EndpointNotAllowedError,
     InvalidKeyError,
@@ -16,7 +17,7 @@ from .providers.base import (
     ProviderUnavailableError,
     RateLimitedError,
 )
-from .serializers import ProviderInput, provider_state
+from .serializers import ModelPriceInput, ProviderInput, costs_state, provider_state
 from .throttles import CoachCheckThrottle
 
 # Fixed texts: nothing the provider said, and nothing that was sent, goes into an answer.
@@ -53,6 +54,8 @@ class ProviderView(APIView):
                 provider=data["provider"],
                 model=data["model"],
                 season_model=data.get("season_model", ""),
+                week_model=data.get("week_model", ""),
+                chat_model=data.get("chat_model", ""),
                 base_url=data.get("base_url", ""),
                 api_key=data.get("api_key"),
             )
@@ -62,6 +65,52 @@ class ProviderView(APIView):
 
     def delete(self, request: Request) -> Response:
         services.remove_configuration(_user(request))
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class CostsView(APIView):
+    """The signed-in user's prices and monthly costs."""
+
+    http_method_names = ["get", "head", "options"]
+
+    def get(self, request: Request) -> Response:
+        return Response(costs_state(_user(request)))
+
+
+class ModelPricesView(APIView):
+    """Sets the price of one model: a new model gets a price, a known one is replaced."""
+
+    http_method_names = ["put", "options"]
+
+    def put(self, request: Request) -> Response:
+        user = _user(request)
+        serializer = ModelPriceInput(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        try:
+            pricing.save_price(
+                user,
+                data["model"],
+                data["input_per_million"],
+                data["output_per_million"],
+                data.get("cached_per_million"),
+            )
+        except DjangoValidationError as error:
+            raise serializers.ValidationError(error.message_dict) from None
+        except pricing.PriceLimitError:
+            raise serializers.ValidationError(
+                {"model": ["You cannot keep more prices. Remove one first."]}
+            ) from None
+        return Response(costs_state(user))
+
+
+class ModelPriceDetailView(APIView):
+    http_method_names = ["delete", "options"]
+
+    def delete(self, request: Request, price_id: int) -> Response:
+        deleted, _ = AIModelPrice.objects.for_user(_user(request)).filter(pk=price_id).delete()
+        if not deleted:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 

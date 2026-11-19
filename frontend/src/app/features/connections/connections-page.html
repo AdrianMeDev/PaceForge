@@ -112,7 +112,8 @@
         (confirmed)="remove()"
       />
 
-      <app-ai-provider-panel (signedOut)="endSession()" />
+      <app-ai-provider-panel (signedOut)="endSession()" (usageChanged)="refreshCosts()" />
+      <app-ai-costs-panel (signedOut)="endSession()" />
     }
   }
 </section>

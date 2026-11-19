@@ -271,6 +271,31 @@ class TestTheModelOfAPurpose:
         assert records(alice)[0].model == "claude-opus-5-5"
         assert records(alice)[0].outcome == "unavailable"
 
+    def test_week_and_chat_use_their_own_models(self, fake: FakeProvider, alice: User) -> None:
+        configure(alice, week_model="claude-haiku-5-5", chat_model="claude-opus-5-5")
+        fake.reply(ANSWER)
+        fake.reply(ANSWER)
+
+        self.ask_for(alice, WEEKLY)
+        self.ask_for(alice, AIUsageRecord.Purpose.CHAT)
+
+        assert [r["json"]["model"] for r in fake.requests] == [
+            "claude-haiku-5-5",
+            "claude-opus-5-5",
+        ]
+        assert [r.model for r in records(alice)] == ["claude-haiku-5-5", "claude-opus-5-5"]
+
+    @pytest.mark.parametrize("purpose", [CHECK, AIUsageRecord.Purpose.WEEK_REVIEW])
+    def test_check_and_review_keep_the_normal_model_with_week_and_chat_models(
+        self, fake: FakeProvider, alice: User, purpose: AIUsageRecord.Purpose
+    ) -> None:
+        configure(alice, week_model="claude-haiku-5-5", chat_model="claude-opus-5-5")
+        fake.reply(ANSWER)
+
+        self.ask_for(alice, purpose)
+
+        assert fake.requests[0]["json"]["model"] == "claude-sonnet-5-5"
+
     def test_the_model_for_is_the_one_of_the_configuration(self, alice: User) -> None:
         config = configure(alice, season_model="m2")
 
@@ -322,6 +347,50 @@ class TestTheSeasonModelInTheSetup:
             self.save(alice, season_model=name)
 
         assert "season_model" in raised.value.message_dict
+        assert not AIProviderConfiguration.objects.exists()
+
+
+class TestTheWeekAndChatModelsInTheSetup:
+    def save(self, user: User, **fields: Any) -> AIProviderConfiguration:
+        data: dict[str, Any] = {
+            "provider": "anthropic",
+            "model": "claude-sonnet-5-5",
+            "base_url": "",
+            "api_key": KEY,
+        }
+        return services.save_configuration(user, **(data | fields))
+
+    @pytest.mark.parametrize("field", ["week_model", "chat_model"])
+    def test_it_is_stored_and_can_be_cleared(self, alice: User, field: str) -> None:
+        assert getattr(self.save(alice), field) == ""
+        assert getattr(self.save(alice, **{field: "claude-haiku-5-5"}), field) == "claude-haiku-5-5"
+        assert getattr(self.save(alice, **{field: ""}), field) == ""
+
+    @pytest.mark.parametrize("field", ["week_model", "chat_model"])
+    def test_a_change_sets_the_status_back(self, alice: User, field: str) -> None:
+        config = self.save(alice)
+        AIProviderConfiguration.objects.filter(pk=config.pk).update(
+            status="connected", last_success_at=NOW
+        )
+
+        changed = self.save(alice, **{field: "claude-haiku-5-5"})
+
+        assert (changed.status, changed.last_success_at) == ("untested", None)
+
+    def test_the_same_setup_again_keeps_the_status(self, alice: User) -> None:
+        config = self.save(alice, week_model="a", chat_model="b")
+        AIProviderConfiguration.objects.filter(pk=config.pk).update(status="connected")
+
+        again = self.save(alice, week_model="a", chat_model="b", api_key=None)
+
+        assert again.status == "connected"
+
+    @pytest.mark.parametrize("field", ["week_model", "chat_model"])
+    def test_a_name_that_cannot_be_a_model_is_refused(self, alice: User, field: str) -> None:
+        with pytest.raises(ValidationError) as raised:
+            self.save(alice, **{field: "has space"})
+
+        assert field in raised.value.message_dict
         assert not AIProviderConfiguration.objects.exists()
 
 
