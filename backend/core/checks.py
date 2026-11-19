@@ -1,9 +1,12 @@
+import base64
 from typing import Any
 from urllib.parse import urlsplit
 
 from cryptography.fernet import Fernet
 from django.conf import settings
 from django.core.checks import CheckMessage, Error
+
+from .backup_crypto import BackupCryptoError, parse_backup_keys
 
 GENERATE_HINT = (
     'Generate one with: uv run python -c "from cryptography.fernet import Fernet; '
@@ -29,6 +32,30 @@ def check_encryption_keys(app_configs: Any, **kwargs: Any) -> list[CheckMessage]
                 )
             )
     return errors
+
+
+def check_backup_encryption_keys(app_configs: Any, **kwargs: Any) -> list[CheckMessage]:
+    """BACKUP_ENCRYPTION_KEY is optional; if set, its keys are valid and not the instance key."""
+    try:
+        backup_keys = parse_backup_keys(settings.BACKUP_ENCRYPTION_KEYS)
+    except BackupCryptoError as error:
+        generate = f" {GENERATE_HINT}"
+        return [Error(f"{error}{generate}", id="core.E006")]
+    instance_keys: set[bytes] = set()
+    for key in settings.ENCRYPTION_KEYS:
+        try:
+            instance_keys.add(base64.urlsafe_b64decode(key))
+        except ValueError:
+            continue  # reported by check_encryption_keys
+    if any(key in instance_keys for key in backup_keys):
+        return [
+            Error(
+                "BACKUP_ENCRYPTION_KEY must not contain a key of ENCRYPTION_KEY: a backup "
+                "must not be readable with the instance key. " + GENERATE_HINT,
+                id="core.E007",
+            )
+        ]
+    return []
 
 
 WEAK_SECRET_MARKERS = ("change-me", "changeme", "insecure", "secret-key", "placeholder", "example")

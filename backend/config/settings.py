@@ -26,6 +26,23 @@ DEBUG = env.bool("DJANGO_DEBUG", default=False)
 # Several keys, comma separated: the first one encrypts, all of them decrypt (key rotation).
 # Keep it apart from database backups.
 ENCRYPTION_KEYS = [key.strip() for key in env.str("ENCRYPTION_KEY").split(",") if key.strip()]
+# Key for encrypted database backups (see core/backup_crypto.py). Optional: without it no backup
+# is made. Several keys, comma separated: the first one encrypts, all of them decrypt. It must
+# differ from ENCRYPTION_KEY and be kept apart from the backups.
+BACKUP_ENCRYPTION_KEYS = [
+    key.strip() for key in env.str("BACKUP_ENCRYPTION_KEY", default="").split(",") if key.strip()
+]
+# Where backups are written, how often the scheduler makes one, and how many are kept.
+BACKUP_DIR = Path(env.str("BACKUP_DIR", default=str(BASE_DIR.parent / "backups")))
+BACKUP_INTERVAL_HOURS = env.int("BACKUP_INTERVAL_HOURS", default=24)
+if not 1 <= BACKUP_INTERVAL_HOURS <= 168:
+    raise ImproperlyConfigured("BACKUP_INTERVAL_HOURS must be a whole number from 1 to 168")
+BACKUP_KEEP_DAILY = env.int("BACKUP_KEEP_DAILY", default=7)
+if not 1 <= BACKUP_KEEP_DAILY <= 365:
+    raise ImproperlyConfigured("BACKUP_KEEP_DAILY must be a whole number from 1 to 365")
+BACKUP_KEEP_WEEKLY = env.int("BACKUP_KEEP_WEEKLY", default=4)
+if not 0 <= BACKUP_KEEP_WEEKLY <= 104:
+    raise ImproperlyConfigured("BACKUP_KEEP_WEEKLY must be a whole number from 0 to 104")
 # The public host name of the instance (no scheme, no path). It is the default for ALLOWED_HOSTS
 # and, outside debug mode, for CSRF_TRUSTED_ORIGINS. Optional.
 APP_DOMAIN = env.str("APP_DOMAIN", default="").strip().lower()

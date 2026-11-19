@@ -130,7 +130,7 @@ AI key; several people can share one instance without seeing each other's data.
 - **Depends on:** M7
 - **Size:** M
 
-### M12 [ ] Backup and restore
+### M12 [~] Backup and restore
 - **Goal:** The database can be backed up encrypted and restored, with the instance key kept apart.
 - **Includes:** backup command or service (pg_dump, encrypted), retention, restore procedure, a test that restores into an empty database, docs.
 - **Done when:** the restore test passes and the docs describe backup, key storage and restore.
