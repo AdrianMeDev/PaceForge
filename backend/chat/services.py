@@ -2,9 +2,9 @@
 that may come of it.
 
 ``send`` asks the coach (``chat.prompt``: the data, the last messages and the new one), reads the
-answer strictly, lets the code do the actions on the week that can be changed (``chat.actions``)
-and stores the result as a **new draft** of that week, which the athlete reads, confirms or
-discards on the Week plan page. Nothing is confirmed or sent anywhere from here.
+answer strictly, lets the code do the actions on the named week (or the first week in the briefing)
+(``chat.actions``) and stores the result as a **new draft** of that week, which the athlete reads,
+confirms or discards on the Week plan page. Nothing is confirmed or sent anywhere from here.
 
 A message of the athlete is only stored together with its answer, so a failed request leaves
 nothing behind to show again. If the coach does not give a usable answer, even after being told
@@ -14,6 +14,7 @@ call at ``coach`` is the usage record (facts, never text).
 """
 
 import unicodedata
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 
@@ -105,8 +106,7 @@ def send(user: User, text: str) -> Sent:
     today = today_of(user)
     stored_plans = _plans_to_change(user)
     loaded = [plans.load(user, row.pk) for row in stored_plans]
-    stored = stored_plans[0] if stored_plans else None
-    plan = loaded[0] if loaded else WeekPlan(_this_week(today), ())
+    available = list(zip(stored_plans, loaded, strict=True))
     told = [
         ("athlete" if message.role == ChatMessage.Role.USER else "coach", message.text)
         for message in ChatMessage.objects.for_user(user).order_by("-created_at", "-id")[
@@ -128,11 +128,13 @@ def send(user: User, text: str) -> Sent:
             problems = (Problem("", "The answer was cut off before its end; make it shorter."),)
         else:
             try:
-                reply, changed, changes, sick = _understand(completion.text, plan, today)
+                reply, parent, changed, changes, sick = _understand(
+                    completion.text, available, today
+                )
             except (AnswerNotUsable, ActionFormatError) as error:
                 problems = error.problems
             else:
-                return _store(user, text, reply, stored, changed, changes, sick, today)
+                return _store(user, text, reply, parent, changed, changes, sick, today)
         if attempt < ATTEMPTS:
             answer = completion.text if completion.text.strip() else "(no answer)"
             messages = [messages[0], Message("assistant", answer), repair_message(problems)]
@@ -140,19 +142,35 @@ def send(user: User, text: str) -> Sent:
 
 
 def _understand(
-    answer: str, plan: WeekPlan, today: date
-) -> tuple[str, WeekPlan | None, tuple[str, ...], MarkSick | None]:
-    """The reply, the changed plan, what changed and any illness action; ``None`` and no changes if
-    the coach proposed nothing, or nothing that makes a difference."""
+    answer: str,
+    available: Sequence[tuple[WeeklyPlan, WeekPlan]],
+    today: date,
+) -> tuple[str, WeeklyPlan | None, WeekPlan | None, tuple[str, ...], MarkSick | None]:
+    """The reply, the parent plan, the changed plan, what changed and any illness action; ``None``
+    and no changes if the coach proposed nothing, or nothing that makes a difference."""
     found = extract_answer(answer)
+    stored, plan = _pick_week(found.week, available, today)
     if not found.actions:
-        return found.reply, None, (), None
+        return found.reply, None, None, (), None
     actions = read_actions(found.actions, plan, today)
     sick = next((action for action in actions if isinstance(action, MarkSick)), None)
     changed, changes = apply(plan, actions, today)
     if changed == plan:
-        return found.reply, None, (), sick
-    return found.reply, changed, changes, sick
+        return found.reply, None, None, (), sick
+    return found.reply, stored, changed, changes, sick
+
+
+def _pick_week(
+    wanted: date | None,
+    available: Sequence[tuple[WeeklyPlan, WeekPlan]],
+    today: date,
+) -> tuple[WeeklyPlan | None, WeekPlan]:
+    if wanted is None:
+        return available[0] if available else (None, WeekPlan(_this_week(today), ()))
+    for row, plan in available:
+        if plan.week_start == wanted:
+            return row, plan
+    raise AnswerNotUsable((Problem("week", "This week is not in the weeks that can be changed."),))
 
 
 def _store(

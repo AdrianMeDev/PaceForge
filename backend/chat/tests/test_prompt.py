@@ -1,4 +1,5 @@
 import json
+from datetime import date
 from typing import Any
 
 import pytest
@@ -55,10 +56,11 @@ class TestTheSystemPrompt:
         assert "You never write the plan yourself" in SYSTEM_PROMPT
         assert "only proposed" in SYSTEM_PROMPT
 
-    def test_describes_weeks_and_says_only_the_first_week_can_change(self) -> None:
-        for field in ("weeks", "week_start", "days", "weekly_budget_minutes", "workouts"):
+    def test_describes_weeks_and_the_optional_week_field(self) -> None:
+        for field in ("weeks", "week_start", "days", "weekly_budget_minutes", "workouts", "week"):
             assert f'"{field}"' in SYSTEM_PROMPT
-        assert 'only the first week in "weeks"' in SYSTEM_PROMPT
+        assert 'any one week in "weeks"' in SYSTEM_PROMPT
+        assert 'only the first week in "weeks"' not in SYSTEM_PROMPT
 
 
 class TestTheFirstMessage:
@@ -89,6 +91,18 @@ class TestReadingTheAnswer:
 
         assert found.reply == "Moved."
         assert found.actions == [{"tool": "free_day", "day": "2026-11-18"}]
+        assert found.week is None
+
+    def test_optional_week_date_or_null(self) -> None:
+        assert extract_answer(answer(week=None)).week is None
+        assert extract_answer(answer(week="2026-11-16")).week == date(2026, 11, 16)
+
+    @pytest.mark.parametrize(
+        "bad",
+        [123, True, "", "next week", "20261116", "2026-W47-1", "2026-02-30", ["2026-11-16"]],
+    )
+    def test_the_week_must_be_a_date_or_null(self, bad: object) -> None:
+        assert "date" in problems_of(answer(week=bad))["week"]
 
     def test_in_a_code_fence(self) -> None:
         assert extract_answer(f"```json\n{answer()}\n```").reply == "Moved it."
@@ -125,7 +139,7 @@ class TestReadingTheAnswer:
         secret = "sk-ant-api03-SECRET"
 
         with pytest.raises(AnswerNotUsable) as caught:
-            extract_answer(json.dumps({"reply": 1, secret: 2}))
+            extract_answer(json.dumps({"reply": 1, "week": secret, secret: 2}))
 
         assert secret not in repr(caught.value.problems)
 

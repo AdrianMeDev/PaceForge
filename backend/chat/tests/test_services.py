@@ -58,8 +58,18 @@ def athlete(alice: User) -> User:
     return alice
 
 
-def said(reply: str = "Done.", actions: list[dict[str, Any]] | None = None) -> str:
-    return json.dumps({"reply": reply, "actions": actions or []})
+_OMIT = object()
+
+
+def said(
+    reply: str = "Done.",
+    actions: list[dict[str, Any]] | None = None,
+    week: object = _OMIT,
+) -> str:
+    payload: dict[str, Any] = {"reply": reply, "actions": actions or []}
+    if week is not _OMIT:
+        payload["week"] = week
+    return json.dumps(payload)
 
 
 def saturday_workout(user: User) -> PlannedWorkout:
@@ -254,7 +264,7 @@ class TestAChange:
         assert [p.version for p in versions] == [2, 3]
         assert versions[1].parent_id == versions[0].pk
 
-    def test_changes_only_the_first_week_when_two_weeks_have_plans(
+    def test_changes_only_the_first_week_when_week_is_omitted(
         self, athlete: User, provide: Callable[..., Scripted]
     ) -> None:
         next_monday = MONDAY + timedelta(weeks=1)
@@ -266,13 +276,217 @@ class TestAChange:
                 "Skipping next week.",
                 [{"tool": "skip_workout", "id": str(next_workout.lineage)}],
             ),
-            said("I can only change this week."),
+            said("I need to name next week to change it."),
         )
 
         sent = send(athlete, "Skip Monday next week")
 
-        assert sent.coach.text == "I can only change this week."
+        assert sent.coach.text == "I need to name next week to change it."
         assert drafts(athlete) == []
+        assert len(provider.calls) == ATTEMPTS
+
+    def test_null_week_changes_the_first_week(
+        self, athlete: User, provide: Callable[..., Scripted]
+    ) -> None:
+        next_monday = MONDAY + timedelta(weeks=1)
+        make_plan(athlete, next_monday, status="confirmed", workouts=2)
+        this_week = WeeklyPlan.objects.for_user(athlete).get(week_start=MONDAY)
+        workout = saturday_workout(athlete)
+        provide(
+            said(
+                "Skipping Saturday.",
+                [{"tool": "skip_workout", "id": str(workout.lineage)}],
+                week=None,
+            )
+        )
+
+        sent = send(athlete, "Skip Saturday")
+
+        (draft,) = drafts(athlete)
+        assert sent.coach.plan == draft
+        assert (draft.week_start, draft.parent_id) == (MONDAY, this_week.pk)
+
+    def test_changes_a_named_week_and_leaves_this_week_untouched(
+        self, athlete: User, provide: Callable[..., Scripted]
+    ) -> None:
+        next_monday = MONDAY + timedelta(weeks=1)
+        next_plan = make_plan(athlete, next_monday, status="confirmed", workouts=3)
+        next_workouts = list(
+            PlannedWorkout.objects.for_user(athlete).filter(plan=next_plan).order_by("day")
+        )
+        run, ride, strength = next_workouts
+        PlannedWorkout.objects.for_user(athlete).filter(pk=ride.pk).update(sport="cycling")
+        PlannedWorkout.objects.for_user(athlete).filter(pk=strength.pk).update(
+            sport="strength", goal="strength"
+        )
+        this_week = WeeklyPlan.objects.for_user(athlete).get(week_start=MONDAY)
+        provide(
+            said(
+                "Swapped the ride for a run and took out strength for next week.",
+                [
+                    {"tool": "swap_sport", "id": str(ride.lineage), "sport": "running"},
+                    {"tool": "skip_workout", "id": str(strength.lineage)},
+                ],
+                week=next_monday.isoformat(),
+            )
+        )
+
+        sent = send(athlete, "Only running next week")
+
+        (draft,) = drafts(athlete)
+        assert sent.coach.plan == draft
+        assert (draft.week_start, draft.parent_id, draft.reason) == (
+            next_monday,
+            next_plan.pk,
+            REASON,
+        )
+        assert draft.confirmed_at is None
+        draft_workouts = list(
+            PlannedWorkout.objects.for_user(athlete).filter(plan=draft).order_by("day")
+        )
+        assert [w.lineage for w in draft_workouts] == [run.lineage, ride.lineage]
+        assert [w.sport for w in draft_workouts] == ["running", "running"]
+        assert sent.coach.changes == [
+            "Ride on Tue (60 min) replaced by Run (60 min)",
+            "Strength on Wed (60 min) removed",
+        ]
+        # This week and next week's confirmed plan are both untouched.
+        assert list(WeeklyPlan.objects.for_user(athlete).filter(week_start=MONDAY)) == [this_week]
+        assert PlannedWorkout.objects.for_user(athlete).filter(plan=this_week).count() == 7
+        assert PlannedWorkout.objects.for_user(athlete).filter(plan=next_plan).count() == 3
+
+    def test_works_on_the_newest_draft_of_a_named_week(
+        self, athlete: User, provide: Callable[..., Scripted]
+    ) -> None:
+        next_monday = MONDAY + timedelta(weeks=1)
+        make_plan(athlete, next_monday, status="confirmed", workouts=2)
+        next_draft = make_plan(athlete, next_monday, status="draft", workouts=2)
+        workout = PlannedWorkout.objects.for_user(athlete).filter(plan=next_draft).first()
+        assert workout is not None
+        provide(
+            said(
+                "Shorter.",
+                [{"tool": "shorten_workout", "id": str(workout.lineage), "minutes": 30}],
+                week=next_monday.isoformat(),
+            )
+        )
+
+        sent = send(athlete, "Shorten Monday next week")
+
+        assert sent.coach.plan is not None
+        assert (sent.coach.plan.week_start, sent.coach.plan.parent_id) == (
+            next_monday,
+            next_draft.pk,
+        )
+        assert sent.coach.plan.version == next_draft.version + 1
+
+    def test_a_week_without_a_plan_is_refused_and_repaired(
+        self, athlete: User, provide: Callable[..., Scripted]
+    ) -> None:
+        unknown = MONDAY + timedelta(weeks=2)
+        provider = provide(
+            said(
+                "Reduced that week.",
+                [{"tool": "reduce_week", "percent": 20}],
+                week=unknown.isoformat(),
+            ),
+            said("You do not have a plan for that week yet."),
+        )
+
+        sent = send(athlete, "Reduce the week after next by 20%")
+
+        assert sent.coach.text == "You do not have a plan for that week yet."
+        assert sent.coach.plan is None
+        assert drafts(athlete) == []
+        assert len(provider.calls) == ATTEMPTS
+        assert "- week:" in provider.calls[1][1][-1].content
+
+    def test_an_unknown_week_that_stays_wrong_stores_the_fixed_answer(
+        self, athlete: User, provide: Callable[..., Scripted]
+    ) -> None:
+        unknown = MONDAY + timedelta(weeks=2)
+        bad = said("Reduced.", [{"tool": "reduce_week", "percent": 20}], week=unknown.isoformat())
+        provide(bad, bad)
+
+        sent = send(athlete, "Reduce two weeks from now")
+
+        assert sent.coach.text == NOT_USABLE
+        assert sent.coach.plan is None
+        assert drafts(athlete) == []
+
+    def test_a_past_week_is_refused_even_when_it_has_a_plan(
+        self, athlete: User, provide: Callable[..., Scripted]
+    ) -> None:
+        last_monday = MONDAY - timedelta(weeks=1)
+        last_plan = make_plan(athlete, last_monday, status="confirmed", workouts=2)
+        provider = provide(
+            said(
+                "Reduced last week.",
+                [{"tool": "reduce_week", "percent": 20}],
+                week=last_monday.isoformat(),
+            ),
+            said("Last week is in the past and cannot be changed."),
+        )
+
+        sent = send(athlete, "Change last week")
+
+        assert sent.coach.text == "Last week is in the past and cannot be changed."
+        assert sent.coach.plan is None
+        assert drafts(athlete) == []
+        assert len(provider.calls) == ATTEMPTS
+        assert "- week:" in provider.calls[1][1][-1].content
+        assert PlannedWorkout.objects.for_user(athlete).filter(plan=last_plan).count() == 2
+
+    def test_another_users_week_is_refused(
+        self, athlete: User, bob: User, provide: Callable[..., Scripted]
+    ) -> None:
+        next_monday = MONDAY + timedelta(weeks=1)
+        bob_plan = make_plan(bob, next_monday, status="confirmed", workouts=2)
+        bob_workout = PlannedWorkout.objects.for_user(bob).filter(plan=bob_plan).first()
+        assert bob_workout is not None
+        provider = provide(
+            said(
+                "Skipped.",
+                [{"tool": "skip_workout", "id": str(bob_workout.lineage)}],
+                week=next_monday.isoformat(),
+            ),
+            said("You do not have a plan for next week yet."),
+        )
+
+        sent = send(athlete, "Skip Monday next week")
+
+        assert sent.coach.text == "You do not have a plan for next week yet."
+        assert sent.coach.plan is None
+        assert drafts(athlete) == []
+        assert drafts(bob) == []
+        assert PlannedWorkout.objects.for_user(bob).filter(plan=bob_plan).count() == 2
+        assert len(provider.calls) == ATTEMPTS
+        assert "- week:" in provider.calls[1][1][-1].content
+
+    def test_another_users_workout_on_a_shared_named_week_is_refused(
+        self, athlete: User, bob: User, provide: Callable[..., Scripted]
+    ) -> None:
+        next_monday = MONDAY + timedelta(weeks=1)
+        make_plan(athlete, next_monday, status="confirmed", workouts=2)
+        bob_plan = make_plan(bob, next_monday, status="confirmed", workouts=2)
+        bob_workout = PlannedWorkout.objects.for_user(bob).filter(plan=bob_plan).first()
+        assert bob_workout is not None
+        provider = provide(
+            said(
+                "Skipped.",
+                [{"tool": "skip_workout", "id": str(bob_workout.lineage)}],
+                week=next_monday.isoformat(),
+            ),
+            said("I could not find that workout."),
+        )
+
+        sent = send(athlete, "Skip that workout next week")
+
+        assert sent.coach.text == "I could not find that workout."
+        assert sent.coach.plan is None
+        assert drafts(athlete) == []
+        assert drafts(bob) == []
+        assert PlannedWorkout.objects.for_user(bob).filter(plan=bob_plan).count() == 2
         assert len(provider.calls) == ATTEMPTS
 
 
