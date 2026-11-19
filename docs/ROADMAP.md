@@ -102,7 +102,7 @@ AI key; several people can share one instance without seeing each other's data.
 - **Depends on:** M1
 - **Size:** L
 
-### M8 [ ] Wellness and readiness
+### M8 [~] Wellness and readiness
 - **Goal:** Sleep, HRV, resting HR and weight from Intervals inform the coach and the dashboard.
 - **Includes:** wellness sync with activities, dashboard tile with the trend, short summary in the week and chat briefing, warning when recovery is clearly worse than usual.
 - **Done when:** synced wellness shows on the dashboard and reaches the briefing; tests green.

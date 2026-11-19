@@ -100,6 +100,24 @@ class ActivityBatch:
     skipped_invalid: int
 
 
+@dataclass(frozen=True)
+class IntervalsWellness:
+    """Whitelisted daily wellness metrics from Intervals.icu."""
+
+    day: date
+    sleep_minutes: int | None
+    hrv: float | None
+    resting_hr: int | None
+    weight_kg: float | None
+
+
+@dataclass(frozen=True)
+class WellnessBatch:
+    entries: tuple[IntervalsWellness, ...]
+    skipped_empty: int
+    skipped_invalid: int
+
+
 ACTIVITY_SPORTS = {
     "Run": "running",
     "VirtualRun": "running",
@@ -131,6 +149,13 @@ MAX_POWER_W = 5000
 MAX_HEART_RATE = 300
 MIN_SPEED_MS = 0.1
 MAX_SPEED_MS = 20.0
+
+WELLNESS_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
+MAX_SLEEP_SECONDS = 24 * 3600
+MAX_HRV = 500.0
+MIN_RESTING_HR = 20
+MIN_WEIGHT_KG = 20.0
+MAX_WEIGHT_KG = 300.0
 
 
 @dataclass(frozen=True)
@@ -242,6 +267,27 @@ class IntervalsClient:
             else:
                 activities.append(activity)
         return ActivityBatch(tuple(activities), skipped_strava, skipped_invalid)
+
+    def get_wellness(self, oldest: date, newest: date) -> WellnessBatch:
+        """Read daily wellness metrics for an inclusive range of calendar dates."""
+        if oldest > newest:
+            raise ValueError("oldest must not be after newest.")
+        query = f"oldest={date.isoformat(oldest)}&newest={date.isoformat(newest)}"
+        data = self._request("GET", f"/athlete/0/wellness?{query}")
+        if not isinstance(data, list):
+            raise UnexpectedResponseError("The answer is not a list of wellness entries.")
+
+        entries = []
+        skipped_empty = skipped_invalid = 0
+        for raw_entry in data:
+            parsed = _parse_wellness(raw_entry)
+            if parsed is None:
+                skipped_invalid += 1
+            elif _is_empty_wellness(parsed):
+                skipped_empty += 1
+            else:
+                entries.append(parsed)
+        return WellnessBatch(tuple(entries), skipped_empty, skipped_invalid)
 
     def upsert_event(self, event: Mapping[str, Any]) -> Event:
         """Create the event, or update the one with the same ``external_id`` (it is the key, so
@@ -429,4 +475,35 @@ def _parse_activity(entry: object) -> IntervalsActivity | None:
         avg_power_w=_whole_measurement(entry.get("icu_average_watts"), MAX_POWER_W),
         total_ascent_m=_whole_measurement(entry.get("total_elevation_gain"), 20_000),
         calories=_whole_measurement(entry.get("calories"), 100_000),
+    )
+
+
+def _parse_wellness(entry: object) -> IntervalsWellness | None:
+    if not isinstance(entry, dict):
+        return None
+    raw_id = entry.get("id")
+    if not isinstance(raw_id, str) or not WELLNESS_DATE.fullmatch(raw_id):
+        return None
+    try:
+        day = date.fromisoformat(raw_id)
+    except ValueError:
+        return None
+
+    sleep_secs = _positive(entry.get("sleepSecs"), MAX_SLEEP_SECONDS)
+    sleep_minutes = round(sleep_secs / 60) if sleep_secs is not None else None
+    return IntervalsWellness(
+        day=day,
+        sleep_minutes=sleep_minutes,
+        hrv=_positive(entry.get("hrv"), MAX_HRV),
+        resting_hr=_whole_measurement(entry.get("restingHR"), MAX_HEART_RATE, MIN_RESTING_HR),
+        weight_kg=_measurement(entry.get("weight"), MAX_WEIGHT_KG, MIN_WEIGHT_KG),
+    )
+
+
+def _is_empty_wellness(entry: IntervalsWellness) -> bool:
+    return (
+        entry.sleep_minutes is None
+        and entry.hrv is None
+        and entry.resting_hr is None
+        and entry.weight_kg is None
     )
