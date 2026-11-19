@@ -18,12 +18,16 @@ const CONNECTED = {
   athlete_id: 'i555',
   connected_at: '2026-11-12T23:29:46.406260Z',
   last_checked_at: '2026-11-12T23:29:46.432072Z',
+  last_sync_at: null,
+  last_sync_error: '',
 };
 const CONNECTION: IntervalsConnection = {
   status: 'connected',
   athlete_id: 'i555',
   connected_at: '2026-11-12T23:29:46.406260Z',
   last_checked_at: '2026-11-12T23:29:46.432072Z',
+  last_sync_at: null,
+  last_sync_error: '',
 };
 
 const UNAVAILABLE = {
@@ -96,10 +100,31 @@ describe('IntervalsConnectionApi', () => {
         'athlete_id',
         'connected_at',
         'last_checked_at',
+        'last_sync_at',
+        'last_sync_error',
         'status',
       ]);
       expect(JSON.stringify(result)).not.toContain(KEY);
     });
+
+    it.each(['', 'invalid_key', 'unavailable', 'unexpected'] as const)(
+      'parses last_sync_at and last_sync_error (%j)',
+      async (last_sync_error) => {
+        const last_sync_at = '2026-11-13T08:15:00Z';
+        const { result } = await run(
+          api.get(),
+          'GET',
+          URL,
+          { ...CONNECTED, last_sync_at, last_sync_error },
+          200,
+        );
+
+        expect(result).toEqual({
+          kind: 'connected',
+          connection: { ...CONNECTION, last_sync_at, last_sync_error },
+        });
+      },
+    );
 
     it.each([401, 403])('reports a lost session (%s)', async (status) => {
       const { result } = await run(api.get(), 'GET', URL, NO_SESSION, status);
@@ -111,6 +136,13 @@ describe('IntervalsConnectionApi', () => {
       ['a status that does not exist', { ...CONNECTED, status: 'broken' }],
       ['a missing athlete id', { ...CONNECTED, athlete_id: undefined }],
       ['a timestamp that is not text', { ...CONNECTED, connected_at: 5 }],
+      ['a last_sync_at that is not text or null', { ...CONNECTED, last_sync_at: 5 }],
+      ['a missing last_sync_at', { ...CONNECTED, last_sync_at: undefined }],
+      [
+        'a last_sync_error that is not a known code',
+        { ...CONNECTED, last_sync_error: 'raw error' },
+      ],
+      ['a last_sync_error that is null', { ...CONNECTED, last_sync_error: null }],
       ['an empty object', {}],
       ['no body', null],
     ])('rejects an answer with %s', async (_label, body) => {

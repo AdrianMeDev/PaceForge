@@ -3,7 +3,7 @@ import { Component, OnInit, inject, signal, viewChild } from '@angular/core';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { IntervalsConnectionApi } from '../../core/integrations/intervals-api';
-import { IntervalsConnection } from '../../core/integrations/intervals-models';
+import { IntervalsConnection, SyncErrorCode } from '../../core/integrations/intervals-models';
 import { ConfirmDialog } from '../../shared/confirm-dialog';
 import { PageHeader } from '../../shared/page-header';
 import { AiProviderPanel } from './ai-provider-panel';
@@ -12,6 +12,13 @@ type View = 'loading' | 'unreachable' | 'ready' | 'signed_out';
 
 const FALLBACK = 'Something went wrong. Please try again.';
 const RATE_LIMIT = 'Too many attempts. Please wait a minute and try again.';
+const SYNC_ERROR_MESSAGE: Record<Exclude<SyncErrorCode, ''>, string> = {
+  invalid_key:
+    'Intervals.icu did not accept the stored key during the last sync. Enter a new key below.',
+  unavailable:
+    'Intervals.icu could not be reached during the last sync. Sync will try again later.',
+  unexpected: 'The last sync failed unexpectedly. Try again later.',
+};
 
 /**
  * Where users connect their Intervals.icu account with a personal API key. The key is write-only:
@@ -167,6 +174,10 @@ export class ConnectionsPage implements OnInit {
     } finally {
       this.busy.set(false);
     }
+  }
+
+  protected syncErrorMessage(code: SyncErrorCode): string | null {
+    return code ? SYNC_ERROR_MESSAGE[code] : null;
   }
 
   private clearMessages(): void {
