@@ -166,12 +166,13 @@ same rules as there. A test fails if a key is added without being listed here.
 | `typical_weekly_minutes`, `recent_weeks_minutes`, `weekly_budget_minutes` | The normal week, the recent weeks and the weekly budget. |
 
 **A change request** (a version that is made from another on the athlete's wish) is told with the
-same briefing, but with the sports the old version was made for, and two more keys: `current_plan`
-(the season as it is now, in the format of the answer) and `change_request` (the wish, a JSON
+current briefing, including current sports, and two more keys: `current_plan`
+(the old season for comparison, in the format of the answer) and `change_request` (the wish, a JSON
 string). The system prompt is the same: it says that then the season is not filled from scratch,
-that the answer has exactly the same weeks, changed as the wish asks and as little else as possible,
-that every rule still applies, and that the wish is data and never an instruction about the rules,
-the format or the task. Like a title of a race it is a request to the model, not a guarantee; what
+that the answer has exactly the current briefing's weeks in order, and that unaffected overlapping
+weeks should stay as they are where they still fit. Every rule still applies. The wish is data
+and never an instruction about the rules, the format or the task. Like a title of a race it is a
+request to the model, not a guarantee; what
 it cannot do is get a plan past the parser and the checks.
 
 What is **never** sent: the name, the e-mail address, ids, the notes of goals, the activities, the
@@ -228,6 +229,16 @@ plan as a draft:
 - **Stored with its frame.** A version (`SeasonPlanVersion`) holds the weeks, the rationale, the
   skeleton and the sports it was made for. It is read back through the parser again and checked
   against **its own** skeleton, not the one of today.
+- **Original inputs.** Before asking the coach, generation collects a versioned `input_snapshot`:
+  active goals in id order, effective cycling FTP, best times in distance order and typical
+  weekly minutes. Goal and race dates are included; notes and creation or update timestamps are
+  excluded. FTP stores only the effective number. Best times keep their distance, seconds and
+  race date without a moving age window. Missing FTP and typical minutes are `null`; missing
+  goals and best times are empty lists. Confirmation keeps this snapshot. Restore requests copy
+  the original snapshot, including `null` when unknown. Change requests capture current inputs
+  before the first provider call and keep them across repair rounds. Changes during the call
+  remain detectable after confirmation against that captured baseline. Confirmed snapshots are
+  immutable with the plan content. Legacy versions stay readable with `input_snapshot: null`.
 - **Status.** `draft`, `confirmed`, `superseded` or `discarded`; at most one confirmed plan per
   user. Confirming a draft with errors is refused. The content of a plan that is not a draft is
   never changed.
@@ -235,12 +246,21 @@ plan as a draft:
   the athlete wishes (`request`, at most `REQUEST_MAX` characters, plain text with line breaks,
   checked before anything is sent) and stores the answer as the next version, a draft: `parent` the
   version it comes from, the reason `Changed on request from version N`, the wish in `request`, and
-  **the skeleton and sports of the old version**. It asks like drafting (the same loop, up to
-  `ATTEMPTS` answers, the best wins) and refuses a version that was replaced or discarded
-  (`PlanNotChangeable`). An answer equal to the old plan is not stored (`PlanUnchanged`); the calls
-  count as usage all the same. The old version is not touched. The Season page compares the new
+  **the current skeleton, sports and captured inputs**. The old plan is comparison data in
+  `current_plan`. The briefing's current weeks, race dates, targets, capacities and sports take
+  precedence. The coach must return exactly those weeks in order, adding new weeks and omitting
+  old weeks outside the current frame. It preserves unaffected overlapping weeks where they
+  still fit the current frame and rules. No current capacity returns `no_time` before any
+  provider call. It asks like drafting (the same loop, up to `ATTEMPTS` answers, the best wins)
+  and refuses a version that was replaced or discarded
+  (`PlanNotChangeable`). An answer equal to the old plan with the same frame and input snapshot
+  is not stored (`PlanUnchanged`). A changed frame or input baseline permits a new draft even
+  with identical content. The calls count as usage all the same. The old version is not touched.
+  The Season page compares the new
   version with its `parent` (`compareSeasons`, a pure function): minutes of each sport, the total,
   the focus, key sessions added and dropped and the reason, week by week, and the rationale.
+  The comparison also lists calendar weeks added to or removed from the frame. The table,
+  timeline and chart show the new draft's stored frame.
 - **Restoring.** `restore` brings back a `superseded` or `discarded` version as the next version, a
   draft: the same weeks and rationale, **its own skeleton and sports** (not today's), `parent` the
   version it comes from and the reason `Restored from version N`. The old version is not touched,
@@ -251,6 +271,115 @@ plan as a draft:
 | -------- | ----- | ------- |
 | `ATTEMPTS` | 3 | Answers of the coach for one season: one try and two repairs. |
 | `REQUEST_MAX` | 500 | Characters of a change request. |
+
+## Changes from the confirmed plan
+
+The Season, Goals, Profile and Week review pages show an adjustment notice when the confirmed plan
+needs attention. On **Goals**, it reloads right after saving, changing status or priority, or
+deleting a goal. On **Profile**, it reloads after threshold saves, switching back to an automatic
+value, Intervals.icu sync (including automatic sync on open) and best-time changes. On **Week
+review**, it also lists the three formatted evidence weeks when `training_deviation` applies and
+reloads after switching weeks, saving a workout correction, rating a session or refreshing the
+week list. Missing plans and unchanged inputs show no hint, and status failures leave normal
+editing and review usable. Follow **Ask for a change to confirmed version N** to open that
+version's **Ask for a change** form. A link from another page works the same way. It selects the
+named confirmed version even if a draft or an older version was open. After loading, the request
+field gets focus. A link to a version that is no longer confirmed shows a message. Opening the
+form makes no coach call.
+
+Write your request and submit it to create a draft against the current weeks and inputs.
+Read the comparison, including added and removed weeks, before confirming it yourself.
+Drafting, provider failure and discard leave the notice in place. Successful confirmation
+reloads the status. It hides the notice only when the confirmed replacement fits current inputs.
+If no current week offers training time, the form links to Training time and keeps your text
+for another attempt.
+
+`season/reassessment.py` compares current inputs with the confirmed version's original
+`input_snapshot` and the capacities in its stored skeleton. The baseline belongs to drafting,
+not confirmation. Only the signed-in user's confirmed version and inputs count.
+
+The endpoint returns a list of stable reason codes in this order, with each code at most once.
+The reasons contain no goal titles, notes, input values or other user text.
+
+| Code | Meaning |
+| ---- | ------- |
+| `baseline_unknown` | The original inputs are unknown. Legacy versions have a null snapshot. An incomplete snapshot or an unsupported snapshot version also counts as unknown. This is the only reason returned in that case. Historical inputs are never guessed. |
+| `goals_changed` | Active goals were added, removed or edited. Meaningful fields are id, kind, title, priority, target date, discipline, distance, target time, metric and target value. Achieving or dropping an active goal removes it from the comparison; activating one adds it. Notes, bookkeeping timestamps and edits to inactive goals do not count. |
+| `ftp_changed` | The effective cycling FTP number changed, including adding or removing it. The existing source priority applies. Changing an overridden source, its metadata or its source without changing the effective number does not count. |
+| `best_times_changed` | Stored best times changed by distance, seconds or race date, including additions and removals. Update timestamps and moving age windows do not count. |
+| `training_time_changed` | Typical weekly minutes or at least one remaining calendar week's capacity changed by both thresholds below. Capacity includes weekday minutes, absences and the weekly budget. |
+| `training_deviation` | Each of the latest three completed local weeks has actual minutes below 70% or above 130% of its confirmed weekly planned minutes. The three evidence Mondays are returned in `deviation_weeks`. |
+
+| Constant | Value | Meaning |
+| -------- | ----- | ------- |
+| `TIME_CHANGE_PERCENT` | 20 | Minimum absolute change as a percentage of the original minutes. |
+| `TIME_CHANGE_MINUTES` | 60 | Minimum absolute change in minutes. Both thresholds must be met. |
+
+The thresholds include their boundaries and apply to increases and decreases. From zero, a
+change needs at least 60 minutes. Unspecified typical minutes count as zero for this comparison.
+Capacity is compared on the same calendar dates in the stored skeleton. Remaining weeks include
+the full current Monday-to-Sunday week in the athlete's time zone. Completed weeks and dates
+outside the original season do not count. Moving into a new week alone never creates a reason.
+Saving identical values does not count. Several changed weeks still give one time reason.
+
+Reading, drafting, restoring or discarding never acknowledges a hint. Each read compares with the
+confirmed version again. Confirming a current replacement clears the reasons. Confirming an
+outdated replacement retains the differences from its original inputs and capacities. A legacy
+hint lasts until a replacement with known, current inputs is confirmed. No plan content changes.
+
+`season/deviation.py` uses the same user-scoped `reviews.services.week_summary` as the week
+review. It checks only the latest three completed Monday-to-Sunday weeks in the athlete's time
+zone. It never searches older weeks for a streak. All three weeks must be in the confirmed
+season's stored skeleton and start at or after its confirmation instant. A week that contains
+the confirmation is excluded unless confirmation was exactly at its local Monday midnight.
+The current, unfinished week never counts.
+
+Each week's actual duration must be strictly below 70% or strictly above 130% of its confirmed
+weekly workout minutes. The direction can differ between weeks. Exactly 70% and 130% do not
+count. Duration uses timer seconds, falling back to elapsed seconds only when timer time is
+missing. The comparison keeps sub-minute precision. All activities count, including unmatched
+activities and other sports. A week without activities has zero actual minutes. A missing
+confirmed weekly plan, zero planned minutes, a week inside the bounds or any activity with
+unknown duration breaks the sequence. Another athlete's training never contributes.
+
+`deviation_weeks` contains the three evidence Mondays as ISO dates, oldest first, only when
+`training_deviation` is returned. Otherwise it is empty. A new season confirmation resets the
+eligible window, including when restoring old content. Three new full weeks must finish before
+another proposal can appear. Reading, drafting, restoring or discarding alone does not reset it.
+The reason is a proposal only. It never drafts, confirms or exports training automatically.
+
+### Athlete walkthrough
+
+1. **Input change (A race moved):** Edit an active A race date on **Goals** (or update FTP or best
+   times on **Profile**). The adjustment notice appears immediately without touching the confirmed
+   season.
+2. **Repeated deviation (three weak weeks):** After three consecutive completed local weeks below
+   70% or above 130% of confirmed planned minutes, open **Week review**. The notice explains the
+   deviation and lists the three evidence weeks.
+3. **Open the change form:** Follow **Ask for a change to confirmed version N**. PaceForge opens
+   that confirmed version on **Season** and focuses the request box without calling the coach.
+4. **Draft and review:** Submit your change request. The coach drafts a new version against the
+   current skeleton, race dates, capacities and sports while comparing against the old plan.
+   Drafting or discarding keeps the notice in place.
+5. **Confirm explicitly:** Inspect the week-by-week comparison (including added and removed weeks)
+   and confirm the draft yourself. Confirmation supersedes the previous version, clears hints
+   covered by the new baseline and resets the three-week deviation window.
+
+### Acceptance checklist
+
+- Moving an A race date shows `goals_changed` on Goals and Season until a current replacement is
+  confirmed; discarding or leaving a draft unconfirmed keeps the hint, and confirming an outdated
+  draft retains hints for later changes.
+- Effective FTP changes, best-time changes and qualifying training-time changes show the matching
+  reasons; identical saves, inactive goals, overridden FTP candidates and week rollover do not.
+- Three consecutive completed local weeks strictly below 70% or above 130% of confirmed weekly
+  planned minutes show `training_deviation` and the three evidence weeks in Week review; two weeks,
+  an interrupted streak, an unfinished week, missing plans, zero planned minutes or unknown
+  durations do not.
+- Following the notice opens **Ask for a change** for the named confirmed version without making
+  any AI call; only explicit submission drafts and only explicit confirmation changes the season.
+- `GET /api/season/reassessment/` is authenticated, read-only, user-scoped and isolated across
+  users, with no external AI or Intervals.icu calls.
 
 ## The week plan follows the season
 
@@ -304,7 +433,24 @@ minutes and sessions in absent sports add nothing. Load is read-only; checks sti
 
 ## The API
 
-`GET /api/season/` answers the skeleton of the signed-in user and writes nothing. The filled plans are at `/api/season/plans/`: `GET` lists the versions (`id`, `version`, `status`, `reason`, `week_count`, `created_at`, `confirmed_at`), `POST generate/` drafts one (`201` with the plan, limited to 3 a minute), `GET <id>/` reads one and `POST <id>/confirm/` and `POST <id>/discard/` decide on a draft and `POST <id>/change/` with `{"request": "…"}` asks the coach to change a version as the athlete wishes (`201` with the new draft; `400` with the messages of the field `request`; `404`; `409` `not_changeable` or `not_configured`; `422` `unchanged` or `not_usable`; the codes of the provider; limited to 3 a minute together with drafting), and `POST <id>/restore/` brings back a replaced or discarded version as a new draft (`201` with the plan; `409` `not_restorable` for any other). A plan has `rationale`, `parent`, the `skeleton` it was made for, its `weeks` (the format with a `total_minutes` and `done`: for the **confirmed** version and the weeks that have begun the minutes the athlete trained by sport, `[{sport, minutes}]`, `other` for activities of no sport of the plan, `[]` for a week without any; `null` for every other week and version) and, for a draft, a `report` of `valid` and `findings`. Errors have a fixed text, a `code` and, where it helps, `problems` or `findings`. The answer has
+`GET /api/season/reassessment/` requires authentication and returns `confirmed_plan_id` (the
+confirmed version's UUID string, or `null`), `reasons` (the codes above) and `deviation_weeks`
+(the three evidence Mondays as ISO dates, oldest first, or `[]` without `training_deviation`).
+Without a confirmed plan both lists are empty, even if drafts exist.
+The endpoint has no user or plan selector. It writes nothing and makes no coach or Intervals.icu
+call. Write methods are refused. Reading it repeatedly never clears a reason.
+
+The shared frontend `SeasonChangeNotice` validates the response through `SeasonApi.reassessment()`.
+It explains each input change or training deviation and hides when no reasons exist. It exposes
+the active `deviationWeeks` and projects optional page context (such as Week review's evidence
+weeks) inside the notice. It reads the version list to name the matching confirmed version in a
+link to `/season?change=<id>#season-change`. If that version is no longer confirmed, status is
+unavailable and Retry reads it again. Other status failures also offer Retry. An expired session
+shows a sign-in link. Parents can call `reload()` after a change. Reloading clears the old notice
+and ignores late results from earlier reads or a destroyed component. No load drafts or confirms a
+plan.
+
+`GET /api/season/` answers the skeleton of the signed-in user and writes nothing. The filled plans are at `/api/season/plans/`: `GET` lists the versions (`id`, `version`, `status`, `reason`, `week_count`, `created_at`, `confirmed_at`), `POST generate/` drafts one (`201` with the plan, limited to 3 a minute), `GET <id>/` reads one and `POST <id>/confirm/` and `POST <id>/discard/` decide on a draft and `POST <id>/change/` with `{"request": "…"}` asks the coach to change a version as the athlete wishes (`201` with the new draft; `400` with the messages of the field `request`; `404`; `409` `not_changeable`, `no_time` or `not_configured`; `422` `unchanged` or `not_usable`; the codes of the provider; limited to 3 a minute together with drafting), and `POST <id>/restore/` brings back a replaced or discarded version as a new draft (`201` with the plan; `409` `not_restorable` for any other). A plan has `rationale`, `parent`, the `skeleton` it was made for, its `weeks` (the format with a `total_minutes` and `done`: for the **confirmed** version and the weeks that have begun the minutes the athlete trained by sport, `[{sport, minutes}]`, `other` for activities of no sport of the plan, `[]` for a week without any; `null` for every other week and version) and, for a draft, a `report` of `valid` and `findings`. Errors have a fixed text, a `code` and, where it helps, `problems` or `findings`. The answer has
 `rolling`, `truncated`, `main_race` (or `null`), `peak_minutes` and `weeks`. A **week** has
 `week_start` (a Monday), `phase` (`base`, `build`, `specific`, `taper` or `transition`), `recovery`,
 `target_minutes`, `capacity_minutes` and `races`. A **race** has `date`, `priority` (`main`,

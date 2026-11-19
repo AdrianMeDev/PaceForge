@@ -13,7 +13,7 @@ from django.test.utils import CaptureQueriesContext
 from accounts.models import User
 from accounts.tests.conftest import AuthApi
 from activities.models import Activity
-from availability.models import WeekdayMinutes
+from availability.models import AvailabilitySettings, WeekdayMinutes
 from coach.models import AIProviderConfiguration, AIUsageRecord
 from coach.providers.base import InvalidKeyError, ProviderUnavailableError, RateLimitedError
 from goals import services as goal_services
@@ -29,6 +29,7 @@ from season.models import SeasonPlanVersion
 from season.rules import SeasonContext
 from season.schema import Focus, KeySession, PlanWeek, SeasonPlan, SessionKind, to_json
 from season.skeleton import Skeleton
+from season.snapshots import collect_inputs
 
 from .conftest import make_user, signed_in
 
@@ -749,7 +750,11 @@ class TestChanging:
     WISH = {"request": "Less cycling in January"}
 
     def confirmed(self, user: User) -> SeasonPlanVersion:
-        return services.confirm(user, draft(user).pk)
+        skeleton = skeleton_for(user)
+        stored = services.save_draft(
+            user, following(skeleton), SeasonContext(skeleton), input_snapshot=collect_inputs(user)
+        )
+        return services.confirm(user, stored.pk)
 
     def test_a_good_answer_gives_the_new_draft_with_its_checks(
         self, alice: User, provide: Callable[..., Scripted]
@@ -767,6 +772,97 @@ class TestChanging:
         assert data["request"] == "Less cycling in January"
         assert data["report"] == {"valid": True, "findings": []}
         assert data["weeks"][0]["focus"] == "tempo"
+
+    @pytest.mark.parametrize("change_kind", ["race", "capacity"])
+    def test_the_draft_is_checked_against_current_inputs_and_the_parent_is_untouched(
+        self, alice: User, provide: Callable[..., Scripted], change_kind: str
+    ) -> None:
+        base = self.confirmed(alice)
+        before = SeasonPlanVersion.objects.values().get(pk=base.pk)
+        if change_kind == "race":
+            Goal.objects.for_user(alice).update(target_date=MONDAY + timedelta(weeks=9, days=6))
+        else:
+            WeekdayMinutes.objects.for_user(alice).update(minutes=30)
+        expected = skeleton_for(alice)
+        scripted = provide(good(alice))
+
+        response = signed_in(alice).call("POST", url(base.pk, "change/"), self.WISH)
+
+        assert response.status_code == HTTPStatus.CREATED
+        data = body(response)
+        assert data["report"] == {"valid": True, "findings": []}
+        assert (data["parent"], data["request"]) == (str(base.pk), self.WISH["request"])
+        stored = services.get(alice, UUID(data["id"]))
+        assert services.read(stored).context.skeleton == expected
+        assert stored.input_snapshot == collect_inputs(alice)
+        told = json.loads(scripted.calls[0][1][0].content.split("\n\n", 1)[1])
+        assert [week["week_start"] for week in told["weeks"]] == [
+            week.week_start.isoformat() for week in expected.weeks
+        ]
+        assert told["current_plan"] == to_json(services.read(base).plan)
+        assert SeasonPlanVersion.objects.values().get(pk=base.pk) == before
+
+    def test_an_answer_in_the_old_frame_stays_an_unconfirmable_draft(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        base = self.confirmed(alice)
+        old_answer = good(alice)
+        Goal.objects.for_user(alice).update(target_date=MONDAY + timedelta(weeks=9, days=6))
+        provide(old_answer, old_answer, old_answer)
+        api = signed_in(alice)
+
+        response = api.call("POST", url(base.pk, "change/"), self.WISH)
+
+        assert response.status_code == HTTPStatus.CREATED
+        data = body(response)
+        assert data["report"]["valid"] is False
+        assert "weeks_mismatch" in [finding["code"] for finding in data["report"]["findings"]]
+        refused = api.call("POST", url(data["id"], "confirm/"))
+        assert refused.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+        assert body(refused)["code"] == "not_confirmable"
+        base.refresh_from_db()
+        assert base.status == "confirmed"
+
+    @pytest.mark.parametrize("configured", [False, True])
+    def test_no_current_time_returns_the_existing_no_time_response_without_a_call(
+        self, alice: User, provide: Callable[..., Scripted], configured: bool
+    ) -> None:
+        base = self.confirmed(alice)
+        AvailabilitySettings.objects.create(owner=alice, weekly_budget_minutes=0)
+        if not configured:
+            AIProviderConfiguration.objects.filter(owner=alice).delete()
+        scripted = provide("never asked")
+
+        response = signed_in(alice).call("POST", url(base.pk, "change/"), self.WISH)
+
+        assert response.status_code == HTTPStatus.CONFLICT
+        assert body(response) == {
+            "code": "no_time",
+            "detail": (
+                "You have no training time in the weeks of your season. "
+                "Enter it on the Training time page."
+            ),
+        }
+        assert scripted.calls == []
+        assert not AIUsageRecord.objects.for_user(alice).exists()
+        assert SeasonPlanVersion.objects.for_user(alice).count() == 1
+
+    def test_identical_content_with_a_new_frame_is_created_instead_of_unchanged(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        AvailabilitySettings.objects.create(owner=alice, typical_weekly_minutes=210)
+        base = self.confirmed(alice)
+        old_answer = good(alice)
+        WeekdayMinutes.objects.for_user(alice).update(minutes=90)
+        provide(old_answer)
+
+        response = signed_in(alice).call("POST", url(base.pk, "change/"), self.WISH)
+
+        assert response.status_code == HTTPStatus.CREATED
+        data = body(response)
+        assert data["report"] == {"valid": True, "findings": []}
+        assert data["skeleton"] != base.skeleton
+        assert data["skeleton"]["weeks"][0]["capacity_minutes"] == 630
 
     def test_the_old_version_stays_confirmed(
         self, alice: User, provide: Callable[..., Scripted]

@@ -27,6 +27,7 @@ import {
   GenerateSeasonResult,
   GetSeasonPlanResult,
   GetSeasonResult,
+  GetSeasonReassessmentResult,
   KeySession,
   ListSeasonPlansResult,
   PlanStatus,
@@ -34,6 +35,8 @@ import {
   RestoreSeasonResult,
   RacePriority,
   Season,
+  SeasonChangeReason,
+  SeasonReassessment,
   SeasonPhase,
   SeasonPlan,
   SeasonWeekFacts,
@@ -79,6 +82,14 @@ const REQUEST_MAX = 500;
 const DETAIL_MAX = 60;
 const WEEK_MINUTES_MAX = 7 * 24 * 60;
 const SESSION_MINUTES_MAX = 24 * 60;
+const CHANGE_REASONS: readonly SeasonChangeReason[] = [
+  'baseline_unknown',
+  'goals_changed',
+  'ftp_changed',
+  'best_times_changed',
+  'training_time_changed',
+  'training_deviation',
+];
 
 /**
  * The season of the signed-in user. The skeleton is read only: the server works it out from the
@@ -89,6 +100,20 @@ const SESSION_MINUTES_MAX = 24 * 60;
 @Injectable({ providedIn: 'root' })
 export class SeasonApi {
   private readonly http = inject(HttpClient);
+
+  /** Reads adjustment hints. This never drafts, confirms or acknowledges a change. */
+  async reassessment(): Promise<GetSeasonReassessmentResult> {
+    const reply = await this.send(this.http.get(`${URL}reassessment/`, { observe: 'response' }));
+    switch (reply.status) {
+      case 200:
+        return { kind: 'ok', reassessment: toReassessment(reply) };
+      case 401:
+      case 403:
+        return { kind: 'forbidden' };
+      default:
+        throw unexpected(reply);
+    }
+  }
 
   async get(): Promise<GetSeasonResult> {
     const reply = await this.send(this.http.get(URL, { observe: 'response' }));
@@ -186,11 +211,15 @@ export class SeasonApi {
       case 404:
         return { kind: 'not_found' };
       case 409:
-        // Two reasons share the status; the code tells them apart. Anything else keeps meaning
-        // what 409 meant first: no provider.
-        return codeOf(reply.body) === 'not_changeable'
-          ? { kind: 'not_changeable' }
-          : { kind: 'not_configured' };
+        // The code separates conflicts; unknown replies retain the original no-provider meaning.
+        switch (codeOf(reply.body)) {
+          case 'not_changeable':
+            return { kind: 'not_changeable' };
+          case 'no_time':
+            return { kind: 'no_time' };
+          default:
+            return { kind: 'not_configured' };
+        }
       case 422:
         return codeOf(reply.body) === 'unchanged'
           ? { kind: 'unchanged' }
@@ -294,6 +323,52 @@ export class SeasonApi {
       throw error;
     }
   }
+}
+
+function toReassessment(reply: Reply): SeasonReassessment {
+  const { confirmed_plan_id, reasons, deviation_weeks } = asObject(reply.body, reply);
+  if (
+    (confirmed_plan_id !== null && !isUuid(confirmed_plan_id)) ||
+    !Array.isArray(reasons) ||
+    reasons.length > CHANGE_REASONS.length ||
+    !Array.isArray(deviation_weeks) ||
+    deviation_weeks.length > 3
+  ) {
+    throw unexpected(reply);
+  }
+  const parsed = reasons.map((reason: unknown) => {
+    if (!isOneOf<SeasonChangeReason>(reason, CHANGE_REASONS)) {
+      throw unexpected(reply);
+    }
+    return reason;
+  });
+  const weeks = deviation_weeks.map((week: unknown) => {
+    if (!isDate(week)) {
+      throw unexpected(reply);
+    }
+    const date = new Date(`${week}T00:00:00Z`);
+    if (
+      !Number.isFinite(date.getTime()) ||
+      date.toISOString().slice(0, 10) !== week ||
+      date.getUTCDay() !== 1
+    ) {
+      throw unexpected(reply);
+    }
+    return week;
+  });
+  if (
+    new Set(parsed).size !== parsed.length ||
+    (confirmed_plan_id === null && parsed.length !== 0) ||
+    (parsed.includes('baseline_unknown') && parsed.length !== 1) ||
+    weeks.length !== (parsed.includes('training_deviation') ? 3 : 0) ||
+    weeks.some(
+      (week, index) =>
+        index > 0 && Date.parse(week) - Date.parse(weeks[index - 1]) !== 7 * 24 * 60 * 60 * 1000,
+    )
+  ) {
+    throw unexpected(reply);
+  }
+  return { confirmed_plan_id, reasons: parsed, deviation_weeks: weeks };
 }
 
 /** Only the known fields are taken over, whatever else an answer might carry. */

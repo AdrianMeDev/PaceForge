@@ -50,6 +50,8 @@ class SeasonPlanVersion(OwnedModel):
     weeks = models.JSONField(default=list, blank=True)
     skeleton = models.JSONField(default=dict, blank=True)
     sports = models.JSONField(default=list, blank=True)
+    # The versioned inputs captured before drafting. Null means the baseline is unknown.
+    input_snapshot = models.JSONField(null=True, blank=True, default=None)
     created_at = models.DateTimeField(auto_now_add=True)
     # Set when the plan is confirmed and kept when it is superseded; empty for drafts.
     confirmed_at = models.DateTimeField(null=True, blank=True)
@@ -93,6 +95,8 @@ class SeasonPlanVersion(OwnedModel):
             errors["skeleton"] = "The skeleton is an object."
         if not isinstance(self.sports, list):
             errors["sports"] = "The sports are a list."
+        if self.input_snapshot is not None and not isinstance(self.input_snapshot, dict):
+            errors["input_snapshot"] = "The input snapshot is an object or unknown."
         if errors:
             raise ValidationError(errors)
 
@@ -104,7 +108,14 @@ class SeasonPlanVersion(OwnedModel):
                 type(self)
                 .objects.filter(pk=self.pk)
                 .values_list(
-                    "status", "reason", "request", "rationale", "weeks", "skeleton", "sports"
+                    "status",
+                    "reason",
+                    "request",
+                    "rationale",
+                    "weeks",
+                    "skeleton",
+                    "sports",
+                    "input_snapshot",
                 )
                 .first()
             )
@@ -115,6 +126,7 @@ class SeasonPlanVersion(OwnedModel):
                 self.weeks,
                 self.skeleton,
                 self.sports,
+                self.input_snapshot,
             )
             if stored is not None and stored[0] != self.Status.DRAFT and stored[1:] != now:
                 raise ValidationError(

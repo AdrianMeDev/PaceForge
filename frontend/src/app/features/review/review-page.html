@@ -33,6 +33,11 @@
       <p><a routerLink="/login">Go to sign in</a></p>
     }
     @case ('ready') {
+      <app-season-change-notice>
+        @if (deviationEvidence(); as evidence) {
+          <p class="my-2 text-sm" data-testid="deviation-weeks">{{ evidence }}</p>
+        }
+      </app-season-change-notice>
       @for (message of errors(); track $index) {
         <p class="alert" role="alert">{{ message }}</p>
       }

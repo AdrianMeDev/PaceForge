@@ -1,5 +1,19 @@
-import { Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  Injector,
+  OnInit,
+  afterNextRender,
+  computed,
+  effect,
+  inject,
+  signal,
+  untracked,
+  viewChild,
+} from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { CoachApi } from '../../core/coach/coach-api';
 import { SeasonApi } from '../../core/season/season-api';
 import {
@@ -22,6 +36,7 @@ import { compareSeasons } from './season-compare';
 import { ConfirmDialog } from '../../shared/confirm-dialog';
 import { VersionChips } from '../../shared/version-chips';
 import { PageHeader } from '../../shared/page-header';
+import { SeasonChangeNotice } from '../../shared/season-change-notice';
 import { SeasonChart } from './season-chart';
 import { SeasonTimeline } from './season-timeline';
 import {
@@ -62,6 +77,8 @@ const UNCHANGED =
 /** The longest request the server keeps (characters, as the server counts them). */
 const REQUEST_MAX = 500;
 const HAS_ERRORS = 'The plan has errors and cannot be confirmed.';
+const STALE_LINK =
+  'That version is no longer confirmed. Choose the confirmed version to ask for a change.';
 const REFRESH_FAILED = 'The list of plans could not be refreshed. Please try again.';
 
 /**
@@ -77,13 +94,44 @@ const REFRESH_FAILED = 'The list of plans could not be refreshed. Please try aga
  */
 @Component({
   selector: 'app-season-page',
-  imports: [RouterLink, ConfirmDialog, PageHeader, SeasonChart, SeasonTimeline, VersionChips],
+  imports: [
+    RouterLink,
+    ConfirmDialog,
+    PageHeader,
+    SeasonChart,
+    SeasonTimeline,
+    VersionChips,
+    SeasonChangeNotice,
+  ],
+  changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './season-page.html',
   styleUrl: './season-page.css',
 })
 export class SeasonPage implements OnInit {
   private readonly api = inject(SeasonApi);
   private readonly coach = inject(CoachApi);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly injector = inject(Injector);
+  private readonly changeNotice = viewChild(SeasonChangeNotice);
+  private readonly requestField = viewChild<ElementRef<HTMLTextAreaElement>>('requestField');
+  private readonly changeLink = signal<string | null>(null);
+  private readonly plansLoaded = signal(false);
+
+  constructor() {
+    this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((params) => {
+      this.changeLink.set(params.get('change'));
+    });
+    effect(() => {
+      const id = this.changeLink();
+      if (id && this.plansLoaded() && this.view() === 'ready' && !this.busy()) {
+        untracked(() => {
+          this.changeLink.set(null);
+          void this.openChangeLink(id);
+        });
+      }
+    });
+  }
 
   protected readonly view = signal<View>('loading');
   protected readonly season = signal<Season | null>(null);
@@ -204,6 +252,7 @@ export class SeasonPage implements OnInit {
 
   protected async load(): Promise<void> {
     this.view.set('loading');
+    this.plansLoaded.set(false);
     try {
       const [result, provider] = await Promise.all([this.api.get(), this.coach.get()]);
       if (result.kind === 'forbidden' || provider.kind === 'forbidden') {
@@ -218,6 +267,7 @@ export class SeasonPage implements OnInit {
       return;
     }
     await this.loadPlans();
+    this.plansLoaded.set(true);
   }
 
   /** Shows one of the versions: the one with this id. */
@@ -290,6 +340,7 @@ export class SeasonPage implements OnInit {
           await this.setPlan(result.plan);
           this.notice.set('The plan is confirmed.');
           await this.refresh();
+          await this.changeNotice()?.reload();
           break;
         case 'not_confirmable':
           this.plan.set({ ...current, report: { valid: false, findings: result.findings } });
@@ -344,6 +395,10 @@ export class SeasonPage implements OnInit {
           this.errors.set([NOT_CHANGEABLE]);
           await this.show(current.id, false);
           await this.refresh();
+          break;
+        case 'no_time':
+          this.errors.set([NO_TIME]);
+          this.noTime.set(true);
           break;
         case 'not_configured':
           this.configured.set(false);
@@ -465,15 +520,46 @@ export class SeasonPage implements OnInit {
     }
   }
 
+  /** A hint always targets the named confirmed plan, even while another version is shown. */
+  private async openChangeLink(id: string): Promise<void> {
+    this.clearMessages();
+    if (this.confirmed()?.id !== id) {
+      this.errors.set([STALE_LINK]);
+    } else if (await this.show(id, true, true)) {
+      afterNextRender(
+        () => {
+          if (this.plan()?.id === id && !this.busy()) {
+            this.requestField()?.nativeElement.focus();
+          }
+        },
+        { injector: this.injector },
+      );
+    }
+    // Consume the request so following the same notice again works after viewing another version.
+    if (this.route.snapshot.queryParamMap.get('change') === id) {
+      await this.router.navigate([], {
+        relativeTo: this.route,
+        queryParams: { change: null },
+        queryParamsHandling: 'merge',
+        fragment: 'season-change',
+        replaceUrl: true,
+      });
+    }
+  }
+
   /** The version with this id on the screen; `work` is the page's while it loads. */
-  private async show(id: string, announce = true): Promise<void> {
+  private async show(id: string, announce = true, confirmedOnly = false): Promise<boolean> {
     this.work.set('opening');
     try {
       const result = await this.api.plan(id);
       switch (result.kind) {
         case 'ok':
+          if (confirmedOnly && result.plan.status !== 'confirmed') {
+            this.errors.set([STALE_LINK]);
+            return false;
+          }
           await this.setPlan(result.plan);
-          break;
+          return true;
         case 'not_found':
           if (announce) {
             this.problem.set('missing');
@@ -490,6 +576,7 @@ export class SeasonPage implements OnInit {
     } finally {
       this.work.set(null);
     }
+    return false;
   }
 
   /**

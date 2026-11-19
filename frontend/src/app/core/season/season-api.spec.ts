@@ -200,6 +200,122 @@ const ID = '0195f3a0-0000-7000-8000-000000000001';
 const OTHER_ID = '0195f3a0-0000-7000-8000-000000000002';
 const STAMP = '2026-11-16T10:00:00.123456Z';
 
+describe('SeasonApi reassessment', () => {
+  const url = `${URL}reassessment/`;
+  const hint = { confirmed_plan_id: ID, reasons: ['goals_changed'], deviation_weeks: [] };
+  const evidence = ['2026-10-26', '2026-11-02', '2026-11-09'];
+  const deviation = { ...hint, reasons: ['training_deviation'], deviation_weeks: evidence };
+  let api: SeasonApi;
+  let backend: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({ providers: [provideApiClient(), provideHttpClientTesting()] });
+    api = TestBed.inject(SeasonApi);
+    backend = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => backend.verify());
+
+  async function answer(body: string | object | null, status = 200) {
+    const action = api.reassessment();
+    // Attach before flushing so a rejected parse is always handled.
+    action.catch(() => undefined);
+    const request = await vi.waitFor(() => backend.expectOne(url));
+    expect(request.request.method).toBe('GET');
+    expect(request.request.body).toBeNull();
+    request.flush(body, { status, statusText: `HTTP ${status}` });
+    return action;
+  }
+
+  it.each([
+    hint,
+    { ...hint, reasons: [] },
+    { ...hint, confirmed_plan_id: null, reasons: [] },
+    { ...hint, reasons: ['baseline_unknown'] },
+    deviation,
+    {
+      ...deviation,
+      reasons: [
+        'goals_changed',
+        'ftp_changed',
+        'best_times_changed',
+        'training_time_changed',
+        'training_deviation',
+      ],
+    },
+  ])('reads valid reassessment %j', async (body) => {
+    expect(await answer(body)).toEqual({ kind: 'ok', reassessment: body });
+  });
+
+  it('takes only the known fields', async () => {
+    expect(await answer({ ...hint, owner: 'ignored', message: '<b>ignored</b>' })).toEqual({
+      kind: 'ok',
+      reassessment: hint,
+    });
+  });
+
+  it.each([401, 403])('reports session expiry (%i)', async (status) => {
+    expect(await answer(NO_SESSION, status)).toEqual({ kind: 'forbidden' });
+  });
+
+  it.each([
+    ['no body', null],
+    ['a text body', 'bad'],
+    ['a list body', []],
+    ['no id', altered(hint, [['confirmed_plan_id'], REMOVE])],
+    ['an invalid id', { ...hint, confirmed_plan_id: '../plans' }],
+    ['a numeric id', { ...hint, confirmed_plan_id: 1 }],
+    ['reasons without a plan', { ...hint, confirmed_plan_id: null }],
+    ['no reasons', altered(hint, [['reasons'], REMOVE])],
+    ['a text as reasons', { ...hint, reasons: 'goals_changed' }],
+    ['a non-text reason', { ...hint, reasons: [1] }],
+    ['an unknown reason', { ...hint, reasons: ['unknown'] }],
+    ['a duplicate reason', { ...hint, reasons: ['goals_changed', 'goals_changed'] }],
+    ['mixed unknown baseline', { ...hint, reasons: ['baseline_unknown', 'goals_changed'] }],
+    ['no evidence field', altered(hint, [['deviation_weeks'], REMOVE])],
+    ['null evidence', { ...hint, deviation_weeks: null }],
+    ['a text as evidence', { ...hint, deviation_weeks: '2026-11-02' }],
+    ['evidence without deviation', { ...hint, deviation_weeks: evidence }],
+    ['deviation without evidence', { ...deviation, deviation_weeks: [] }],
+    ['two evidence weeks', { ...deviation, deviation_weeks: evidence.slice(0, 2) }],
+    ['four evidence weeks', { ...deviation, deviation_weeks: [...evidence, '2026-11-16'] }],
+    ['a non-text week', { ...deviation, deviation_weeks: [1, ...evidence.slice(1)] }],
+    ['an invalid date', { ...deviation, deviation_weeks: ['2026-02-30', ...evidence.slice(1)] }],
+    [
+      'an impossible month',
+      { ...deviation, deviation_weeks: ['2026-13-01', ...evidence.slice(1)] },
+    ],
+    [
+      'a date with a time',
+      { ...deviation, deviation_weeks: ['2026-10-26T00:00:00Z', ...evidence.slice(1)] },
+    ],
+    ['a Tuesday', { ...deviation, deviation_weeks: ['2026-10-27', ...evidence.slice(1)] }],
+    ['duplicate weeks', { ...deviation, deviation_weeks: [evidence[0], evidence[0], evidence[2]] }],
+    ['reversed weeks', { ...deviation, deviation_weeks: [...evidence].reverse() }],
+    [
+      'nonconsecutive weeks',
+      { ...deviation, deviation_weeks: ['2026-10-19', ...evidence.slice(1)] },
+    ],
+  ])('rejects %s', async (_name, body) => {
+    await expect(answer(body as object | null)).rejects.toThrow();
+  });
+
+  it.each([404, 409, 429, 500, 503])(
+    'rejects unavailable or unexpected HTTP %i',
+    async (status) => {
+      await expect(answer('unavailable', status)).rejects.toThrow();
+    },
+  );
+
+  it('rejects a network failure', async () => {
+    const action = api.reassessment();
+    action.catch(() => undefined);
+    const request = await vi.waitFor(() => backend.expectOne(url));
+    request.error(new ProgressEvent('error'));
+    await expect(action).rejects.toThrow();
+  });
+});
+
 const SUMMARY = {
   id: ID,
   version: 2,
@@ -1033,6 +1149,17 @@ describe('SeasonApi acting on season plans', () => {
       const { result } = await post(api.change(ID, 'x'), url, { code: 'not_changeable' }, 409);
 
       expect(result).toEqual({ kind: 'not_changeable' });
+    });
+
+    it('says when the current season has no training time', async () => {
+      const { result } = await post(
+        api.change(ID, 'x'),
+        url,
+        { detail: 'You have no training time.', code: 'no_time' },
+        409,
+      );
+
+      expect(result).toEqual({ kind: 'no_time' });
     });
 
     it.each([

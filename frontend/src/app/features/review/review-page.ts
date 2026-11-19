@@ -5,6 +5,7 @@ import {
   computed,
   inject,
   signal,
+  viewChild,
 } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { PlanningApi } from '../../core/planning/planning-api';
@@ -40,6 +41,7 @@ import {
 } from './review-format';
 import { Icon } from '../../shared/icon';
 import { PageHeader } from '../../shared/page-header';
+import { SeasonChangeNotice } from '../../shared/season-change-notice';
 import { CoachComment } from './coach-comment';
 import { SessionRating } from './session-rating';
 import { WeekFeedbackForm } from './week-feedback-form';
@@ -83,7 +85,15 @@ interface ReviewDay {
  */
 @Component({
   selector: 'app-review-page',
-  imports: [RouterLink, Icon, PageHeader, SessionRating, WeekFeedbackForm, CoachComment],
+  imports: [
+    RouterLink,
+    Icon,
+    PageHeader,
+    SeasonChangeNotice,
+    SessionRating,
+    WeekFeedbackForm,
+    CoachComment,
+  ],
   templateUrl: './review-page.html',
   styleUrl: './review-page.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -93,6 +103,7 @@ export class ReviewPage implements OnInit {
   private readonly planning = inject(PlanningApi);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
+  private readonly changeNotice = viewChild(SeasonChangeNotice);
 
   protected readonly view = signal<View>('loading');
   protected readonly weeks = signal<ReviewableWeek[]>([]);
@@ -110,6 +121,11 @@ export class ReviewPage implements OnInit {
   protected readonly unplanned = computed(
     () => this.review()?.activities.filter((activity) => activity.workout_id === null) ?? [],
   );
+  /** The three completed weeks behind a deviation proposal, formatted like the week selector. */
+  protected readonly deviationEvidence = computed<string | null>(() => {
+    const weeks = this.changeNotice()?.deviationWeeks() ?? [];
+    return weeks.length === 0 ? null : `Evidence weeks: ${weeks.map(weekRange).join(', ')}.`;
+  });
 
   protected readonly sport = SPORT_LABELS;
   protected readonly icon = SPORT_ICONS;
@@ -158,7 +174,7 @@ export class ReviewPage implements OnInit {
       return;
     }
     if (this.selected() !== '') {
-      await this.show();
+      await this.show(false);
     }
   }
 
@@ -169,7 +185,7 @@ export class ReviewPage implements OnInit {
     this.clearMessages();
     this.review.set(null);
     this.selected.set(value);
-    await this.show();
+    await this.show(true);
   }
 
   /** The choices of one workout as the server is to keep them; empty goes back to automatic. */
@@ -301,6 +317,7 @@ export class ReviewPage implements OnInit {
       case 'ok':
         this.review.set(result.review);
         this.notice.set(SAVED);
+        this.reloadNotice();
         break;
       case 'invalid':
         this.errors.set(
@@ -314,7 +331,7 @@ export class ReviewPage implements OnInit {
         break;
       case 'workout_not_found':
         this.errors.set([NO_SUCH_WORKOUT]);
-        await this.fetch();
+        await this.fetch(true);
         break;
       case 'not_reviewable':
         this.errors.set([NOT_REVIEWABLE]);
@@ -335,7 +352,7 @@ export class ReviewPage implements OnInit {
     this.errors.set(errors);
     this.work.set('saving');
     try {
-      await this.fetch();
+      await this.fetch(true);
       if (notice !== null && this.errors().length === 0) {
         this.notice.set(notice);
       }
@@ -345,21 +362,24 @@ export class ReviewPage implements OnInit {
   }
 
   /** Opens the selected week and says what is wrong if that does not work. */
-  private async show(): Promise<void> {
+  private async show(refreshNotice: boolean): Promise<void> {
     this.work.set('opening');
     try {
-      await this.fetch();
+      await this.fetch(refreshNotice);
     } finally {
       this.work.set(null);
     }
   }
 
-  private async fetch(): Promise<void> {
+  private async fetch(refreshNotice: boolean): Promise<void> {
     try {
       const result = await this.api.week(this.selected());
       switch (result.kind) {
         case 'ok':
           this.review.set(result.review);
+          if (refreshNotice) {
+            this.reloadNotice();
+          }
           break;
         case 'not_reviewable':
           this.review.set(null);
@@ -384,9 +404,14 @@ export class ReviewPage implements OnInit {
         return;
       }
       this.weeks.set(result.weeks);
+      this.reloadNotice();
     } catch {
       this.errors.update((list) => [...list, REFRESH_FAILED]);
     }
+  }
+
+  private reloadNotice(): void {
+    void this.changeNotice()?.reload();
   }
 
   private group(review: WeekReview | null): ReviewDay[] {

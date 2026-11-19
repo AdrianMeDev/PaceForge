@@ -57,6 +57,26 @@ export interface Season {
 
 export type GetSeasonResult = { kind: 'ok'; season: Season } | Forbidden;
 
+/** Stable reasons why the confirmed season may need an adjustment. */
+export type SeasonChangeReason =
+  | 'baseline_unknown'
+  | 'goals_changed'
+  | 'ftp_changed'
+  | 'best_times_changed'
+  | 'training_time_changed'
+  | 'training_deviation';
+
+/** Read-only comparison with the confirmed version; no plan means empty lists. */
+export interface SeasonReassessment {
+  confirmed_plan_id: string | null;
+  reasons: SeasonChangeReason[];
+  /** Three consecutive evidence Mondays, oldest first, only for training deviation. */
+  deviation_weeks: string[];
+}
+
+export type GetSeasonReassessmentResult =
+  { kind: 'ok'; reassessment: SeasonReassessment } | Forbidden;
+
 /** What a week of a filled season is about. */
 export type Focus = 'recovery' | 'endurance' | 'tempo' | 'threshold' | 'vo2max' | 'race_specific';
 
@@ -188,6 +208,8 @@ export type ChangeSeasonResult =
   | { kind: 'not_changeable' }
   /** No AI provider is set up. */
   | { kind: 'not_configured' }
+  /** No current week offers training time; nothing was asked of the coach. */
+  | { kind: 'no_time' }
   /** The coach gave the season back as it was; nothing was stored. */
   | { kind: 'unchanged' }
   /** The coach gave no readable plan, even after being told what was wrong. */

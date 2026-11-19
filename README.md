@@ -612,6 +612,13 @@ there are several, the first one in that order counts and the others are listed 
    - **The coach** is told your best times (distance, time, day, VDOT, whether the race is recent
      and whether it counts) and the VDOT that counts, as numbers and fixed words.
 
+**Season adjustment hints.** When your confirmed [season plan](#filling-the-season-with-your-coach)
+needs attention, the Profile page shows a read-only notice above your settings with a link to that
+version's **Ask for a change** form. It refreshes after saving a threshold, switching back to an
+automatic value, updating from Intervals.icu (including an automatic sync on open) and saving or
+removing a best time. Without a confirmed plan or with unchanged inputs, no hint is shown. If the
+status cannot be read, editing stays usable.
+
 Thresholds and the data about you are personal: every user sees and changes only their own,
 administrators included, and no answer contains another user's values.
 
@@ -677,6 +684,12 @@ stays yours**: it is a hint and never changes anything. Cycling, swimming and tr
 goals without a target, a date or a form to start from, say why they cannot be judged. Your coach
 is told the judgement in the briefing of the week and of the season. The rules, every number and
 what is not judged are in [`docs/goals.md`](docs/goals.md).
+
+**Season adjustment hints.** When your confirmed [season plan](#filling-the-season-with-your-coach)
+needs attention, the Goals page shows a read-only notice above the list with a link to that
+version's **Ask for a change** form. It refreshes right after you add, edit, change the status or
+priority of, or delete a goal. Without a confirmed plan or with unchanged inputs, no hint is shown.
+If the status cannot be read, goal editing stays usable.
 
 **Limits.** At most 30 goals per user (finished ones included), so delete old ones when it is full.
 Titles and notes are shown as plain text, never as markup.
@@ -910,6 +923,48 @@ sessions (a long run, a threshold session, the race …) and a reason. The model
   confirmed version, which stays as **superseded**) or **discarded**. A confirmed plan is never
   changed. A plan keeps the skeleton and the sports it was made for, so it stays readable and is
   checked against them when goals, time or the week move on; it is **not updated** by that.
+  New coach drafts also keep the active goals, effective FTP, best times and typical weekly
+  minutes from before the coach was asked. Confirmation keeps these original inputs. Restoring
+  a version copies them. A change request captures current inputs. Older versions may have no
+  recorded inputs.
+- **Checking for changes:** `GET /api/season/reassessment/` compares your confirmed plan's
+  original inputs with your active goals, effective cycling FTP, best times and training time.
+  Its `reasons` are `goals_changed`, `ftp_changed`, `best_times_changed` and
+  `training_time_changed`. A time change needs both 20% and 60 minutes in typical weekly time
+  or a remaining calendar week's capacity, including absences and the weekly budget. From zero
+  it needs 60 minutes; unspecified typical time counts as zero. The current week is included in
+  your time zone. Identical saves, inactive-goal edits, overridden FTP changes and calendar
+  rollover do not count. An older plan without recorded inputs returns `baseline_unknown`.
+  Drafting or discarding keeps the hint. Confirming a replacement clears it only if its original
+  inputs and capacities now fit. An outdated replacement keeps the hint.
+  A `training_deviation` reason proposes an adjustment when each of the latest three completed
+  local weeks has actual minutes below 70% or above 130% of its confirmed weekly planned minutes.
+  Exactly 70% or 130% does not count. All three weeks must be in the confirmed season and start
+  at or after its confirmation. Missing weekly plans, zero planned minutes or any activity with
+  unknown duration break the sequence. No activities means zero actual minutes. Timer time takes
+  priority over elapsed time, and unplanned activities count. A new season confirmation resets
+  the eligible window; drafting or discarding does not.
+  This read-only endpoint returns `confirmed_plan_id`, `reasons` and `deviation_weeks`, the three
+  evidence Mondays as ISO dates, oldest first, or an empty list without a deviation reason.
+  Without a confirmed plan, the id is `null` and both lists are empty. It calls neither the coach
+  nor Intervals.icu.
+  The reusable frontend notice explains each reason and names the confirmed version in its
+  change link. It appears on [Season](#season), [Goals](#goals), [Profile](#athlete-profile) and
+  [Week review](#week-review). It refreshes after goal mutations, threshold saves,
+  automatic-value selection, Intervals.icu sync (including automatic sync on open), best-time
+  changes and week review reloads (switching weeks, workout corrections, session ratings and
+  week-list reloads). On Week review, a `training_deviation` proposal also lists the three
+  evidence weeks. The notice hides when there are no reasons. Status failures offer Retry without
+  blocking editing, and an expired session asks you to sign in again. Loading or reloading the
+  notice only reads status and versions.
+  **Walkthrough.** (1) Move an A race date on **Goals** (or change FTP/best times on **Profile**,
+  or finish three weak weeks and open **Week review**). (2) Read the notice and its evidence weeks
+  if shown, then follow **Ask for a change to confirmed version N**. (3) The **Season** page opens
+  that confirmed version and focuses the request box without calling the coach. (4) Write your
+  wish and submit it to draft an adjustment against the current weeks and inputs. (5) Inspect the
+  comparison (including added and removed weeks) and confirm the draft yourself, or discard it to
+  keep the old plan and its hint. Only explicit confirmation replaces the confirmed season and
+  refreshes or resets the notice; changes made after drafting can still leave a hint.
 - **Restoring:** a version that was **replaced or discarded** can be brought back with **Make this
   the new draft**. That copies it as the next version, a draft (its reason says "Restored from
   version N"), with the skeleton and the sports it was made for; the old version is not touched
@@ -918,16 +973,24 @@ sessions (a long run, a threshold session, the race …) and a reason. The model
   costs nothing: no coach is asked.
 - **Changing a version on request:** under a confirmed version or a draft the page has **Ask for a
   change**: you write what should be different ("less cycling in January", at most 500
-  characters, plain text) and your coach turns that version into a **new draft**. It keeps the
-  weeks, the skeleton and the sports of the version it comes from, is asked like a draft (up to
-  three answers, the same checks, the same cost, 3 requests a minute together with drafting) and
-  is told your wish as data, never as an instruction about the rules or its task. Your wish is
-  stored with the new version and shown with it. Under the draft the page shows **what changed**
+  characters, plain text) and your coach turns that version into a **new draft**. It uses your
+  current weeks, race dates, training time and sports. The old plan is comparison data. The coach
+  preserves unaffected overlapping weeks where they still fit the current frame and rules.
+  It is asked like a draft (up to three answers, the same checks, the same cost, 3 requests a
+  minute together with drafting) and is told your wish as data, never as an instruction about
+  the rules or its task. Without training time it returns `no_time` and makes no coach call.
+  The new draft keeps the inputs captured before the call, so later changes still show as hints
+  after confirmation. Your wish is stored with the new version and shown with it. Under the
+  draft the page shows **what changed**
   since the version it was made from, week by week: the minutes of each sport, the focus, key
-  sessions added or dropped and a rewritten reason, and how many weeks are the same. That is the
+  sessions added or dropped and a rewritten reason, and how many weeks are the same. Added and
+  removed calendar weeks are listed too. If no current week offers training time, the page links
+  to **Training time** and keeps your request so you can retry. That is the
   safeguard when the coach changes more than you asked; the old version stays as it is and the
   confirmed one stays confirmed until you confirm the new draft. If the coach gives the season
-  back as it was, nothing is stored. A version that was replaced or discarded is restored first.
+  back as it was with the same frame and recorded inputs, nothing is stored. A changed frame or
+  input baseline can produce a new draft even with identical plan content. A version that was
+  replaced or discarded is restored first.
 - **On the page:** under the skeleton note the page shows your versions (the confirmed one, else
   the newest draft, opens on its own) and, for the one that is open, three more columns: the
   **plan** (minutes of each sport and the total), the **focus** and the **key sessions**, with the
@@ -1204,6 +1267,14 @@ provider, no training time that week, an answer that cannot be used), the page s
 feedback stays saved and the note stays in the form. The note belongs to the draft and is shown
 with it; it is not part of the feedback. Nothing runs by itself: there is no automatic weekly
 run.
+
+**Season adjustment proposal.** When you have a confirmed [season plan](#season) and actual
+minutes in each of the latest three completed local weeks fall below 70% or above 130% of
+confirmed planned minutes, Week review shows the shared adjustment notice at the top of the page.
+It lists the three evidence weeks and links to **Ask for a change** for that confirmed version on
+the Season page. The notice refreshes after switching weeks, saving a workout correction, rating a
+session or reloading the week list. Status failures keep the review usable and offer Retry.
+Following the link never drafts or confirms a plan on its own.
 
 **Planned and done.** Mobile tiles and a desktop table compare planned workouts, minutes and
 estimated load against activities done, minutes and done load, per sport and for the week.

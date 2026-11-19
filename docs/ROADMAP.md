@@ -74,7 +74,7 @@ AI key; several people can share one instance without seeing each other's data.
 - **Depends on:** –
 - **Size:** S
 
-### M4 [ ] Season plan reacts to changes
+### M4 [x] Season plan reacts to changes
 - **Goal:** The athlete is told when the confirmed season plan no longer fits and can ask for an update.
 - **Includes:** detect changed goals, new FTP or best time, larger changes of training time since the confirmed plan; hint on Season, Goals and Profile pages with a link to "Ask for a change"; after several weeks of strong deviation in the week review, a proposal to adjust the season.
 - **Done when:** changing an A race date shows the hint until a new plan is confirmed; three weak weeks show the proposal; tests green.
@@ -173,6 +173,7 @@ AI key; several people can share one instance without seeing each other's data.
 - README section and `docs/` updated for every user-visible change.
 
 ## Changelog
+- 2026-11-19: M4 completed — season change hints on Season, Goals and Profile, three-week deviation proposal with evidence weeks in Week review, and change requests drafted from current inputs
 - 2026-11-19: M2 completed — unified activity load (Intervals or duration × RPE), workout load estimates, and planned vs done load across week plan, week review and season chart
 - 2026-11-19: M1 completed — sync non-Strava activities from Intervals.icu (last 8–12 weeks, duplicate check, last sync & error on connection, Activities page button)
 - 2026-11-19: roadmap created from `PROJECT_PLAN.md` §15 and the user stories, checked against `main` (905fee0)
