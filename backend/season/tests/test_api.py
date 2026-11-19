@@ -9,7 +9,7 @@ from django.test.utils import CaptureQueriesContext
 
 from accounts.models import User
 from accounts.tests.conftest import AuthApi
-from availability.models import WeekdayMinutes
+from availability.models import UnavailablePeriod, WeekdayMinutes
 from goals import services
 from goals.models import Goal
 
@@ -87,7 +87,15 @@ class TestTheAnswer:
 
         assert response.status_code == HTTPStatus.OK
         data = body(response)
-        assert set(data) == {"rolling", "truncated", "main_race", "peak_minutes", "weeks"}
+        assert set(data) == {
+            "rolling",
+            "truncated",
+            "main_race",
+            "peak_minutes",
+            "weeks",
+            "absences",
+        }
+        assert data["absences"] == []
         assert (data["rolling"], data["truncated"], data["main_race"]) == (True, False, None)
         assert len(data["weeks"]) == 12
         assert data["peak_minutes"] == 0
@@ -169,6 +177,99 @@ class TestTheAnswer:
         assert len(empty) == len(full)
 
 
+class TestAbsences:
+    def test_an_illness_in_the_weeks_is_listed(self, alice: User) -> None:
+        UnavailablePeriod.objects.create(
+            owner=alice,
+            kind="illness",
+            start_date=MONDAY + timedelta(days=2),
+            end_date=MONDAY + timedelta(days=5),
+        )
+
+        absences = body(signed_in(alice).call("GET", URL))["absences"]
+
+        assert absences == [
+            {"kind": "illness", "start_date": "2026-11-18", "end_date": "2026-11-21"}
+        ]
+
+    def test_a_period_outside_the_weeks_is_not_listed(self, alice: User) -> None:
+        UnavailablePeriod.objects.create(
+            owner=alice,
+            kind="vacation",
+            start_date=MONDAY + timedelta(weeks=40),
+            end_date=MONDAY + timedelta(weeks=40, days=6),
+        )
+        UnavailablePeriod.objects.create(
+            owner=alice,
+            kind="other",
+            start_date=MONDAY - timedelta(days=30),
+            end_date=MONDAY - timedelta(days=20),
+        )
+
+        assert body(signed_in(alice).call("GET", URL))["absences"] == []
+
+    def test_the_last_day_of_the_last_week_still_counts(self, alice: User) -> None:
+        last_day = MONDAY + timedelta(weeks=11, days=6)
+        UnavailablePeriod.objects.create(
+            owner=alice, kind="illness", start_date=last_day, end_date=last_day
+        )
+
+        absences = body(signed_in(alice).call("GET", URL))["absences"]
+
+        assert [a["start_date"] for a in absences] == ["2027-02-07"]
+
+    def test_the_note_of_the_absence_is_not_in_the_answer(self, alice: User) -> None:
+        UnavailablePeriod.objects.create(
+            owner=alice,
+            kind="illness",
+            start_date=MONDAY,
+            end_date=MONDAY,
+            note="a private note",
+        )
+
+        text = signed_in(alice).call("GET", URL).content.decode()
+
+        assert "private note" not in text
+
+    def test_the_absences_are_by_start_date(self, alice: User) -> None:
+        UnavailablePeriod.objects.create(
+            owner=alice,
+            kind="illness",
+            start_date=MONDAY + timedelta(weeks=5),
+            end_date=MONDAY + timedelta(weeks=5),
+        )
+        UnavailablePeriod.objects.create(
+            owner=alice,
+            kind="vacation",
+            start_date=MONDAY + timedelta(weeks=2),
+            end_date=MONDAY + timedelta(weeks=2, days=3),
+        )
+
+        absences = body(signed_in(alice).call("GET", URL))["absences"]
+
+        assert [a["kind"] for a in absences] == ["vacation", "illness"]
+
+    def test_the_answer_asks_the_database_one_more_time_for_any_number_of_absences(
+        self, alice: User
+    ) -> None:
+        api = signed_in(alice)
+        api.call("GET", URL)  # the session and the cache are warm now
+        with CaptureQueriesContext(connection) as empty:
+            api.call("GET", URL)
+        for week in range(1, 9):
+            UnavailablePeriod.objects.create(
+                owner=alice,
+                kind="illness",
+                start_date=MONDAY + timedelta(weeks=week),
+                end_date=MONDAY + timedelta(weeks=week),
+            )
+
+        with CaptureQueriesContext(connection) as full:
+            api.call("GET", URL)
+
+        assert len(full) == len(empty)
+
+
 class TestIsolation:
     def test_the_data_of_another_user_is_not_in_the_answer(self, alice: User, bob: User) -> None:
         train(bob, 600)
@@ -188,3 +289,15 @@ class TestIsolation:
 
         assert (len(mine["weeks"]), mine["main_race"]["title"]) == (7, "Alice's race")
         assert (len(theirs["weeks"]), theirs["main_race"]["title"]) == (13, "Bob's race")
+
+    def test_the_illness_of_another_user_is_not_in_the_answer(self, alice: User, bob: User) -> None:
+        UnavailablePeriod.objects.create(
+            owner=bob,
+            kind="illness",
+            start_date=MONDAY + timedelta(days=1),
+            end_date=MONDAY + timedelta(days=3),
+        )
+
+        assert body(signed_in(alice).call("GET", URL))["absences"] == []
+        theirs = body(signed_in(bob).call("GET", URL))["absences"]
+        assert [a["kind"] for a in theirs] == ["illness"]

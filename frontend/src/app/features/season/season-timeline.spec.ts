@@ -1,5 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { Season, SeasonRace, SeasonWeek } from '../../core/season/season-models';
+import { Season, SeasonAbsence, SeasonRace, SeasonWeek } from '../../core/season/season-models';
 import { SeasonTimeline, centeredScroll, timelineCells } from './season-timeline';
 
 const MAIN: SeasonRace = {
@@ -107,6 +107,52 @@ describe('timelineCells', () => {
   it('has no cells for a season without weeks', () => {
     expect(timelineCells({ ...SEASON, weeks: [] }, '2026-11-16')).toEqual([]);
   });
+
+  it('marks weeks overlapped by an illness with the days inside each week', () => {
+    const absences: SeasonAbsence[] = [
+      // One day inside week 0.
+      { kind: 'illness', start_date: '2026-11-18', end_date: '2026-11-18' },
+      // Spans week 1 (Fri–Sun: 3 days) into week 2 (Mon–Tue: 2 days).
+      { kind: 'illness', start_date: '2026-11-27', end_date: '2026-12-01' },
+    ];
+
+    const cells = timelineCells(SEASON, '2026-11-24', absences);
+
+    expect(cells.map((cell) => cell.illnessDays)).toEqual([1, 3, 2, 0, 0]);
+    expect(cells[0].label).toBe('16 Nov – 22 Nov · Base · Illness, 1 day');
+    expect(cells[1].label).toBe(
+      '23 Nov – 29 Nov · Build · Recovery week · Illness, 3 days · This week',
+    );
+    expect(cells[2].label).toBe('30 Nov – 6 Dec · Specific · Illness, 2 days · C race Park run');
+    expect(cells[3].label).not.toContain('Illness');
+  });
+
+  it('counts each day at most once when illnesses overlap in the same week', () => {
+    const absences: SeasonAbsence[] = [
+      { kind: 'illness', start_date: '2026-11-16', end_date: '2026-11-18' },
+      { kind: 'illness', start_date: '2026-11-17', end_date: '2026-11-19' },
+      { kind: 'illness', start_date: '2026-11-22', end_date: '2026-11-22' },
+    ];
+
+    const cells = timelineCells(SEASON, '2026-11-01', absences);
+
+    expect(cells[0].illnessDays).toBe(5);
+    expect(cells[0].label).toBe('16 Nov – 22 Nov · Base · Illness, 5 days');
+  });
+
+  it('ignores vacation, other absences and illnesses outside the season', () => {
+    const absences: SeasonAbsence[] = [
+      { kind: 'vacation', start_date: '2026-11-16', end_date: '2026-11-22' },
+      { kind: 'other', start_date: '2026-11-23', end_date: '2026-11-25' },
+      { kind: 'illness', start_date: '2026-11-10', end_date: '2026-11-15' },
+      { kind: 'illness', start_date: '2026-12-21', end_date: '2026-12-25' },
+    ];
+
+    const cells = timelineCells(SEASON, '2026-11-01', absences);
+
+    expect(cells.every((cell) => cell.illnessDays === 0)).toBe(true);
+    expect(cells.some((cell) => cell.label.includes('Illness'))).toBe(false);
+  });
 });
 
 describe('centeredScroll', () => {
@@ -123,10 +169,11 @@ describe('SeasonTimeline', () => {
   let fixture: ComponentFixture<SeasonTimeline>;
   let host: HTMLElement;
 
-  async function render(season: Season, today = '2026-11-24') {
+  async function render(season: Season, today = '2026-11-24', absences: SeasonAbsence[] = []) {
     fixture = TestBed.createComponent(SeasonTimeline);
     fixture.componentRef.setInput('season', season);
     fixture.componentRef.setInput('today', today);
+    fixture.componentRef.setInput('absences', absences);
     host = fixture.nativeElement as HTMLElement;
     await fixture.whenStable();
   }
@@ -164,6 +211,29 @@ describe('SeasonTimeline', () => {
     ]);
     expect(cells()[1].getAttribute('data-recovery')).toBe('true');
     expect(cells()[1].querySelector('.mark')?.textContent).toBe('R');
+  });
+
+  it('marks weeks with an illness and puts the days in the tooltip and label', async () => {
+    await render(SEASON, '2026-11-24', [
+      { kind: 'illness', start_date: '2026-11-20', end_date: '2026-11-24' },
+      { kind: 'vacation', start_date: '2026-11-30', end_date: '2026-12-06' },
+    ]);
+
+    expect(cells().map((cell) => cell.getAttribute('data-illness'))).toEqual([
+      'true',
+      'true',
+      null,
+      null,
+      null,
+    ]);
+    expect(
+      cells().map((cell) => cell.querySelector('[data-testid="timeline-illness"]') !== null),
+    ).toEqual([true, true, false, false, false]);
+    expect(cells()[0].getAttribute('title')).toContain('Illness, 3 days');
+    expect(cells()[0].getAttribute('aria-label')).toContain('Illness, 3 days');
+    expect(cells()[1].getAttribute('title')).toContain('Illness, 2 days');
+    expect(cells()[1].getAttribute('aria-label')).toContain('Illness, 2 days');
+    expect(cells()[2].getAttribute('title')).not.toContain('Illness');
   });
 
   it('shows the letter of a race and the title only as text of the label', async () => {

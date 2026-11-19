@@ -6,7 +6,7 @@ import {
 import { TestBed } from '@angular/core/testing';
 import { provideApiClient } from '../api/api-providers';
 import { SeasonApi } from './season-api';
-import { Season, SeasonPlan } from './season-models';
+import { LiveSeason, SeasonPlan } from './season-models';
 
 const URL = '/api/season/';
 
@@ -17,7 +17,7 @@ const RACE = {
   distance_m: 42195,
   title: 'Berlin Marathon',
 };
-const SEASON = {
+const SKELETON = {
   rolling: false,
   truncated: false,
   main_race: RACE,
@@ -49,7 +49,9 @@ const SEASON = {
     },
   ],
 };
-const ROLLING = { ...SEASON, rolling: true, main_race: null, weeks: [] };
+const ABSENCE = { kind: 'illness', start_date: '2026-11-18', end_date: '2026-11-21' };
+const SEASON = { ...SKELETON, absences: [ABSENCE] };
+const ROLLING = { ...SEASON, rolling: true, main_race: null, weeks: [], absences: [] };
 const NO_SESSION = { detail: 'Authentication credentials were not provided.' };
 
 const REMOVE = Symbol('remove');
@@ -109,17 +111,31 @@ describe('SeasonApi', () => {
     await expect(action).rejects.toThrow();
   }
 
-  it('reads the weeks, the races and the peak', async () => {
+  it('reads the weeks, the races, the absences and the peak', async () => {
     const { result, request } = await run(api.get(), SEASON, 200);
 
     expect(request.request.body).toBeNull();
-    expect(result).toEqual({ kind: 'ok', season: SEASON as Season });
+    expect(result).toEqual({ kind: 'ok', season: SEASON as LiveSeason });
+  });
+
+  it('reads all absence kinds and single-day absences', async () => {
+    const absences = [
+      { kind: 'vacation', start_date: '2026-11-16', end_date: '2026-11-16' },
+      { kind: 'illness', start_date: '2026-11-18', end_date: '2026-11-21' },
+      { kind: 'other', start_date: '2026-11-23', end_date: '2026-11-25' },
+    ];
+    const { result } = await run(api.get(), { ...SEASON, absences }, 200);
+
+    expect(result).toEqual({ kind: 'ok', season: { ...SEASON, absences } as LiveSeason });
   });
 
   it('reads a rolling skeleton without a main race', async () => {
     const { result } = await run(api.get(), ROLLING, 200);
 
-    expect(result).toMatchObject({ kind: 'ok', season: { rolling: true, main_race: null } });
+    expect(result).toMatchObject({
+      kind: 'ok',
+      season: { rolling: true, main_race: null, absences: [] },
+    });
   });
 
   it('takes over only the known fields', async () => {
@@ -128,11 +144,12 @@ describe('SeasonApi', () => {
       [['owner'], 'x'],
       [['weeks', 0, 'note'], 'secret'],
       [['main_race', 'internal'], 1],
+      [['absences', 0, 'note'], 'private'],
     );
 
     const { result } = await run(api.get(), crowded as object, 200);
 
-    expect(result).toEqual({ kind: 'ok', season: SEASON as Season });
+    expect(result).toEqual({ kind: 'ok', season: SEASON as LiveSeason });
   });
 
   it.each([401, 403])('says when the session is gone (%i)', async (status) => {
@@ -175,6 +192,27 @@ describe('SeasonApi', () => {
     ['no distance', altered(SEASON, [['main_race', 'distance_m'], REMOVE])],
     ['no title', altered(SEASON, [['main_race', 'title'], REMOVE])],
     ['a number as title', altered(SEASON, [['main_race', 'title'], 5])],
+    ['no absences', altered(SEASON, [['absences'], REMOVE])],
+    ['null absences', altered(SEASON, [['absences'], null])],
+    ['an object as absences', altered(SEASON, [['absences'], {}])],
+    ['a text as an absence', altered(SEASON, [['absences'], ['illness']])],
+    ['no absence kind', altered(SEASON, [['absences', 0, 'kind'], REMOVE])],
+    ['an unknown absence kind', altered(SEASON, [['absences', 0, 'kind'], 'injury'])],
+    ['no absence start date', altered(SEASON, [['absences', 0, 'start_date'], REMOVE])],
+    [
+      'an invalid absence start date',
+      altered(SEASON, [['absences', 0, 'start_date'], '2026-02-30']),
+    ],
+    [
+      'an absence start date with a time',
+      altered(SEASON, [['absences', 0, 'start_date'], '2026-11-18T00:00:00Z']),
+    ],
+    ['no absence end date', altered(SEASON, [['absences', 0, 'end_date'], REMOVE])],
+    ['an invalid absence end date', altered(SEASON, [['absences', 0, 'end_date'], '2026-13-01'])],
+    [
+      'an absence ending before it starts',
+      altered(SEASON, [['absences', 0, 'end_date'], '2026-11-17']),
+    ],
   ])('rejects an answer with %s', async (_name, bad) => {
     await runFailing(api.get(), bad as object | null, 200);
   });
@@ -363,7 +401,7 @@ const PLAN = {
   parent: OTHER_ID,
   created_at: STAMP,
   confirmed_at: STAMP,
-  skeleton: SEASON,
+  skeleton: SKELETON,
   weeks: PLAN_WEEKS,
   report: null,
 };

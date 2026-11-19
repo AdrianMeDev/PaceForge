@@ -1,27 +1,47 @@
 import json
 from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
 from django.core.exceptions import ValidationError
 
 from accounts.models import User
+from availability.models import UnavailablePeriod, WeekdayMinutes
 from chat import services
 from chat.models import USER_TEXT_MAX, ChatMessage
-from chat.services import ATTEMPTS, HISTORY_TOLD, NOT_USABLE, REASON, clean_text, clear, send
+from chat.services import (
+    ATTEMPTS,
+    DOCTOR_HINT,
+    HISTORY_TOLD,
+    NOT_USABLE,
+    REASON,
+    clean_text,
+    clear,
+    send,
+)
 from coach import services as coach_services
 from coach.models import AIProviderConfiguration, AIUsageRecord
 from coach.providers.base import Completion, ProviderUnavailableError, RateLimitedError
 from goals import services as goal_services
-from planning.models import PlannedWorkout, WeeklyPlan
+from integrations.models import ProviderConnection
+from planning import services as plan_services
+from planning.models import PlannedWorkout, WeeklyPlan, WorkoutExport
+from planning.push import export_state, push
+from planning.rules import Intensity, intensity_of
+from planning.tests.fake_calendar import Calendar
 from planning.tests.scripted import Scripted
 from reviews.tests.builders import MONDAY, NOW, make_plan
 
 pytestmark = pytest.mark.django_db
 
 KEY = "sk-ant-test-0123456789-abcdefghij"
+INTERVALS_KEY = "k3y-0123456789-abcdefghij"
 SATURDAY = "2026-11-14"
 SUNDAY = "2026-11-15"
+WEDNESDAY = "2026-11-11"
+# A Wednesday morning; a mild illness pauses this day and eases the two days after it.
+MIDWEEK = datetime(2026, 11, 11, 8, 0, tzinfo=UTC)
 
 
 @pytest.fixture(autouse=True)
@@ -48,6 +68,18 @@ def saturday_workout(user: User) -> PlannedWorkout:
 
 def drafts(user: User) -> list[WeeklyPlan]:
     return list(WeeklyPlan.objects.for_user(user).filter(status="draft"))
+
+
+def room_to_train(user: User) -> None:
+    """Three hours on every day, so that the plan of the athlete can be confirmed."""
+    WeekdayMinutes.objects.for_user(user).delete()
+    for weekday in range(7):
+        WeekdayMinutes.objects.create(owner=user, weekday=weekday, minutes=180)
+
+
+def key_of(workout: PlannedWorkout) -> str:
+    """What the event of ``workout`` is called in the calendar."""
+    return f"paceforge-{workout.lineage}"
 
 
 class TestAQuestion:
@@ -264,6 +296,174 @@ class TestWithoutAPlan:
         sent = send(alice, "What is next?")
 
         assert sent.coach.text == "You have no plan yet."
+
+
+class TestIllness:
+    def test_a_sick_message_stores_a_draft_with_easy_return_and_an_absence(
+        self, athlete: User, provide: Callable[..., Scripted]
+    ) -> None:
+        PlannedWorkout.objects.for_user(athlete).filter(day=SUNDAY).update(
+            goal="threshold",
+            zone_system="pace",
+            zone=4,
+            segments=[
+                {
+                    "kind": "work",
+                    "seconds": 3600,
+                    "repeat": 1,
+                    "zone_system": "pace",
+                    "zone": 4,
+                }
+            ],
+        )
+        provide(
+            said(
+                "Rest today, then take it easy.",
+                [{"tool": "mark_sick", "symptoms": "above_neck", "fever": False, "days": 1}],
+            )
+        )
+
+        sent = send(athlete, "I have a sore throat today.")
+
+        (draft,) = drafts(athlete)
+        assert sent.coach.plan == draft
+        assert sent.coach.text == "Rest today, then take it easy."
+        assert DOCTOR_HINT not in sent.coach.text
+        loaded = plan_services.load(athlete, draft.pk)
+        days = {w.day.isoformat(): w for w in loaded.workouts}
+        assert SATURDAY not in days
+        sunday = days[SUNDAY]
+        assert intensity_of(sunday) is Intensity.EASY
+        assert sunday.duration_minutes == 36
+        (period,) = UnavailablePeriod.objects.for_user(athlete)
+        assert period.kind == UnavailablePeriod.Kind.ILLNESS
+        assert (period.start_date.isoformat(), period.end_date.isoformat()) == (SATURDAY, SATURDAY)
+        assert sent.coach.changes == [
+            f"Sick pause (1 day, {SATURDAY}): 1 workout removed",
+            f"Easy return (2 days, {SUNDAY} to 2026-11-16): 1 workout made easy and shorter",
+            f"Illness noted as an absence ({SATURDAY})",
+        ]
+
+    def test_stores_the_absence_and_change_even_without_a_plan(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        AIProviderConfiguration.objects.create(
+            owner=alice, provider="anthropic", model="claude-sonnet-5-5", api_key=KEY
+        )
+        provide(
+            said(
+                "Get well soon.",
+                [{"tool": "mark_sick", "symptoms": "below_neck", "fever": False, "days": 3}],
+            )
+        )
+
+        sent = send(alice, "I am sick for three days.")
+
+        assert sent.coach.plan is None
+        assert drafts(alice) == []
+        (period,) = UnavailablePeriod.objects.for_user(alice)
+        assert period.kind == UnavailablePeriod.Kind.ILLNESS
+        assert (period.start_date.isoformat(), period.end_date.isoformat()) == (
+            SATURDAY,
+            "2026-11-16",
+        )
+        assert sent.coach.changes == [f"Illness noted as an absence ({SATURDAY} to 2026-11-16)"]
+
+    def test_fever_appends_the_doctor_hint(
+        self, athlete: User, provide: Callable[..., Scripted]
+    ) -> None:
+        provide(
+            said(
+                "Please rest.",
+                [{"tool": "mark_sick", "symptoms": "below_neck", "fever": True, "days": 2}],
+            )
+        )
+
+        sent = send(athlete, "I have a fever.")
+
+        assert sent.coach.text == f"Please rest.\n\n{DOCTOR_HINT}"
+        (period,) = UnavailablePeriod.objects.for_user(athlete)
+        assert (period.start_date.isoformat(), period.end_date.isoformat()) == (SATURDAY, SUNDAY)
+
+    def test_another_user_is_not_affected(
+        self, athlete: User, bob: User, provide: Callable[..., Scripted]
+    ) -> None:
+        bob_plan = make_plan(bob, MONDAY, workouts=7)
+        bob_period = UnavailablePeriod.objects.create(
+            owner=bob,
+            kind=UnavailablePeriod.Kind.ILLNESS,
+            start_date=MONDAY,
+            end_date=MONDAY,
+        )
+        provide(
+            said(
+                "Rest up.",
+                [{"tool": "mark_sick", "symptoms": "above_neck", "fever": True, "days": 2}],
+            )
+        )
+
+        send(athlete, "Sick with fever")
+
+        assert drafts(bob) == []
+        assert PlannedWorkout.objects.for_user(bob).filter(plan=bob_plan).count() == 7
+        bob_period.refresh_from_db()
+        assert (bob_period.start_date, bob_period.end_date) == (MONDAY, MONDAY)
+        assert UnavailablePeriod.objects.for_user(bob).count() == 1
+
+
+class TestAConfirmedSickDraft:
+    def test_takes_the_paused_workouts_out_of_the_calendar_and_updates_the_return_days(
+        self,
+        athlete: User,
+        provide: Callable[..., Scripted],
+        calendar: Calendar,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        ProviderConnection.objects.create(
+            owner=athlete, provider="intervals_icu", api_key=INTERVALS_KEY, athlete_id="i100"
+        )
+        room_to_train(athlete)
+        before = WeeklyPlan.objects.for_user(athlete).get()
+        assert push(athlete, before.pk).synced == 7
+        events = {
+            row.external_id: row.event_id
+            for row in WorkoutExport.objects.for_user(athlete)
+            if row.event_id is not None
+        }
+        paused = PlannedWorkout.objects.for_user(athlete).get(plan=before, day=WEDNESDAY)
+        paused_event = events[key_of(paused)]
+        sent_before = {event_id: dict(event) for event_id, event in calendar.events.items()}
+        # A mild illness pauses the day and makes the two days after it easy and shorter.
+        eased = list(
+            PlannedWorkout.objects.for_user(athlete)
+            .filter(plan=before, day__gt=paused.day)
+            .order_by("day")[:2]
+        )
+        monkeypatch.setattr(goal_services, "_utc_now", lambda: MIDWEEK)
+        provide(
+            said(
+                "Rest today.",
+                [{"tool": "mark_sick", "symptoms": "above_neck", "fever": False, "days": 1}],
+            )
+        )
+
+        draft = send(athlete, "Sore throat this morning.").coach.plan
+        assert draft is not None
+        plan_services.confirm(athlete, draft.pk)
+        result = push(athlete, draft.pk)
+
+        assert ("delete", paused_event) in calendar.calls
+        assert paused_event not in calendar.events
+        assert export_state(athlete, draft).older == 0
+        updated = {event["external_id"]: event for event in calendar.events.values()}
+        for workout in eased:
+            was, now = sent_before[events[key_of(workout)]], updated[key_of(workout)]
+            assert now["start_date_local"] == was["start_date_local"]  # the same day
+            assert "- 36m" in now["description"] and now["description"] != was["description"]
+        left = WorkoutExport.objects.for_user(athlete)
+        assert paused_event not in {row.event_id for row in left}
+        assert result.removed == 1 and result.left_behind == 0
+        assert result.synced == len(events) - 1  # every workout that is still in the plan
 
 
 class TestTheText:

@@ -30,11 +30,14 @@ import {
   GetSeasonReassessmentResult,
   KeySession,
   ListSeasonPlansResult,
+  LiveSeason,
+  PeriodKind,
   PlanStatus,
   PlanWeek,
   RestoreSeasonResult,
   RacePriority,
   Season,
+  SeasonAbsence,
   SeasonChangeReason,
   SeasonReassessment,
   SeasonPhase,
@@ -73,6 +76,7 @@ const KINDS: readonly string[] = [
   'race',
 ];
 const STATUSES: readonly string[] = ['draft', 'confirmed', 'superseded', 'discarded'];
+const ABSENCE_KINDS: readonly string[] = ['vacation', 'illness', 'other'];
 const CALENDAR_DATE = /^\d{4}-\d{2}-\d{2}$/;
 // The most the server sends: a year of weeks.
 const WEEKS_MAX = 52;
@@ -119,7 +123,7 @@ export class SeasonApi {
     const reply = await this.send(this.http.get(URL, { observe: 'response' }));
     switch (reply.status) {
       case 200:
-        return { kind: 'ok', season: toSeason(reply.body, reply) };
+        return { kind: 'ok', season: toLiveSeason(reply.body, reply) };
       case 401:
       case 403:
         return { kind: 'forbidden' };
@@ -369,6 +373,32 @@ function toReassessment(reply: Reply): SeasonReassessment {
     throw unexpected(reply);
   }
   return { confirmed_plan_id, reasons: parsed, deviation_weeks: weeks };
+}
+
+/** Live season from `GET /api/season/`: the skeleton plus the absences overlapping its weeks. */
+function toLiveSeason(raw: unknown, reply: Reply): LiveSeason {
+  const season = toSeason(raw, reply);
+  const absences = asObject(raw, reply)['absences'];
+  if (!Array.isArray(absences)) {
+    throw unexpected(reply);
+  }
+  return {
+    ...season,
+    absences: absences.map((entry: unknown) => toAbsence(entry, reply)),
+  };
+}
+
+function toAbsence(raw: unknown, reply: Reply): SeasonAbsence {
+  const { kind, start_date, end_date } = asObject(raw, reply);
+  if (
+    !isOneOf<PeriodKind>(kind, ABSENCE_KINDS) ||
+    !isRealDate(start_date) ||
+    !isRealDate(end_date) ||
+    start_date > end_date
+  ) {
+    throw unexpected(reply);
+  }
+  return { kind, start_date, end_date };
 }
 
 /** Only the known fields are taken over, whatever else an answer might carry. */
@@ -696,6 +726,14 @@ function toRace(raw: unknown, reply: Reply): SeasonRace {
 
 function isDate(value: unknown): value is string {
   return typeof value === 'string' && CALENDAR_DATE.test(value);
+}
+
+function isRealDate(value: unknown): value is string {
+  if (!isDate(value)) {
+    return false;
+  }
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
 
 function unexpected(reply: Reply): Error {

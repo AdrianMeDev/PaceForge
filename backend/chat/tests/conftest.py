@@ -6,6 +6,8 @@ from django.core.cache import cache
 
 from accounts.models import User
 from coach import services as coach_services
+from integrations import services as integrations_services
+from planning.tests.fake_calendar import Calendar, FakeClient
 from planning.tests.scripted import Scripted
 from reviews.tests.conftest import make_user
 
@@ -40,3 +42,13 @@ def provide(monkeypatch: pytest.MonkeyPatch) -> Callable[..., Scripted]:
         return scripted
 
     return install
+
+
+@pytest.fixture
+def calendar(monkeypatch: pytest.MonkeyPatch) -> Calendar:
+    """An in-memory Intervals.icu calendar used in place of the real one."""
+    calendar = Calendar()
+    monkeypatch.setattr(
+        integrations_services, "IntervalsClient", lambda key: FakeClient(calendar, key)
+    )
+    return calendar

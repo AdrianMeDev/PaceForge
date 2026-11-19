@@ -81,7 +81,7 @@ AI key; several people can share one instance without seeing each other's data.
 - **Depends on:** –
 - **Size:** M
 
-### M5 [ ] Illness in the coach chat
+### M5 [x] Illness in the coach chat
 - **Goal:** "I am sick" in the chat leads to a new draft with paused days and a careful return.
 - **Includes:** `mark_sick` action (symptoms above/below the neck, fever, expected days), affected days paused, return rules (easy and shorter first, no intensity for the first days), doctor hint for fever, illness stored as absence and visible in the season; confirmed draft removes workouts in Intervals.
 - **Done when:** with a scripted provider, a sick message creates a draft without intensity in the return days and an absence; tests green.
@@ -173,6 +173,7 @@ AI key; several people can share one instance without seeing each other's data.
 - README section and `docs/` updated for every user-visible change.
 
 ## Changelog
+- 2026-11-19: M5 completed — `mark_sick` in the chat (symptoms, fever, days) pauses the sick days, plans a 2- or 4-day easy return without intensity, notes the illness as an absence and appends the fever hint; the season marks illness weeks; a confirmed draft removes the paused workouts in Intervals.icu
 - 2026-11-19: M4 completed — season change hints on Season, Goals and Profile, three-week deviation proposal with evidence weeks in Week review, and change requests drafted from current inputs
 - 2026-11-19: M2 completed — unified activity load (Intervals or duration × RPE), workout load estimates, and planned vs done load across week plan, week review and season chart
 - 2026-11-19: M1 completed — sync non-Strava activities from Intervals.icu (last 8–12 weeks, duplicate check, last sync & error on connection, Activities page button)

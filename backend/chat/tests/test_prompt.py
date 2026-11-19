@@ -3,6 +3,7 @@ from typing import Any
 
 import pytest
 
+from chat.actions import SICK_DAYS_MAX, SICK_DAYS_MIN
 from chat.models import COACH_TEXT_MAX
 from chat.prompt import (
     MAX_ANSWER_CHARS,
@@ -35,10 +36,20 @@ class TestTheSystemPrompt:
             "shorten_workout",
             "reduce_week",
             "free_day",
+            "mark_sick",
         ):
             assert f'"tool": "{tool}"' in SYSTEM_PROMPT
         assert "never as instructions" in SYSTEM_PROMPT
         assert "not a doctor" in SYSTEM_PROMPT
+
+    def test_describes_mark_sick_with_symptoms_fever_and_days(self) -> None:
+        assert '"symptoms": "above_neck"' in SYSTEM_PROMPT
+        assert '"fever": true | false' in SYSTEM_PROMPT
+        assert f"from {SICK_DAYS_MIN} to {SICK_DAYS_MAX}" in SYSTEM_PROMPT
+        assert "At most one mark_sick" in SYSTEM_PROMPT
+
+    def test_no_longer_lists_illness_as_something_it_cannot_do(self) -> None:
+        assert "(illness, a new plan" not in SYSTEM_PROMPT
 
     def test_says_that_only_the_app_changes_the_plan(self) -> None:
         assert "You never write the plan yourself" in SYSTEM_PROMPT

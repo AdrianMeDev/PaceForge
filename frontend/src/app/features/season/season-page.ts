@@ -17,8 +17,8 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { CoachApi } from '../../core/coach/coach-api';
 import { SeasonApi } from '../../core/season/season-api';
 import {
+  LiveSeason,
   PlanProblem,
-  Season,
   SeasonPhase,
   SeasonPlan,
   SeasonPlanVersion,
@@ -134,7 +134,7 @@ export class SeasonPage implements OnInit {
   }
 
   protected readonly view = signal<View>('loading');
-  protected readonly season = signal<Season | null>(null);
+  protected readonly season = signal<LiveSeason | null>(null);
   protected readonly versions = signal<SeasonPlanVersion[]>([]);
   /** The version that is shown, with its weeks. */
   protected readonly plan = signal<SeasonPlan | null>(null);
@@ -166,6 +166,8 @@ export class SeasonPage implements OnInit {
   });
   private readonly discardDialog = viewChild(ConfirmDialog);
   protected readonly shown = computed(() => this.plan()?.skeleton ?? this.season());
+  /** The absences from the live season; a stored plan's skeleton does not carry them. */
+  protected readonly absences = computed(() => this.season()?.absences ?? []);
 
   /** The version has the minutes done for some of its weeks. */
   protected readonly hasDone = computed(

@@ -21,6 +21,7 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 
 from accounts.models import User
+from availability.absences import note_illness
 from coach import services as coach
 from coach.models import AIUsageRecord
 from coach.providers.base import Message
@@ -30,7 +31,7 @@ from planning.generation import plannable_weeks
 from planning.models import WeeklyPlan
 from planning.schema import Problem, WeekPlan
 
-from .actions import ActionFormatError, apply, read_actions
+from .actions import ActionFormatError, MarkSick, apply, read_actions
 from .briefing import build_briefing
 from .models import USER_TEXT_MAX, ChatMessage
 from .prompt import SYSTEM_PROMPT, AnswerNotUsable, extract_answer, first_message, repair_message
@@ -43,6 +44,11 @@ CHAT_MAX_TOKENS = 2_000
 ATTEMPTS = 2
 # The reason of a draft that came from the chat (shown on the Week plan page).
 REASON = "Changed in the chat"
+# Fixed note appended when the athlete reports a fever.
+DOCTOR_HINT = (
+    "Because you have a fever, do not train until it has been gone for a full day, "
+    "and see a doctor if it lasts or gets worse."
+)
 # What the athlete is told when no usable answer came of the request.
 NOT_USABLE = (
     "I could not turn that into a change of your plan. Please try again, "
@@ -120,29 +126,31 @@ def send(user: User, text: str) -> Sent:
             problems = (Problem("", "The answer was cut off before its end; make it shorter."),)
         else:
             try:
-                reply, changed, changes = _understand(completion.text, plan, today)
+                reply, changed, changes, sick = _understand(completion.text, plan, today)
             except (AnswerNotUsable, ActionFormatError) as error:
                 problems = error.problems
             else:
-                return _store(user, text, reply, stored, changed, changes)
+                return _store(user, text, reply, stored, changed, changes, sick, today)
         if attempt < ATTEMPTS:
             answer = completion.text if completion.text.strip() else "(no answer)"
             messages = [messages[0], Message("assistant", answer), repair_message(problems)]
-    return _store(user, text, NOT_USABLE, None, None, ())
+    return _store(user, text, NOT_USABLE, None, None, (), None, today)
 
 
 def _understand(
     answer: str, plan: WeekPlan, today: date
-) -> tuple[str, WeekPlan | None, tuple[str, ...]]:
-    """The reply, the changed plan and what changed; ``None`` and no changes if the coach
-    proposed nothing, or nothing that makes a difference."""
+) -> tuple[str, WeekPlan | None, tuple[str, ...], MarkSick | None]:
+    """The reply, the changed plan, what changed and any illness action; ``None`` and no changes if
+    the coach proposed nothing, or nothing that makes a difference."""
     found = extract_answer(answer)
     if not found.actions:
-        return found.reply, None, ()
-    changed, changes = apply(plan, read_actions(found.actions, plan, today), today)
+        return found.reply, None, (), None
+    actions = read_actions(found.actions, plan, today)
+    sick = next((action for action in actions if isinstance(action, MarkSick)), None)
+    changed, changes = apply(plan, actions, today)
     if changed == plan:
-        return found.reply, None, ()
-    return found.reply, changed, changes
+        return found.reply, None, (), sick
+    return found.reply, changed, changes, sick
 
 
 def _store(
@@ -152,18 +160,33 @@ def _store(
     parent: WeeklyPlan | None,
     changed: WeekPlan | None,
     changes: tuple[str, ...],
+    sick: MarkSick | None,
+    today: date,
 ) -> Sent:
     draft: WeeklyPlan | None = None
     if parent is not None and changed is not None:
         draft = plans.save_draft(user, changed, reason=REASON, parent=parent.pk)
+    if sick is not None and sick.fever:
+        reply = f"{reply}\n\n{DOCTOR_HINT}"
     with transaction.atomic():
+        stored_changes = list(changes) if draft else []
+        if sick is not None:
+            end = today + timedelta(days=sick.days - 1)
+            period = note_illness(user, today, end)
+            if period is not None:
+                span = (
+                    today.isoformat()
+                    if sick.days == 1
+                    else f"{today.isoformat()} to {end.isoformat()}"
+                )
+                stored_changes.append(f"Illness noted as an absence ({span})")
         athlete = ChatMessage.objects.create(owner=user, role=ChatMessage.Role.USER, text=text)
         answered = ChatMessage.objects.create(
             owner=user,
             role=ChatMessage.Role.COACH,
             text=reply,
             plan=draft,
-            changes=list(changes) if draft else [],
+            changes=stored_changes,
         )
     return Sent(athlete, answered)
 

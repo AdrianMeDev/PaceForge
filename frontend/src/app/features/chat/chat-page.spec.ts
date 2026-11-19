@@ -157,6 +157,22 @@ describe('ChatPage', () => {
       );
     });
 
+    it('lists changes even when there is no draft', async () => {
+      await setup(
+        ok(ASKED, {
+          ...ANSWERED,
+          changes: ['Illness noted as an absence (2026-11-14 to 2026-11-16)'],
+          plan: null,
+        }),
+      );
+
+      const changes = query(page, '[data-testid="changes"]');
+      expect(
+        Array.from(changes.querySelectorAll('li')).map((li) => li.textContent?.trim()),
+      ).toEqual(['Illness noted as an absence (2026-11-14 to 2026-11-16)']);
+      expect(changes.querySelector('[data-testid="open-draft"]')).toBeNull();
+    });
+
     it('shows no change card for an answer that changed nothing', async () => {
       await setup(ok(ASKED, { ...ANSWERED, changes: [], plan: null }));
 
