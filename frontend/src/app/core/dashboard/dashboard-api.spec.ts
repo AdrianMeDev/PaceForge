@@ -26,6 +26,7 @@ const EMPTY = {
   recent: [],
   usage: { calls: 0, input_tokens: 0, output_tokens: 0, days: 30 },
   setup: { steps: [] },
+  wellness: null,
 };
 
 const FULL = {
@@ -83,6 +84,14 @@ const FULL = {
       { key: 'intervals', done: false, optional: true },
     ],
   },
+  wellness: {
+    sleep: { recent: 450, baseline: 500, trend: 'down' },
+    hrv: { recent: null, baseline: null, trend: null },
+    resting_hr: { recent: 54, baseline: 50, trend: 'up' },
+    weight: { recent: null, baseline: null, trend: null },
+    warning: true,
+    warning_signals: ['low_sleep', 'high_resting_hr'],
+  },
 };
 
 describe('DashboardApi', () => {
@@ -123,6 +132,20 @@ describe('DashboardApi', () => {
 
   it('reads an account that has nothing yet', async () => {
     expect(await answer(EMPTY)).toEqual({ kind: 'ok', dashboard: { ...EMPTY, setup: [] } });
+  });
+
+  it('reads no wellness as null', async () => {
+    const result = await answer(EMPTY);
+    expect(result.kind === 'ok' && result.dashboard.wellness).toBeNull();
+  });
+
+  it('reads the wellness summary with its metrics and warning', async () => {
+    const result = await answer(FULL);
+    expect(result.kind).toBe('ok');
+    if (result.kind !== 'ok') {
+      return;
+    }
+    expect(result.dashboard.wellness).toEqual(FULL.wellness);
   });
 
   it('reads a full answer and takes over only the rating of the goal', async () => {
@@ -207,6 +230,32 @@ describe('DashboardApi', () => {
     ['an empty title', changed((c) => (c.main_goal.title = ''))],
     ['usage that is missing', { ...EMPTY, usage: null }],
     ['setup that is missing', { ...EMPTY, setup: null }],
+    ['wellness that is not null or an object', { ...EMPTY, wellness: 'unfit' }],
+    [
+      'a wellness metric without a baseline',
+      changed((c) => Object.assign(c.wellness.sleep, { baseline: null, trend: null })),
+    ],
+    [
+      'a wellness metric with a trend but no readings',
+      changed((c) => Object.assign(c.wellness.hrv, { trend: 'up' })),
+    ],
+    [
+      'a wellness trend that is unknown',
+      changed((c) => Object.assign(c.wellness.sleep, { trend: 'better' })),
+    ],
+    [
+      'a wellness measurement that is text',
+      changed((c) => Object.assign(c.wellness.sleep, { recent: '450' })),
+    ],
+    [
+      'a wellness warning that is no boolean',
+      changed((c) => Object.assign(c.wellness, { warning: 'yes' })),
+    ],
+    ['a wellness signal that is unknown', changed((c) => c.wellness.warning_signals.push('sore'))],
+    [
+      'wellness signals that are no list',
+      changed((c) => Object.assign(c.wellness, { warning_signals: 'low_sleep' })),
+    ],
     ['setup steps that are no list', { ...EMPTY, setup: { steps: 'profile' } }],
     [
       'a setup step that is not known',

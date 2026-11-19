@@ -19,6 +19,7 @@ import { PHASE_LABELS } from '../season/season-format';
 import { MinutesChart } from './minutes-chart';
 import { SetupChecklist, readHidden, setupComplete, writeHidden } from './setup-checklist';
 import { StatTile } from './stat-tile';
+import { WellnessTile } from './wellness-tile';
 
 type View = 'loading' | 'unreachable' | 'ready' | 'signed_out';
 
@@ -47,7 +48,7 @@ const RATING_BADGES: Record<Rating, string> = {
 @Component({
   selector: 'app-dashboard-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Icon, MinutesChart, PageHeader, RouterLink, StatTile, SetupChecklist],
+  imports: [Icon, MinutesChart, PageHeader, RouterLink, StatTile, SetupChecklist, WellnessTile],
   templateUrl: './dashboard-page.html',
 })
 export class DashboardPage implements OnInit {

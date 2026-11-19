@@ -6,6 +6,7 @@ import {
   GetDashboardResult,
   NextWorkout,
   WeekFigures,
+  WellnessSummary,
 } from '../../core/dashboard/dashboard-models';
 import { query, settle } from '../../testing/dom';
 import { DashboardPage } from './dashboard-page';
@@ -50,6 +51,7 @@ function dashboard(
     recent: [],
     usage: { calls: 0, input_tokens: 0, output_tokens: 0, days: 30 },
     setup: [],
+    wellness: null,
     ...rest,
   };
 }
@@ -445,6 +447,47 @@ describe('DashboardPage', () => {
         ['Other', 'Thu 12 Nov', 'no duration'],
       ]);
       expect(page.querySelector('[data-testid=recent-empty]')).toBeNull();
+    });
+  });
+
+  describe('the wellness and readiness', () => {
+    const wellness: WellnessSummary = {
+      sleep: { recent: 450, baseline: 500, trend: 'down' },
+      hrv: { recent: 55, baseline: 50, trend: 'up' },
+      resting_hr: { recent: 54, baseline: 50, trend: 'up' },
+      weight: { recent: 72.5, baseline: 72.5, trend: 'flat' },
+      warning: true,
+      warning_signals: ['low_sleep', 'high_resting_hr'],
+    };
+
+    it('shows the empty state when no wellness is synced', async () => {
+      const page = await open(ok(dashboard()));
+
+      expect(query(page, '[data-testid=wellness]')).toBeTruthy();
+      expect(query(page, '[data-testid=wellness-empty]').textContent).toContain(
+        'Connect Intervals.icu',
+      );
+      expect(page.querySelector('[data-testid=wellness-warning]')).toBeNull();
+    });
+
+    it('shows the metrics and the warning when recovery is worse than usual', async () => {
+      const page = await open(ok(dashboard({}, { wellness })));
+
+      expect(text(page, '[data-testid=wellness-sleep]')).toContain('7 h 30 min');
+      expect(text(page, '[data-testid=wellness-resting_hr]')).toContain('54');
+      expect(query(page, '[data-testid=wellness-warning]').getAttribute('role')).toBe('alert');
+      expect(text(page, '[data-testid=wellness-warning-text]')).toContain(
+        'sleep is shorter than usual',
+      );
+    });
+
+    it('hides the warning when recovery is not clearly worse', async () => {
+      const page = await open(
+        ok(dashboard({}, { wellness: { ...wellness, warning: false, warning_signals: [] } })),
+      );
+
+      expect(page.querySelector('[data-testid=wellness-warning]')).toBeNull();
+      expect(query(page, '[data-testid=wellness-sleep]')).toBeTruthy();
     });
   });
 });

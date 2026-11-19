@@ -99,6 +99,30 @@ export interface SetupStep {
   optional: boolean;
 }
 
+/** The direction a wellness metric moved against its baseline. */
+export type WellnessTrend = 'up' | 'down' | 'flat';
+
+/** Which metric is clearly worse than usual, as the server names them. */
+export type WellnessWarningSignal = 'low_sleep' | 'low_hrv' | 'high_resting_hr';
+
+/** One metric: its recent mean against the baseline mean, both `null` when there were too few
+ * readings; `trend` is `null` unless both are present. */
+export interface WellnessMetric {
+  recent: number | null;
+  baseline: number | null;
+  trend: WellnessTrend | null;
+}
+
+/** The four synced metrics plus a warning when recovery is clearly worse than usual. */
+export interface WellnessSummary {
+  sleep: WellnessMetric;
+  hrv: WellnessMetric;
+  resting_hr: WellnessMetric;
+  weight: WellnessMetric;
+  warning: boolean;
+  warning_signals: WellnessWarningSignal[];
+}
+
 export interface Dashboard {
   week: WeekGlance;
   season: SeasonGlance | null;
@@ -110,6 +134,8 @@ export interface Dashboard {
   usage: CoachUsage;
   /** The steps of the setup, in order. */
   setup: SetupStep[];
+  /** The synced wellness summary, or `null` while no metric has enough recent readings. */
+  wellness: WellnessSummary | null;
 }
 
 export type GetDashboardResult = { kind: 'ok'; dashboard: Dashboard } | Forbidden;
