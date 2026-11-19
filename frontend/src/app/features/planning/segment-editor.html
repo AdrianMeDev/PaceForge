@@ -1,0 +1,184 @@
+<section class="segments" [attr.aria-labelledby]="id + '-title'">
+  <h4 [id]="id + '-title'" class="m-0 mb-2 text-sm font-semibold">Interval structure</h4>
+
+  @if (rows().length === 0) {
+    <p class="hint" data-testid="segments-empty">No parts yet. Add a warm-up or a block.</p>
+  } @else {
+    <ol class="rows">
+      @for (row of rows(); track $index; let i = $index; let first = $first; let last = $last) {
+        <li class="row" [attr.data-testid]="'segment-row-' + i">
+          <div class="cell kind">
+            <label [for]="id + '-kind-' + i">Part {{ i + 1 }}</label>
+            <select [id]="id + '-kind-' + i" (change)="setKind(i, value($event))">
+              @for (choice of kinds; track choice.value) {
+                <option [value]="choice.value" [selected]="choice.value === row.kind">
+                  {{ choice.label }}
+                </option>
+              }
+            </select>
+          </div>
+
+          <div class="cell short">
+            <label [for]="id + '-repeat-' + i">Repeats</label>
+            <input
+              [id]="id + '-repeat-' + i"
+              type="text"
+              inputmode="numeric"
+              autocomplete="off"
+              [value]="row.repeat"
+              [attr.aria-invalid]="errors()[i]?.repeat ? 'true' : null"
+              [attr.aria-describedby]="errors()[i]?.repeat ? id + '-repeat-error-' + i : null"
+              (input)="patch(i, { repeat: value($event) })"
+            />
+          </div>
+
+          <div class="cell short">
+            <label [for]="id + '-duration-' + i">Duration</label>
+            <input
+              [id]="id + '-duration-' + i"
+              type="text"
+              autocomplete="off"
+              placeholder="m:ss"
+              [value]="row.duration"
+              [attr.aria-invalid]="errors()[i]?.duration ? 'true' : null"
+              [attr.aria-describedby]="errors()[i]?.duration ? id + '-duration-error-' + i : null"
+              (input)="patch(i, { duration: value($event) })"
+            />
+          </div>
+
+          @if (zoneSystems().length > 0) {
+            <div class="cell">
+              <label [for]="id + '-system-' + i">Target</label>
+              <select [id]="id + '-system-' + i" (change)="setZoneSystem(i, value($event))">
+                <option value="" [selected]="row.zone_system === ''">None</option>
+                @for (choice of zoneSystems(); track choice.value) {
+                  <option [value]="choice.value" [selected]="choice.value === row.zone_system">
+                    {{ choice.label }}
+                  </option>
+                }
+              </select>
+            </div>
+
+            @if (row.zone_system !== '') {
+              <div class="cell short">
+                <label [for]="id + '-zone-' + i">Zone</label>
+                <select
+                  [id]="id + '-zone-' + i"
+                  [attr.aria-invalid]="errors()[i]?.zone ? 'true' : null"
+                  [attr.aria-describedby]="errors()[i]?.zone ? id + '-zone-error-' + i : null"
+                  (change)="patch(i, { zone: value($event) })"
+                >
+                  <option value="" [selected]="row.zone === ''">–</option>
+                  @for (choice of zones(row.zone_system); track choice.value) {
+                    <option
+                      [value]="choice.value"
+                      [selected]="choice.value.toString() === row.zone"
+                    >
+                      {{ choice.label }}
+                    </option>
+                  }
+                </select>
+              </div>
+            }
+          }
+
+          <div class="actions">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              data-testid="segment-up"
+              [attr.aria-label]="'Move part ' + (i + 1) + ' up'"
+              [disabled]="first"
+              (click)="move(i, -1)"
+            >
+              ↑
+            </button>
+            <button
+              type="button"
+              class="btn btn-secondary"
+              data-testid="segment-down"
+              [attr.aria-label]="'Move part ' + (i + 1) + ' down'"
+              [disabled]="last"
+              (click)="move(i, 1)"
+            >
+              ↓
+            </button>
+            <button
+              type="button"
+              class="btn btn-secondary"
+              data-testid="segment-remove"
+              [attr.aria-label]="'Remove part ' + (i + 1)"
+              (click)="remove(i)"
+            >
+              Remove
+            </button>
+          </div>
+
+          @if (errors()[i]; as rowError) {
+            <div class="messages">
+              @if (rowError.repeat; as text) {
+                <p class="field-error" [id]="id + '-repeat-error-' + i" data-testid="error-repeat">
+                  {{ text }}
+                </p>
+              }
+              @if (rowError.duration; as text) {
+                <p
+                  class="field-error"
+                  [id]="id + '-duration-error-' + i"
+                  data-testid="error-duration"
+                >
+                  {{ text }}
+                </p>
+              }
+              @if (rowError.zone; as text) {
+                <p class="field-error" [id]="id + '-zone-error-' + i" data-testid="error-zone">
+                  {{ text }}
+                </p>
+              }
+            </div>
+          }
+        </li>
+      }
+    </ol>
+  }
+
+  <div class="add">
+    <button
+      type="button"
+      class="btn btn-secondary"
+      data-testid="add-warmup"
+      [disabled]="full()"
+      (click)="addWarmup()"
+    >
+      Add warm-up
+    </button>
+    <button
+      type="button"
+      class="btn btn-secondary"
+      data-testid="add-block"
+      [disabled]="full()"
+      (click)="addBlock()"
+    >
+      Add block
+    </button>
+    <button
+      type="button"
+      class="btn btn-secondary"
+      data-testid="add-cooldown"
+      [disabled]="full()"
+      (click)="addCooldown()"
+    >
+      Add cool-down
+    </button>
+  </div>
+  @if (full()) {
+    <p class="hint" data-testid="segments-full">At most {{ maxSegments }} parts.</p>
+  }
+
+  <p class="total" data-testid="segments-total" aria-live="polite">
+    {{ rows().length }} {{ rows().length === 1 ? 'part' : 'parts' }}, total {{ total() }}
+  </p>
+  @if (totalError(); as text) {
+    <p class="field-error" role="alert" data-testid="error-total">{{ text }}</p>
+  }
+</section>
