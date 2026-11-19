@@ -123,7 +123,7 @@ AI key; several people can share one instance without seeing each other's data.
 - **Depends on:** –
 - **Size:** M
 
-### M11 [ ] Production deployment
+### M11 [~] Production deployment
 - **Goal:** A new person can run PaceForge on a VPS with HTTPS from the docs.
 - **Includes:** `compose.prod.yaml` with Caddy (HTTPS), backend, frontend, PostgreSQL, scheduler; production settings from environment; first setup without database edits; registration closed/invite only documented; update and migration docs.
 - **Done when:** `docker compose -f compose.prod.yaml config` is valid, a CI job builds the images, the setup doc covers install to first login.

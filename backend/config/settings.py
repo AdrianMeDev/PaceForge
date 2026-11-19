@@ -4,6 +4,7 @@ All instance configuration comes from environment variables (see ``.env.example`
 There are deliberately no insecure defaults for secrets.
 """
 
+import re
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -25,7 +26,15 @@ DEBUG = env.bool("DJANGO_DEBUG", default=False)
 # Several keys, comma separated: the first one encrypts, all of them decrypt (key rotation).
 # Keep it apart from database backups.
 ENCRYPTION_KEYS = [key.strip() for key in env.str("ENCRYPTION_KEY").split(",") if key.strip()]
-ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=[])
+# The public host name of the instance (no scheme, no path). It is the default for ALLOWED_HOSTS
+# and, outside debug mode, for CSRF_TRUSTED_ORIGINS. Optional.
+APP_DOMAIN = env.str("APP_DOMAIN", default="").strip().lower()
+if APP_DOMAIN and not re.fullmatch(
+    r"(?=.{1,253}$)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*",
+    APP_DOMAIN,
+):
+    raise ImproperlyConfigured("APP_DOMAIN must be a host name only, without scheme, port or path")
+ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=[APP_DOMAIN] if APP_DOMAIN else [])
 
 INSTALLED_APPS = [
     "django.contrib.auth",
@@ -111,7 +120,29 @@ CSRF_COOKIE_SECURE = not DEBUG
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_SAMESITE = "Lax"
-CSRF_TRUSTED_ORIGINS = env.list("DJANGO_CSRF_TRUSTED_ORIGINS", default=[])
+CSRF_TRUSTED_ORIGINS = env.list(
+    "DJANGO_CSRF_TRUSTED_ORIGINS",
+    default=[f"https://{APP_DOMAIN}"] if APP_DOMAIN and not DEBUG else [],
+)
+
+# Behind an HTTPS reverse proxy (Caddy) the request arrives as plain HTTP. Trust the proxy's
+# X-Forwarded-Proto header only when the proxy is the sole way in (default outside debug mode).
+if env.bool("DJANGO_TRUST_PROXY_HEADERS", default=not DEBUG):
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+ACCOUNT_DEFAULT_HTTP_PROTOCOL = "http" if DEBUG else "https"
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = "same-origin"
+X_FRAME_OPTIONS = "DENY"
+SECURE_HSTS_SECONDS = env.int("DJANGO_HSTS_SECONDS", default=0 if DEBUG else 31536000)
+if SECURE_HSTS_SECONDS < 0:
+    raise ImproperlyConfigured("DJANGO_HSTS_SECONDS must not be negative")
+
+# Keep database connections open between requests and drop dead ones.
+CONN_MAX_AGE = env.int("DATABASE_CONN_MAX_AGE", default=60)
+if CONN_MAX_AGE < 0:
+    raise ImproperlyConfigured("DATABASE_CONN_MAX_AGE must not be negative")
+DATABASES["default"]["CONN_MAX_AGE"] = CONN_MAX_AGE
+DATABASES["default"]["CONN_HEALTH_CHECKS"] = True
 
 # closed: nobody can register; invite_only: registration needs a valid invitation token;
 # open: public registration (not intended for the MVP).
@@ -219,6 +250,22 @@ if _smtp_host:
     }
 else:
     MAILERS = {"default": {"BACKEND": "django.core.mail.backends.console.EmailBackend"}}
+
+# Container-friendly logging: warnings and unhandled request errors go to stderr.
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {"plain": {"format": "%(asctime)s %(levelname)s %(name)s: %(message)s"}},
+    "handlers": {
+        "stderr": {
+            "class": "logging.StreamHandler",
+            "stream": "ext://sys.stderr",
+            "formatter": "plain",
+        },
+    },
+    "root": {"handlers": ["stderr"], "level": "WARNING"},
+    "loggers": {"django.request": {"handlers": ["stderr"], "level": "ERROR", "propagate": False}},
+}
 
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "UTC"
