@@ -1151,6 +1151,17 @@ describe('SeasonApi acting on season plans', () => {
       expect(result).toEqual({ kind: 'not_changeable' });
     });
 
+    it('says when the current season has no training time', async () => {
+      const { result } = await post(
+        api.change(ID, 'x'),
+        url,
+        { detail: 'You have no training time.', code: 'no_time' },
+        409,
+      );
+
+      expect(result).toEqual({ kind: 'no_time' });
+    });
+
     it.each([
       ['the code of the provider', { code: 'not_configured' }],
       ['no body', null],

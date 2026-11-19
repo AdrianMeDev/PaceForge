@@ -18,6 +18,7 @@
       <p><a routerLink="/login">Go to sign in</a></p>
     }
     @case ('ready') {
+      <app-season-change-notice />
       @if (shown(); as shown) {
         <p class="hint">
           The skeleton of your season: the phases and the minutes to aim for in every week, worked
@@ -48,7 +49,7 @@
         @if (noTime()) {
           <p class="hint" data-testid="no-time">
             Enter the minutes you can train on the
-            <a routerLink="/availability">Training time</a> page, then draft the season again.
+            <a routerLink="/availability">Training time</a> page, then ask your coach again.
           </p>
         }
         @if (problems().length > 0) {
@@ -133,9 +134,22 @@
             @if (differences(); as changes) {
               <section class="changes" data-testid="changes">
                 <h3 class="font-semibold">What changed since version {{ parent()?.version }}</h3>
-                @if (changes.weeks.length === 0 && !changes.rationale) {
+                @if (
+                  changes.weeks.length === 0 &&
+                  !changes.rationale &&
+                  changes.only_in_changed.length === 0 &&
+                  changes.only_in_base.length === 0
+                ) {
                   <p class="hint" data-testid="no-changes">
                     Nothing is different in the weeks. Only the words may have changed.
+                  </p>
+                }
+                @for (monday of changes.only_in_changed; track monday) {
+                  <p class="added" data-testid="week-added">Week added: {{ range(monday) }}</p>
+                }
+                @for (monday of changes.only_in_base; track monday) {
+                  <p class="removed" data-testid="week-removed">
+                    Week removed: {{ range(monday) }}
                   </p>
                 }
                 @for (item of changes.weeks; track item.week_start) {
@@ -264,11 +278,17 @@
         }
 
         @if (canChange()) {
-          <section class="change" data-testid="change" aria-label="Ask for a change">
+          <section
+            id="season-change"
+            class="change"
+            data-testid="change"
+            aria-label="Ask for a change"
+          >
             <h3 class="font-semibold">Ask for a change</h3>
             @if (configured()) {
               <label for="season-request">What should be different?</label>
               <textarea
+                #requestField
                 id="season-request"
                 rows="3"
                 autocomplete="off"

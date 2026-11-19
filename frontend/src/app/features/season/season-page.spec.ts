@@ -1,5 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
+import { RouterTestingHarness } from '@angular/router/testing';
 import { CoachApi } from '../../core/coach/coach-api';
 import { AiProviderState, GetProviderResult } from '../../core/coach/coach-models';
 import { SeasonApi } from '../../core/season/season-api';
@@ -10,6 +11,7 @@ import {
   GenerateSeasonResult,
   GetSeasonPlanResult,
   GetSeasonResult,
+  GetSeasonReassessmentResult,
   ListSeasonPlansResult,
   RestoreSeasonResult,
   Season,
@@ -140,15 +142,26 @@ describe('SeasonPage', () => {
   >;
   let restore: ReturnType<typeof vi.fn<(id: string) => Promise<RestoreSeasonResult>>>;
   let discard: ReturnType<typeof vi.fn<(id: string) => Promise<DiscardSeasonResult>>>;
+  let reassessment: ReturnType<typeof vi.fn<() => Promise<GetSeasonReassessmentResult>>>;
   let provider: ReturnType<typeof vi.fn<() => Promise<GetProviderResult>>>;
 
   /** The stubs of the two APIs the page uses; `provider` says whether a coach is set up. */
   function providers() {
     return [
-      provideRouter([]),
+      provideRouter([{ path: 'season', component: SeasonPage }]),
       {
         provide: SeasonApi,
-        useValue: { get, plans, plan: open, generate, confirm, discard, restore, change },
+        useValue: {
+          get,
+          plans,
+          plan: open,
+          generate,
+          confirm,
+          discard,
+          restore,
+          change,
+          reassessment,
+        },
       },
       { provide: CoachApi, useValue: { get: provider } },
     ];
@@ -182,6 +195,10 @@ describe('SeasonPage', () => {
   }
 
   beforeEach(() => {
+    reassessment = vi.fn<() => Promise<GetSeasonReassessmentResult>>().mockResolvedValue({
+      kind: 'ok',
+      reassessment: { confirmed_plan_id: null, reasons: [], deviation_weeks: [] },
+    });
     plans = vi
       .fn<() => Promise<ListSeasonPlansResult>>()
       .mockResolvedValue({ kind: 'ok', plans: [] });
@@ -373,6 +390,209 @@ describe('SeasonPage', () => {
       expect(open).not.toHaveBeenCalled();
       expect(page.querySelector('.versions')).toBeNull();
       expect(Array.from(page.querySelectorAll('thead th'))).toHaveLength(5);
+    });
+  });
+
+  describe('adjustment hints', () => {
+    const BASE = version();
+    const DRAFT = version({
+      id: '0195f3a0-0000-7000-8000-000000000002',
+      version: 2,
+      status: 'draft',
+      confirmed_at: null,
+    });
+    let harness: RouterTestingHarness;
+    const hint = () => page.querySelector('[data-testid="season-change-notice"]');
+    const field = () => query<HTMLTextAreaElement>(page, '#season-request');
+    const status = () => query(page, '[data-testid="plan-status"]').textContent;
+    const draft = () =>
+      plan({
+        ...DRAFT,
+        parent: BASE.id,
+        request: 'Use my new race date',
+        report: { valid: true, findings: [] },
+      });
+
+    async function start(url = '/season') {
+      get = vi
+        .fn<() => Promise<GetSeasonResult>>()
+        .mockResolvedValue({ kind: 'ok', season: SEASON });
+      plans.mockResolvedValue({ kind: 'ok', plans: [DRAFT, BASE] });
+      open.mockImplementation(async (id) => ({
+        kind: 'ok',
+        plan: id === BASE.id ? plan() : draft(),
+      }));
+      generate = vi.fn<() => Promise<GenerateSeasonResult>>();
+      change = vi.fn<(id: string, request: string) => Promise<ChangeSeasonResult>>();
+      restore = vi.fn<(id: string) => Promise<RestoreSeasonResult>>();
+      reassessment.mockResolvedValue({
+        kind: 'ok',
+        reassessment: {
+          confirmed_plan_id: BASE.id,
+          reasons: ['goals_changed'],
+          deviation_weeks: [],
+        },
+      });
+      TestBed.configureTestingModule({ imports: [SeasonPage], providers: providers() });
+      harness = await RouterTestingHarness.create();
+      await harness.navigateByUrl(url, SeasonPage);
+      page = harness.routeNativeElement as HTMLElement;
+      await settle(harness.fixture);
+      await vi.waitFor(() => expect(hint()).not.toBeNull());
+    }
+
+    async function followHint() {
+      query<HTMLAnchorElement>(query(page, '[data-testid="season-change-notice"]'), 'a').click();
+      await settle(harness.fixture);
+    }
+
+    async function ask() {
+      field().value = 'Use my new race date';
+      field().dispatchEvent(new Event('input'));
+      await settle(harness.fixture);
+      query<HTMLButtonElement>(page, '[data-testid="change-submit"]').click();
+      await settle(harness.fixture);
+    }
+
+    it('opens and focuses the named confirmed form from an external link without asking the coach', async () => {
+      await start(`/season?change=${BASE.id}#season-change`);
+      expect(status()).toContain('version 1: Confirmed');
+      expect(query(page, '#season-change').getAttribute('aria-label')).toBe('Ask for a change');
+      expect(document.activeElement).toBe(field());
+      expect(generate).not.toHaveBeenCalled();
+      expect(change).not.toHaveBeenCalled();
+      expect(confirm).not.toHaveBeenCalled();
+    });
+
+    it('returns from another version and can follow the same notice again', async () => {
+      await start();
+      for (let attempt = 0; attempt < 2; attempt++) {
+        query<HTMLButtonElement>(page, '[data-testid="version-2"]').click();
+        await settle(harness.fixture);
+        expect(status()).toContain('version 2: Draft');
+        await followHint();
+        expect(status()).toContain('version 1: Confirmed');
+        expect(document.activeElement).toBe(field());
+      }
+      expect(change).not.toHaveBeenCalled();
+      expect(generate).not.toHaveBeenCalled();
+      expect(confirm).not.toHaveBeenCalled();
+    });
+
+    it('waits for the named plan before focusing the field', async () => {
+      await start();
+      query<HTMLButtonElement>(page, '[data-testid="version-2"]').click();
+      await settle(harness.fixture);
+      let finish: (value: GetSeasonPlanResult) => void = () => undefined;
+      open.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+      await TestBed.inject(Router).navigateByUrl(`/season?change=${BASE.id}#season-change`);
+      harness.detectChanges();
+      expect(field().disabled).toBe(true);
+      finish({ kind: 'ok', plan: plan() });
+      await settle(harness.fixture);
+      expect(field().disabled).toBe(false);
+      expect(document.activeElement).toBe(field());
+    });
+
+    it.each(['draft', 'superseded'] as const)(
+      'does not open a stale link as a %s change request',
+      async (status) => {
+        await start();
+        open.mockResolvedValue({ kind: 'ok', plan: plan({ status }) });
+        await followHint();
+        expect(page.textContent).toContain('That version is no longer confirmed.');
+        expect(change).not.toHaveBeenCalled();
+        expect(confirm).not.toHaveBeenCalled();
+      },
+    );
+
+    it('keeps the hint after provider failure, drafting and discard', async () => {
+      await start();
+      change.mockResolvedValue({
+        kind: 'provider_problem',
+        problem: 'unavailable',
+        message: 'Try later.',
+        retry_after: null,
+      });
+      await ask();
+      expect(hint()).not.toBeNull();
+      expect(field().value).toBe('Use my new race date');
+      change.mockResolvedValue({ kind: 'ok', plan: draft() });
+      await ask();
+      expect(hint()).not.toBeNull();
+      discard.mockResolvedValue({ kind: 'ok', plan: { ...draft(), status: 'discarded' } });
+      query<HTMLButtonElement>(page, '[data-testid="discard"]').click();
+      await settle(harness.fixture);
+      query<HTMLButtonElement>(page, '[data-testid="confirm-dialog-confirm"]').click();
+      await settle(harness.fixture);
+      expect(hint()).not.toBeNull();
+      expect(reassessment).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([false, true])(
+      'refreshes the hint after confirmation (still outdated: %s)',
+      async (outdated) => {
+        await start();
+        change.mockResolvedValue({ kind: 'ok', plan: draft() });
+        await ask();
+        confirm.mockResolvedValue({ kind: 'ok', plan: { ...draft(), status: 'confirmed' } });
+        plans.mockResolvedValue({
+          kind: 'ok',
+          plans: [
+            { ...DRAFT, status: 'confirmed' },
+            { ...BASE, status: 'superseded' },
+          ],
+        });
+        reassessment.mockResolvedValue({
+          kind: 'ok',
+          reassessment: {
+            confirmed_plan_id: DRAFT.id,
+            reasons: outdated ? ['goals_changed'] : [],
+            deviation_weeks: [],
+          },
+        });
+        query<HTMLButtonElement>(page, '[data-testid="confirm"]').click();
+        await settle(harness.fixture);
+        expect(reassessment).toHaveBeenCalledTimes(2);
+        if (outdated) {
+          expect(hint()?.textContent).toContain('confirmed version 2');
+        } else {
+          expect(hint()).toBeNull();
+        }
+      },
+    );
+
+    it('keeps the request and hint when current weeks have no training time', async () => {
+      await start();
+      change.mockResolvedValue({ kind: 'no_time' });
+      await ask();
+      expect(page.textContent).toContain('You have no training time in the weeks of your season.');
+      expect(query(page, '[data-testid="no-time"] a').getAttribute('href')).toBe('/availability');
+      expect(field().value).toBe('Use my new race date');
+      expect(hint()).not.toBeNull();
+    });
+
+    it('shows added and removed calendar weeks with the refreshed frame', async () => {
+      await start();
+      const changed = draft();
+      const added = '2026-12-14';
+      changed.skeleton = {
+        ...SEASON,
+        weeks: [...SEASON.weeks.slice(1), week({ week_start: added })],
+      };
+      changed.weeks = [...changed.weeks.slice(1), { ...changed.weeks[0], week_start: added }];
+      change.mockResolvedValue({ kind: 'ok', plan: changed });
+      await ask();
+      expect(query(page, '[data-testid="week-added"]').textContent).toContain('14');
+      expect(query(page, '[data-testid="week-removed"]').textContent).toContain('16');
+      expect(page.querySelector('[data-testid="no-changes"]')).toBeNull();
+      expect(query(page, 'tbody tr th').textContent).toContain('23');
+      const timeline = Array.from(page.querySelectorAll('[data-testid="timeline-cell"]'));
+      expect(timeline).toHaveLength(4);
+      expect(timeline[0].getAttribute('aria-label')).toContain('23');
+      expect(timeline[3].getAttribute('aria-label')).toContain('14');
+      expect(page.querySelector('[data-testid="bar-2026-11-16"]')).toBeNull();
+      expect(page.querySelector('[data-testid="bar-2026-12-14"]')).not.toBeNull();
     });
   });
 

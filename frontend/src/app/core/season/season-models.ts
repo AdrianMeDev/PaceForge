@@ -208,6 +208,8 @@ export type ChangeSeasonResult =
   | { kind: 'not_changeable' }
   /** No AI provider is set up. */
   | { kind: 'not_configured' }
+  /** No current week offers training time; nothing was asked of the coach. */
+  | { kind: 'no_time' }
   /** The coach gave the season back as it was; nothing was stored. */
   | { kind: 'unchanged' }
   /** The coach gave no readable plan, even after being told what was wrong. */

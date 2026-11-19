@@ -259,6 +259,8 @@ plan as a draft:
   The Season page compares the new
   version with its `parent` (`compareSeasons`, a pure function): minutes of each sport, the total,
   the focus, key sessions added and dropped and the reason, week by week, and the rationale.
+  The comparison also lists calendar weeks added to or removed from the frame. The table,
+  timeline and chart show the new draft's stored frame.
 - **Restoring.** `restore` brings back a `superseded` or `discarded` version as the next version, a
   draft: the same weeks and rationale, **its own skeleton and sports** (not today's), `parent` the
   version it comes from and the reason `Restored from version N`. The old version is not touched,
@@ -271,6 +273,19 @@ plan as a draft:
 | `REQUEST_MAX` | 500 | Characters of a change request. |
 
 ## Changes from the confirmed plan
+
+The Season page shows an adjustment notice when the confirmed plan needs attention. Follow
+**Ask for a change to confirmed version N** to open that version's **Ask for a change** form.
+A link from another page works the same way. It selects the named confirmed version even if
+a draft or an older version was open. After loading, the request field gets focus. A link to
+a version that is no longer confirmed shows a message. Opening the form makes no coach call.
+
+Write your request and submit it to create a draft against the current weeks and inputs.
+Read the comparison, including added and removed weeks, before confirming it yourself.
+Drafting, provider failure and discard leave the notice in place. Successful confirmation
+reloads the status. It hides the notice only when the confirmed replacement fits current inputs.
+If no current week offers training time, the form links to Training time and keeps your text
+for another attempt.
 
 `season/reassessment.py` compares current inputs with the confirmed version's original
 `input_snapshot` and the capacities in its stored skeleton. The baseline belongs to drafting,

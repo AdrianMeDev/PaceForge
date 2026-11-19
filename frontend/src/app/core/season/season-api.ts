@@ -211,11 +211,15 @@ export class SeasonApi {
       case 404:
         return { kind: 'not_found' };
       case 409:
-        // Two reasons share the status; the code tells them apart. Anything else keeps meaning
-        // what 409 meant first: no provider.
-        return codeOf(reply.body) === 'not_changeable'
-          ? { kind: 'not_changeable' }
-          : { kind: 'not_configured' };
+        // The code separates conflicts; unknown replies retain the original no-provider meaning.
+        switch (codeOf(reply.body)) {
+          case 'not_changeable':
+            return { kind: 'not_changeable' };
+          case 'no_time':
+            return { kind: 'no_time' };
+          default:
+            return { kind: 'not_configured' };
+        }
       case 422:
         return codeOf(reply.body) === 'unchanged'
           ? { kind: 'unchanged' }

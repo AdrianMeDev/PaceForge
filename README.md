@@ -938,6 +938,12 @@ sessions (a long run, a threshold session, the race …) and a reason. The model
   The reusable frontend notice explains each reason and names the confirmed version in its
   change link. It hides when there are no reasons. Status failures offer Retry, and an expired
   session asks you to sign in again. Loading or reloading the notice only reads status and versions.
+  On Season, follow **Ask for a change to confirmed version N** to open that version's form.
+  Links from another page do the same, even if you were viewing a draft or an older version.
+  The request field gets focus once the version loads. Opening the form makes no coach call.
+  Submit your request to draft an adjustment, read the comparison, then confirm it yourself.
+  Drafting, a provider failure and discarding keep the hint. Successful confirmation refreshes
+  it; changes made since the draft was created can still leave a hint.
 - **Restoring:** a version that was **replaced or discarded** can be brought back with **Make this
   the new draft**. That copies it as the next version, a draft (its reason says "Restored from
   version N"), with the skeleton and the sports it was made for; the old version is not touched
@@ -956,7 +962,9 @@ sessions (a long run, a threshold session, the race …) and a reason. The model
   after confirmation. Your wish is stored with the new version and shown with it. Under the
   draft the page shows **what changed**
   since the version it was made from, week by week: the minutes of each sport, the focus, key
-  sessions added or dropped and a rewritten reason, and how many weeks are the same. That is the
+  sessions added or dropped and a rewritten reason, and how many weeks are the same. Added and
+  removed calendar weeks are listed too. If no current week offers training time, the page links
+  to **Training time** and keeps your request so you can retry. That is the
   safeguard when the coach changes more than you asked; the old version stays as it is and the
   confirmed one stays confirmed until you confirm the new draft. If the coach gives the season
   back as it was with the same frame and recorded inputs, nothing is stored. A changed frame or
