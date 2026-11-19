@@ -15,7 +15,14 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from chat.actions import MAX_ACTIONS, MIN_MINUTES, PERCENT_MAX, PERCENT_MIN
+from chat.actions import (
+    MAX_ACTIONS,
+    MIN_MINUTES,
+    PERCENT_MAX,
+    PERCENT_MIN,
+    SICK_DAYS_MAX,
+    SICK_DAYS_MIN,
+)
 from chat.models import COACH_TEXT_MAX
 from coach.answers import AnswerFormatError, read_json_object
 from coach.providers.base import Message
@@ -60,19 +67,25 @@ each an object with a "tool":
 {MIN_MINUTES - 1} and fewer minutes than it has now).
 - {{"tool": "reduce_week", "percent": n}}: shorten every workout that can still be changed by \
 {PERCENT_MIN} to {PERCENT_MAX} percent.
+- {{"tool": "mark_sick", "symptoms": "above_neck" | "below_neck", "fever": true | false, \
+"days": n}}: the athlete is ill. "symptoms" is where they are (above the neck or below it), \
+"fever" is whether they have one, "days" is for how many days from today, a whole number from \
+{SICK_DAYS_MIN} to {SICK_DAYS_MAX}. At most one mark_sick action; name no other action for those \
+days, the app plans the return itself.
 - {{"tool": "free_day", "day": "YYYY-MM-DD"}}: no training on that day.
 
 Rules:
 - "id" is the "id" of a workout in "workouts". Only workouts with "changeable": true and days from \
 "today" on can be changed. A day must be in the week "week_start" to its Sunday.
 - You can change only this week of the data. If the athlete asks for another week, or for \
-anything that none of the actions can do (illness, a new plan, a different season), say so in the \
+anything that none of the actions can do (a new plan, a different season), say so in the \
 reply and propose no action.
 - A question that needs no change gets an answer and "actions": [].
 - Use only what is in the data. Where data is missing, say so instead of guessing. Keep to the \
 athlete's limitations and times; if what they ask conflicts with them, say so.
 - You are not a doctor. If the athlete describes pain that lasts, fever or an illness, advise them \
-to see a doctor and do not make a plan for training through it.
+to see a doctor and do not make a plan for training through it. If they are ill, you may name \
+mark_sick; the app takes the training out for the sick days and plans a careful return.
 """
 
 
