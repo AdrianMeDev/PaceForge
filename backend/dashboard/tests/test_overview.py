@@ -16,6 +16,8 @@ from season import services as season_services
 from season.rules import SeasonContext
 from season.schema import Focus, KeySession, PlanWeek, SeasonPlan, SessionKind
 from season.skeleton import Phase, Race, SkeletonInputs, build_skeleton
+from wellness.models import DailyWellness
+from wellness.summary import BASELINE_DAYS, RECENT_DAYS, MetricSummary
 
 pytestmark = pytest.mark.django_db
 
@@ -67,6 +69,24 @@ def use_coach(owner: User, **fields: Any) -> None:
     AIUsageRecord.objects.create(owner=owner, **data)
 
 
+def fill_wellness(
+    owner: User,
+    *,
+    recent: dict[str, float | int],
+    baseline: dict[str, float | int] | None = None,
+) -> None:
+    """Create ``RECENT_DAYS`` recent rows and (when given) ``BASELINE_DAYS`` baseline rows ending on
+    ``NOW.date()``."""
+    today = NOW.date()
+    for offset in range(RECENT_DAYS):
+        DailyWellness.objects.create(owner=owner, day=today - timedelta(days=offset), **recent)
+    if baseline is not None:
+        for offset in range(RECENT_DAYS, RECENT_DAYS + BASELINE_DAYS):
+            DailyWellness.objects.create(
+                owner=owner, day=today - timedelta(days=offset), **baseline
+            )
+
+
 class TestAnEmptyAccount:
     def test_has_an_empty_block_everywhere(self, alice: User) -> None:
         found = dashboard_of(alice)
@@ -75,6 +95,7 @@ class TestAnEmptyAccount:
         assert found.main_goal is None
         assert found.recent == ()
         assert found.usage.calls == 0
+        assert found.wellness is None
         assert [week.week_start for week in found.weeks] == [
             MONDAY - timedelta(weeks=n) for n in range(CHART_WEEKS - 1, -1, -1)
         ]
@@ -226,6 +247,51 @@ class TestTheCoachUsage:
         use_coach(bob)
 
         assert dashboard_of(alice).usage.calls == 0
+
+
+class TestTheWellness:
+    def test_is_none_without_recent_readings(self, alice: User) -> None:
+        today = NOW.date()
+        for offset in range(RECENT_DAYS, RECENT_DAYS + BASELINE_DAYS):
+            DailyWellness.objects.create(
+                owner=alice, day=today - timedelta(days=offset), sleep_minutes=480
+            )
+        DailyWellness.objects.create(owner=alice, day=today, sleep_minutes=480)
+
+        assert dashboard_of(alice).wellness is None
+
+    def test_summarises_metrics_and_trends(self, alice: User) -> None:
+        fill_wellness(
+            alice,
+            recent={"sleep_minutes": 480, "hrv": 65.0},
+            baseline={"sleep_minutes": 470, "hrv": 60.0},
+        )
+
+        found = dashboard_of(alice).wellness
+
+        assert found is not None
+        assert found.sleep == MetricSummary(480.0, 470.0, "up")
+        assert found.hrv == MetricSummary(65.0, 60.0, "up")
+        assert found.warning is False
+        assert found.warning_signals == ()
+
+    def test_flags_a_recovery_warning(self, alice: User) -> None:
+        fill_wellness(
+            alice,
+            recent={"sleep_minutes": 440, "resting_hr": 55},
+            baseline={"sleep_minutes": 500, "resting_hr": 50},
+        )
+
+        found = dashboard_of(alice).wellness
+
+        assert found is not None
+        assert found.warning is True
+        assert found.warning_signals == ("low_sleep", "high_resting_hr")
+
+    def test_leave_out_another_users_wellness(self, alice: User, bob: User) -> None:
+        fill_wellness(bob, recent={"sleep_minutes": 400}, baseline={"sleep_minutes": 500})
+
+        assert dashboard_of(alice).wellness is None
 
 
 def test_the_clock_is_the_one_of_the_tests() -> None:

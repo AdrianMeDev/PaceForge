@@ -21,6 +21,7 @@ from .conftest import NOW, make_user
 pytestmark = pytest.mark.django_db
 
 PATH = "/api/v1/athlete/0/activities"
+WELLNESS_PATH = "/api/v1/athlete/0/wellness"
 
 
 @pytest.fixture
@@ -39,6 +40,7 @@ def connect(owner: User, key: str = "k3y-0123456789-abcdefghij") -> ProviderConn
 
 def answer(fake: FakeIntervals, *entries: object) -> None:
     fake.bodies[PATH] = json.dumps(list(entries)).encode()
+    fake.bodies[WELLNESS_PATH] = b"[]"
 
 
 def entry(external_id: str, start: datetime) -> dict[str, object]:
@@ -131,6 +133,7 @@ def test_a_successful_sync_is_done_with_its_counts(fake: FakeIntervals) -> None:
         "skipped_duplicates": 0,
         "skipped_strava": 1,
         "skipped_invalid": 0,
+        "wellness_synced": 0,
     }
     assert [a.external_id for a in Activity.objects.for_user(user)] == ["i100"]
 
@@ -143,8 +146,10 @@ def test_two_users_each_get_only_their_own_activities_and_runs(fake: FakeInterva
     connect(bob, bob_key)
 
     fake.queue(body=json.dumps([entry("a1", NOW)]).encode())
+    fake.queue(body=b"[]")
     alice_run = run_sync(alice)
     fake.queue(body=json.dumps([entry("b1", NOW), entry("b2", NOW - timedelta(hours=2))]).encode())
+    fake.queue(body=b"[]")
     bob_run = run_sync(bob)
     assert alice_run is not None and bob_run is not None
 
@@ -158,9 +163,14 @@ def test_two_users_each_get_only_their_own_activities_and_runs(fake: FakeInterva
     assert (alice_run.owner, alice_run.counts["imported"]) == (alice, 1)
     assert (bob_run.owner, bob_run.counts["imported"]) == (bob, 2)
     assert set(JobRun.objects.values_list("owner_id", flat=True)) == {alice.id, bob.id}
-    # Each sync used the key of its own user, and only it.
+    # Each sync used the key of its own user, and only it (activities then wellness).
     authorizations = [request["headers"].get("Authorization") for request in fake.requests]
-    assert authorizations == [authorization_of(alice_key), authorization_of(bob_key)]
+    assert authorizations == [
+        authorization_of(alice_key),
+        authorization_of(alice_key),
+        authorization_of(bob_key),
+        authorization_of(bob_key),
+    ]
 
 
 def test_the_log_holds_only_fixed_words(fake: FakeIntervals) -> None:

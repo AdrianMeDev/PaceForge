@@ -350,6 +350,7 @@ function toSyncSummary(reply: Reply): {
   skipped_duplicates: number;
   skipped_strava: number;
   skipped_invalid: number;
+  wellness_synced: number;
   last_sync_at: string | null;
 } {
   if (typeof reply.body !== 'object' || reply.body === null || Array.isArray(reply.body)) {
@@ -365,6 +366,7 @@ function toSyncSummary(reply: Reply): {
     skipped_duplicates: nonNegativeInt(item['skipped_duplicates'], reply),
     skipped_strava: nonNegativeInt(item['skipped_strava'], reply),
     skipped_invalid: nonNegativeInt(item['skipped_invalid'], reply),
+    wellness_synced: nonNegativeInt(item['wellness_synced'], reply),
     last_sync_at: lastSyncAt,
   };
 }

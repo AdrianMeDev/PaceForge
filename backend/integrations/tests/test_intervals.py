@@ -1125,3 +1125,172 @@ class TestDeleteEvent:
 
         with pytest.raises(UnexpectedResponseError):
             client(fake).get_athlete()
+
+
+WELLNESS = {
+    "id": "2027-07-19",
+    "sleepSecs": 27000,
+    "hrv": 62.5,
+    "restingHR": 48,
+    "weight": 72.4,
+}
+
+
+class TestWellness:
+    def read(self, fake: FakeIntervals, *entries: object) -> intervals.WellnessBatch:
+        fake.body = json.dumps(entries).encode()
+        return client(fake).get_wellness(OLDEST, NEWEST)
+
+    def test_requests_the_date_range_with_basic_auth(self, fake: FakeIntervals) -> None:
+        assert self.read(fake) == intervals.WellnessBatch((), 0, 0)
+
+        [request] = fake.requests
+        assert request["method"] == "GET"
+        assert request["path"] == "/api/v1/athlete/0/wellness?oldest=2027-07-01&newest=2027-07-31"
+        encoded = base64.b64encode(f"API_KEY:{KEY}".encode()).decode()
+        assert request["headers"]["Authorization"] == f"Basic {encoded}"
+
+    def test_refuses_reversed_date_range_without_sending(self, fake: FakeIntervals) -> None:
+        with pytest.raises(ValueError, match="oldest"):
+            client(fake).get_wellness(NEWEST, OLDEST)
+
+        assert fake.requests == []
+
+    def test_whitelists_fields_and_converts_sleep_seconds_to_minutes(
+        self, fake: FakeIntervals
+    ) -> None:
+        batch = self.read(
+            fake,
+            {
+                **WELLNESS,
+                "sleepSecs": 27149,
+                "ctl": 58.3,
+                "atl": 64.1,
+                "comments": "PRIVATE NOTE",
+                "soreness": 2,
+            },
+        )
+
+        [entry] = batch.entries
+        assert dataclasses.asdict(entry) == {
+            "day": date(2027, 7, 19),
+            "sleep_minutes": 452,
+            "hrv": 62.5,
+            "resting_hr": 48,
+            "weight_kg": 72.4,
+        }
+        assert (batch.skipped_empty, batch.skipped_invalid) == (0, 0)
+
+    def test_skips_empty_shells_and_counts_malformed_entries(self, fake: FakeIntervals) -> None:
+        invalid: list[object] = [
+            None,
+            [],
+            "2027-07-19",
+            {},
+            {"id": None},
+            {"id": 20270719},
+            {"id": "2027-02-30"},
+            {"id": "2027-07-19T00:00:00Z"},
+            {"id": "20270719"},
+        ]
+        empty_shells: list[object] = [
+            {"id": "2027-07-17"},
+            {"id": "2027-07-18", "sleepSecs": None, "hrv": None, "restingHR": None, "weight": None},
+            {"id": "2027-07-20", "ctl": 50.0, "sleepSecs": 0},
+        ]
+
+        batch = self.read(fake, *invalid, *empty_shells, WELLNESS)
+
+        assert [entry.day for entry in batch.entries] == [date(2027, 7, 19)]
+        assert batch.skipped_empty == len(empty_shells)
+        assert batch.skipped_invalid == len(invalid)
+
+    @pytest.mark.parametrize(
+        "bad",
+        [True, "48", -5, 0, 10**400, float("nan"), float("inf")],
+    )
+    def test_drops_invalid_values_independently(self, fake: FakeIntervals, bad: object) -> None:
+        batch = self.read(
+            fake,
+            {
+                "id": "2027-07-19",
+                "sleepSecs": bad,
+                "hrv": bad,
+                "restingHR": bad,
+                "weight": 71.0,
+            },
+        )
+
+        [entry] = batch.entries
+        assert entry == intervals.IntervalsWellness(
+            day=date(2027, 7, 19),
+            sleep_minutes=None,
+            hrv=None,
+            resting_hr=None,
+            weight_kg=71.0,
+        )
+        assert (batch.skipped_empty, batch.skipped_invalid) == (0, 0)
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("sleepSecs", 24 * 3600 + 1),
+            ("hrv", 500.1),
+            ("restingHR", 19),
+            ("restingHR", 301),
+            ("weight", 19.9),
+            ("weight", 300.1),
+        ],
+    )
+    def test_drops_out_of_range_values(self, fake: FakeIntervals, field: str, value: float) -> None:
+        batch = self.read(fake, {"id": "2027-07-19", field: value})
+
+        assert batch == intervals.WellnessBatch((), skipped_empty=1, skipped_invalid=0)
+
+    def test_non_list_response_is_unexpected(self, fake: FakeIntervals) -> None:
+        fake.body = b'{"id": "2027-07-19"}'
+
+        with pytest.raises(UnexpectedResponseError):
+            client(fake).get_wellness(OLDEST, NEWEST)
+
+    @pytest.mark.parametrize("status", [401, 403])
+    def test_a_refused_key_is_reported_as_invalid(self, fake: FakeIntervals, status: int) -> None:
+        fake.status = status
+
+        with pytest.raises(InvalidKeyError):
+            client(fake).get_wellness(OLDEST, NEWEST)
+
+    @pytest.mark.parametrize("status", [429, 500, 503])
+    def test_a_busy_service_is_reported_as_unavailable(
+        self, fake: FakeIntervals, status: int
+    ) -> None:
+        fake.status = status
+
+        with pytest.raises(IntervalsUnavailableError):
+            client(fake).get_wellness(OLDEST, NEWEST)
+
+    def test_a_too_large_answer_is_refused(
+        self, fake: FakeIntervals, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        fake.body = json.dumps([WELLNESS]).encode()
+        monkeypatch.setattr(intervals, "MAX_RESPONSE_BYTES", len(fake.body) - 1)
+
+        with pytest.raises(UnexpectedResponseError, match="larger"):
+            client(fake).get_wellness(OLDEST, NEWEST)
+
+    @pytest.mark.parametrize("status", [200, 401, 503])
+    def test_errors_and_logs_exclude_secrets_and_private_text(
+        self, fake: FakeIntervals, status: int, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        caplog.set_level(logging.DEBUG)
+        encoded = base64.b64encode(f"API_KEY:{KEY}".encode()).decode()
+        private = {"comments": "PRIVATE WELLNESS NOTE", "secret": KEY, "echo": encoded}
+        batch = self.read(fake, {**WELLNESS, **private})
+        fake.status = status
+        fake.body = json.dumps(private).encode()
+
+        with pytest.raises(intervals.IntervalsError) as raised:
+            client(fake).get_wellness(OLDEST, NEWEST)
+
+        shown = repr(batch) + everything_printed(raised.value) + caplog.text
+        assert all(value not in shown for value in private.values())

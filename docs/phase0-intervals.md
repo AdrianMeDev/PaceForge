@@ -137,6 +137,17 @@ Base URL `https://intervals.icu/api/v1`. All paths below start with `/athlete/{i
   reach several MB, TCX must be parsed safely (refuse `DOCTYPE` and entities), and developer
   fields in FIT can be ignored.
 
+## Wellness: implemented field mapping
+
+- `GET /athlete/0/wellness?oldest=YYYY-MM-DD&newest=YYYY-MM-DD` returns a JSON list of daily
+  entries. PaceForge keeps only `id` (calendar date `YYYY-MM-DD`), `sleepSecs` (rounded to whole
+  minutes in `sleep_minutes`), `hrv` (`hrv`), `restingHR` (`resting_hr`) and `weight`
+  (`weight_kg`). Every other field is discarded, and days where all four metrics are missing are
+  skipped.
+- Sync runs together with activities via `POST /api/activities/sync/` (and the `sync` background
+  job) over the last `INTERVALS_SYNC_WEEKS` weeks. See [`docs/wellness.md`](wellness.md) for the
+  ranges, summary windows and recovery-warning rules.
+
 ## Open checks
 
 - [x] **Zwift:** the test ride reached Zwift (2026-11-13).
@@ -147,6 +158,8 @@ Base URL `https://intervals.icu/api/v1`. All paths below start with `/athlete/{i
 - [ ] **Live activity fields:** the Intervals.icu activity importer now exists, but its field
       mapping has only been tested against a stubbed API; verify against a live account with
       non-Strava activities.
+- [ ] **Live wellness fields:** the wellness importer now exists, but its field mapping has only
+      been tested against a stubbed API; verify against a live account with wellness data.
 - [ ] **Rate limits:** find out the limits for personal keys before an automatic sync runs
       against many users.
 

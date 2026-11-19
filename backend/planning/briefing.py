@@ -6,7 +6,8 @@ what each day offers, the zone tables of the zone systems the athlete can use, t
 the minutes done in recent weeks, the athlete's injuries (a body part and sports from a fixed
 list), the limits of the rules that follow from the athlete's intensity level (``limits``), a
 summary of last week's confirmed plan and how that week went (``previous_week_review``: numbers
-and one fixed word, no free text; see ``reviews.briefing``).
+and one fixed word, no free text; see ``reviews.briefing``), and the concise wellness summary with
+its recovery warning (``wellness``; see ``wellness.summary``).
 
 What is not in it: names, e-mail addresses, activity names or descriptions, ids of any kind, the
 thresholds of sports without zones, the provider settings. The only free text is the title and
@@ -36,6 +37,7 @@ from goals.services import today_of
 from reviews.services import WeekReview, week_summary
 from season.schema import DETAIL_MAX, REASON_MAX
 from season.weeks import SeasonWeekFacts
+from wellness.summary import wellness_data, wellness_summary
 
 from .context import PlanContext, build_context
 from .models import PlannedWorkout, WeeklyPlan
@@ -108,6 +110,7 @@ def build_briefing(user: User, monday: date, note: str = "") -> dict[str, Any]:
         "season_week": season_week_data(context.season_week),
         "previous_week_plan": _previous_week(user, monday),
         "previous_week_review": _previous_week_review(user, monday),
+        "wellness": wellness_data(wellness_summary(user, today)),
         "athlete_note": note or None,
     }
 

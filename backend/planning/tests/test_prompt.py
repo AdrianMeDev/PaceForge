@@ -387,7 +387,8 @@ class TestTheSystemPrompt:
                 "weekly_minutes_available", "run_progression_warning_percent",
                 "previous_week_plan", "previous_week_review", "zone_systems", "today", "sports",
                 "stretching", "limits", "max_hard_days", "progression_warning_percent",
-                "progression_error_percent", "easy_share_percent"}  # fmt: skip
+                "progression_error_percent", "easy_share_percent", "wellness", "warning",
+                "warning_signals"}  # fmt: skip
 
         assert keys <= named
 
@@ -434,6 +435,28 @@ class TestTheSystemPrompt:
 
     def test_it_says_that_the_review_may_be_missing(self) -> None:
         assert "and is null if there is nothing to tell" in SYSTEM_PROMPT
+
+    def test_it_explains_the_wellness_and_its_recovery_warning(self) -> None:
+        flat = " ".join(SYSTEM_PROMPT.split())
+
+        assert '"wellness" is the athlete\'s recent wellness' in flat
+        assert "the last week against the 28 days before it" in flat
+        for word in (
+            '"sleep"',
+            '"hrv"',
+            '"resting_hr"',
+            '"weight"',
+            '"recent"',
+            '"baseline"',
+            '"trend"',
+        ):
+            assert word in flat, word
+        assert '"warning" (true when tracked recovery has clearly worsened)' in flat
+        assert '"warning_signals"' in flat
+        assert '"low_sleep" and "low_hrv"' in flat
+        assert '"high_resting_hr"' in flat
+        assert "advisory recovery context" in flat
+        assert "no metric or null value is a reason to leave a goal out" in flat
 
     def test_it_names_the_time_of_day_and_the_stretching_in_the_format(self) -> None:
         assert '"slot": one of "morning", "afternoon", "evening"' in SYSTEM_PROMPT

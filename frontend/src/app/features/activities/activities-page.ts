@@ -163,7 +163,7 @@ export class ActivitiesPage implements OnInit {
               : connection,
           );
           this.notice.set(
-            `Intervals.icu sync: ${result.imported} imported; ${result.skipped_duplicates} duplicates skipped; ${result.skipped_strava} Strava activities skipped; ${result.skipped_invalid} invalid activities skipped.`,
+            `Intervals.icu sync: ${result.imported} imported; ${result.skipped_duplicates} duplicates skipped; ${result.skipped_strava} Strava activities skipped; ${result.skipped_invalid} invalid activities skipped; ${result.wellness_synced} wellness days synced.`,
           );
           if (result.imported > 0) {
             await this.refresh(0);

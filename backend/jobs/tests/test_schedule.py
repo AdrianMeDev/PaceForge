@@ -21,6 +21,7 @@ from jobs.services import record
 from planning.models import WeeklyPlan
 from planning.tests.scripted import Scripted
 from reviews.models import WeekComment
+from wellness.models import DailyWellness
 
 from .conftest import make_user
 from .test_commands import (
@@ -35,6 +36,7 @@ from .test_commands import (
     good_comment,
     good_plan,
     provide,  # noqa: F401  (fixture)
+    wellness_entry,
 )
 
 pytestmark = pytest.mark.django_db
@@ -212,8 +214,11 @@ class TestRunScheduler:
         connect(bob)
         activity_in(alice, THIS_MONDAY, 1)
         activity_in(bob, THIS_MONDAY, 2)
+        # Each sync asks for activities then wellness; both users get their own wellness day.
         fake.queue(body=json.dumps([entry("a1", SUNDAY)]).encode())
+        fake.queue(body=json.dumps([wellness_entry("2026-11-19", sleep_minutes=480)]).encode())
         fake.queue(body=json.dumps([entry("b1", SUNDAY)]).encode())
+        fake.queue(body=json.dumps([wellness_entry("2026-11-19", sleep_minutes=360)]).encode())
         scripted = provide(
             good_comment(),
             good_plan(),
@@ -239,6 +244,10 @@ class TestRunScheduler:
         assert [
             a.external_id for a in Activity.objects.for_user(bob).filter(source="intervals_icu")
         ] == ["b1"]
+        # Each user's wellness is kept apart, even though they share the same day.
+        alices = DailyWellness.objects.for_user(alice).get(day=date(2026, 11, 19))
+        bobs = DailyWellness.objects.for_user(bob).get(day=date(2026, 11, 19))
+        assert (alices.sleep_minutes, bobs.sleep_minutes) == (480, 360)
 
         # The runs were logged with the real clock; put them on the Sunday of this test.
         JobRun.objects.update(started_at=SUNDAY, finished_at=SUNDAY)

@@ -27,6 +27,7 @@ KEPT = (
     "limitations",
     "limitations_not_shown",
     "limitations_text",
+    "wellness",
 )
 
 # What of the briefing of the week plan is kept per week.

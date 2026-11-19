@@ -1,9 +1,10 @@
-"""Importing a user's recent activities from their Intervals.icu connection.
+"""Importing a user's recent activities and daily wellness from their Intervals.icu connection.
 
 Only the user's own connection and key are used, and only new activities are written: one that
 was synced before (same Intervals.icu id), or that is the same session as an uploaded file or a
 manual entry (see ``duplicates``), is skipped. Strava activities cannot be read through the API
-and are skipped by the client.
+and are skipped by the client. Daily wellness is stored per ``(user, day)`` with the same single
+client session.
 """
 
 from contextlib import suppress
@@ -20,11 +21,14 @@ from integrations import services as integrations
 from integrations.intervals import (
     ActivityBatch,
     IntervalsActivity,
+    IntervalsClient,
     IntervalsError,
     IntervalsUnavailableError,
     InvalidKeyError,
+    WellnessBatch,
 )
 from integrations.models import ProviderConnection
+from wellness.sync import store_wellness
 
 from .duplicates import duration_of, find_duplicate
 from .models import Activity
@@ -38,11 +42,12 @@ class SyncCounts:
     skipped_duplicates: int
     skipped_strava: int
     skipped_invalid: int
+    wellness_synced: int
 
 
 def sync_from_intervals(user: User) -> SyncCounts:
-    """Import the activities of the last ``INTERVALS_SYNC_WEEKS`` weeks (up to today in the user's
-    time zone) and record the sync on the connection.
+    """Import the activities and daily wellness of the last ``INTERVALS_SYNC_WEEKS`` weeks (up to
+    today in the user's time zone) and record the sync on the connection.
 
     Raises ``NotConnectedError`` (nothing is recorded) and the errors of the client
     (``InvalidKeyError``, ``IntervalsUnavailableError``, ``UnexpectedResponseError``); then nothing
@@ -50,8 +55,15 @@ def sync_from_intervals(user: User) -> SyncCounts:
     """
     newest = today_of(user)
     oldest = newest - timedelta(weeks=settings.INTERVALS_SYNC_WEEKS)
+
+    def fetch(client: IntervalsClient) -> tuple[ActivityBatch, WellnessBatch]:
+        return (
+            client.get_activities(oldest, newest),
+            client.get_wellness(oldest, newest),
+        )
+
     try:
-        batch = integrations.with_client(user, lambda client: client.get_activities(oldest, newest))
+        batch, wellness = integrations.with_client(user, fetch)
     except IntervalsError as error:
         _record(user, _error_code(error))
         raise
@@ -59,8 +71,9 @@ def sync_from_intervals(user: User) -> SyncCounts:
     imported = _store(user, batch.activities)
     if imported:
         refresh_estimates_safely(user)
+    wellness_synced = store_wellness(user, wellness.entries)
     _record(user, SyncError.NONE)
-    return _counts(batch, imported)
+    return _counts(batch, imported, wellness_synced)
 
 
 def _store(user: User, activities: tuple[IntervalsActivity, ...]) -> int:
@@ -90,12 +103,13 @@ def _store(user: User, activities: tuple[IntervalsActivity, ...]) -> int:
     return imported
 
 
-def _counts(batch: ActivityBatch, imported: int) -> SyncCounts:
+def _counts(batch: ActivityBatch, imported: int, wellness_synced: int) -> SyncCounts:
     return SyncCounts(
         imported=imported,
         skipped_duplicates=len(batch.activities) - imported,
         skipped_strava=batch.skipped_strava,
         skipped_invalid=batch.skipped_invalid,
+        wellness_synced=wellness_synced,
     )
 
 

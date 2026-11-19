@@ -20,6 +20,10 @@ import {
   WeekFigures,
   WeekGlance,
   WeekMinutes,
+  WellnessMetric,
+  WellnessSummary,
+  WellnessTrend,
+  WellnessWarningSignal,
 } from './dashboard-models';
 
 const URL = `${API_BASE}/dashboard/`;
@@ -42,6 +46,9 @@ const SETUP_KEYS: readonly string[] = [
   'first_week',
 ];
 const RATINGS: readonly string[] = ['realistic', 'ambitious', 'unrealistic', 'unknown'];
+const WELLNESS_TRENDS: readonly string[] = ['up', 'down', 'flat'];
+const WELLNESS_SIGNALS: readonly string[] = ['low_sleep', 'low_hrv', 'high_resting_hr'];
+const WELLNESS_METRICS = ['sleep', 'hrv', 'resting_hr', 'weight'] as const;
 
 interface Reply {
   status: number;
@@ -89,6 +96,7 @@ function toDashboard(body: unknown, reply: Reply): Dashboard {
   const item = object(body, reply);
   const season = item['season'];
   const goal = item['main_goal'];
+  const wellness = item['wellness'];
   return {
     week: toWeek(item['week'], reply),
     season: season === null ? null : toSeason(season, reply),
@@ -97,6 +105,7 @@ function toDashboard(body: unknown, reply: Reply): Dashboard {
     recent: list(item['recent'], reply).map((raw) => toRecent(raw, reply)),
     usage: toUsage(item['usage'], reply),
     setup: toSetup(item['setup'], reply),
+    wellness: wellness === null ? null : toWellness(wellness, reply),
   };
 }
 
@@ -216,6 +225,51 @@ function toSetup(raw: unknown, reply: Reply): SetupStep[] {
       optional: flag(step['optional'], reply),
     };
   });
+}
+
+function toWellness(raw: unknown, reply: Reply): WellnessSummary {
+  const item = object(raw, reply);
+  const result = {} as Record<(typeof WELLNESS_METRICS)[number], WellnessMetric>;
+  for (const name of WELLNESS_METRICS) {
+    result[name] = toWellnessMetric(item[name], reply);
+  }
+  return {
+    sleep: result.sleep,
+    hrv: result.hrv,
+    resting_hr: result.resting_hr,
+    weight: result.weight,
+    warning: flag(item['warning'], reply),
+    warning_signals: list(item['warning_signals'], reply).map(
+      (entry) => oneOf(entry, WELLNESS_SIGNALS, reply) as WellnessWarningSignal,
+    ),
+  };
+}
+
+function toWellnessMetric(raw: unknown, reply: Reply): WellnessMetric {
+  const item = object(raw, reply);
+  const recent = metricNumber(item['recent'], reply);
+  const baseline = metricNumber(item['baseline'], reply);
+  const trend = item['trend'];
+  if ((recent === null) !== (baseline === null)) {
+    throw unexpected(reply);
+  }
+  const parsedTrend =
+    trend === null ? null : (oneOf(trend, WELLNESS_TRENDS, reply) as WellnessTrend);
+  if ((recent === null) !== (parsedTrend === null)) {
+    throw unexpected(reply);
+  }
+  return { recent, baseline, trend: parsedTrend };
+}
+
+/** A measurement (a mean) is `null` when there were too few readings; nothing else is accepted. */
+function metricNumber(value: unknown, reply: Reply): number | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw unexpected(reply);
+  }
+  return value;
 }
 
 function object(value: unknown, reply: Reply): Raw {

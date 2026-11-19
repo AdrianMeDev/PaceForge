@@ -21,6 +21,7 @@ from goals.services import time_zone_of, today_of
 from season.done import done_minutes
 from season.skeleton import Phase
 from season.weeks import confirmed_week
+from wellness.summary import WellnessSummary, wellness_summary
 
 from .setup import SetupStep, setup_of
 from .summary import WeekGlance, week_glance
@@ -80,6 +81,7 @@ class Dashboard:
     recent: tuple[RecentActivity, ...]
     usage: UsageSummary
     setup: tuple[SetupStep, ...]
+    wellness: WellnessSummary | None
 
 
 def dashboard_of(user: User) -> Dashboard:
@@ -96,6 +98,7 @@ def dashboard_of(user: User) -> Dashboard:
         recent=_recent(user),
         usage=usage_summary(user),
         setup=setup_of(user),
+        wellness=_wellness(user, today),
     )
 
 
@@ -148,3 +151,14 @@ def _recent(user: User) -> tuple[RecentActivity, ...]:
 def _minutes(seconds: float | None) -> int | None:
     """Whole minutes, half up (as ``season.done`` counts them)."""
     return None if seconds is None else int(seconds / 60 + 0.5)
+
+
+def _wellness(user: User, today: date) -> WellnessSummary | None:
+    """The recent wellness summary, or ``None`` when no metric has enough recent readings."""
+    summary = wellness_summary(user, today)
+    if all(
+        metric.recent is None
+        for metric in (summary.sleep, summary.hrv, summary.resting_hr, summary.weight)
+    ):
+        return None
+    return summary

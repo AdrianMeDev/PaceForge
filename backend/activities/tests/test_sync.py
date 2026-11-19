@@ -4,7 +4,7 @@ import os
 import subprocess
 import sys
 from collections.abc import Callable, Iterator
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from http import HTTPStatus
 from pathlib import Path
 from typing import Any
@@ -27,6 +27,7 @@ from integrations.intervals import (
 from integrations.models import ProviderConnection
 from integrations.services import NotConnectedError
 from integrations.tests.fake_intervals import FakeIntervals, running
+from wellness.models import DailyWellness
 
 from .conftest import make_user, signed_in
 from .fit_builder import activity_file
@@ -37,6 +38,7 @@ pytestmark = pytest.mark.django_db
 
 URL = "/api/activities/sync/"
 PATH = "/api/v1/athlete/0/activities"
+WELLNESS_PATH = "/api/v1/athlete/0/wellness"
 CHECK = "/api/integrations/intervals/check/"
 KEY = "k3y-0123456789-abcdefghij"
 NOW = datetime(2026, 11, 19, 12, 0, tzinfo=UTC)
@@ -62,6 +64,7 @@ def fake(settings: Any) -> Iterator[FakeIntervals]:
     """A fake Intervals.icu that the application talks to instead of the real one."""
     with running() as server:
         settings.INTERVALS_API_BASE_URL = server.url
+        server.bodies[WELLNESS_PATH] = b"[]"  # most tests only care about activities
         yield server
 
 
@@ -114,6 +117,27 @@ def answer(fake: FakeIntervals, *entries: object) -> None:
     fake.bodies[PATH] = json.dumps(list(entries)).encode()
 
 
+def wellness_entry(
+    day: str = "2026-11-19",
+    *,
+    sleep_minutes: int | None = 480,
+    hrv: float | None = 62.5,
+    resting_hr: int | None = 48,
+    weight_kg: float | None = 72.4,
+) -> dict[str, object]:
+    return {
+        "id": day,
+        "sleepSecs": None if sleep_minutes is None else sleep_minutes * 60,
+        "hrv": hrv,
+        "restingHR": resting_hr,
+        "weight": weight_kg,
+    }
+
+
+def answer_wellness(fake: FakeIntervals, *entries: object) -> None:
+    fake.bodies[WELLNESS_PATH] = json.dumps(list(entries)).encode()
+
+
 def body(response: Any) -> Any:
     return json.loads(response.content)
 
@@ -132,7 +156,7 @@ class TestService:
         counts = sync_from_intervals(alice)
 
         assert counts == SyncCounts(
-            imported=1, skipped_duplicates=0, skipped_strava=0, skipped_invalid=0
+            imported=1, skipped_duplicates=0, skipped_strava=0, skipped_invalid=0, wellness_synced=0
         )
         [activity] = activities_of(alice)
         assert activity.source == Activity.Source.INTERVALS_ICU
@@ -162,7 +186,9 @@ class TestService:
 
         assert [request["path"] for request in fake.requests] == [
             f"{PATH}?oldest=2026-08-27&newest=2026-11-19",
+            f"{WELLNESS_PATH}?oldest=2026-08-27&newest=2026-11-19",
             f"{PATH}?oldest=2026-09-24&newest=2026-11-19",
+            f"{WELLNESS_PATH}?oldest=2026-09-24&newest=2026-11-19",
         ]
 
     def test_today_is_the_day_in_the_users_time_zone(
@@ -175,8 +201,9 @@ class TestService:
 
         sync_from_intervals(alice)
 
-        [request] = fake.requests
-        assert request["path"] == f"{PATH}?oldest=2026-08-28&newest=2026-11-20"
+        [activities, wellness] = fake.requests
+        assert activities["path"] == f"{PATH}?oldest=2026-08-28&newest=2026-11-20"
+        assert wellness["path"] == f"{WELLNESS_PATH}?oldest=2026-08-28&newest=2026-11-20"
 
     def test_strava_stubs_and_unreadable_entries_are_skipped_and_counted(
         self, fake: FakeIntervals, alice: User
@@ -187,7 +214,7 @@ class TestService:
         counts = sync_from_intervals(alice)
 
         assert counts == SyncCounts(
-            imported=1, skipped_duplicates=0, skipped_strava=2, skipped_invalid=1
+            imported=1, skipped_duplicates=0, skipped_strava=2, skipped_invalid=1, wellness_synced=0
         )
         assert [activity.external_id for activity in activities_of(alice)] == ["i100"]
 
@@ -199,7 +226,7 @@ class TestService:
         counts = sync_from_intervals(alice)
 
         assert counts == SyncCounts(
-            imported=0, skipped_duplicates=2, skipped_strava=0, skipped_invalid=0
+            imported=0, skipped_duplicates=2, skipped_strava=0, skipped_invalid=0, wellness_synced=0
         )
         assert Activity.objects.count() == 2
 
@@ -381,6 +408,49 @@ class TestService:
         values = Activity.objects.values().get()
         assert "secret" not in json.dumps(values, default=str)
 
+    def test_it_imports_wellness_alongside_activities(
+        self, fake: FakeIntervals, alice: User
+    ) -> None:
+        connect(alice)
+        answer(fake, entry())
+        answer_wellness(fake, wellness_entry("2026-11-19", sleep_minutes=480))
+
+        counts = sync_from_intervals(alice)
+
+        assert counts.wellness_synced == 1
+        stored = DailyWellness.objects.for_user(alice).get(day=date(2026, 11, 19))
+        assert stored.sleep_minutes == 480
+
+    def test_a_repeat_sync_is_idempotent_for_wellness(
+        self, fake: FakeIntervals, alice: User
+    ) -> None:
+        connect(alice)
+        answer(fake, entry())
+        answer_wellness(fake, wellness_entry("2026-11-19", sleep_minutes=480))
+        assert sync_from_intervals(alice).wellness_synced == 1
+        before = DailyWellness.objects.for_user(alice).get(day=date(2026, 11, 19)).updated_at
+
+        counts = sync_from_intervals(alice)
+
+        assert counts.wellness_synced == 0
+        after = DailyWellness.objects.for_user(alice).get(day=date(2026, 11, 19))
+        assert after.updated_at == before
+        assert DailyWellness.objects.count() == 1
+
+    def test_a_wellness_fetch_error_records_its_code_and_imports_nothing(
+        self, fake: FakeIntervals, alice: User
+    ) -> None:
+        connect(alice)
+        answer(fake, entry())
+        fake.bodies[WELLNESS_PATH] = b'{"not": "a list"}'
+
+        with pytest.raises(UnexpectedResponseError):
+            sync_from_intervals(alice)
+
+        assert connection_of(alice).last_sync_error == "unexpected"
+        assert not Activity.objects.exists()
+        assert not DailyWellness.objects.exists()
+
 
 class TestIsolation:
     def test_it_uses_only_the_key_of_the_user_and_writes_only_their_data(
@@ -392,9 +462,10 @@ class TestIsolation:
 
         sync_from_intervals(alice)
 
-        [request] = fake.requests
+        [request, *rest] = fake.requests
         expected = base64.b64encode(b"API_KEY:alice-key-0123456789").decode()
         assert request["headers"]["Authorization"] == f"Basic {expected}"
+        assert all(r["headers"]["Authorization"] == f"Basic {expected}" for r in rest)
         assert len(activities_of(alice)) == 1
         assert activities_of(bob) == []
         assert connection_of(alice).last_sync_at is not None
@@ -438,6 +509,23 @@ class TestIsolation:
         assert connection_of(alice).last_sync_error == "unavailable"
         assert connection_of(bob).last_sync_error == ""
 
+    def test_each_users_wellness_is_kept_apart(
+        self, fake: FakeIntervals, alice: User, bob: User
+    ) -> None:
+        connect(alice)
+        connect(bob)
+        answer(fake, entry())
+        answer_wellness(fake, wellness_entry("2026-11-19", sleep_minutes=480))
+
+        sync_from_intervals(alice)
+        answer_wellness(fake, wellness_entry("2026-11-19", sleep_minutes=360))
+        sync_from_intervals(bob)
+
+        alices = DailyWellness.objects.for_user(alice).get(day=date(2026, 11, 19))
+        bobs = DailyWellness.objects.for_user(bob).get(day=date(2026, 11, 19))
+        assert alices.sleep_minutes == 480
+        assert bobs.sleep_minutes == 360
+
 
 class TestEndpoint:
     def test_it_imports_and_answers_with_the_counts_and_the_sync_time(
@@ -457,6 +545,7 @@ class TestEndpoint:
             "skipped_duplicates": 0,
             "skipped_strava": 1,
             "skipped_invalid": 0,
+            "wellness_synced": 0,
         }
         [listed] = body(api.call("GET", "/api/activities/"))["results"]
         assert listed["source"] == "intervals_icu"
@@ -561,9 +650,10 @@ class TestEndpointIsolation:
 
         signed_in(alice).call("POST", URL)
 
-        [request] = fake.requests
+        [request, *rest] = fake.requests
         expected = base64.b64encode(b"API_KEY:alice-key-0123456789").decode()
         assert request["headers"]["Authorization"] == f"Basic {expected}"
+        assert all(r["headers"]["Authorization"] == f"Basic {expected}" for r in rest)
         assert body(signed_in(bob).call("GET", "/api/activities/"))["results"] == []
         assert connection_of(bob).last_sync_at is None
 
@@ -593,7 +683,7 @@ class TestThrottle:
 
         assert response.status_code == HTTPStatus.TOO_MANY_REQUESTS
         assert "Retry-After" in response.headers
-        assert len(fake.requests) == 10
+        assert len(fake.requests) == 20  # ten syncs, each asking for activities and wellness
 
     def test_it_shares_the_counter_with_checking_the_connection(
         self, fake: FakeIntervals, alice: User
