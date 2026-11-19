@@ -1,0 +1,100 @@
+<section class="automation">
+  <app-page-header title="Automation" />
+
+  @switch (view()) {
+    @case ('loading') {
+      <div class="grid gap-4" role="status" aria-label="Loading">
+        <div class="skeleton h-40"></div>
+        <div class="skeleton h-40"></div>
+      </div>
+    }
+    @case ('unreachable') {
+      <p class="alert" role="alert">Your automation settings could not be loaded.</p>
+      <p>
+        <button type="button" class="btn btn-primary btn-sm" (click)="load()">Try again</button>
+      </p>
+    }
+    @case ('signed_out') {
+      <p class="alert" role="alert">Your session has ended. Please sign in again.</p>
+      <p><a routerLink="/login">Go to sign in</a></p>
+    }
+    @case ('ready') {
+      @for (message of errors(); track $index) {
+        <p class="alert" role="alert">{{ message }}</p>
+      }
+      @if (notice(); as text) {
+        <p class="notice" role="status">{{ text }}</p>
+      }
+
+      <div class="card">
+        <h2 class="m-0 mb-3 text-lg font-semibold">Background jobs</h2>
+        <p class="mb-4">
+          PaceForge does these on its own. Nothing is confirmed and nothing is sent to Intervals.icu
+          without you.
+        </p>
+
+        <fieldset class="field jobs">
+          <legend class="sr-only">Which background jobs run</legend>
+          @for (job of jobs; track job.name) {
+            <div class="job">
+              <input
+                type="checkbox"
+                role="switch"
+                [id]="'job-' + job.name"
+                [checked]="isChecked(job.key)"
+                [disabled]="isBusy(job.key)"
+                (change)="settingChanged(job.key, $event)"
+              />
+              <label [for]="'job-' + job.name">
+                <span class="title">{{ job.title }}</span>
+                <span class="hint">{{ job.hint }}</span>
+              </label>
+            </div>
+          }
+        </fieldset>
+      </div>
+
+      <div class="card">
+        <h2 class="m-0 mb-3 text-lg font-semibold">Recent runs</h2>
+
+        @if (runs().length === 0) {
+          <p class="empty-state" data-testid="no-runs">
+            Nothing has run yet. The jobs start once your account is ready.
+          </p>
+        } @else {
+          <div class="runs-wrap">
+            <table class="runs" data-testid="runs">
+              <thead>
+                <tr>
+                  <th scope="col">Job</th>
+                  <th scope="col">Week</th>
+                  <th scope="col">Outcome</th>
+                  <th scope="col">Details</th>
+                  <th scope="col">When</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (run of runs(); track run.id) {
+                  <tr [attr.data-testid]="'run-' + run.id">
+                    <td>{{ jobLabel(run) }}</td>
+                    <td>{{ weekText(run) }}</td>
+                    <td>{{ outcomeLabel(run) }}</td>
+                    <td>
+                      @if (codeText(run); as text) {
+                        {{ text }}
+                      }
+                      @if (countsText(run); as counts) {
+                        <span class="counts">{{ counts }}</span>
+                      }
+                    </td>
+                    <td>{{ run.started_at | date: 'medium' }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+      </div>
+    }
+  }
+</section>
