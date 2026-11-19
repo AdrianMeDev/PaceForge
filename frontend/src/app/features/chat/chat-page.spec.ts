@@ -17,6 +17,7 @@ const ASKED: ChatMessage = {
   created_at: '2026-11-14T10:00:00Z',
   changes: [],
   plan: null,
+  season_plan: null,
 };
 const ANSWERED: ChatMessage = {
   id: 'm2',
@@ -25,6 +26,16 @@ const ANSWERED: ChatMessage = {
   created_at: '2026-11-14T10:00:05Z',
   changes: ['Run on Sat (60 min) moved to Sun'],
   plan: { id: 'p1', week_start: '2026-11-09' },
+  season_plan: null,
+};
+const ABSENT: ChatMessage = {
+  id: 'm3',
+  role: 'coach',
+  text: 'Two weeks away then.',
+  created_at: '2026-11-14T10:00:10Z',
+  changes: ['Absence from 2026-11-23 to 2026-12-06 handed to the season'],
+  plan: null,
+  season_plan: { id: 's1', version: 2 },
 };
 
 describe('ChatPage', () => {
@@ -144,17 +155,41 @@ describe('ChatPage', () => {
       expect(items[1].textContent).toContain('Your coach');
     });
 
-    it('says what changed and links to the draft of that week', async () => {
+    it('says what changed and links to the draft of that week, named by its dates', async () => {
       await setup(ok(ASKED, ANSWERED));
 
       const changes = query(page, '[data-testid="changes"]');
       expect(
         Array.from(changes.querySelectorAll('li')).map((li) => li.textContent?.trim()),
       ).toEqual(['Run on Sat (60 min) moved to Sun']);
+      expect(changes.querySelector('p')?.textContent?.trim()).toBe(
+        'What changed in a new draft of the week',
+      );
       expect(changes.textContent).toContain('Nothing is confirmed or sent');
       expect(query(changes, '[data-testid="open-draft"]').getAttribute('href')).toBe(
         '/planning?week=2026-11-09',
       );
+      expect(changes.querySelector('[data-testid="open-draft"]')?.textContent).toContain(
+        'week of 9 Nov – 15 Nov',
+      );
+      expect(changes.querySelector('[data-testid="open-season-draft"]')).toBeNull();
+    });
+
+    it('says what changed and links to the draft of the season', async () => {
+      await setup(ok(ASKED, ABSENT));
+
+      const changes = query(page, '[data-testid="changes"]');
+      expect(
+        Array.from(changes.querySelectorAll('li')).map((li) => li.textContent?.trim()),
+      ).toEqual(['Absence from 2026-11-23 to 2026-12-06 handed to the season']);
+      expect(changes.querySelector('p')?.textContent?.trim()).toBe(
+        'What changed in a new draft of the season',
+      );
+      const link = query(changes, '[data-testid="open-season-draft"]');
+      expect(link.getAttribute('href')).toBe('/season');
+      expect(link.textContent?.trim()).toBe('Open the season draft (version 2)');
+      expect(changes.textContent).toContain('Nothing is confirmed or sent until you do it');
+      expect(changes.querySelector('[data-testid="open-draft"]')).toBeNull();
     });
 
     it('lists changes even when there is no draft', async () => {
@@ -170,13 +205,25 @@ describe('ChatPage', () => {
       expect(
         Array.from(changes.querySelectorAll('li')).map((li) => li.textContent?.trim()),
       ).toEqual(['Illness noted as an absence (2026-11-14 to 2026-11-16)']);
+      expect(changes.querySelector('p')?.textContent?.trim()).toBe('What changed');
       expect(changes.querySelector('[data-testid="open-draft"]')).toBeNull();
+      expect(changes.querySelector('[data-testid="open-season-draft"]')).toBeNull();
     });
 
     it('shows no change card for an answer that changed nothing', async () => {
       await setup(ok(ASKED, { ...ANSWERED, changes: [], plan: null }));
 
       expect(page.querySelector('[data-testid="changes"]')).toBeNull();
+    });
+  });
+
+  describe('the header', () => {
+    it('does not promise changes of this week only', async () => {
+      await setup();
+
+      const subtitle = query(page, '[data-testid="subtitle"]').textContent?.trim();
+      expect(subtitle).toBe('Ask a question, or say what should change.');
+      expect(subtitle).not.toContain('this week');
     });
   });
 

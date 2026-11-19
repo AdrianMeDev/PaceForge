@@ -15,6 +15,7 @@ const ASKED = {
   created_at: '2026-11-14T10:00:00.123456Z',
   changes: [],
   plan: null,
+  season_plan: null,
 };
 const ANSWERED = {
   id: '01a1dbcf-0000-7000-8000-000000000002',
@@ -23,6 +24,16 @@ const ANSWERED = {
   created_at: '2026-11-14T10:00:05Z',
   changes: ['Run on Sat (60 min) moved to Sun'],
   plan: { id: '01a1dbcf-0000-7000-8000-000000000003', week_start: '2026-11-09' },
+  season_plan: null,
+};
+const SEASON = {
+  id: '01a1dbcf-0000-7000-8000-000000000004',
+  role: 'coach',
+  text: 'Two weeks away then.',
+  created_at: '2026-11-14T10:00:10Z',
+  changes: ['Absence from 2026-11-23 to 2026-12-06 handed to the season'],
+  plan: null,
+  season_plan: { id: '01a1dbcf-0000-7000-8000-000000000005', version: 2 },
 };
 const NO_SESSION = { detail: 'Authentication credentials were not provided.' };
 
@@ -67,9 +78,9 @@ describe('ChatApi', () => {
 
   describe('list', () => {
     it('returns the conversation as it is', async () => {
-      const { result } = await run(api.list(), 'GET', { messages: [ASKED, ANSWERED] }, 200);
+      const { result } = await run(api.list(), 'GET', { messages: [ASKED, ANSWERED, SEASON] }, 200);
 
-      expect(result).toEqual({ kind: 'ok', messages: [ASKED, ANSWERED] });
+      expect(result).toEqual({ kind: 'ok', messages: [ASKED, ANSWERED, SEASON] });
     });
 
     it('returns an empty conversation', async () => {
@@ -95,6 +106,20 @@ describe('ChatApi', () => {
       [
         'a plan with a week that is no date',
         { messages: [{ ...ANSWERED, plan: { id: 'x', week_start: 'monday' } }] },
+      ],
+      ['a season plan that is missing', { messages: [{ ...ANSWERED, season_plan: undefined }] }],
+      ['a season plan without a version', { messages: [{ ...SEASON, season_plan: { id: 'x' } }] }],
+      [
+        'a season plan with a version that is no number',
+        { messages: [{ ...SEASON, season_plan: { id: 'x', version: '2' } }] },
+      ],
+      [
+        'a season plan with a version below one',
+        { messages: [{ ...SEASON, season_plan: { id: 'x', version: 0 } }] },
+      ],
+      [
+        'a season plan with a version that is no whole number',
+        { messages: [{ ...SEASON, season_plan: { id: 'x', version: 1.5 } }] },
       ],
     ])('rejects %s', async (_name, reply) => {
       await runFailing(api.list(), 'GET', reply, 200);

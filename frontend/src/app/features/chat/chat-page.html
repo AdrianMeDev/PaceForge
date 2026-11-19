@@ -1,5 +1,5 @@
 <section class="chat max-w-3xl">
-  <app-page-header title="Coach" subtitle="Ask a question, or say what should change this week.">
+  <app-page-header title="Coach" subtitle="Ask a question, or say what should change.">
     @if (view() === 'ready' && messages().length > 0) {
       <button
         type="button"
@@ -59,9 +59,7 @@
               </p>
               @if (message.changes.length > 0) {
                 <div class="mt-3 rounded-sm bg-surface-2 p-3" data-testid="changes">
-                  <p class="m-0 font-semibold">
-                    {{ message.plan ? 'What changed in a new draft of the week' : 'What changed' }}
-                  </p>
+                  <p class="m-0 font-semibold">{{ whatChanged(message) }}</p>
                   <ul class="m-0 mt-1 list-disc pl-5">
                     @for (change of message.changes; track $index) {
                       <li>{{ change }}</li>
@@ -76,7 +74,18 @@
                       data-testid="open-draft"
                       routerLink="/planning"
                       [queryParams]="{ week: plan.week_start }"
-                      >Open the draft</a
+                      >Open the draft of the week of {{ week(plan.week_start) }}</a
+                    >
+                  }
+                  @if (message.season_plan; as season) {
+                    <p class="m-0 mt-2 text-sm text-muted">
+                      Nothing is confirmed or sent until you do it on the Season page.
+                    </p>
+                    <a
+                      class="btn btn-secondary btn-sm mt-2 no-underline"
+                      data-testid="open-season-draft"
+                      routerLink="/season"
+                      >Open the season draft (version {{ season.version }})</a
                     >
                   }
                 </div>

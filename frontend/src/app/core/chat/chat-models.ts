@@ -13,10 +13,18 @@ export interface ChatPlan {
   week_start: string;
 }
 
+/** The draft of the season that the coach made from a message. */
+export interface ChatSeasonPlan {
+  id: string;
+  /** The version of the season plan; the draft itself. */
+  version: number;
+}
+
 /**
  * One message of the conversation. `text` is the athlete's own or the coach's and is shown as text
  * only. `changes` are sentences the server made from what it changed (never the coach's words);
- * `plan` is the draft they went into, `null` for a message that changed nothing.
+ * `plan` is the draft of a week they went into and `season_plan` the draft of the season, both
+ * `null` for a message that changed nothing.
  */
 export interface ChatMessage {
   id: string;
@@ -25,6 +33,7 @@ export interface ChatMessage {
   created_at: string;
   changes: string[];
   plan: ChatPlan | null;
+  season_plan: ChatSeasonPlan | null;
 }
 
 export type ListMessagesResult = { kind: 'ok'; messages: ChatMessage[] } | Forbidden;

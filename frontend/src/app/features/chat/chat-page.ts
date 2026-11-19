@@ -3,6 +3,7 @@ import { Component, OnInit, computed, inject, signal, viewChild } from '@angular
 import { RouterLink } from '@angular/router';
 import { ChatApi } from '../../core/chat/chat-api';
 import { ChatMessage } from '../../core/chat/chat-models';
+import { weekRange } from '../planning/plan-format';
 import { ConfirmDialog } from '../../shared/confirm-dialog';
 import { PageHeader } from '../../shared/page-header';
 
@@ -16,10 +17,10 @@ const NOT_CONFIGURED = 'No AI provider is set up, so your coach cannot answer.';
 const DELETE_FAILED = 'The conversation could not be deleted. Please try again.';
 
 /**
- * The chat with the coach: the athlete asks a question or says what should change this week, and the
- * coach answers. A change is never made in place: the coach proposes it, the server makes a new
- * draft of the week from it, and the card under the answer says what changed and links to the draft
- * on the Week plan page, where it is confirmed or discarded. Every text is shown as text only.
+ * The chat with the coach: the athlete asks a question or says what should change, and the coach
+ * answers. A change is never made in place: the coach proposes it, the server makes a new draft of
+ * a week or of the season from it, and the card under the answer says what changed and links to the
+ * draft, where it is confirmed or discarded. Every text is shown as text only.
  * Asking takes a while (a minute or two) and costs the user a request to their own AI provider, so
  * it only ever happens when the button is pressed; one thing at a time.
  */
@@ -136,5 +137,21 @@ export class ChatPage implements OnInit {
 
   protected onInput(event: Event): void {
     this.text.set((event.target as HTMLTextAreaElement).value);
+  }
+
+  /** The title of the change card: the draft it led to, or nothing more than the changes. */
+  protected whatChanged(message: ChatMessage): string {
+    if (message.season_plan !== null) {
+      return 'What changed in a new draft of the season';
+    }
+    if (message.plan !== null) {
+      return 'What changed in a new draft of the week';
+    }
+    return 'What changed';
+  }
+
+  /** "Nov 9 – Nov 15": the week a draft is for, so the link names it. */
+  protected week(monday: string): string {
+    return weekRange(monday);
   }
 }
