@@ -127,6 +127,8 @@ class PlanContext:
     # What the confirmed season plan says about this week; ``None``: there is no confirmed plan,
     # or the week is not in it.
     season_week: SeasonWeekFacts | None = None
+    # Running minutes for the same weeks, including zero when a week has no timed run.
+    recent_run_weeks: tuple[int, ...] = ()
 
     def offset(self, day: date) -> int | None:
         """The place of ``day`` in the week (Monday is 0), ``None`` if it lies outside."""
@@ -142,6 +144,7 @@ def build_context(user: User, monday: date) -> PlanContext:
     races = best_times.entries(user)
     held = set(all_candidates(user, races))
     zone = time_zone_of(user)
+    activities = recent_activities(user, monday, zone)
     return PlanContext(
         week_start=monday,
         minutes=capacity.minutes,
@@ -149,7 +152,10 @@ def build_context(user: User, monday: date) -> PlanContext:
         weekly_budget=capacity.budget,
         weekly_minutes=capacity.total,
         zone_systems=usable_zone_systems(held),
-        recent_weeks=recent_weekly_minutes(recent_activities(user, monday, zone), zone, monday),
+        recent_weeks=recent_weekly_minutes(activities, zone, monday),
+        recent_run_weeks=recent_weekly_minutes(
+            activities, zone, monday, sport=Activity.Sport.RUNNING
+        ),
         typical_weekly_minutes=capacity.typical_weekly_minutes,
         sports=frozenset(Sport(sport) for sport in capacity.sports),
         stretching=capacity.stretching,
@@ -215,22 +221,24 @@ def usable_zone_systems(held: Iterable[tuple[str, str]]) -> frozenset[tuple[Spor
 
 
 def recent_weekly_minutes(
-    activities: Iterable[tuple[datetime, float | None, float | None]],
+    activities: Iterable[tuple[datetime, float | None, float | None, str]],
     zone: tzinfo,
     monday: date,
     weeks: int = RECENT_WEEKS,
+    sport: str | None = None,
 ) -> tuple[int, ...]:
     """The minutes done in each of the ``weeks`` weeks before ``monday``, the latest first.
 
-    ``activities`` are ``(start, timer seconds, elapsed seconds)``. A week is a calendar week
+    ``activities`` are ``(start, timer seconds, elapsed seconds, sport)``. A week is a calendar week
     (Monday to Sunday) in ``zone``, so an activity just after midnight belongs to the day the
     athlete lived it. The timer time counts, the elapsed time stands in for it, and an activity
     with neither has no duration and does not count at all. A week without any activity that has
-    a duration is left out, not counted as zero: it says nothing about what the athlete can do.
+    a duration is left out. With a sport filter, other timed activities still establish a week,
+    but contribute zero minutes.
     """
     first = monday - timedelta(weeks=weeks)
     seconds_by_week: dict[date, float] = {}
-    for start, timer, elapsed in activities:
+    for start, timer, elapsed, activity_sport in activities:
         duration = timer if timer is not None else elapsed
         if duration is None:
             continue
@@ -238,7 +246,9 @@ def recent_weekly_minutes(
         if not first <= day < monday:
             continue
         week = day - timedelta(days=day.weekday())
-        seconds_by_week[week] = seconds_by_week.get(week, 0.0) + duration
+        seconds_by_week.setdefault(week, 0.0)
+        if sport is None or activity_sport == sport:
+            seconds_by_week[week] += duration
     return tuple(
         int(seconds_by_week[week] / 60 + 0.5) for week in sorted(seconds_by_week, reverse=True)
     )
@@ -246,14 +256,14 @@ def recent_weekly_minutes(
 
 def recent_activities(
     user: User, monday: date, zone: tzinfo
-) -> list[tuple[datetime, float | None, float | None]]:
+) -> list[tuple[datetime, float | None, float | None, str]]:
     """The user's activities of the weeks before ``monday``, with one query."""
     since = _local_midnight(monday - timedelta(weeks=RECENT_WEEKS), zone)
     until = _local_midnight(monday, zone)
     return list(
         Activity.objects.for_user(user)
         .filter(start_time__gte=since, start_time__lt=until)
-        .values_list("start_time", "timer_seconds", "elapsed_seconds")
+        .values_list("start_time", "timer_seconds", "elapsed_seconds", "sport")
     )
 
 

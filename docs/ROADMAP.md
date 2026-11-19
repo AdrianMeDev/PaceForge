@@ -67,7 +67,7 @@ AI key; several people can share one instance without seeing each other's data.
 - **Depends on:** M1
 - **Size:** M
 
-### M3 [ ] Run volume rises slower than cycling
+### M3 [~] Run volume rises slower than cycling
 - **Goal:** The volume increase check is applied per sport, with a stricter limit for running.
 - **Includes:** per-sport reference (last four weeks), running limit below the general one per intensity level, new warning code, coach briefing and docs.
 - **Done when:** a week that keeps total minutes but jumps in running gets the new warning; tests green.

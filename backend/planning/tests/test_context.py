@@ -55,8 +55,10 @@ def at(text: str) -> datetime:
     return datetime.fromisoformat(text).replace(tzinfo=UTC)
 
 
-def done(start: str, timer: float | None = 3600, elapsed: float | None = None) -> Any:
-    return (at(start), timer, elapsed)
+def done(
+    start: str, timer: float | None = 3600, elapsed: float | None = None, sport: str = "running"
+) -> Any:
+    return (at(start), timer, elapsed, sport)
 
 
 class TestTheZoneSystemsThatCanBeUsed:
@@ -125,6 +127,18 @@ class TestTheRecentWeeks:
 
     def test_no_activities_give_no_reference(self) -> None:
         assert self.minutes([]) == ()
+
+    def test_sport_filter_keeps_the_same_weeks_with_zero_for_other_sports(self) -> None:
+        activities = [
+            done("2027-07-12T08:00", 3600, sport="cycling"),
+            done("2027-07-05T08:00", 1800),
+            done("2027-07-05T09:00", 7200, sport="cycling"),
+            done("2027-06-28T08:00", None, None),
+        ]
+
+        assert self.minutes(activities) == (60, 150)
+        assert recent_weekly_minutes(iter(activities), UTC, MONDAY, sport="running") == (0, 30)
+        assert recent_weekly_minutes(activities, UTC, MONDAY, sport="cycling") == (60, 120)
 
     def test_activities_are_added_up_per_week_latest_week_first(self) -> None:
         result = self.minutes(
@@ -262,6 +276,22 @@ class TestTheContextOfAUser:
             zone_systems=frozenset(),
             recent_weeks=(),
         )
+
+    def test_running_weeks_follow_local_calendar_weeks_and_exclude_other_users(
+        self, alice: User, bob: User
+    ) -> None:
+        AthleteProfile.objects.create(owner=alice, timezone="Europe/Berlin")
+        self.activity(alice, "2027-07-11T22:30", 1800)  # Monday in Berlin
+        self.activity(alice, "2027-07-13T08:00", 3600, sport="cycling")
+        self.activity(alice, "2027-07-06T08:00", 1200, sport="cycling")
+        self.activity(alice, "2027-06-28T08:00", 600)
+        self.activity(alice, "2027-07-18T22:30", 7200)  # plan week in Berlin
+        self.activity(bob, "2027-07-06T09:00", 9000)
+
+        context = build_context(alice, MONDAY)
+
+        assert context.recent_weeks == (90, 20, 10)
+        assert context.recent_run_weeks == (30, 0, 10)
 
     def test_the_week_must_start_on_a_monday(self, alice: User) -> None:
         with pytest.raises(ValueError, match="not a Monday"):
