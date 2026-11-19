@@ -1174,8 +1174,8 @@ the workouts that are the same training (see [Week plan](#week-plan)).
 
 **Rate a session.** Every activity of the week, planned or not and imported or entered by hand, has
 *Rate this session*: how hard it felt (1 to 10, [RPE](#sessions-entered-by-hand)) and a note of up
-to 500 characters. You can change or clear it at any time. The load follows the rating (minutes
-times RPE, in AU; it is not TSS).
+to 500 characters. You can change or clear it at any time. Load uses Intervals.icu training load
+when present. Otherwise it uses duration in hours times RPE times 10.
 
 **How the week felt.** Tiredness, motivation and pain, each from 1 to 5, the week as a whole
 (*bad*, *fair*, *good* or *strong*) and a note of up to 500 characters. There is one feedback per
@@ -1195,8 +1195,12 @@ run.
 
 **Planned and done.** A table per sport and for the week: the planned workouts and minutes, the
 activities done and their minutes (every activity of the week counts, planned or not), and the sum
-of the loads of the rated sessions, with "(1 of 2 rated)" where not every session is rated. There is
-no planned load, because workouts have none yet.
+of the activity loads, with "(1 of 2 rated)" where not every session is rated.
+The review API also returns `estimated_load` for each workout and `load_source` for each activity
+(`intervals`, `rpe` or `null`). Its comparison includes `planned_load`, `load`, `loaded_count` and
+`rated_count` per sport and for the week. `loaded_count` counts activities with a known load,
+including zero and unrated Intervals.icu activities. `rated_count` counts RPE ratings separately.
+Planned load uses the same workout estimates as the week plan. Missing activity load adds zero.
 
 **Ask the coach.** At the bottom of the page, *What your coach says* has the button **Ask the
 coach** (**Ask again** once there is a comment). It asks your own
@@ -1211,7 +1215,8 @@ and no feedback has nothing to look back on: nothing is sent then, so it costs n
 **What the coach is told.** Numbers and fixed words only (`backend/reviews/briefing.py`): for each
 workout its day, sport, goal, planned minutes, status, the minutes done and the RPE; the sessions
 that were not planned (at most `MAX_UNPLANNED`, the rest is only counted); planned and done per
-sport and for the week; the statuses and the share done; and the three scales of the feedback.
+sport and for the week, including planned load, done load and the counts with load and RPE;
+the statuses and the share done; and the three scales of the feedback.
 **Not** your notes (of a session or of the week), the titles and notes of workouts, names, e-mail
 addresses or ids: there is no free text in it at all. The comment is the coach's own text; it is
 shown as text, and it is **never sent back** to the coach, not even when it plans the next week.

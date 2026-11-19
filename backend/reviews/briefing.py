@@ -5,7 +5,8 @@ bounded set of numbers and fixed words.
 wraps it, nothing else is ever sent. What is in it: for each workout its day (0 for Monday), sport,
 goal, planned minutes, status, the minutes of the activity that belongs to it and its RPE; the
 sessions that were not planned (day, sport, minutes, RPE); planned against done per sport and in
-all; the statuses; the share done; and the three scales of the week feedback.
+all, including load estimates and counts with load and RPE; the statuses; the share done; and the
+three scales of the week feedback.
 
 What is not in it, whatever the user wrote: the title and notes of a workout, the note of an
 activity, the note of the week, ids, names, dates other than the week and today, the coach's own
@@ -27,7 +28,7 @@ from .services import WeekReview
 # is only counted.
 MAX_UNPLANNED = 20
 # The most the JSON of a briefing may take, in UTF-8 bytes; checked in the tests with a week at the
-# limits of a plan (which takes about 4.7 KB: there is no free text in it).
+# limits of a plan. There is no free text in it.
 MAX_BYTES = 8_000
 
 
@@ -101,8 +102,10 @@ def _figures(figures: Figures) -> dict[str, int]:
     return {
         "planned_count": figures.planned_count,
         "planned_minutes": figures.planned_minutes,
+        "planned_load": figures.planned_load,
         "actual_count": figures.actual_count,
         "actual_minutes": figures.actual_minutes,
         "load": figures.load,
+        "loaded_count": figures.loaded_count,
         "rated_count": figures.rated_count,
     }

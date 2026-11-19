@@ -153,6 +153,7 @@ class TestOneWeek:
 
         assert data["plan"]["id"] == str(plan.pk)
         first, second = data["workouts"]
+        assert [first["estimated_load"], second["estimated_load"]] == [55, 55]
         assert (first["title"], first["status"], first["status_origin"]) == (
             "Run 0",
             "done",
@@ -165,8 +166,13 @@ class TestOneWeek:
             None,
         )
         by_id = {activity["id"]: activity for activity in data["activities"]}
-        assert (by_id[str(run.pk)]["rpe"], by_id[str(run.pk)]["load"]) == (6, 60)
+        assert (
+            by_id[str(run.pk)]["rpe"],
+            by_id[str(run.pk)]["load"],
+            by_id[str(run.pk)]["load_source"],
+        ) == (6, 60, "rpe")
         assert by_id[str(extra.pk)]["load"] is None  # not rated
+        assert by_id[str(extra.pk)]["load_source"] is None
         assert by_id[str(run.pk)]["workout_id"] == first["id"]
         assert by_id[str(extra.pk)]["workout_id"] is None
         assert data["comparison"]["statuses"] == {
@@ -184,9 +190,11 @@ class TestOneWeek:
             "sport": "running",
             "planned_count": 2,
             "planned_minutes": 120,
+            "planned_load": 110,
             "actual_count": 1,
             "actual_minutes": 60,
             "load": 60,
+            "loaded_count": 1,
             "rated_count": 1,
         }
         assert data["comparison"]["total"]["actual_count"] == 2
@@ -198,6 +206,79 @@ class TestOneWeek:
             "pain": 1,
             "notes": "Tired",
         }
+
+    def test_planned_and_done_load_per_sport_and_for_the_week(self, alice: User) -> None:
+        plan = make_plan(alice, workouts=4)
+        run, ride, swim, strength = plan.workouts.all()
+        PlannedWorkout.objects.filter(pk=ride.pk).update(
+            sport="cycling",
+            zone_system="power",
+            zone=2,
+            segments=[
+                {"kind": "work", "seconds": 600, "zone_system": "power", "zone": 4},
+                {"kind": "recovery", "seconds": 300, "repeat": 2},
+            ],
+        )
+        PlannedWorkout.objects.filter(pk=swim.pk).update(
+            sport="swimming", zone_system="heart_rate", zone=4, stretching_minutes=30
+        )
+        PlannedWorkout.objects.filter(pk=strength.pk).update(
+            sport="strength",
+            goal="strength",
+            duration_minutes=45,
+            exercises=[
+                {
+                    "name": "Squat",
+                    "region": "legs",
+                    "equipment": "bodyweight",
+                    "sets": 3,
+                    "reps": 10,
+                    "rpe": rpe,
+                }
+                for rpe in (4, 9)
+            ],
+        )
+        intervals = make_activity(
+            alice,
+            "2026-11-09T07:00",
+            source="intervals_icu",
+            external_id="i123",
+            training_load=64.5,
+        )
+        make_activity(alice, "2026-11-10T07:00", sport="cycling", timer_seconds=1800, rpe=6)
+        make_activity(
+            alice,
+            "2026-11-11T07:00",
+            sport="swimming",
+            timer_seconds=None,
+            training_load=0,
+            rpe=5,
+        )
+        make_activity(alice, "2026-11-12T07:00", sport="strength", timer_seconds=None, rpe=7)
+        make_activity(alice, "2026-11-13T07:00", sport="other", timer_seconds=1800, rpe=8)
+
+        response = get(alice, week_url())
+        assert response.status_code == HTTPStatus.OK
+        data = body(response)
+        assert {item["id"]: item["estimated_load"] for item in data["workouts"]} == {
+            str(run.pk): 55,
+            str(ride.pk): 73,
+            str(swim.pk): 100,
+            str(strength.pk): 49,
+        }
+        loaded = next(item for item in data["activities"] if item["id"] == str(intervals.pk))
+        assert (loaded["load"], loaded["load_source"], loaded["rpe"]) == (65, "intervals", None)
+        keys = ("planned_load", "load", "loaded_count", "rated_count")
+        assert {
+            item["sport"]: tuple(item[key] for key in keys) for item in data["comparison"]["sports"]
+        } == {
+            "running": (55, 65, 1, 0),
+            "cycling": (73, 30, 1, 1),
+            "swimming": (100, 0, 1, 1),
+            "strength": (49, 0, 0, 1),
+            "other": (0, 40, 1, 1),
+        }
+        assert tuple(data["comparison"]["total"][key] for key in keys) == (277, 135, 4, 4)
 
     def test_the_comment_of_the_coach_is_part_of_the_week(self, alice: User) -> None:
         assert body(get(alice, week_url()))["comment"] is None
@@ -274,6 +355,19 @@ class TestOneWeek:
         assert response.status_code == HTTPStatus.OK
         assert MARKER not in response.content.decode()
         assert body(response)["plan"] is None
+        assert body(response)["workouts"] == []
+        assert body(response)["activities"] == []
+        assert body(response)["comparison"]["sports"] == []
+        assert all(value == 0 for value in body(response)["comparison"]["total"].values())
+
+    def test_another_users_load_does_not_change_the_review(self, alice: User, bob: User) -> None:
+        make_plan(alice, workouts=1)
+        make_activity(alice, "2026-11-09T07:00", rpe=5)
+        before = body(get(alice, week_url()))
+        make_plan(bob, workouts=3)
+        make_activity(bob, "2026-11-09T07:00", training_load=999, rpe=10)
+
+        assert body(get(alice, week_url())) == before
 
     def test_no_owner_hash_or_file_is_part_of_an_activity(self, alice: User) -> None:
         make_activity(alice, "2026-11-09T07:00", source="fit_file", source_hash="a" * 64)

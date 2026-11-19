@@ -15,9 +15,16 @@ def uid(number: int) -> UUID:
 
 
 def planned(
-    number: int, day: int = 0, sport: str = "running", minutes: int = 60, position: int = 0
+    number: int,
+    day: int = 0,
+    sport: str = "running",
+    minutes: int = 60,
+    position: int = 0,
+    planned_load: int = 0,
 ) -> PlannedItem:
-    return PlannedItem(uid(number), MONDAY + timedelta(days=day), position, sport, minutes)
+    return PlannedItem(
+        uid(number), MONDAY + timedelta(days=day), position, sport, minutes, planned_load
+    )
 
 
 def performed(
@@ -51,32 +58,34 @@ class TestFigures:
     def test_planned_against_actual_per_sport_and_in_all(self) -> None:
         result = comparison_of(
             [
-                planned(1, 0, "running", 60),
-                planned(2, 1, "cycling", 90),
-                planned(3, 2, "running", 45),
+                planned(1, 0, "running", 60, planned_load=55),
+                planned(2, 1, "cycling", 90, planned_load=83),
+                planned(3, 2, "running", 45, planned_load=41),
             ],
             [
-                performed(11, 0, "running", 50, rpe=6, load=300),
-                performed(12, 1, "cycling", 100, rpe=5, load=500),
+                performed(11, 0, "running", 50, rpe=6, load=50),
+                performed(12, 1, "cycling", 100, load=80),  # Intervals load without a rating
             ],
         )
 
         assert figures(result, "running") == Figures(
             planned_count=2,
             planned_minutes=105,
+            planned_load=96,
             actual_count=1,
             actual_minutes=50,
-            load=300,
+            load=50,
+            loaded_count=1,
             rated_count=1,
         )
-        assert figures(result, "cycling") == Figures(1, 90, 1, 100, 500, 1)
-        assert result.total == Figures(3, 195, 2, 150, 800, 2)
+        assert figures(result, "cycling") == Figures(1, 90, 83, 1, 100, 80, 1, 0)
+        assert result.total == Figures(3, 195, 179, 2, 150, 130, 2, 1)
         assert [entry.sport for entry in result.sports] == ["running", "cycling"]
 
     def test_a_session_nobody_planned_still_counts_as_training_done(self) -> None:
         result = comparison_of([planned(1, 0, "running", 60)], [performed(11, 3, "swimming", 40)])
 
-        assert figures(result, "swimming") == Figures(0, 0, 1, 40, 0, 0)
+        assert figures(result, "swimming") == Figures(0, 0, 0, 1, 40, 0, 0, 0)
         assert result.total.actual_minutes == 40
 
     def test_the_sports_come_in_a_fixed_order_and_only_when_involved(self) -> None:
@@ -104,27 +113,36 @@ class TestFigures:
         assert figures(result, "running").actual_count == 1
         assert figures(result, "running").actual_minutes == 0
 
-    def test_the_load_is_the_sum_of_what_is_rated_and_the_count_says_how_many(self) -> None:
+    def test_load_coverage_and_rpe_ratings_are_counted_separately(self) -> None:
         result = comparison_of(
             [],
             [
-                performed(11, 0, minutes=60, rpe=5, load=300),
+                performed(11, 0, minutes=60, rpe=5, load=50),
                 performed(12, 1, minutes=30, rpe=None, load=None),
-                performed(13, 2, minutes=30, rpe=4, load=120),
+                performed(13, 2, minutes=30, rpe=4, load=20),
+                performed(14, 3, minutes=None, load=75),  # unrated Intervals activity
+                performed(15, 4, minutes=0, load=0),  # zero is a known load
+                performed(16, 5, minutes=None, rpe=7),  # rated but no load
             ],
         )
 
-        assert (result.total.load, result.total.rated_count, result.total.actual_count) == (
-            420,
-            2,
+        assert (
+            result.total.load,
+            result.total.loaded_count,
+            result.total.rated_count,
+            result.total.actual_count,
+        ) == (
+            145,
+            4,
             3,
+            6,
         )
 
     def test_an_empty_week(self) -> None:
         result = comparison_of([], [])
 
         assert result.sports == ()
-        assert result.total == Figures(0, 0, 0, 0, 0, 0)
+        assert result.total == Figures(0, 0, 0, 0, 0, 0, 0, 0)
         assert result.done_percent is None
         assert result.statuses == {status: 0 for status in Status}
 

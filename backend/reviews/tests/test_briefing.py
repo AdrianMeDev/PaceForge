@@ -5,7 +5,7 @@ import pytest
 from accounts.models import User
 from goals import services as goal_services
 from planning.models import PlannedWorkout
-from planning.schema import MAX_WORKOUTS
+from planning.schema import DURATION_MAX, MAX_WORKOUTS
 from reviews.briefing import MAX_BYTES, MAX_UNPLANNED, build_briefing, to_json
 from reviews.models import WeekComment, WeekFeedback
 from reviews.services import week_review
@@ -69,9 +69,11 @@ class TestTheKeys:
         assert data["total"] == {
             "planned_count": 0,
             "planned_minutes": 0,
+            "planned_load": 0,
             "actual_count": 0,
             "actual_minutes": 0,
             "load": 0,
+            "loaded_count": 0,
             "rated_count": 0,
         }
 
@@ -144,14 +146,35 @@ class TestTheWorkouts:
             "sport": "running",
             "planned_count": 2,
             "planned_minutes": 120,
+            "planned_load": 110,
             "actual_count": 1,
             "actual_minutes": 60,
             "load": 50,
+            "loaded_count": 1,
             "rated_count": 1,
         }
         assert data["total"]["load"] == 50
+        assert data["total"]["planned_load"] == 110
+        assert data["total"]["loaded_count"] == 1
         assert data["done_percent"] == 50
         assert data["statuses"]["done"] == 1 and data["statuses"]["missed"] == 1
+
+    def test_load_per_sport_includes_unrated_intervals_activities(self, alice: User) -> None:
+        plan = make_plan(alice, workouts=2)
+        PlannedWorkout.objects.filter(plan=plan, day=MONDAY).update(sport="cycling", goal="tempo")
+        make_activity(alice, "2026-11-09T07:00", sport="cycling", training_load=79.5)
+        make_activity(alice, "2026-11-10T07:00", rpe=5)
+        make_activity(alice, "2026-11-12T07:00", sport="swimming", training_load=0)
+
+        data = briefing(alice)
+
+        keys = ("planned_load", "load", "loaded_count", "rated_count")
+        assert {item["sport"]: tuple(item[key] for key in keys) for item in data["sports"]} == {
+            "running": (55, 50, 1, 1),
+            "cycling": (75, 80, 1, 0),
+            "swimming": (0, 0, 1, 0),
+        }
+        assert tuple(data["total"][key] for key in keys) == (130, 130, 3, 1)
 
 
 class TestTheSessionsThatWereNotPlanned:
@@ -268,12 +291,14 @@ class TestWhatIsNeverTold:
 
     def test_the_data_of_another_user_is_not_told(self, alice: User, bob: User) -> None:
         make_plan(bob, workouts=3)
-        make_activity(bob, "2026-11-09T07:00", rpe=9)
+        make_activity(bob, "2026-11-09T07:00", training_load=999, rpe=9)
         WeekFeedback.objects.create(owner=bob, week_start=MONDAY, pain=5)
 
         data = briefing(alice)
 
         assert data["workouts"] == [] and data["unplanned"] == [] and data["feedback"] is None
+        assert data["sports"] == []
+        assert all(value == 0 for value in data["total"].values())
 
 
 class TestTheText:
@@ -290,7 +315,10 @@ class TestTheText:
         assert ", " not in text and ": " not in text
 
     def test_a_week_at_every_limit_stays_below_the_size_limit(self, alice: User) -> None:
-        make_plan(alice, workouts=MAX_WORKOUTS)
+        plan = make_plan(alice, workouts=MAX_WORKOUTS)
+        PlannedWorkout.objects.filter(plan=plan).update(
+            duration_minutes=DURATION_MAX, zone_system="power", zone=7
+        )
         for n in range(MAX_WORKOUTS):
             make_activity(
                 alice,
@@ -298,11 +326,15 @@ class TestTheText:
                 sport=["running", "cycling", "swimming", "strength", "other"][n % 5],
                 rpe=10,
                 timer_seconds=86399.0,
+                training_load=9999.5,
             )
         for n in range(MAX_UNPLANNED + 20):
             make_activity(alice, f"2026-11-{9 + n % 7:02d}T{18 + n // 7:02d}:{n % 60:02d}", rpe=10)
         WeekFeedback.objects.create(owner=alice, week_start=MONDAY, fatigue=5, motivation=5, pain=5)
 
-        text = to_json(briefing(alice))
+        data = briefing(alice)
+        text = to_json(data)
 
+        assert data["total"]["planned_load"] == MAX_WORKOUTS * 3480
+        assert data["total"]["loaded_count"] == MAX_WORKOUTS + MAX_UNPLANNED + 20
         assert len(text.encode()) < MAX_BYTES

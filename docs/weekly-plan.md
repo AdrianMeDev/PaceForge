@@ -539,6 +539,15 @@ or a default RPE of 6. Stretching adds no load. Estimates round half up once per
 fields are read-only response fields, outside the coach and editor JSON format. All planning
 checks still use minutes.
 
+The [week review](../README.md#week-review) API uses these same estimates. Each review workout
+has `estimated_load`. Each activity has `load` and `load_source` (`intervals`, `rpe` or `null`).
+Comparison figures per sport and for the week include `planned_load`, `load`, `loaded_count`
+and `rated_count`. Every activity in the user's local week counts, including unplanned sessions.
+`loaded_count` counts known loads, including zero and Intervals load without an RPE rating.
+`rated_count` counts RPE ratings, even without enough duration data to estimate load.
+Missing activity load adds zero. Planned estimates count all workouts of the confirmed plan.
+The review coach briefing includes both loads and both counts within its 8,000-byte limit.
+
 Errors have a fixed text and a `code`; nothing the provider or the coach said is in one. A 429
 without a code is the limit of PaceForge itself.
 
