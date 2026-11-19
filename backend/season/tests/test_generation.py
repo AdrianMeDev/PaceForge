@@ -32,6 +32,7 @@ from season.generation import (
 from season.inputs import skeleton_for
 from season.models import SeasonPlanVersion
 from season.prompt import SEASON_MAX_TOKENS, SYSTEM_PROMPT, change_message, first_message
+from season.reassessment import reassess
 from season.rules import SeasonContext, validate_season
 from season.schema import Focus, KeySession, PlanWeek, SeasonPlan, SessionKind, to_json
 from season.skeleton import Skeleton
@@ -536,7 +537,9 @@ def tempo(user: User) -> str:
 
 def confirmed(user: User) -> SeasonPlanVersion:
     skeleton = skeleton_for(user)
-    stored = services.save_draft(user, following(skeleton), SeasonContext(skeleton))
+    stored = services.save_draft(
+        user, following(skeleton), SeasonContext(skeleton), input_snapshot=collect_inputs(user)
+    )
     return services.confirm(user, stored.pk)
 
 
@@ -546,7 +549,7 @@ WISH = "Less cycling in January"
 class TestChangingASeason:
     @pytest.mark.parametrize("known", [True, False])
     @pytest.mark.parametrize("status", ["draft", "confirmed"])
-    def test_a_change_keeps_the_original_snapshot_including_unknown_inputs(
+    def test_a_change_captures_current_inputs_even_when_the_original_inputs_are_unknown(
         self, alice: User, provide: Callable[..., Scripted], known: bool, status: str
     ) -> None:
         skeleton = skeleton_for(alice)
@@ -556,18 +559,48 @@ class TestChangingASeason:
         )
         if status == "confirmed":
             services.confirm(alice, base.pk)
-        answer = tempo(alice)
         Goal.objects.for_user(alice).update(title="Changed after drafting")
         AvailabilitySettings.objects.create(owner=alice, typical_weekly_minutes=600)
-        provide(answer)
+        current = collect_inputs(alice)
+        provide(tempo(alice))
 
         changed = change(alice, base.pk, WISH).plan
 
         changed.refresh_from_db()
         base.refresh_from_db()
-        assert changed.input_snapshot == snapshot
+        assert changed.input_snapshot == current
         assert base.input_snapshot == snapshot
-        assert changed.input_snapshot != collect_inputs(alice)
+        assert changed.input_snapshot != snapshot
+
+    @pytest.mark.parametrize("repair", [False, True])
+    def test_changes_during_the_call_remain_detectable_against_the_captured_baseline(
+        self, alice: User, provide: Callable[..., Scripted], repair: bool
+    ) -> None:
+        base = confirmed(alice)
+        Goal.objects.for_user(alice).update(target_date=MONDAY + timedelta(weeks=9, days=6))
+        WeekdayMinutes.objects.for_user(alice).update(minutes=90)
+        snapshot = collect_inputs(alice)
+        context = SeasonContext(skeleton_for(alice))
+        briefing = build_briefing(alice, NOW.date(), context.skeleton)
+        replies = [broken(alice), good(alice)] if repair else [good(alice)]
+        scripted = provide(*replies)
+
+        def change_inputs() -> None:
+            Goal.objects.for_user(alice).update(target_date=MONDAY + timedelta(weeks=12, days=6))
+            WeekdayMinutes.objects.for_user(alice).update(minutes=30)
+
+        scripted.before_answer = change_inputs
+
+        result = change(alice, base.pk, WISH)
+
+        assert result.report.valid is True
+        assert result.plan.input_snapshot == snapshot
+        assert services.read(result.plan).context == context
+        assert len(scripted.calls) == (2 if repair else 1)
+        expected = change_message(briefing, services.read(base).plan, WISH)
+        assert all(messages[0] == expected for _, messages, _ in scripted.calls)
+        services.confirm(alice, result.plan.pk)
+        assert reassess(alice)["reasons"] == ["goals_changed", "training_time_changed"]
 
     def test_a_changed_answer_is_stored_as_the_next_draft_made_from_the_old_version(
         self, alice: User, provide: Callable[..., Scripted]
@@ -596,44 +629,80 @@ class TestChangingASeason:
         assert SeasonPlanVersion.objects.values().get(pk=base.pk) == before
         assert base.status == "confirmed"
 
-    def test_the_new_version_keeps_the_skeleton_and_the_sports_of_the_old_one(
+    @pytest.mark.parametrize("change_kind", ["earlier_race", "later_race", "capacity", "budget"])
+    def test_the_new_version_uses_the_current_frame_and_keeps_the_parent_and_request(
+        self, alice: User, provide: Callable[..., Scripted], change_kind: str
+    ) -> None:
+        base = confirmed(alice)
+        before = SeasonPlanVersion.objects.values().get(pk=base.pk)
+        if change_kind in ("earlier_race", "later_race"):
+            weeks = 5 if change_kind == "earlier_race" else 10
+            Goal.objects.for_user(alice).update(target_date=MONDAY + timedelta(weeks=weeks, days=6))
+        elif change_kind == "capacity":
+            WeekdayMinutes.objects.for_user(alice).update(minutes=30)
+        else:
+            AvailabilitySettings.objects.create(owner=alice, weekly_budget_minutes=180)
+        frame = skeleton_for(alice)
+        briefing = build_briefing(alice, NOW.date(), frame)
+        scripted = provide(good(alice))
+
+        result = change(alice, base.pk, WISH)
+
+        assert result.report.valid is True
+        assert services.read(result.plan).context.skeleton == frame
+        assert result.plan.skeleton != base.skeleton
+        assert (result.plan.parent_id, result.plan.request) == (base.pk, WISH)
+        assert result.plan.input_snapshot == collect_inputs(alice)
+        assert scripted.calls[0][1] == [change_message(briefing, services.read(base).plan, WISH)]
+        assert SeasonPlanVersion.objects.values().get(pk=base.pk) == before
+        assert reassess(alice)["reasons"]  # Drafting does not acknowledge the hint.
+        services.confirm(alice, result.plan.pk)
+        assert reassess(alice)["reasons"] == []
+
+    def test_the_new_version_uses_the_current_sports(
         self, alice: User, provide: Callable[..., Scripted]
     ) -> None:
         base = confirmed(alice)
-        answer = tempo(alice)  # worked out before the goals and the sports move on
         AvailabilitySettings.objects.create(owner=alice, sports=["swimming"])
-        Goal.objects.create(
-            owner=alice,
-            kind="race",
-            title="Later",
-            priority="secondary",
-            target_date=MONDAY + timedelta(weeks=30),
-            discipline="running",
+        plan = following(skeleton_for(alice))
+        answer = replace(
+            plan,
+            weeks=tuple(
+                replace(
+                    week,
+                    minutes=((Sport.SWIMMING, week.total),),
+                    key_sessions=tuple(
+                        replace(session, sport=Sport.SWIMMING) for session in week.key_sessions
+                    ),
+                )
+                for week in plan.weeks
+            ),
         )
-        provide(answer)
+        provide(json.dumps(to_json(answer)))
 
-        stored = change(alice, base.pk, WISH).plan
+        result = change(alice, base.pk, WISH)
 
-        assert stored.skeleton == base.skeleton
-        assert stored.sports == base.sports
+        assert result.report.valid is True
+        assert result.plan.sports == ["swimming"]
+        assert services.read(result.plan).plan == answer
 
-    def test_the_coach_gets_the_plan_the_wish_and_the_sports_of_the_old_version(
+    def test_the_coach_gets_the_old_plan_the_wish_and_the_current_sports(
         self, alice: User, provide: Callable[..., Scripted]
     ) -> None:
         base = confirmed(alice)
-        AvailabilitySettings.objects.create(owner=alice, sports=["swimming"])
+        AvailabilitySettings.objects.create(owner=alice, sports=["running"])
         scripted = provide(tempo(alice))
 
         change(alice, base.pk, WISH)
 
         ((system, messages, limit),) = scripted.calls
         loaded = services.read(base)
-        briefing = build_briefing(alice, NOW.date(), loaded.context.skeleton, loaded.context.sports)
+        briefing = build_briefing(alice, NOW.date(), skeleton_for(alice))
         assert system == SYSTEM_PROMPT
         assert limit == SEASON_MAX_TOKENS
         assert messages == [change_message(briefing, loaded.plan, WISH)]
         assert scripted.json_outputs == [True]
-        assert '"sports":["running","cycling","swimming","strength"]' in messages[0].content
+        assert json.loads(messages[0].content.split("\n\n", 1)[1])["sports"] == ["running"]
 
     def test_a_draft_can_be_changed_too(
         self, alice: User, provide: Callable[..., Scripted]
@@ -706,6 +775,78 @@ class TestChangingASeason:
 
         assert [v.version for v in versions(alice)] == [1]
         assert len(records(alice)) == 1
+
+    @pytest.mark.parametrize("change_kind", ["capacity", "sports", "inputs", "unknown_baseline"])
+    def test_identical_content_is_stored_when_the_frame_or_input_baseline_changes(
+        self, alice: User, provide: Callable[..., Scripted], change_kind: str
+    ) -> None:
+        AvailabilitySettings.objects.create(owner=alice, typical_weekly_minutes=210)
+        base = confirmed(alice)
+        if change_kind == "capacity":
+            WeekdayMinutes.objects.for_user(alice).update(minutes=90)
+        elif change_kind == "sports":
+            AvailabilitySettings.objects.for_user(alice).update(sports=["running"])
+        elif change_kind == "inputs":
+            Goal.objects.for_user(alice).update(target_time_seconds=2400)
+        else:
+            SeasonPlanVersion.objects.filter(pk=base.pk).update(input_snapshot=None)
+        old_plan = services.read(base).plan
+        provide(json.dumps(to_json(old_plan)))
+
+        result = change(alice, base.pk, WISH)
+
+        assert result.report.valid is True
+        assert services.read(result.plan).plan == old_plan
+        assert result.plan.input_snapshot == collect_inputs(alice)
+        assert result.plan.parent_id == base.pk
+
+    def test_the_old_frame_is_checked_against_current_inputs_and_cannot_be_confirmed(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        base = confirmed(alice)
+        old_answer = good(alice)
+        Goal.objects.for_user(alice).update(target_date=MONDAY + timedelta(weeks=10, days=6))
+        WeekdayMinutes.objects.for_user(alice).update(minutes=20)
+        AvailabilitySettings.objects.create(owner=alice, sports=["swimming"])
+        scripted = provide(*[old_answer] * ATTEMPTS)
+
+        result = change(alice, base.pk, WISH)
+
+        assert len(scripted.calls) == ATTEMPTS
+        assert result.report.valid is False
+        assert {"weeks_mismatch", "sport_not_selected", "minutes_above_capacity"} <= {
+            finding.code for finding in result.report.errors
+        }
+        with pytest.raises(services.PlanNotConfirmable):
+            services.confirm(alice, result.plan.pk)
+        base.refresh_from_db()
+        assert base.status == "confirmed"
+
+    @pytest.mark.parametrize("no_time", ["weekdays", "budget", "absence"])
+    def test_no_current_capacity_is_refused_before_even_looking_for_a_provider(
+        self, alice: User, provide: Callable[..., Scripted], no_time: str
+    ) -> None:
+        base = confirmed(alice)
+        if no_time == "weekdays":
+            WeekdayMinutes.objects.for_user(alice).update(minutes=0)
+        elif no_time == "budget":
+            AvailabilitySettings.objects.create(owner=alice, weekly_budget_minutes=0)
+        else:
+            UnavailablePeriod.objects.create(
+                owner=alice,
+                kind="vacation",
+                start_date=MONDAY,
+                end_date=MONDAY + timedelta(weeks=9),
+            )
+        AIProviderConfiguration.objects.filter(owner=alice).delete()
+        scripted = provide("never asked")
+
+        with pytest.raises(NothingToPlan):
+            change(alice, base.pk, WISH)
+
+        assert scripted.calls == []
+        assert records(alice) == []
+        assert len(versions(alice)) == 1
 
     def test_a_provider_that_fails_stores_nothing(
         self, alice: User, provide: Callable[..., Scripted]

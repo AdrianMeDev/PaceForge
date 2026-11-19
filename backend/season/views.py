@@ -170,6 +170,8 @@ class ChangeView(APIView):
             return _error(status.HTTP_404_NOT_FOUND, "not_found", NOT_FOUND)
         except PlanNotChangeable:
             return _error(status.HTTP_409_CONFLICT, "not_changeable", NOT_CHANGEABLE)
+        except NothingToPlan:
+            return _error(status.HTTP_409_CONFLICT, "no_time", NO_TIME)
         except NotConfiguredError:
             return _error(status.HTTP_409_CONFLICT, "not_configured", NOT_CONFIGURED)
         except PlanUnchanged:

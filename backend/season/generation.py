@@ -66,8 +66,8 @@ class PlanNotChangeable(Exception):
 
 
 class PlanUnchanged(Exception):
-    """The coach gave the season back as it was (the same weeks, the same words), so there is no new
-    version to show. The calls are counted as usage all the same."""
+    """The coach gave the same plan, with the same frame and inputs, so there is no new version to
+    show. The calls are counted as usage all the same."""
 
 
 @dataclass(frozen=True)
@@ -119,13 +119,15 @@ def generate(user: User) -> Generated:
 def change(user: User, plan_id: UUID, request: str) -> Generated:
     """Change the version ``plan_id`` as the athlete asks, with their coach, and store the answer
     as the next version, a draft (``parent`` the version it was made from, ``request`` what was
-    asked). The new version has the skeleton and the sports of the old one; the old one is not
-    touched, and a confirmed one stays confirmed until the new one is.
+    asked). The new version uses today's skeleton, sports and captured inputs. The old plan is
+    comparison data only; it is not touched, and a confirmed one stays confirmed until the new one
+    is.
 
     Raises ``django.core.exceptions.ValidationError`` for a request that is empty, too long or not
     plain text (checked before anything is sent), ``season.services.PlanNotFound``,
-    ``PlanNotChangeable`` (also before anything is sent), ``coach.services.NotConfiguredError``,
-    the errors of the provider, ``PlanNotUsable`` and ``PlanUnchanged``.
+    ``PlanNotChangeable`` and ``NothingToPlan`` (also before anything is sent),
+    ``coach.services.NotConfiguredError``, the errors of the provider, ``PlanNotUsable`` and
+    ``PlanUnchanged``.
     """
     request = services.clean_request(request)
     if request == "":
@@ -134,18 +136,27 @@ def change(user: User, plan_id: UUID, request: str) -> Generated:
     if base.status not in (SeasonPlanVersion.Status.CONFIRMED, SeasonPlanVersion.Status.DRAFT):
         raise PlanNotChangeable
     loaded = services.read(base)
-    briefing = build_briefing(user, today_of(user), loaded.context.skeleton, loaded.context.sports)
-    best = _ask(user, loaded.context, change_message(briefing, loaded.plan, request))
-    if best.plan == loaded.plan:
+    skeleton = skeleton_for(user)
+    if not any(week.capacity_minutes for week in skeleton.weeks):
+        raise NothingToPlan
+    input_snapshot = collect_inputs(user)
+    briefing = build_briefing(user, today_of(user), skeleton)
+    context = SeasonContext(skeleton, frozenset(Sport(sport) for sport in briefing["sports"]))
+    best = _ask(user, context, change_message(briefing, loaded.plan, request))
+    if (
+        best.plan == loaded.plan
+        and context == loaded.context
+        and input_snapshot == base.input_snapshot
+    ):
         raise PlanUnchanged
     stored = services.save_draft(
         user,
         best.plan,
-        loaded.context,
+        context,
         reason=CHANGE_REASON.format(version=base.version),
         parent=base.pk,
         request=request,
-        input_snapshot=base.input_snapshot,
+        input_snapshot=input_snapshot,
     )
     return Generated(stored, best.report)
 

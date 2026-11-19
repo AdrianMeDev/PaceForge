@@ -912,7 +912,8 @@ sessions (a long run, a threshold session, the race …) and a reason. The model
   checked against them when goals, time or the week move on; it is **not updated** by that.
   New coach drafts also keep the active goals, effective FTP, best times and typical weekly
   minutes from before the coach was asked. Confirmation keeps these original inputs. Restoring
-  or changing a version copies them. Older versions may have no recorded inputs.
+  a version copies them. A change request captures current inputs. Older versions may have no
+  recorded inputs.
 - **Checking for changes:** `GET /api/season/reassessment/` compares your confirmed plan's
   original inputs with your active goals, effective cycling FTP, best times and training time.
   Its `reasons` are `goals_changed`, `ftp_changed`, `best_times_changed` and
@@ -942,16 +943,22 @@ sessions (a long run, a threshold session, the race …) and a reason. The model
   costs nothing: no coach is asked.
 - **Changing a version on request:** under a confirmed version or a draft the page has **Ask for a
   change**: you write what should be different ("less cycling in January", at most 500
-  characters, plain text) and your coach turns that version into a **new draft**. It keeps the
-  weeks, the skeleton and the sports of the version it comes from, is asked like a draft (up to
-  three answers, the same checks, the same cost, 3 requests a minute together with drafting) and
-  is told your wish as data, never as an instruction about the rules or its task. Your wish is
-  stored with the new version and shown with it. Under the draft the page shows **what changed**
+  characters, plain text) and your coach turns that version into a **new draft**. It uses your
+  current weeks, race dates, training time and sports. The old plan is comparison data. The coach
+  preserves unaffected overlapping weeks where they still fit the current frame and rules.
+  It is asked like a draft (up to three answers, the same checks, the same cost, 3 requests a
+  minute together with drafting) and is told your wish as data, never as an instruction about
+  the rules or its task. Without training time it returns `no_time` and makes no coach call.
+  The new draft keeps the inputs captured before the call, so later changes still show as hints
+  after confirmation. Your wish is stored with the new version and shown with it. Under the
+  draft the page shows **what changed**
   since the version it was made from, week by week: the minutes of each sport, the focus, key
   sessions added or dropped and a rewritten reason, and how many weeks are the same. That is the
   safeguard when the coach changes more than you asked; the old version stays as it is and the
   confirmed one stays confirmed until you confirm the new draft. If the coach gives the season
-  back as it was, nothing is stored. A version that was replaced or discarded is restored first.
+  back as it was with the same frame and recorded inputs, nothing is stored. A changed frame or
+  input baseline can produce a new draft even with identical plan content. A version that was
+  replaced or discarded is restored first.
 - **On the page:** under the skeleton note the page shows your versions (the confirmed one, else
   the newest draft, opens on its own) and, for the one that is open, three more columns: the
   **plan** (minutes of each sport and the total), the **focus** and the **key sessions**, with the
