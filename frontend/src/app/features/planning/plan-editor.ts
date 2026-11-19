@@ -16,13 +16,14 @@ import {
   PlanProblem,
   WeekPlan,
 } from '../../core/planning/planning-models';
-import { EditorDay, editorDays, editedFrom, structureText } from './edit-format';
+import { EditorDay, editorDays, editedFrom } from './edit-format';
 import {
   GOAL_LABELS,
   SLOT_LABELS,
   SPORT_ICONS,
   SPORT_LABELS,
   minutesText,
+  segmentText,
   stretchingText,
   targetText,
 } from './plan-format';
@@ -101,7 +102,7 @@ export class PlanEditor implements OnInit {
   protected readonly minutes = minutesText;
   protected readonly stretching = stretchingText;
   protected readonly target = targetText;
-  protected readonly structure = structureText;
+  protected readonly segment = segmentText;
 
   ngOnInit(): void {
     // The first check is of the plan as it is: the user sees where it stands before changing it.

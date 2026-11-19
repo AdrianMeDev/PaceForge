@@ -196,7 +196,7 @@ describe('PlanEditor', () => {
       expect(titles()).toEqual(['Endurance ride', 'Easy run', 'Intervals']);
       expect(text()).toContain('Morning');
       expect(text()).toContain('Power zone 2');
-      expect(text()).toContain('Interval structure with 1 part');
+      expect(text()).toContain('15 min warm-up, pace zone 2');
     });
 
     it('keeps saving and leaving together in one bar, and marks each workout with its sport', async () => {
@@ -530,6 +530,125 @@ describe('PlanEditor', () => {
 
       expect(lastChecked().workouts[2].segments).toHaveLength(1);
       expect(lastChecked().workouts[2].day).toBe('2026-11-19');
+    });
+
+    function intervalsPlan(): WeekPlan {
+      const base = plan();
+      return plan({
+        workouts: [
+          base.workouts[0],
+          base.workouts[1],
+          workout({
+            lineage: INTERVALS_LINEAGE,
+            day: '2026-11-20',
+            sport: 'running',
+            title: 'Intervals',
+            goal: 'threshold',
+            duration_minutes: 45,
+            zone_system: null,
+            zone: null,
+            slot: null,
+            segments: [
+              {
+                kind: 'warmup',
+                seconds: 900,
+                repeat: 1,
+                zone_system: 'pace',
+                zone: 2,
+                target: null,
+              },
+              {
+                kind: 'work',
+                seconds: 600,
+                repeat: 3,
+                zone_system: 'pace',
+                zone: 4,
+                target: null,
+              },
+            ],
+          }),
+        ],
+      });
+    }
+
+    async function editSegment(row: number, field: 'repeat' | 'duration', value: string) {
+      const element = query<HTMLInputElement>(
+        page,
+        `[data-testid="segment-row-${row}"] [id$="-${field}-${row}"]`,
+      );
+      element.value = value;
+      element.dispatchEvent(new Event('input'));
+      await settle(fixture);
+    }
+
+    it('renders updated segments and checks with recalculated duration and lineage', async () => {
+      await setup(intervalsPlan());
+      await click('change-2');
+
+      await editSegment(1, 'repeat', '4');
+      await editSegment(1, 'duration', '8:00');
+      await click('workout-save');
+
+      const rendered = Array.from(
+        byId('editor-workout-2')?.querySelectorAll('.segments li') ?? [],
+      ).map((li) => li.textContent?.trim());
+      expect(rendered).toEqual(['15 min warm-up, pace zone 2', '4 × 8 min work, pace zone 4']);
+      expect(check).toHaveBeenCalledTimes(2);
+      expect(lastChecked().workouts[2]).toMatchObject({
+        lineage: INTERVALS_LINEAGE,
+        duration_minutes: 47,
+        segments: [
+          { kind: 'warmup', seconds: 900, repeat: 1, zone_system: 'pace', zone: 2 },
+          { kind: 'work', seconds: 480, repeat: 4, zone_system: 'pace', zone: 4 },
+        ],
+      });
+    });
+
+    it('shows segment-path findings on the workout and saves the edited segments as a new draft', async () => {
+      const NEW_DRAFT = plan({
+        id: '01a1d73d-0000-7000-8000-000000000009',
+        status: 'draft',
+        version: 3,
+      });
+      await setup(intervalsPlan());
+      check.mockResolvedValue({
+        kind: 'ok',
+        report: {
+          valid: false,
+          findings: [
+            {
+              severity: 'error',
+              code: 'too_much_work',
+              message: 'Too much work in zone 4.',
+              path: 'workouts[2].segments[1]',
+            },
+          ],
+        },
+        order: [0, 1, 2],
+      });
+      await click('change-2');
+
+      await editSegment(1, 'repeat', '4');
+      await editSegment(1, 'duration', '8:00');
+      await click('workout-save');
+
+      expect(byId('editor-findings-2')?.textContent).toContain('Too much work in zone 4.');
+
+      revise.mockResolvedValue({ kind: 'ok', plan: NEW_DRAFT });
+      await click('save-version');
+
+      expect(revise).toHaveBeenCalledTimes(1);
+      const [id, sent] = revise.mock.calls[0];
+      expect(id).toBe(PLAN_ID);
+      expect(sent.workouts[2]).toMatchObject({
+        lineage: INTERVALS_LINEAGE,
+        duration_minutes: 47,
+        segments: [
+          { kind: 'warmup', seconds: 900, repeat: 1, zone_system: 'pace', zone: 2 },
+          { kind: 'work', seconds: 480, repeat: 4, zone_system: 'pace', zone: 4 },
+        ],
+      });
+      expect(saved).toHaveBeenCalledExactlyOnceWith(NEW_DRAFT);
     });
   });
 

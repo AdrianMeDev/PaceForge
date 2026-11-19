@@ -244,12 +244,6 @@ function rank(slot: WorkoutSlot | null): number {
   return slot === null ? 3 : SLOT_RANK[slot];
 }
 
-/** How many parts the interval structure of a workout has, in words; empty without one. */
-export function structureText(workout: EditedWorkout): string {
-  const parts = workout.segments.length;
-  return parts === 0 ? '' : `Interval structure with ${parts} ${parts === 1 ? 'part' : 'parts'}`;
-}
-
 export interface SegmentDraft {
   kind: SegmentKind;
   duration: string;
