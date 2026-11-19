@@ -16,6 +16,7 @@ from planning.serializers import finding_data
 from planning.validation import Report
 
 from . import services
+from .absences import absences_in_weeks
 from .done import done_week_totals
 from .generation import (
     NothingToPlan,
@@ -81,12 +82,17 @@ def _detail(user: User, plan: SeasonPlanVersion, report: Report | None = None) -
 
 class SeasonView(APIView):
     """The skeleton of the signed-in user's season. It is worked out on every request from what
-    the user has now and stored nowhere; there is no id and no user parameter."""
+    the user has now and stored nowhere; there is no id and no user parameter. The absences are
+    the user's periods that overlap the weeks and are not part of the skeleton itself."""
 
     http_method_names = ["get", "head", "options"]
 
     def get(self, request: Request) -> Response:
-        return Response(skeleton_data(skeleton_for(_user(request))))
+        user = _user(request)
+        skeleton = skeleton_for(user)
+        data = skeleton_data(skeleton)
+        data["absences"] = absences_in_weeks(user, [week.week_start for week in skeleton.weeks])
+        return Response(data)
 
 
 class ReassessmentView(APIView):
