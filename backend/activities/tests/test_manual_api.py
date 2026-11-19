@@ -72,7 +72,7 @@ class TestEntering:
         assert data["source"] == "manual"
         assert data["id"] == str(Activity.objects.get().pk)
         assert (data["rpe"], data["notes"], data["distance_m"]) == (7, "Legs were heavy", 5500)
-        assert (data["timer_seconds"], data["load"]) == (2700, 315)
+        assert (data["timer_seconds"], data["load"]) == (2700, 53)
         assert "source_hash" not in data
 
     def test_it_shows_in_the_list_of_the_user(self, alice: User) -> None:

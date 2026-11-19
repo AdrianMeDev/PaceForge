@@ -104,7 +104,7 @@ class TestAWeek:
         assert review.match.unplanned == (extra.pk,)
         assert review.feedback == feedback
         running = next(e.figures for e in review.comparison.sports if e.sport == "running")
-        assert (running.planned_minutes, running.actual_minutes, running.load) == (120, 60, 360)
+        assert (running.planned_minutes, running.actual_minutes, running.load) == (120, 60, 60)
 
     def test_the_corrections_of_the_user_are_applied(self, alice: User) -> None:
         make_plan(alice, workouts=2)
@@ -182,7 +182,7 @@ class TestAWeek:
 
         total = week_review(alice, MONDAY).comparison.total
 
-        assert (total.load, total.rated_count, total.actual_count) == (225, 1, 2)
+        assert (total.load, total.rated_count, total.actual_count) == (38, 1, 2)
 
     def test_other_users_data_never_appears(self, alice: User, bob: User) -> None:
         plan = make_plan(bob, workouts=3)

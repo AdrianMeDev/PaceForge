@@ -60,7 +60,7 @@ AI key; several people can share one instance without seeing each other's data.
 - **Depends on:** –
 - **Size:** M
 
-### M2 [ ] Load per workout
+### M2 [~] Load per workout
 - **Goal:** Every planned workout and every activity has a load value shown next to the minutes.
 - **Includes:** estimated load for endurance workouts from duration and zones, for strength from duration × RPE; load of activities from Intervals or duration × RPE; planned vs done load on the week plan, week review and season chart; docs.
 - **Done when:** the week plan and review show planned and done load per sport; checks still work on minutes; tests green.

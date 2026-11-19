@@ -146,10 +146,10 @@ class TestTheWorkouts:
             "planned_minutes": 120,
             "actual_count": 1,
             "actual_minutes": 60,
-            "load": 300,
+            "load": 50,
             "rated_count": 1,
         }
-        assert data["total"]["load"] == 300
+        assert data["total"]["load"] == 50
         assert data["done_percent"] == 50
         assert data["statuses"]["done"] == 1 and data["statuses"]["missed"] == 1
 

@@ -75,7 +75,7 @@ class TestRating:
         data = body(rate(alice, activity, rpe=6))
 
         assert data["id"] == str(activity.pk)
-        assert (data["rpe"], data["load"]) == (6, 360)  # 60 minutes at 6
+        assert (data["rpe"], data["load"]) == (6, 60)  # 60 minutes at 6 × 10/h
         assert data["laps"] == []
         assert "source_hash" not in data and "owner" not in data
 

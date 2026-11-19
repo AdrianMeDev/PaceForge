@@ -49,6 +49,7 @@ SUMMARY_FIELDS = {
     "rpe",
     "notes",
     "load",
+    "load_source",
     "created_at",
 }
 
@@ -226,7 +227,8 @@ class TestImport:
             assert data["source"] == "intervals_icu"
             assert data["avg_pace_s_per_km"] == 305.5
             assert data["training_load"] == 65.25
-            assert data["load"] == 120  # the duration-times-RPE estimate remains separate
+            assert data["load"] == 65
+            assert data["load_source"] == "intervals"
             assert "external_id" not in data
 
     def test_the_stored_file_is_the_uploaded_one(self, alice: User) -> None:
