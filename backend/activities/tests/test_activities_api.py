@@ -41,6 +41,8 @@ SUMMARY_FIELDS = {
     "avg_heart_rate",
     "max_heart_rate",
     "avg_power_w",
+    "avg_pace_s_per_km",
+    "training_load",
     "total_ascent_m",
     "calories",
     "manufacturer",
@@ -146,6 +148,8 @@ class TestImport:
         assert created["distance_m"] == pytest.approx(12766.23)
         assert (created["avg_heart_rate"], created["max_heart_rate"]) == (155, 169)
         assert created["manufacturer"] == "garmin"
+        assert created["avg_pace_s_per_km"] is None
+        assert created["training_load"] is None
         listed = body(api.call("GET", LIST))
         assert [item["id"] for item in listed["results"]] == [created["id"]]
         assert listed["results"][0] == created
@@ -188,8 +192,42 @@ class TestImport:
 
         assert '"laps"' not in texts[0]
         for text in texts:
-            for private in ("12.345678", "23.456789", "source_hash", "owner", "Trackpoint"):
+            for private in (
+                "12.345678",
+                "23.456789",
+                "source_hash",
+                "external_id",
+                "owner",
+                "Trackpoint",
+            ):
                 assert private not in text
+
+    def test_provider_measurements_are_shown_and_external_id_stays_internal(
+        self, alice: User
+    ) -> None:
+        stored = Activity.objects.create(
+            owner=alice,
+            source=Activity.Source.INTERVALS_ICU,
+            external_id="i123",
+            sport=Activity.Sport.RUNNING,
+            start_time=START,
+            avg_pace_s_per_km=305.5,
+            training_load=65.25,
+            timer_seconds=1800,
+            rpe=4,
+        )
+        api = signed_in(alice)
+
+        listed = body(api.call("GET", LIST))["results"][0]
+        shown = body(api.call("GET", detail_url(stored.pk)))
+
+        assert set(listed) == SUMMARY_FIELDS
+        for data in (listed, shown):
+            assert data["source"] == "intervals_icu"
+            assert data["avg_pace_s_per_km"] == 305.5
+            assert data["training_load"] == 65.25
+            assert data["load"] == 120  # the duration-times-RPE estimate remains separate
+            assert "external_id" not in data
 
     def test_the_stored_file_is_the_uploaded_one(self, alice: User) -> None:
         data = tcx_document()

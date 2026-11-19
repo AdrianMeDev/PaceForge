@@ -23,6 +23,12 @@ class ProviderConnection(OwnedModel):
         CONNECTED = "connected"
         INVALID = "invalid"  # the provider refused the stored key at the last check
 
+    class SyncError(models.TextChoices):
+        NONE = "", "No error"
+        INVALID_KEY = "invalid_key"
+        UNAVAILABLE = "unavailable"
+        UNEXPECTED = "unexpected"
+
     provider = models.CharField(max_length=30, choices=Provider.choices)
     api_key = EncryptedTextField(editable=False)
     # The account's id at the provider, so that the user can see which account is connected.
@@ -30,6 +36,11 @@ class ProviderConnection(OwnedModel):
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.CONNECTED)
     connected_at = models.DateTimeField(default=timezone.now)
     last_checked_at = models.DateTimeField(default=timezone.now)
+    last_sync_at = models.DateTimeField(null=True, blank=True)
+    # Fixed codes only; never store a provider response or exception text here.
+    last_sync_error = models.CharField(
+        max_length=20, choices=SyncError.choices, blank=True, default=""
+    )
 
     class Meta:
         constraints = [

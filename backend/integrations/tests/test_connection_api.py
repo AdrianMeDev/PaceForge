@@ -24,7 +24,15 @@ URL = "/api/integrations/intervals/"
 CHECK = "/api/integrations/intervals/check/"
 KEY = "k3y-0123456789-abcdefghij"
 OTHER_KEY = "other-9876543210-zyxwvutsrq"
-STATE_FIELDS = {"connected", "status", "athlete_id", "connected_at", "last_checked_at"}
+STATE_FIELDS = {
+    "connected",
+    "status",
+    "athlete_id",
+    "connected_at",
+    "last_checked_at",
+    "last_sync_at",
+    "last_sync_error",
+}
 
 
 def athlete(fake: FakeIntervals, athlete_id: str = "i100") -> None:
@@ -98,6 +106,19 @@ class TestTheStatus:
         assert body["connected"] is True
         assert body["status"] == "connected"
         assert body["athlete_id"] == "i797177"
+        assert body["last_sync_at"] is None
+        assert body["last_sync_error"] == ""
+
+    def test_sync_state_is_exposed(self, fake: FakeIntervals, alice: User) -> None:
+        api = signed_in(alice)
+        api.call("PUT", URL, {"api_key": KEY})
+        synced_at = timezone.now().replace(microsecond=0)
+        ProviderConnection.objects.update(last_sync_at=synced_at, last_sync_error="unavailable")
+
+        body = api.call("GET", URL).json()
+
+        assert body["last_sync_at"] == synced_at.isoformat().replace("+00:00", "Z")
+        assert body["last_sync_error"] == "unavailable"
 
     def test_reading_it_does_not_call_intervals_or_need_the_key(
         self, fake: FakeIntervals, alice: User, settings: Any
@@ -155,7 +176,10 @@ class TestConnecting:
         api = signed_in(alice)
         api.call("PUT", URL, {"api_key": KEY})
         first = stored_key(alice)
-        ProviderConnection.objects.update(connected_at=timezone.now() - timedelta(days=3))
+        past = timezone.now() - timedelta(days=3)
+        ProviderConnection.objects.update(
+            connected_at=past, last_sync_at=past, last_sync_error="invalid_key"
+        )
 
         response = api.call("PUT", URL, {"api_key": OTHER_KEY})
 
@@ -165,6 +189,9 @@ class TestConnecting:
         replaced = ProviderConnection.objects.get(owner=alice)
         assert replaced.api_key == OTHER_KEY
         assert replaced.connected_at > timezone.now() - timedelta(minutes=1)
+        assert replaced.last_sync_error == ""
+        assert replaced.last_sync_at == past
+        assert response.json()["last_sync_error"] == ""
 
     def test_a_refused_key_gives_a_400_and_stores_nothing(
         self, fake: FakeIntervals, alice: User
@@ -335,7 +362,9 @@ class TestChecking:
         api = signed_in(alice)
         api.call("PUT", URL, {"api_key": KEY})
         past = timezone.now() - timedelta(days=2)
-        ProviderConnection.objects.update(last_checked_at=past)
+        ProviderConnection.objects.update(
+            last_checked_at=past, last_sync_at=past, last_sync_error="unavailable"
+        )
         fake.requests.clear()
 
         response = api.call("POST", CHECK)
@@ -344,6 +373,9 @@ class TestChecking:
         assert response.json()["status"] == "connected"
         assert set(response.json()) == STATE_FIELDS
         assert ProviderConnection.objects.get(owner=alice).last_checked_at > past
+        assert response.json()["last_sync_error"] == ""
+        assert ProviderConnection.objects.get(owner=alice).last_sync_error == ""
+        assert ProviderConnection.objects.get(owner=alice).last_sync_at == past
         [request] = fake.requests  # the stored key is what is sent
         assert KEY in base64.b64decode(request["headers"]["Authorization"][6:]).decode()
 
@@ -381,13 +413,15 @@ class TestChecking:
     ) -> None:
         api = signed_in(alice)
         api.call("PUT", URL, {"api_key": KEY})
-        before = ProviderConnection.objects.values("status", "last_checked_at").get()
+        ProviderConnection.objects.update(last_sync_error="unavailable")
+        fields = ("status", "last_checked_at", "last_sync_at", "last_sync_error")
+        before = ProviderConnection.objects.values(*fields).get()
         fake.status = status
 
         response = api.call("POST", CHECK)
 
         assert response.status_code == HTTPStatus.SERVICE_UNAVAILABLE
-        assert ProviderConnection.objects.values("status", "last_checked_at").get() == before
+        assert ProviderConnection.objects.values(*fields).get() == before
 
     def test_a_key_that_cannot_be_decrypted_is_invalid_without_calling_intervals(
         self, fake: FakeIntervals, alice: User, settings: Any

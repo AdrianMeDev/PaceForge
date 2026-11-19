@@ -52,6 +52,7 @@ def connect(user: User, api_key: str) -> ProviderConnection:
                 connection.status = ProviderConnection.Status.CONNECTED
                 connection.connected_at = now
                 connection.last_checked_at = now
+                connection.last_sync_error = ""
                 connection.save()
                 return connection
         except IntegrityError:
@@ -104,7 +105,25 @@ def disconnect(user: User) -> None:
     _own(user).delete()
 
 
+def record_sync_result(user: User, *, error: str = "") -> None:
+    """Record a sync's fixed error code, or its success time and clear an earlier error.
+
+    A failure keeps the last successful sync time. This never needs to decrypt the stored key.
+    """
+    if error not in ProviderConnection.SyncError.values:
+        raise ValueError("Unknown sync error code.")
+    updates: dict[str, object] = {"last_sync_error": error}
+    if not error:
+        updates["last_sync_at"] = timezone.now()
+    if not _own(user).update(**updates):
+        raise NotConnectedError
+
+
 def _record(connection: ProviderConnection, status: ProviderConnection.Status) -> None:
     connection.status = status
     connection.last_checked_at = timezone.now()
-    connection.save(update_fields=["status", "last_checked_at"])
+    fields = ["status", "last_checked_at"]
+    if status == ProviderConnection.Status.CONNECTED:
+        connection.last_sync_error = ""
+        fields.append("last_sync_error")
+    connection.save(update_fields=fields)

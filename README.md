@@ -197,6 +197,9 @@ and invite a few others. The findings behind this are in
 - **If the instance key is lost,** the stored keys can no longer be used. The page still opens and
   shows **Needs attention** after a check, and each user pastes their key again.
 - `INTERVALS_API_BASE_URL` (see [Configuration](#configuration)) is only for tests and fake servers.
+- The connection API also returns `last_sync_at` (initially `null`) and `last_sync_error`
+  (initially empty). Errors use fixed codes: `invalid_key`, `unavailable` or `unexpected`.
+  Reconnecting or successfully checking the key clears the error.
 - Your AI provider is set up on the same page, in its own section: see
   [AI coach](#ai-coach-bring-your-own-key).
 
@@ -399,6 +402,9 @@ What you should know:
   be built later without asking you to upload again. **This includes the GPS track**: from it,
   home and workplace can be inferred. The database and its backups therefore hold location data and
   need the same care. The file is never returned by the API, and deleting an activity deletes it.
+- Activity summaries also return nullable `avg_pace_s_per_km` (seconds per kilometre) and
+  `training_load` fields. Provider training load is separate from the existing RPE-based `load`.
+  The provider activity id stays internal. File imports leave these new measurements empty.
 - **Duplicates are refused:** the same file, or the same session from another source, answers
   *Already imported* (see [the same session twice](#the-same-session-twice)). Each user has their
   own activities; another user may import the same file.

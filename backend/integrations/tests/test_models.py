@@ -3,6 +3,7 @@ from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, connection, transaction
 from django.forms.models import model_to_dict
+from django.utils import timezone
 
 from accounts.models import User
 from core.encryption import PREFIX
@@ -116,9 +117,30 @@ class TestFields:
         assert created.status == ProviderConnection.Status.CONNECTED
         assert created.connected_at is not None
         assert created.last_checked_at is not None
+        assert created.last_sync_at is None
+        assert created.last_sync_error == ""
+
+    @pytest.mark.parametrize("error", ProviderConnection.SyncError.values)
+    def test_sync_state_is_kept(self, alice: User, error: str) -> None:
+        created = connect(alice)
+        synced_at = timezone.now()
+        created.last_sync_at = synced_at
+        created.last_sync_error = error
+        created.full_clean()
+        created.save()
+
+        created.refresh_from_db()
+        assert created.last_sync_at == synced_at
+        assert created.last_sync_error == error
 
     @pytest.mark.parametrize(
-        ("field", "value"), [("provider", "garmin"), ("status", "broken"), ("athlete_id", "")]
+        ("field", "value"),
+        [
+            ("provider", "garmin"),
+            ("status", "broken"),
+            ("athlete_id", ""),
+            ("last_sync_error", "raw provider response"),
+        ],
     )
     def test_unknown_values_are_not_valid(self, alice: User, field: str, value: str) -> None:
         created = ProviderConnection(

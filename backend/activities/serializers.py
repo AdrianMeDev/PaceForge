@@ -24,6 +24,8 @@ SUMMARY_FIELDS = [
     "avg_heart_rate",
     "max_heart_rate",
     "avg_power_w",
+    "avg_pace_s_per_km",
+    "training_load",
     "total_ascent_m",
     "calories",
     "manufacturer",
@@ -35,8 +37,8 @@ SUMMARY_FIELDS = [
 
 
 class ActivitySerializer(serializers.ModelSerializer[Activity]):
-    """The summary of an activity. Neither the owner, the file hash nor the file itself is part of
-    it: the file holds the whole GPS track and is never returned. ``load`` is the estimate from the
+    """The summary of an activity. The owner, external id, file hash and file are internal:
+    the file holds the whole GPS track and is never returned. ``load`` is the estimate from the
     duration and the RPE (see ``activities.load``), ``None`` without either."""
 
     load = serializers.SerializerMethodField()
