@@ -385,6 +385,14 @@ Without a confirmed plan both lists are empty, even if drafts exist.
 The endpoint has no user or plan selector. It writes nothing and makes no coach or Intervals.icu
 call. Write methods are refused. Reading it repeatedly never clears a reason.
 
+The shared frontend `SeasonChangeNotice` validates the response through `SeasonApi.reassessment()`.
+It explains each input change or training deviation and hides when no reasons exist. It reads
+the version list to name the matching confirmed version in a link to
+`/season?change=<id>#season-change`. If that version is no longer confirmed, status is unavailable
+and Retry reads it again. Other status failures also offer Retry. An expired session shows a
+sign-in link. Parents can call `reload()` after a change. Reloading clears the old notice and
+ignores late results from earlier reads or a destroyed component. No load drafts or confirms a plan.
+
 `GET /api/season/` answers the skeleton of the signed-in user and writes nothing. The filled plans are at `/api/season/plans/`: `GET` lists the versions (`id`, `version`, `status`, `reason`, `week_count`, `created_at`, `confirmed_at`), `POST generate/` drafts one (`201` with the plan, limited to 3 a minute), `GET <id>/` reads one and `POST <id>/confirm/` and `POST <id>/discard/` decide on a draft and `POST <id>/change/` with `{"request": "…"}` asks the coach to change a version as the athlete wishes (`201` with the new draft; `400` with the messages of the field `request`; `404`; `409` `not_changeable`, `no_time` or `not_configured`; `422` `unchanged` or `not_usable`; the codes of the provider; limited to 3 a minute together with drafting), and `POST <id>/restore/` brings back a replaced or discarded version as a new draft (`201` with the plan; `409` `not_restorable` for any other). A plan has `rationale`, `parent`, the `skeleton` it was made for, its `weeks` (the format with a `total_minutes` and `done`: for the **confirmed** version and the weeks that have begun the minutes the athlete trained by sport, `[{sport, minutes}]`, `other` for activities of no sport of the plan, `[]` for a week without any; `null` for every other week and version) and, for a draft, a `report` of `valid` and `findings`. Errors have a fixed text, a `code` and, where it helps, `problems` or `findings`. The answer has
 `rolling`, `truncated`, `main_race` (or `null`), `peak_minutes` and `weeks`. A **week** has
 `week_start` (a Monday), `phase` (`base`, `build`, `specific`, `taper` or `transition`), `recovery`,

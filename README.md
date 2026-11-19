@@ -935,6 +935,9 @@ sessions (a long run, a threshold session, the race …) and a reason. The model
   evidence Mondays as ISO dates, oldest first, or an empty list without a deviation reason.
   Without a confirmed plan, the id is `null` and both lists are empty. It calls neither the coach
   nor Intervals.icu.
+  The reusable frontend notice explains each reason and names the confirmed version in its
+  change link. It hides when there are no reasons. Status failures offer Retry, and an expired
+  session asks you to sign in again. Loading or reloading the notice only reads status and versions.
 - **Restoring:** a version that was **replaced or discarded** can be brought back with **Make this
   the new draft**. That copies it as the next version, a draft (its reason says "Restored from
   version N"), with the skeleton and the sports it was made for; the old version is not touched
