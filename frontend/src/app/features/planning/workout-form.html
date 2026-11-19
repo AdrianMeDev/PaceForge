@@ -79,7 +79,7 @@
           type="text"
           readonly
           aria-describedby="workout-structure"
-          [value]="minutes(start().duration_minutes)"
+          [value]="minutes(structureMinutes())"
         />
       } @else {
         <input
@@ -152,26 +152,35 @@
     </div>
   }
 
-  @if (hasStructure()) {
+  @if (sportValue() !== 'strength') {
     <div class="field" id="workout-structure">
-      <label class="check">
-        <input
-          id="workout-drop-structure"
-          type="checkbox"
-          [checked]="dropStructure()"
-          (change)="dropStructure.set($any($event.target).checked)"
-        />
-        Remove the interval structure
-      </label>
-      <p class="hint" data-testid="structure-hint">
-        @if (keepsStructure()) {
-          This workout has an interval structure (it is kept as it is) and its duration follows it.
-          Remove the structure to set the duration yourself.
-        } @else {
-          The structure is removed when you save; the duration is the one above.
-        }
-      </p>
+      <app-segment-editor
+        [sport]="sportValue()"
+        [rows]="segmentRows()"
+        [errors]="segmentChecks().rows"
+        [totalError]="segmentChecks().total"
+        (rowsChange)="setSegmentRows($event)"
+      />
+      @if (keepsStructure()) {
+        <p class="hint" data-testid="structure-hint">
+          The duration follows the interval structure. Remove the structure to set the duration
+          yourself.
+        </p>
+        <button
+          type="button"
+          class="btn btn-secondary"
+          data-testid="drop-structure"
+          (click)="setSegmentRows([])"
+        >
+          Remove the interval structure
+        </button>
+      }
     </div>
+  }
+  @if (structureRemoved()) {
+    <p class="hint" role="status" data-testid="structure-removed-hint">
+      The interval structure is removed when you save, because a strength workout has none.
+    </p>
   }
 
   @if (exercisesHint(); as state) {

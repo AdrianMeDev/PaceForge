@@ -116,7 +116,7 @@ AI key; several people can share one instance without seeing each other's data.
 - **Depends on:** –
 - **Size:** M
 
-### M10 [ ] Edit a workout's structure
+### M10 [x] Edit a workout's structure
 - **Goal:** The athlete can change the segments and intervals of a workout by hand.
 - **Includes:** segment editor (warm-up, blocks with repeats, cool-down, zone, duration) on the Week plan page, checks after each change, saved as a new draft, push updates the same Intervals event.
 - **Done when:** changing 3×10 min to 4×8 min saves a new draft that passes the checks; tests green.
@@ -173,6 +173,7 @@ AI key; several people can share one instance without seeing each other's data.
 - README section and `docs/` updated for every user-visible change.
 
 ## Changelog
+- 2026-11-19: M10 completed — segment editor on the Week plan page (warm-up, repeated blocks, cool-down, duration, zone, reordering, removing structure) with automatic duration calculation, checks after each change, new draft on save, and updating the same Intervals.icu event on push
 - 2026-11-19: M9 completed — optional per-model prices (input, output and cached input per million tokens), monthly usage and estimated cost in the athlete's time zone on the Connections page, and separate optional models for the week plan and coach chat
 - 2026-11-19: M8 completed — daily wellness (sleep, HRV, resting HR and weight) synced from Intervals.icu with activities, shown on the dashboard with 7-day vs 28-day trends and recovery warnings, and passed to week and chat briefings
 - 2026-11-19: M7 completed — background jobs run sync, the Sunday week review and the next week's draft in a scheduler container (no broker); each athlete turns each job off and reads a log of their own runs, and jobs only ever create drafts (never confirm, never push to Intervals.icu)

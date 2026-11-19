@@ -1,4 +1,4 @@
-import { Exercise, Segment } from '../../core/planning/planning-models';
+import { EditedSegment, Exercise, Segment } from '../../core/planning/planning-models';
 import {
   EQUIPMENT_LABELS,
   GOAL_LABELS,
@@ -287,6 +287,21 @@ describe('segmentText', () => {
         }),
       ),
     ).toBe('4 × 10 min work, power zone 4 · 248–300 W');
+  });
+
+  it('formats an edited segment that has no target field', () => {
+    const edited: EditedSegment = {
+      kind: 'work',
+      seconds: 300,
+      repeat: 4,
+      zone_system: 'power',
+      zone: 4,
+    };
+
+    expect(segmentText(edited)).toBe('4 × 5 min work, power zone 4');
+    expect(
+      segmentText({ kind: 'warmup', seconds: 600, repeat: 1, zone_system: null, zone: null }),
+    ).toBe('10 min warm-up');
   });
 });
 

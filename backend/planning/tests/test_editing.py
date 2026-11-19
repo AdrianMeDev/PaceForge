@@ -22,7 +22,15 @@ from planning.editing import (
 )
 from planning.generation import WeekNotPlannable
 from planning.models import PlannedWorkout, WeeklyPlan
-from planning.schema import PlanFormatError, Slot, WeekPlan, to_json
+from planning.schema import (
+    PlanFormatError,
+    Segment,
+    SegmentKind,
+    Slot,
+    WeekPlan,
+    ZoneSystem,
+    to_json,
+)
 from planning.services import PlanNotConfirmable, PlanNotFound
 from reviews.models import WorkoutReview
 
@@ -264,6 +272,125 @@ class TestChecking:
         with pytest.raises(PlanFormatError):
             check(alice, THIS_WEEK, {"workouts": []})
 
+    def test_changing_interval_segments_from_3x10_to_4x8_passes_checks(self, alice: User) -> None:
+        week = WeekPlan(
+            THIS_WEEK,
+            (
+                workout(
+                    THIS_WEEK,
+                    0,
+                    52,
+                    segments=(
+                        Segment(SegmentKind.WARMUP, 600, 1, ZoneSystem.POWER, 2),
+                        Segment(SegmentKind.WORK, 480, 4, ZoneSystem.POWER, 4),
+                        Segment(SegmentKind.COOLDOWN, 600, 1, ZoneSystem.POWER, 1),
+                    ),
+                ),
+            ),
+        )
+
+        checked = check(alice, THIS_WEEK, body(week))
+
+        assert checked.report.valid
+        assert checked.report.errors == ()
+
+    def test_segments_that_do_not_add_up_to_duration_report_segments_mismatch(
+        self, alice: User
+    ) -> None:
+        week = WeekPlan(
+            THIS_WEEK,
+            (
+                workout(
+                    THIS_WEEK,
+                    0,
+                    60,
+                    segments=(
+                        Segment(SegmentKind.WARMUP, 600, 1, ZoneSystem.POWER, 2),
+                        Segment(SegmentKind.WORK, 480, 4, ZoneSystem.POWER, 4),
+                    ),
+                ),
+            ),
+        )
+
+        checked = check(alice, THIS_WEEK, body(week))
+
+        assert not checked.report.valid
+        assert [(f.code, f.path) for f in checked.report.errors] == [
+            ("segments_mismatch", "workouts[0].segments")
+        ]
+
+    def test_a_segment_with_an_out_of_range_zone_is_refused(self, alice: User) -> None:
+        data = body(
+            WeekPlan(
+                THIS_WEEK,
+                (
+                    workout(
+                        THIS_WEEK,
+                        0,
+                        20,
+                        segments=(Segment(SegmentKind.WORK, 1200, 1, ZoneSystem.POWER, 4),),
+                    ),
+                ),
+            )
+        )
+        data["workouts"][0]["segments"][0]["zone"] = 8
+
+        assert problems_of(data) == [("workouts[0].segments[0].zone", "Must be between 1 and 7.")]
+
+    def test_a_segment_with_an_unavailable_zone_system_reports_an_error(self, alice: User) -> None:
+        week = WeekPlan(
+            THIS_WEEK,
+            (
+                workout(
+                    THIS_WEEK,
+                    0,
+                    20,
+                    segments=(Segment(SegmentKind.WORK, 1200, 1, ZoneSystem.HEART_RATE, 2),),
+                ),
+            ),
+        )
+
+        checked = check(alice, THIS_WEEK, body(week))
+
+        assert not checked.report.valid
+        assert [(f.code, f.path) for f in checked.report.errors] == [
+            ("zone_system_unavailable", "workouts[0].segments[0].zone_system")
+        ]
+
+    def test_adding_and_removing_segments_passes_when_duration_matches(self, alice: User) -> None:
+        added = WeekPlan(
+            THIS_WEEK,
+            (
+                workout(
+                    THIS_WEEK,
+                    0,
+                    40,
+                    segments=(
+                        Segment(SegmentKind.WARMUP, 600, 1, ZoneSystem.POWER, 2),
+                        Segment(SegmentKind.WORK, 600, 2, ZoneSystem.POWER, 4),
+                        Segment(SegmentKind.COOLDOWN, 600, 1, ZoneSystem.POWER, 1),
+                    ),
+                ),
+            ),
+        )
+        removed = WeekPlan(
+            THIS_WEEK,
+            (
+                workout(
+                    THIS_WEEK,
+                    0,
+                    30,
+                    segments=(
+                        Segment(SegmentKind.WARMUP, 600, 1, ZoneSystem.POWER, 2),
+                        Segment(SegmentKind.WORK, 600, 2, ZoneSystem.POWER, 4),
+                    ),
+                ),
+            ),
+        )
+
+        assert check(alice, THIS_WEEK, body(added)).report.valid
+        assert check(alice, THIS_WEEK, body(removed)).report.valid
+
 
 def confirmed(user: User, week: WeekPlan | None = None) -> WeeklyPlan:
     plan = services.save_draft(user, week or good_week(THIS_WEEK), reason="Drafted by the coach")
@@ -401,6 +528,98 @@ class TestStoringAChange:
         old.refresh_from_db()
         assert (old.status, newer.status) == ("superseded", "confirmed")
         assert [w.lineage for w in workouts_of(newer)] == [w.lineage for w in workouts_of(old)]
+
+    def test_revising_segments_from_3x10_to_4x8_passes_checks_and_keeps_lineage(
+        self, alice: User
+    ) -> None:
+        old = confirmed(
+            alice,
+            WeekPlan(
+                THIS_WEEK,
+                (
+                    workout(
+                        THIS_WEEK,
+                        0,
+                        50,
+                        segments=(
+                            Segment(SegmentKind.WARMUP, 600, 1, ZoneSystem.POWER, 2),
+                            Segment(SegmentKind.WORK, 600, 3, ZoneSystem.POWER, 4),
+                            Segment(SegmentKind.COOLDOWN, 600, 1, ZoneSystem.POWER, 1),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        target = workouts_of(old)[0]
+        data = sent_as_stored(old, alice)
+        data["workouts"][0]["duration_minutes"] = 52
+        data["workouts"][0]["segments"][1] = {
+            "kind": "work",
+            "seconds": 480,
+            "repeat": 4,
+            "zone_system": "power",
+            "zone": 4,
+        }
+
+        assert check(alice, THIS_WEEK, data).report.valid
+        newer = revise(alice, old.pk, data)
+
+        changed = PlannedWorkout.objects.get(plan=newer, lineage=target.lineage)
+        assert changed.pk != target.pk
+        assert changed.duration_minutes == 52
+        loaded = services.load(alice, newer.pk).workouts[0]
+        assert loaded.segments == (
+            Segment(SegmentKind.WARMUP, 600, 1, ZoneSystem.POWER, 2),
+            Segment(SegmentKind.WORK, 480, 4, ZoneSystem.POWER, 4),
+            Segment(SegmentKind.COOLDOWN, 600, 1, ZoneSystem.POWER, 1),
+        )
+        assert services.validate(alice, newer.pk).valid
+
+    def test_adding_and_removing_segments_via_revise_keeps_lineage(self, alice: User) -> None:
+        old = confirmed(
+            alice,
+            WeekPlan(
+                THIS_WEEK,
+                (
+                    workout(
+                        THIS_WEEK,
+                        0,
+                        30,
+                        segments=(
+                            Segment(SegmentKind.WARMUP, 600, 1, ZoneSystem.POWER, 2),
+                            Segment(SegmentKind.WORK, 600, 2, ZoneSystem.POWER, 4),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        lineage = workouts_of(old)[0].lineage
+        data = sent_as_stored(old, alice)
+        data["workouts"][0]["duration_minutes"] = 40
+        data["workouts"][0]["segments"].append(
+            {"kind": "cooldown", "seconds": 600, "repeat": 1, "zone_system": "power", "zone": 1}
+        )
+
+        with_added = revise(alice, old.pk, data)
+
+        assert [s.kind for s in services.load(alice, with_added.pk).workouts[0].segments] == [
+            SegmentKind.WARMUP,
+            SegmentKind.WORK,
+            SegmentKind.COOLDOWN,
+        ]
+        assert PlannedWorkout.objects.get(plan=with_added, lineage=lineage).duration_minutes == 40
+
+        removed_data = sent_as_stored(with_added, alice)
+        removed_data["workouts"][0]["duration_minutes"] = 30
+        del removed_data["workouts"][0]["segments"][2]
+
+        with_removed = revise(alice, with_added.pk, removed_data)
+
+        assert [s.kind for s in services.load(alice, with_removed.pk).workouts[0].segments] == [
+            SegmentKind.WARMUP,
+            SegmentKind.WORK,
+        ]
+        assert PlannedWorkout.objects.get(plan=with_removed, lineage=lineage).duration_minutes == 30
 
 
 class TestRefusingAChange:

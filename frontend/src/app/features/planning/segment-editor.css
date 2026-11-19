@@ -1,0 +1,80 @@
+.segments {
+  margin: 0.75rem 0;
+}
+
+.rows {
+  margin: 0 0 0.75rem;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.cell {
+  min-width: 0;
+}
+
+.cell label {
+  display: block;
+  margin-bottom: 0.2rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.cell select,
+.cell input {
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+.cell [aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+.actions,
+.messages {
+  grid-column: 1 / -1;
+}
+
+.actions,
+.add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.total {
+  margin: 0.5rem 0 0;
+  font-weight: 600;
+}
+
+@media (min-width: 48rem) {
+  .row {
+    grid-template-columns: 1.4fr 0.7fr 0.8fr 1fr 0.8fr auto;
+    align-items: end;
+  }
+
+  .actions,
+  .messages {
+    grid-column: auto;
+  }
+
+  .messages {
+    grid-column: 1 / -1;
+  }
+}

@@ -1,4 +1,5 @@
 import { Component, computed, input, linkedSignal, output, signal } from '@angular/core';
+import { SegmentEditor } from './segment-editor';
 import {
   EditedWorkout,
   Sport,
@@ -9,6 +10,8 @@ import {
 import {
   GOAL_CHOICES,
   NOTES_MAX,
+  SegmentDraft,
+  SegmentRowError,
   SLOT_CHOICES,
   SPORT_CHOICES,
   TITLE_MAX,
@@ -17,8 +20,13 @@ import {
   checkNotes,
   checkTitle,
   dayChoices,
+  draftsFromSegments,
   parseDuration,
+  parseSegmentDrafts,
+  parseSegmentDuration,
+  parseSegmentRepeat,
   parseStretching,
+  sanitizeSegmentZones,
   zoneChoices,
   zoneSystemChoices,
 } from './edit-format';
@@ -32,12 +40,14 @@ type Field = 'title' | 'duration' | 'zone' | 'notes' | 'stretching';
  * on that day?) come from the server after the workout is saved. Moving a workout is changing its
  * day and its time of day. The input stays in the form after a refusal.
  *
- * A workout with an interval structure keeps it, and its duration follows the structure; removing
- * the structure frees the duration. The `lineage` of the workout is kept as it is: it is what tells
+ * The interval structure is edited in the form, and the duration of a workout with one follows it
+ * as it is edited; removing the structure frees the duration. A strength workout has none: the
+ * structure is hidden, and removed when the workout is saved as strength. The `lineage` of the workout is kept as it is: it is what tells
  * a workout that was moved from a new one.
  */
 @Component({
   selector: 'app-workout-form',
+  imports: [SegmentEditor],
   templateUrl: './workout-form.html',
   styleUrl: './workout-form.css',
 })
@@ -78,18 +88,34 @@ export class WorkoutForm {
   protected readonly stretchingValue = linkedSignal(() =>
     this.start().stretching_minutes === 0 ? '' : String(this.start().stretching_minutes),
   );
-  protected readonly dropStructure = linkedSignal(() => {
+  protected readonly segmentRows = linkedSignal<SegmentDraft[]>(() =>
+    draftsFromSegments(this.start().segments),
+  );
+  // Whether the user tried to save; the messages of the rows show from then on.
+  private readonly attempted = linkedSignal(() => {
     this.start();
     return false;
   });
 
   protected readonly errors = signal<Partial<Record<Field, string>>>({});
 
-  /** Whether the workout has an interval structure that is kept. */
+  /** Whether the rows are the structure of the workout: a strength workout has none. */
   protected readonly keepsStructure = computed(
-    () => this.start().segments.length > 0 && !this.dropStructure(),
+    () => this.segmentRows().length > 0 && this.sportValue() !== 'strength',
   );
-  protected readonly hasStructure = computed(() => this.start().segments.length > 0);
+  /** Whether the structure is dropped because the sport is strength. */
+  protected readonly structureRemoved = computed(
+    () => this.segmentRows().length > 0 && this.sportValue() === 'strength',
+  );
+  protected readonly segmentChecks = computed(() => {
+    if (!this.attempted() || !this.keepsStructure()) {
+      return { rows: [] as SegmentRowError[], total: null };
+    }
+    const parsed = parseSegmentDrafts(this.segmentRows());
+    return parsed.ok ? { rows: [], total: null } : { rows: parsed.rowErrors, total: parsed.error };
+  });
+  /** The duration of the rows that can be read, in minutes. */
+  protected readonly structureMinutes = computed(() => segmentRowsMinutes(this.segmentRows()));
   /** What to tell about the exercises: none to tell, kept as they are, or removed with the sport. */
   protected readonly exercisesHint = computed<'none' | 'kept' | 'removed'>(() => {
     if (this.start().exercises.length === 0) {
@@ -111,6 +137,9 @@ export class WorkoutForm {
   protected setSport(value: string): void {
     const sport = value as Sport;
     this.sportValue.set(sport);
+    if (sport !== 'strength') {
+      this.segmentRows.update((rows) => sanitizeSegmentZones(rows, sport));
+    }
     if (!ZONE_SYSTEMS_OF[sport].includes(this.zoneSystem() as ZoneSystem)) {
       this.setZoneSystem('');
     }
@@ -121,13 +150,26 @@ export class WorkoutForm {
     this.zoneValue.set('');
   }
 
+  /** Take the rows as they are edited; when the last one goes, the duration stays as it was. */
+  protected setSegmentRows(rows: SegmentDraft[]): void {
+    if (rows.length === 0 && this.keepsStructure()) {
+      this.durationValue.set(String(this.structureMinutes()));
+    }
+    this.segmentRows.set(rows);
+  }
+
   protected submit(): void {
+    this.attempted.set(true);
     const errors: Partial<Record<Field, string>> = {};
     const title = checkTitle(this.titleValue());
     const notes = checkNotes(this.notesValue());
-    const duration = this.keepsStructure()
-      ? { ok: true as const, value: this.start().duration_minutes }
-      : parseDuration(this.durationValue());
+    const segments = this.keepsStructure() ? parseSegmentDrafts(this.segmentRows()) : null;
+    const duration =
+      segments === null
+        ? parseDuration(this.durationValue())
+        : segments.ok
+          ? { ok: true as const, value: segmentRowsMinutes(this.segmentRows()) }
+          : { ok: false as const, error: '' };
     const stretching = parseStretching(this.stretchingValue());
     if (title !== null) {
       errors.title = title;
@@ -135,7 +177,7 @@ export class WorkoutForm {
     if (notes !== null) {
       errors.notes = notes;
     }
-    if (!duration.ok) {
+    if (!duration.ok && segments === null) {
       errors.duration = duration.error;
     }
     if (!stretching.ok) {
@@ -161,9 +203,22 @@ export class WorkoutForm {
       notes: this.notesValue().trim(),
       slot: this.slotValue() === '' ? null : (this.slotValue() as WorkoutSlot),
       stretching_minutes: stretching.value,
-      segments: this.keepsStructure() ? this.start().segments : [],
+      segments: segments?.ok ? segments.segments : [],
       // The exercises belong to a strength workout: they stay with it and go with another sport.
       exercises: this.sportValue() === 'strength' ? this.start().exercises : [],
     });
   }
+}
+
+/** The minutes of the rows that can be read, repeats counted; the same sum as on the server. */
+function segmentRowsMinutes(rows: readonly SegmentDraft[]): number {
+  let seconds = 0;
+  for (const row of rows) {
+    const duration = parseSegmentDuration(row.duration);
+    const repeat = parseSegmentRepeat(row.repeat);
+    if (duration.ok && repeat.ok) {
+      seconds += duration.value * repeat.value;
+    }
+  }
+  return seconds === 0 ? 0 : Math.max(1, Math.round(seconds / 60));
 }

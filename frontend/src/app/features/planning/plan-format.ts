@@ -1,11 +1,11 @@
 import {
+  EditedSegment,
   Exercise,
   ExerciseEquipment,
   ExerciseRegion,
   ExportSummary,
   PlanStatus,
   PushOutcome,
-  Segment,
   SegmentKind,
   Severity,
   Sport,
@@ -151,7 +151,7 @@ export function targetText(
 }
 
 /** "3 × 10 min work, power zone 4", "15 min warm-up": one part of an interval workout. */
-export function segmentText(segment: Segment): string {
+export function segmentText(segment: EditedSegment & { target?: ZoneTarget | null }): string {
   const total = segment.seconds;
   const minutes = Math.floor(total / 60);
   const seconds = total % 60;
@@ -162,7 +162,7 @@ export function segmentText(segment: Segment): string {
         ? `${minutes} min`
         : `${minutes} min ${seconds} s`;
   const repeat = segment.repeat > 1 ? `${segment.repeat} × ` : '';
-  const target = targetText(segment.zone_system, segment.zone, segment.target);
+  const target = targetText(segment.zone_system, segment.zone, segment.target ?? null);
   const text = `${repeat}${length} ${SEGMENT_LABELS[segment.kind]}`;
   return target === '' ? text : `${text}, ${target.charAt(0).toLowerCase()}${target.slice(1)}`;
 }

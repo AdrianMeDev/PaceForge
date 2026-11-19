@@ -540,7 +540,10 @@ plan of another user does not exist (404, the same answer as for an unknown id).
 
 **Checking a plan that was changed by hand.** `POST /api/planning/weeks/<Monday>/check/` takes a
 plan in the format of [The format](#the-format) for that week, with one addition: a workout may have a
-`lineage` (the lineage of the workout it was made from, or `null` for a new one). It is read by
+`lineage` (the lineage of the workout it was made from, or `null` for a new one). Workouts may also
+include added, edited, reordered, or removed `segments`; when segments are present, the editor
+recalculates `duration_minutes` from them (seconds times repeats) so `segments_mismatch` passes and
+the check validates both the segments and the updated duration. It is read by
 the same strict parser and checked against what the user can do and has done *now*. The answer is
 `valid`, the `findings` and `order`: the findings number the workouts as they are stored (by day,
 then by time of day, then as sent), and `order[i]` is the place in the body of the workout that is
@@ -551,7 +554,10 @@ limited: it is how the planning page shows the findings after every change.
 same body as the check and stores it as the next version of the week: a **draft** with `parent` the
 plan in the address and the `reason` "Changed by hand". That plan is not touched: a confirmed plan
 is never changed, a change is a new version, which is confirmed (and sent) as any other. A workout
-with a `lineage` is the workout of that plan with it, changed or moved; a workout without one is
+with a `lineage` is the workout of that plan with it, changed or moved (including its updated
+`segments` and recalculated `duration_minutes`); confirming and sending via
+`POST /api/planning/plans/<id>/push/` updates the same Intervals.icu event (`paceforge-<lineage>`)
+with the new steps and duration. A workout without a `lineage` is
 new; a workout of that plan that is not in the body is taken out. A `lineage` that is not one of
 the workouts of the plan in the address is refused, and so is a week that cannot be planned. The
 rationale of the plan in the address is kept, the one in the body is ignored. The draft is stored

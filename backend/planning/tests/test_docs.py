@@ -616,6 +616,11 @@ class TestTheReadmeOnChangingAPlan:
             ("plan-editor.html", "Discard changes"),
             ("planning-page.html", "Make this the new draft"),
             ("workout-form.html", "Remove the interval structure"),
+            ("segment-editor.html", "Interval structure"),
+            ("segment-editor.html", "Add warm-up"),
+            ("segment-editor.html", "Add block"),
+            ("segment-editor.html", "Add cool-down"),
+            ("segment-editor.html", "Remove"),
         ],
     )
     def test_every_button_the_readme_names_is_one_of_the_page(self, file: str, label: str) -> None:

@@ -89,8 +89,12 @@
                 · {{ text }}
               }
             </p>
-            @if (structure(item.workout); as text) {
-              <p class="hint">{{ text }}</p>
+            @if (item.workout.segments.length > 0) {
+              <ul class="segments m-0 mt-1 list-disc pl-5 text-muted">
+                @for (part of item.workout.segments; track $index) {
+                  <li>{{ segment(part) }}</li>
+                }
+              </ul>
             }
             @if (item.workout.notes) {
               <p class="notes">{{ item.workout.notes }}</p>

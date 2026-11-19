@@ -2068,6 +2068,85 @@ describe('PlanningPage', () => {
         expect(stubs.planning.confirm).toHaveBeenCalledExactlyOnceWith(NEW_ID, false);
       });
 
+      it('edits a workout structure, checks it, and saves the new draft with updated segments and clean report', async () => {
+        await setup();
+        await open();
+        await click('change-2');
+
+        const repeat = query<HTMLInputElement>(
+          page,
+          '[data-testid="segment-row-1"] [id$="-repeat-1"]',
+        );
+        repeat.value = '4';
+        repeat.dispatchEvent(new Event('input'));
+        await settle(fixture);
+        const duration = query<HTMLInputElement>(
+          page,
+          '[data-testid="segment-row-1"] [id$="-duration-1"]',
+        );
+        duration.value = '8:00';
+        duration.dispatchEvent(new Event('input'));
+        await settle(fixture);
+        await click('workout-save');
+
+        const editorSegments = Array.from(
+          byId('editor-workout-2')?.querySelectorAll('.segments li') ?? [],
+        ).map((li) => li.textContent?.trim());
+        expect(editorSegments).toEqual([
+          '15 min warm-up, pace zone 2',
+          '4 × 8 min work, pace zone 4',
+        ]);
+        expect(byId('editor-all-clear')).toBeTruthy();
+        expect(stubs.planning.check).toHaveBeenCalledTimes(2);
+        expect(stubs.planning.check.mock.calls[1][1].workouts[2]).toMatchObject({
+          duration_minutes: 47,
+          segments: [
+            { kind: 'warmup', seconds: 900, repeat: 1, zone_system: 'pace', zone: 2 },
+            { kind: 'work', seconds: 480, repeat: 4, zone_system: 'pace', zone: 4 },
+          ],
+        });
+
+        const base = plan();
+        const savedDraft = changed({ valid: true, findings: [] });
+        savedDraft.workouts = [
+          base.workouts[0],
+          base.workouts[1],
+          {
+            ...base.workouts[2],
+            duration_minutes: 47,
+            segments: [
+              base.workouts[2].segments[0],
+              { ...base.workouts[2].segments[1], repeat: 4, seconds: 480 },
+            ],
+          },
+        ];
+        stubs.planning.revise.mockResolvedValue({ kind: 'ok', plan: savedDraft });
+
+        await click('save-version');
+
+        expect(stubs.planning.revise).toHaveBeenCalledTimes(1);
+        expect(stubs.planning.revise.mock.calls[0][0]).toBe(DRAFT_ID);
+        expect(stubs.planning.revise.mock.calls[0][1].workouts[2]).toMatchObject({
+          lineage: base.workouts[2].lineage,
+          duration_minutes: 47,
+          segments: [
+            { kind: 'warmup', seconds: 900, repeat: 1, zone_system: 'pace', zone: 2 },
+            { kind: 'work', seconds: 480, repeat: 4, zone_system: 'pace', zone: 4 },
+          ],
+        });
+        expect(editor()).toBeNull();
+        expect(page.querySelector('.plan h2')?.textContent).toBe('Version 3');
+        expect(byId('status')?.textContent).toBe('Draft');
+        expect(byId('all-clear')).toBeTruthy();
+        const savedSegments = Array.from(
+          byId('workout-3')?.querySelectorAll('.segments li') ?? [],
+        ).map((li) => li.textContent?.trim());
+        expect(savedSegments).toEqual([
+          '15 min warm-up, pace zone 2',
+          '4 × 8 min work, pace zone 4',
+        ]);
+      });
+
       it('keeps the editor and the changes when the server refuses', async () => {
         await setup();
         await open();
