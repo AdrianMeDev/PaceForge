@@ -35,6 +35,10 @@
             <dd data-testid="model">{{ current.model }}</dd>
             <dt>Model for the season plan</dt>
             <dd data-testid="season-model">{{ current.season_model || 'The normal model' }}</dd>
+            <dt>Model for the week plan</dt>
+            <dd data-testid="week-model">{{ current.week_model || 'The normal model' }}</dd>
+            <dt>Model for the coach chat</dt>
+            <dd data-testid="chat-model">{{ current.chat_model || 'The normal model' }}</dd>
             @if (current.base_url) {
               <dt>Address</dt>
               <dd data-testid="address">{{ current.base_url }}</dd>
@@ -161,6 +165,50 @@
             <p class="hint" id="ai-season-model-hint">
               The season plan is the biggest thing your coach is asked, so a stronger model may be
               worth it there. Leave it empty to use the model above. Same provider, same key.
+            </p>
+          </div>
+
+          <div class="field">
+            <label for="ai-week-model">Model for the week plan (optional)</label>
+            <input
+              id="ai-week-model"
+              type="text"
+              autocomplete="off"
+              autocapitalize="off"
+              spellcheck="false"
+              aria-describedby="ai-week-model-hint"
+              [value]="weekModel()"
+              [attr.aria-invalid]="fieldErrors()['week_model'] ? true : null"
+              (input)="weekModel.set(read($event))"
+            />
+            @if (fieldErrors()['week_model']; as message) {
+              <p class="field-error" role="alert">{{ message }}</p>
+            }
+            <p class="hint" id="ai-week-model-hint">
+              A lighter model can be enough for the weekly plan. Leave it empty to use the model
+              above.
+            </p>
+          </div>
+
+          <div class="field">
+            <label for="ai-chat-model">Model for the coach chat (optional)</label>
+            <input
+              id="ai-chat-model"
+              type="text"
+              autocomplete="off"
+              autocapitalize="off"
+              spellcheck="false"
+              aria-describedby="ai-chat-model-hint"
+              [value]="chatModel()"
+              [attr.aria-invalid]="fieldErrors()['chat_model'] ? true : null"
+              (input)="chatModel.set(read($event))"
+            />
+            @if (fieldErrors()['chat_model']; as message) {
+              <p class="field-error" role="alert">{{ message }}</p>
+            }
+            <p class="hint" id="ai-chat-model-hint">
+              A lighter model can keep the chat quick and cheap. Leave it empty to use the model
+              above.
             </p>
           </div>
 

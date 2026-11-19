@@ -37,7 +37,15 @@ export const STATUS_TEXT: Record<AiStatus, string> = {
 };
 
 /** The names of the fields as the server knows them, for the messages next to them. */
-const FIELDS = ['provider', 'model', 'season_model', 'base_url', 'api_key'];
+const FIELDS = [
+  'provider',
+  'model',
+  'season_model',
+  'week_model',
+  'chat_model',
+  'base_url',
+  'api_key',
+];
 
 /**
  * Where users connect their own AI provider: Anthropic, or an OpenAI-compatible endpoint from the
@@ -57,6 +65,8 @@ export class AiProviderPanel implements OnInit {
 
   /** The session is gone. */
   readonly signedOut = output<void>();
+  /** The usage figures changed: a connection check has run and its calls count. */
+  readonly usageChanged = output<void>();
 
   protected readonly view = signal<View>('loading');
   protected readonly state = signal<AiProviderState | null>(null);
@@ -64,6 +74,8 @@ export class AiProviderPanel implements OnInit {
   protected readonly provider = signal<AiProviderKind>('anthropic');
   protected readonly model = signal('');
   protected readonly seasonModel = signal('');
+  protected readonly weekModel = signal('');
+  protected readonly chatModel = signal('');
   protected readonly baseUrl = signal('');
   protected readonly apiKey = signal('');
   protected readonly removeKey = signal(false);
@@ -126,6 +138,8 @@ export class AiProviderPanel implements OnInit {
       this.provider() !== state.provider ||
       this.model().trim() !== state.model ||
       this.seasonModel().trim() !== state.season_model ||
+      this.weekModel().trim() !== state.week_model ||
+      this.chatModel().trim() !== state.chat_model ||
       (this.provider() === 'openai_compatible' && this.baseUrl() !== state.base_url) ||
       this.apiKey() !== '' ||
       this.removeKey()
@@ -219,6 +233,7 @@ export class AiProviderPanel implements OnInit {
       switch (result.kind) {
         case 'checked':
           this.state.set(result.state);
+          this.usageChanged.emit();
           if (result.check.ok) {
             this.notice.set('The connection works.');
           } else {
@@ -288,11 +303,17 @@ export class AiProviderPanel implements OnInit {
       errors['model'] = MODEL_TEXT;
     }
     const seasonModel = this.seasonModel().trim();
-    if (
-      seasonModel.length > MODEL_MAX ||
-      (seasonModel !== '' && !MODEL_PATTERN.test(seasonModel))
-    ) {
-      errors['season_model'] = MODEL_TEXT;
+    const weekModel = this.weekModel().trim();
+    const chatModel = this.chatModel().trim();
+    const optional: [string, string][] = [
+      ['season_model', seasonModel],
+      ['week_model', weekModel],
+      ['chat_model', chatModel],
+    ];
+    for (const [name, text] of optional) {
+      if (text.length > MODEL_MAX || (text !== '' && !MODEL_PATTERN.test(text))) {
+        errors[name] = MODEL_TEXT;
+      }
     }
     if (compatible && this.baseUrl() === '') {
       errors['base_url'] = 'Choose the address of the endpoint.';
@@ -309,7 +330,13 @@ export class AiProviderPanel implements OnInit {
       return null;
     }
 
-    const input: AiProviderInput = { provider, model, season_model: seasonModel };
+    const input: AiProviderInput = {
+      provider,
+      model,
+      season_model: seasonModel,
+      week_model: weekModel,
+      chat_model: chatModel,
+    };
     if (compatible) {
       input.base_url = this.baseUrl();
     }
@@ -327,6 +354,8 @@ export class AiProviderPanel implements OnInit {
     this.provider.set(state.provider ?? 'anthropic');
     this.model.set(state.model);
     this.seasonModel.set(state.season_model);
+    this.weekModel.set(state.week_model);
+    this.chatModel.set(state.chat_model);
     this.baseUrl.set(state.base_url ?? state.allowed_base_urls[0] ?? '');
     this.apiKey.set('');
     this.removeKey.set(false);

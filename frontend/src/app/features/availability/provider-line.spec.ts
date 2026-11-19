@@ -6,6 +6,8 @@ const BASE: AiProviderState = {
   provider: 'anthropic',
   model: 'claude-sonnet-5-5',
   season_model: '',
+  week_model: '',
+  chat_model: '',
   base_url: null,
   has_key: true,
   status: 'connected',

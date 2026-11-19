@@ -37,6 +37,10 @@ export interface AiProviderState {
   model: string;
   /** The model for the season plan; empty: the normal model does it. */
   season_model: string;
+  /** The model for the week plan; empty: the normal model does it. */
+  week_model: string;
+  /** The model for the coach chat; empty: the normal model does it. */
+  chat_model: string;
   base_url: string | null;
   has_key: boolean;
   status: AiStatus | null;
@@ -56,6 +60,10 @@ export interface AiProviderInput {
   model: string;
   /** Empty: the season plan uses the normal model. */
   season_model?: string;
+  /** Empty: the week plan uses the normal model. */
+  week_model?: string;
+  /** Empty: the coach chat uses the normal model. */
+  chat_model?: string;
   base_url?: string;
   api_key?: string;
 }
@@ -78,3 +86,51 @@ export type CheckProviderResult =
   | { kind: 'not_configured' }
   | RateLimited
   | Forbidden;
+
+/**
+ * What one million tokens of a model cost. Prices are decimal texts as the server writes them
+ * (for example `"3.0000"`); `cached_per_million` is `null` if no price is set for cached input.
+ */
+export interface ModelPrice {
+  id: number;
+  model: string;
+  input_per_million: string;
+  output_per_million: string;
+  cached_per_million: string | null;
+}
+
+/** What is sent to set the price of one model; a cached price left out or `null` means none. */
+export interface ModelPriceInput {
+  model: string;
+  input_per_million: number;
+  output_per_million: number;
+  cached_per_million?: number | null;
+}
+
+/** The calls of one calendar month (`month` is `YYYY-MM`, in the user's time zone). */
+export interface MonthlyUsage {
+  month: string;
+  calls: number;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+  /** Decimal text; `null` if no model used in the month has a price. */
+  cost: string | null;
+  /** The models used in the month that have no price; their calls are not in `cost`. */
+  unpriced_models: string[];
+}
+
+/** The user's prices and their monthly usage, newest month first. */
+export interface AiCostsState {
+  prices: ModelPrice[];
+  months: MonthlyUsage[];
+}
+
+export interface PriceNotFound {
+  kind: 'not_found';
+}
+
+export type GetCostsResult = { kind: 'ok'; state: AiCostsState } | Forbidden;
+export type SavePriceResult = { kind: 'ok'; state: AiCostsState } | Invalid | Forbidden;
+export type DeletePriceResult = { kind: 'deleted' } | PriceNotFound | Forbidden;

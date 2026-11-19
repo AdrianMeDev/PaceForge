@@ -4,6 +4,7 @@ import { Observable, firstValueFrom } from 'rxjs';
 import { API_BASE } from '../api/api-providers';
 import { toInvalid } from '../api/coach-replies';
 import {
+  AiCostsState,
   AiProviderInput,
   AiProviderKind,
   AiProviderState,
@@ -12,13 +13,21 @@ import {
   CheckOutcome,
   CheckProblem,
   CheckProviderResult,
+  DeletePriceResult,
+  GetCostsResult,
   GetProviderResult,
+  ModelPrice,
+  ModelPriceInput,
+  MonthlyUsage,
   RemoveProviderResult,
+  SavePriceResult,
   SaveProviderResult,
 } from './coach-models';
 
 const URL = `${API_BASE}/coach/provider/`;
 const CHECK_URL = `${URL}check/`;
+const COSTS_URL = `${API_BASE}/coach/costs/`;
+const PRICES_URL = `${COSTS_URL}prices/`;
 const HANDLED_ERRORS = [400, 401, 403, 404, 429];
 const PROVIDERS: readonly string[] = ['anthropic', 'openai_compatible'];
 const STATUSES: readonly string[] = ['untested', 'connected', 'invalid', 'unavailable'];
@@ -29,6 +38,9 @@ const PROBLEMS: readonly string[] = [
   'unexpected',
   'not_allowed',
 ];
+
+const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
+const DECIMAL_PATTERN = /^\d+(\.\d+)?$/;
 
 interface Reply {
   status: number;
@@ -115,6 +127,51 @@ export class CoachApi {
     }
   }
 
+  /** The user's model prices and calls and costs per month. */
+  async getCosts(): Promise<GetCostsResult> {
+    const reply = await this.send(this.http.get(COSTS_URL, { observe: 'response' }));
+    switch (reply.status) {
+      case 200:
+        return { kind: 'ok', state: toCosts(reply.body, reply) };
+      case 401:
+      case 403:
+        return { kind: 'forbidden' };
+      default:
+        throw unexpected(reply);
+    }
+  }
+
+  /** Sets the price of one model (a known model gets the new price); the answer is all costs. */
+  async savePrice(input: ModelPriceInput): Promise<SavePriceResult> {
+    const reply = await this.send(this.http.put(PRICES_URL, input, { observe: 'response' }));
+    switch (reply.status) {
+      case 200:
+        return { kind: 'ok', state: toCosts(reply.body, reply) };
+      case 400:
+        return toInvalid(reply);
+      case 401:
+      case 403:
+        return { kind: 'forbidden' };
+      default:
+        throw unexpected(reply);
+    }
+  }
+
+  async deletePrice(id: number): Promise<DeletePriceResult> {
+    const reply = await this.send(this.http.delete(`${PRICES_URL}${id}/`, { observe: 'response' }));
+    switch (reply.status) {
+      case 204:
+        return { kind: 'deleted' };
+      case 404:
+        return { kind: 'not_found' };
+      case 401:
+      case 403:
+        return { kind: 'forbidden' };
+      default:
+        throw unexpected(reply);
+    }
+  }
+
   private async send(request: Observable<HttpResponse<unknown>>): Promise<Reply> {
     try {
       const response = await firstValueFrom(request);
@@ -140,6 +197,8 @@ function toState(raw: unknown, reply: Reply): AiProviderState {
     (provider !== null && !isOneOf<AiProviderKind>(provider, PROVIDERS)) ||
     typeof item['model'] !== 'string' ||
     typeof item['season_model'] !== 'string' ||
+    typeof item['week_model'] !== 'string' ||
+    typeof item['chat_model'] !== 'string' ||
     (baseUrl !== null && typeof baseUrl !== 'string') ||
     typeof item['has_key'] !== 'boolean' ||
     (status !== null && !isOneOf<AiStatus>(status, STATUSES)) ||
@@ -158,6 +217,8 @@ function toState(raw: unknown, reply: Reply): AiProviderState {
     provider,
     model: item['model'],
     season_model: item['season_model'],
+    week_model: item['week_model'],
+    chat_model: item['chat_model'],
     base_url: baseUrl,
     has_key: item['has_key'],
     status,
@@ -187,6 +248,66 @@ function toUsage(raw: unknown, reply: Reply): AiUsage {
   return { calls, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, days };
 }
 
+function toCosts(raw: unknown, reply: Reply): AiCostsState {
+  const item = asObject(raw, reply);
+  const { prices, months } = item;
+  if (!Array.isArray(prices) || !Array.isArray(months)) {
+    throw unexpected(reply);
+  }
+  return {
+    prices: prices.map((price) => toPrice(price, reply)),
+    months: months.map((month) => toMonth(month, reply)),
+  };
+}
+
+function toPrice(raw: unknown, reply: Reply): ModelPrice {
+  const item = asObject(raw, reply);
+  const { id, model, input_per_million, output_per_million, cached_per_million } = item;
+  if (
+    !isCount(id) ||
+    typeof model !== 'string' ||
+    model === '' ||
+    !isDecimal(input_per_million) ||
+    !isDecimal(output_per_million) ||
+    (cached_per_million !== null && !isDecimal(cached_per_million))
+  ) {
+    throw unexpected(reply);
+  }
+  return { id, model, input_per_million, output_per_million, cached_per_million };
+}
+
+function toMonth(raw: unknown, reply: Reply): MonthlyUsage {
+  const item = asObject(raw, reply);
+  const { month, calls, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens } = item;
+  const cost = item['cost'];
+  const unpriced = item['unpriced_models'];
+  if (
+    typeof month !== 'string' ||
+    !MONTH_PATTERN.test(month) ||
+    !isCount(calls) ||
+    !isCount(input_tokens) ||
+    !isCount(output_tokens) ||
+    !isCount(cache_read_tokens) ||
+    !isCount(cache_write_tokens) ||
+    cache_read_tokens + cache_write_tokens > input_tokens ||
+    (cost !== null && !isDecimal(cost)) ||
+    !Array.isArray(unpriced) ||
+    !unpriced.every((model) => typeof model === 'string')
+  ) {
+    throw unexpected(reply);
+  }
+  return {
+    month,
+    calls,
+    input_tokens,
+    output_tokens,
+    cache_read_tokens,
+    cache_write_tokens,
+    cost,
+    unpriced_models: [...(unpriced as string[])],
+  };
+}
+
 function toCheck(raw: unknown, reply: Reply): CheckOutcome {
   const item = asObject(raw, reply);
   const { ok, problem, message } = item;
@@ -213,6 +334,10 @@ function asObject(raw: unknown, reply: Reply): Record<string, unknown> {
 
 function isCount(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0;
+}
+
+function isDecimal(value: unknown): value is string {
+  return typeof value === 'string' && DECIMAL_PATTERN.test(value);
 }
 
 function isTimestampOrNull(value: unknown): value is string | null {

@@ -32,6 +32,8 @@ const NO_AI: AiProviderState = {
   provider: null,
   model: '',
   season_model: '',
+  week_model: '',
+  chat_model: '',
   base_url: null,
   has_key: false,
   status: null,
