@@ -12,6 +12,7 @@ from accounts.models import User
 from availability.capacity import weekly_capacities
 from goals.services import today_of
 
+from .deviation import deviation_weeks
 from .models import SeasonPlanVersion
 from .snapshots import SNAPSHOT_VERSION, collect_inputs
 from .storage import skeleton_from_data
@@ -26,6 +27,7 @@ class Reason(StrEnum):
     FTP_CHANGED = "ftp_changed"
     BEST_TIMES_CHANGED = "best_times_changed"
     TRAINING_TIME_CHANGED = "training_time_changed"
+    TRAINING_DEVIATION = "training_deviation"
 
 
 class Reassessment(TypedDict):
@@ -70,6 +72,10 @@ def reassess(user: User) -> Reassessment:
         baseline["typical_weekly_minutes"], current["typical_weekly_minutes"]
     ) or _capacity_changed(user, plan):
         result["reasons"].append(Reason.TRAINING_TIME_CHANGED.value)
+    evidence = deviation_weeks(user, plan)
+    if evidence:
+        result["reasons"].append(Reason.TRAINING_DEVIATION.value)
+        result["deviation_weeks"] = [monday.isoformat() for monday in evidence]
     return result
 
 

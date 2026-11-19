@@ -922,9 +922,18 @@ sessions (a long run, a threshold session, the race …) and a reason. The model
   your time zone. Identical saves, inactive-goal edits, overridden FTP changes and calendar
   rollover do not count. An older plan without recorded inputs returns `baseline_unknown`.
   Drafting or discarding keeps the hint. Confirming a replacement clears it only if its original
-  inputs and capacities now fit. An outdated replacement keeps the hint. This read-only endpoint
-  returns `confirmed_plan_id`, `reasons` and an empty `deviation_weeks`. Without a confirmed plan,
-  the id is `null` and both lists are empty. It calls neither the coach nor Intervals.icu.
+  inputs and capacities now fit. An outdated replacement keeps the hint.
+  A `training_deviation` reason proposes an adjustment when each of the latest three completed
+  local weeks has actual minutes below 70% or above 130% of its confirmed weekly planned minutes.
+  Exactly 70% or 130% does not count. All three weeks must be in the confirmed season and start
+  at or after its confirmation. Missing weekly plans, zero planned minutes or any activity with
+  unknown duration break the sequence. No activities means zero actual minutes. Timer time takes
+  priority over elapsed time, and unplanned activities count. A new season confirmation resets
+  the eligible window; drafting or discarding does not.
+  This read-only endpoint returns `confirmed_plan_id`, `reasons` and `deviation_weeks`, the three
+  evidence Mondays as ISO dates, oldest first, or an empty list without a deviation reason.
+  Without a confirmed plan, the id is `null` and both lists are empty. It calls neither the coach
+  nor Intervals.icu.
 - **Restoring:** a version that was **replaced or discarded** can be brought back with **Make this
   the new draft**. That copies it as the next version, a draft (its reason says "Restored from
   version N"), with the skeleton and the sports it was made for; the old version is not touched

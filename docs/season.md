@@ -276,6 +276,7 @@ The reasons contain no goal titles, notes, input values or other user text.
 | `ftp_changed` | The effective cycling FTP number changed, including adding or removing it. The existing source priority applies. Changing an overridden source, its metadata or its source without changing the effective number does not count. |
 | `best_times_changed` | Stored best times changed by distance, seconds or race date, including additions and removals. Update timestamps and moving age windows do not count. |
 | `training_time_changed` | Typical weekly minutes or at least one remaining calendar week's capacity changed by both thresholds below. Capacity includes weekday minutes, absences and the weekly budget. |
+| `training_deviation` | Each of the latest three completed local weeks has actual minutes below 70% or above 130% of its confirmed weekly planned minutes. The three evidence Mondays are returned in `deviation_weeks`. |
 
 | Constant | Value | Meaning |
 | -------- | ----- | ------- |
@@ -293,6 +294,27 @@ Reading, drafting, restoring or discarding never acknowledges a hint. Each read 
 confirmed version again. Confirming a current replacement clears the reasons. Confirming an
 outdated replacement retains the differences from its original inputs and capacities. A legacy
 hint lasts until a replacement with known, current inputs is confirmed. No plan content changes.
+
+`season/deviation.py` uses the same user-scoped `reviews.services.week_summary` as the week
+review. It checks only the latest three completed Monday-to-Sunday weeks in the athlete's time
+zone. It never searches older weeks for a streak. All three weeks must be in the confirmed
+season's stored skeleton and start at or after its confirmation instant. A week that contains
+the confirmation is excluded unless confirmation was exactly at its local Monday midnight.
+The current, unfinished week never counts.
+
+Each week's actual duration must be strictly below 70% or strictly above 130% of its confirmed
+weekly workout minutes. The direction can differ between weeks. Exactly 70% and 130% do not
+count. Duration uses timer seconds, falling back to elapsed seconds only when timer time is
+missing. The comparison keeps sub-minute precision. All activities count, including unmatched
+activities and other sports. A week without activities has zero actual minutes. A missing
+confirmed weekly plan, zero planned minutes, a week inside the bounds or any activity with
+unknown duration breaks the sequence. Another athlete's training never contributes.
+
+`deviation_weeks` contains the three evidence Mondays as ISO dates, oldest first, only when
+`training_deviation` is returned. Otherwise it is empty. A new season confirmation resets the
+eligible window, including when restoring old content. Three new full weeks must finish before
+another proposal can appear. Reading, drafting, restoring or discarding alone does not reset it.
+The reason is a proposal only. It never drafts, confirms or exports training automatically.
 
 ## The week plan follows the season
 
@@ -348,7 +370,8 @@ minutes and sessions in absent sports add nothing. Load is read-only; checks sti
 
 `GET /api/season/reassessment/` requires authentication and returns `confirmed_plan_id` (the
 confirmed version's UUID string, or `null`), `reasons` (the codes above) and `deviation_weeks`
-(currently always `[]`). Without a confirmed plan both lists are empty, even if drafts exist.
+(the three evidence Mondays as ISO dates, oldest first, or `[]` without `training_deviation`).
+Without a confirmed plan both lists are empty, even if drafts exist.
 The endpoint has no user or plan selector. It writes nothing and makes no coach or Intervals.icu
 call. Write methods are refused. Reading it repeatedly never clears a reason.
 

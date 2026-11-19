@@ -1,4 +1,5 @@
 import json
+from datetime import timedelta
 from http import HTTPStatus
 from unittest.mock import patch
 
@@ -16,6 +17,7 @@ from season import services
 from season.models import SeasonPlanVersion
 
 from .conftest import make_user, signed_in
+from .test_deviation import CHECK_NOW, WEEKS, make_season, training
 from .test_reassessment import MONDAY, NOW, confirmed, draft, race, train
 
 pytestmark = pytest.mark.django_db
@@ -176,3 +178,122 @@ def test_all_comparison_inputs_and_capacities_are_isolated(alice: User) -> None:
     }
     Goal.objects.for_user(bob).delete()
     assert json.loads(alice_api.call("GET", URL).content)["reasons"] == []
+
+
+@pytest.mark.parametrize("seconds", [1800, 5400])
+def test_deviation_returns_three_evidence_mondays_and_remains_read_only(
+    alice: User, monkeypatch: pytest.MonkeyPatch, seconds: float
+) -> None:
+    plan = make_season(alice, monkeypatch)
+    training(alice, seconds)
+    api = signed_in(alice)
+    expected = {
+        "confirmed_plan_id": str(plan.pk),
+        "reasons": ["training_deviation"],
+        "deviation_weeks": [week.isoformat() for week in WEEKS],
+    }
+    before = list(SeasonPlanVersion.objects.values())
+    with (
+        patch("coach.services.call", side_effect=AssertionError("Unexpected coach call")),
+        patch("coach.services.provider_for", side_effect=AssertionError("Unexpected provider")),
+        patch(
+            "integrations.intervals.IntervalsClient.__init__",
+            side_effect=AssertionError("Unexpected Intervals call"),
+        ),
+        CaptureQueriesContext(connection) as queries,
+    ):
+        for _ in range(2):
+            response = api.call("GET", URL)
+            assert response.status_code == HTTPStatus.OK
+            assert json.loads(response.content) == expected
+    assert all(query["sql"].lstrip().upper().startswith("SELECT") for query in queries)
+    assert list(SeasonPlanVersion.objects.values()) == before
+
+
+def test_deviation_is_last_in_the_stable_reason_order(
+    alice: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    make_season(alice, monkeypatch)
+    training(alice)
+    race(alice)
+    ThresholdValue.objects.create(
+        owner=alice, sport="ride", metric="ftp", source="manual", value=250
+    )
+    BestTime.objects.create(owner=alice, distance="5k", seconds=1200, date=MONDAY)
+    WeekdayMinutes.objects.for_user(alice).update(minutes=120)
+
+    answer = json.loads(signed_in(alice).call("GET", URL).content)
+
+    assert answer["reasons"] == [
+        "goals_changed",
+        "ftp_changed",
+        "best_times_changed",
+        "training_time_changed",
+        "training_deviation",
+    ]
+    assert answer["deviation_weeks"] == [week.isoformat() for week in WEEKS]
+
+
+def test_confirmation_resets_evidence_but_drafting_and_discarding_do_not(
+    alice: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plan = make_season(alice, monkeypatch)
+    training(alice)
+    api = signed_in(alice)
+    hint = json.loads(api.call("GET", URL).content)
+    assert hint["reasons"] == ["training_deviation"]
+    replacement = draft(alice)
+    assert json.loads(api.call("GET", URL).content) == hint
+    services.discard(alice, replacement.pk)
+    assert json.loads(api.call("GET", URL).content) == hint
+    restored = services.restore(alice, replacement.pk)
+    assert json.loads(api.call("GET", URL).content) == hint
+    replacement = services.confirm(alice, restored.pk)
+    assert json.loads(api.call("GET", URL).content) == {
+        "confirmed_plan_id": str(replacement.pk),
+        "reasons": [],
+        "deviation_weeks": [],
+    }
+    # Restoring the original frame and inputs must still reset the confirmation window.
+    old = services.restore(alice, plan.pk)
+    services.confirm(alice, old.pk)
+    assert json.loads(api.call("GET", URL).content) == {
+        "confirmed_plan_id": str(old.pk),
+        "reasons": [],
+        "deviation_weeks": [],
+    }
+    new_weeks = tuple(week + timedelta(weeks=4) for week in WEEKS)
+    training(alice, weeks=new_weeks)
+    monkeypatch.setattr(goal_services, "_utc_now", lambda: CHECK_NOW + timedelta(weeks=3))
+    assert json.loads(api.call("GET", URL).content)["reasons"] == []
+    monkeypatch.setattr(goal_services, "_utc_now", lambda: CHECK_NOW + timedelta(weeks=4))
+    assert json.loads(api.call("GET", URL).content) == {
+        "confirmed_plan_id": str(old.pk),
+        "reasons": ["training_deviation"],
+        "deviation_weeks": [week.isoformat() for week in new_weeks],
+    }
+    replacement.refresh_from_db()
+    assert replacement.status == SeasonPlanVersion.Status.SUPERSEDED
+
+
+def test_training_evidence_is_isolated_even_with_an_owner_query_parameter(
+    alice: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    alice_plan = make_season(alice, monkeypatch)
+    bob = make_user("bob@example.com")
+    train(bob)
+    bob_plan = make_season(bob, monkeypatch)
+    training(bob)
+    alice_api = signed_in(alice)
+    assert json.loads(alice_api.call("GET", f"{URL}?owner={bob.pk}").content) == {
+        "confirmed_plan_id": str(alice_plan.pk),
+        "reasons": [],
+        "deviation_weeks": [],
+    }
+    training(alice, seconds=3600)
+    assert json.loads(alice_api.call("GET", URL).content)["reasons"] == []
+    assert json.loads(signed_in(bob).call("GET", URL).content) == {
+        "confirmed_plan_id": str(bob_plan.pk),
+        "reasons": ["training_deviation"],
+        "deviation_weeks": [week.isoformat() for week in WEEKS],
+    }
