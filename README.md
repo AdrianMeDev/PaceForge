@@ -896,6 +896,12 @@ the next time you look. The numbers are a starting point, not coaching science.
 - **Without a race** (or without a date) the page shows a rolling skeleton of twelve weeks of base
   and build, and says what to add. A race more than a year away cuts the skeleton off after 52
   weeks.
+- **Illness on the timeline** is marked: a week whose days lie inside a period of **illness** from
+  [Not available](#training-time) gets an **Ill** mark, and its tooltip says how many days of the
+  week are ill ("Illness, 3 days"). Other absences (vacation, other) leave the week unmarked. A
+  period the chat noted with `mark_sick` (see [Coach chat](#coach-chat)) is the same period, so
+  saying "I am sick" marks the week here too. The marks are only told: a filled plan keeps the
+  skeleton it was made for.
 
 ### Filling the season with your coach
 
@@ -1363,13 +1369,42 @@ as there. Nothing is confirmed or sent from the chat. The actions:
 | `shorten_workout` | a shorter workout (at least 10 minutes)                                       |
 | `reduce_week`     | every workout that can still be changed 5 to 50 % shorter                     |
 | `free_day`        | no training on a day                                                          |
+| `mark_sick`       | you are ill: the sick days pause and a careful return follows                 |
 
 **What can be changed.** One week: the current week, or the next one that has a plan (the newest
 draft or the confirmed version). Workouts before today are never changed, and a day has to be in
 that week. A workout that is shortened or swapped loses its steps and exercises (they were made for
-the old one) and becomes one steady session. For anything else (illness, another week, the season)
-the coach says that it cannot do it yet. If its answer cannot be used, even after being told what
-was wrong once, your message is kept with a fixed answer that says so.
+the old one) and becomes one steady session. For anything else (another week, the season) the coach
+says that it cannot do it yet. If its answer cannot be used, even after being told what was wrong
+once, your message is kept with a fixed answer that says so.
+
+**Illness (`mark_sick`).** Say that you are ill ("sore throat, I should rest") and the coach may
+propose `mark_sick` with three things: whether the **symptoms** are above the neck (a cold, a sore
+throat) or below it, whether you have a **fever**, and for how many **days** (1 to 14, from today).
+At most one of these per answer, and the coach names no other action for the same days; it is told
+that it is not a doctor and that it should not plan training through an illness.
+
+What the app does with it, always by code and never by the coach's words:
+
+- **The sick days pause:** every workout from today to the last sick day is taken out of the week
+  and the answer names the pause in days and dates: "Sick pause (2 days, 2026-11-19 to
+  2026-11-20): 1 workout removed".
+- **A careful return:** 2 days after a mild illness (symptoms above the neck, no fever), 4 days
+  otherwise. On each return day a workout stays, but it is made easy: a hard goal becomes
+  endurance, the zone goes down to easy, its steps go, and it is cut to 60 % of its length, never
+  below 10 minutes. Those days carry no intensity.
+- **The absence:** the sick days are stored as a period of **illness** in [Not
+  available](#training-time), so they are not added to the plan a second time, no week aims for
+  time it does not offer, and the weeks show it on the [Season](#season) timeline.
+- **Fever:** if you reported a fever, the fixed note "Because you have a fever, do not train until
+  it has been gone for a full day, and see a doctor if it lasts or gets worse." is added under the
+  answer; it is the app's text, not the coach's.
+- **On push:** if you confirm the draft, sending the week to Intervals.icu removes the paused
+  workouts there (the events are deleted, see [Sending to
+  Intervals.icu](#sending-to-intervalsicu)) and updates the return days that still exist.
+
+The illness is noted even when there is no plan to change: then the answer has no draft, but the
+absence is stored and named. Nothing about it is confirmed or sent from the chat.
 
 **What is stored and what goes to the provider.** The messages are stored (only you see them) and
 **Delete the conversation** removes them all, after a question; the drafts stay. With each message

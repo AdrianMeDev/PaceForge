@@ -407,6 +407,13 @@ plan, begun weeks show a narrower bar beside the plan for `done` minutes or `don
 geometry is in pure functions (`timelineCells`, `chartLayout`) that the specs test; the SVG is
 drawn by hand without a library.
 
+`timelineCells` takes the live season's `absences` and marks **illness** only. `illnessDays` of a
+cell is how many of that week's seven days lie inside at least one illness period (0 if none). A
+cell with a mark carries `data-illness="true"`, an `Ill` badge and, in its label and tooltip,
+`Illness, 1 day` or `Illness, 3 days` after the phase. Vacation and other absences leave the cell
+unmarked. The Season page passes the live season's absences, also while a stored version's week is
+shown (a stored skeleton has none).
+
 `season/done.py` counts the minutes done for the chart. `done_minutes(user, mondays)` adds up the
 activities of each calendar week (Monday to Sunday) in the **time zone of the athlete**, by sport
 (`other` for any sport the plan does not have), the timer time and else the elapsed time, an
@@ -457,8 +464,13 @@ plan.
 `priority` (`main`, `secondary` or `preparation`), `discipline`, `distance_m` and `title` (the
 athlete's own text). `absences` are the user's own periods that overlap the weeks of the skeleton,
 by start date: `kind` (`illness`, `vacation` or `other`), `start_date` and `end_date`, both
-included. The note of a period is never part of the answer, and the stored skeleton of a plan
-stays as it was: the absences are only told, never kept with a version.
+included. All three kinds are listed; the answer never says which week they touch, the client
+works that out. One query reads them, scoped to the user (`season/absences.py`); another user's
+periods are never in the answer. An **illness** can come from the chat: `mark_sick` stores it with
+`availability.absences.note_illness`, which extends an overlapping or adjacent illness instead of
+adding a second one, so the season shows one period for one illness. The note of a period is never
+part of the answer, and the stored skeleton of a plan stays as it was: the absences are only told,
+never kept with a version.
 
 Each filled week also has `planned_load`, a sport-to-load object like its `minutes`, and
 `total_planned_load`, the sum of that object's values. `done_load` follows the same availability
