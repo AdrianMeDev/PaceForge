@@ -90,6 +90,7 @@ ALLOWED_KEYS = {
     "limits",
     "max_hard_days",
     "progression_warning_percent",
+    "run_progression_warning_percent",
     "progression_error_percent",
     "easy_share_percent",
     "limitations",

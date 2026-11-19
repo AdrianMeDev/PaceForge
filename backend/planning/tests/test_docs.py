@@ -156,7 +156,7 @@ class TestTheLimits:
 class TestTheIntensityLevels:
     def test_the_table_has_the_limits_of_every_level(self) -> None:
         documented = {
-            row[0]: (int(row[1]), int(row[2]), int(row[3]), int(row[4]))
+            row[0]: (int(row[1]), int(row[2]), int(row[3]), int(row[4]), int(row[5]))
             for row in rows(section("The intensity levels"))
         }
 
@@ -166,6 +166,7 @@ class TestTheIntensityLevels:
                 limits.progression_warning_percent,
                 limits.progression_error_percent,
                 limits.easy_share_percent,
+                limits.run_progression_warning_percent,
             )
             for level, limits in LEVEL_LIMITS.items()
         }
@@ -186,8 +187,8 @@ class TestTheRules:
 
     def test_every_check_of_the_rules_is_covered_by_the_table(self) -> None:
         # the number of checks and of codes can only move together with the page
-        assert len(rules.ALL_CHECKS) == 29
-        assert len(self.in_the_code()) == 35
+        assert len(rules.ALL_CHECKS) == 30
+        assert len(self.in_the_code()) == 36
 
 
 class TestTheZoneSystems:
@@ -280,6 +281,15 @@ class TestTheBriefing:
         told = set(build_briefing(user, date(2027, 7, 12)))
 
         assert {row[0] for row in rows(subsection("What the coach is told"))} == told
+
+    @pytest.mark.django_db
+    def test_the_limits_keys_are_documented(self) -> None:
+        user = User.objects.create_user("docs-limits@example.com")
+        limits = build_briefing(user, date(2027, 7, 12))["limits"]
+        table = {row[0]: row[1] for row in rows(subsection("What the coach is told"))}
+
+        for key in limits:
+            assert re.search(rf"\b{re.escape(key)}\b", table["limits"]), key
 
     def test_the_page_names_what_is_never_sent(self) -> None:
         text = subsection("What the coach is told")

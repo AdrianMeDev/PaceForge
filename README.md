@@ -991,6 +991,8 @@ links to the Connections page.
    pace) and, for intervals, their parts, and below the title what the **checks** say. An *error*
    (for example a workout on a day you cannot train, or segments that do not add up to the length)
    means the plan cannot be confirmed; a *note* is for you to weigh.
+   The checks also warn if running minutes rise too quickly compared with your recent running,
+   even when total training time stays the same. Without recent running to compare, this check is skipped.
 4. **Confirm plan** or **Discard**. Confirming checks the plan again with your data of that moment.
    Discarding asks first (*Discard this draft?*), because it cannot be undone with one click; you can
    bring the version back later (see *Restoring a version*). Drafting again makes a **new version**

@@ -275,6 +275,7 @@ user to weigh.
 | `day_in_absence` | error | A workout on a day of vacation, illness or another absence. |
 | `week_over_capacity` | error | The week adds up to more than the user offers, the weekly budget included. |
 | `too_many_hard_days` | error | More hard days than the limit. A day counts once. |
+| `run_volume_increase` | warning | Running minutes exceed the running reference at the running warning limit. Without a positive running reference this is skipped. |
 | `volume_jump` | error | The planned minutes are above the error limit of the reference (the recent average, or the typical week if that is higher). |
 | `two_hard_in_a_day` | error | Two hard workouts on one day. Named once per day, at the second hard one. |
 | `quality_not_first` | warning | On a day with two running, cycling or swimming workouts that both have a time of day, an easy one comes before a moderate or hard one. Strength is left out. Named once per day, at the easy one. |
@@ -341,6 +342,12 @@ error, unless the athlete has given a typical week that is higher. With a recent
 a typical week of 360 minutes the limits of "intensive" (130 and 150 percent) are 468 (warning above)
 and 540 (error above) instead of 140 and 162. The message of a finding says which of the two was the reference.
 
+For running, the reference is the average running minutes in the same recent weeks, including
+zero for a week with timed activity but no running. Weeks without timed activity are omitted. The
+typical week is not used because it has no sport breakdown. Without a positive running reference
+the check is skipped. The comparison is exact and a week at the limit passes. Going above the
+running limit gives a warning only, even for a large increase.
+
 ## The intensity levels
 
 How many hard days a week may have, the two progression limits and the share of easy minutes are
@@ -351,13 +358,15 @@ to 4, warning 100 to 200, error 100 to 300, easy share 50 to 100; the warning li
 limit). The limits that count are those when a plan is checked: when it is drafted, checked in the
 editor or confirmed. The coach is told them in the briefing (`limits`), never in the system prompt.
 
-| Level | Hard days (at most) | Progression warning above (%) | Progression error above (%) | Easy share (at least, %) |
-| ----- | ------------------- | ----------------------------- | --------------------------- | ------------------------ |
-| `relaxed` | 1 | 115 | 130 | 85 |
-| `normal` | 2 | 120 | 140 | 80 |
-| `intensive` | 3 | 130 | 150 | 75 |
+| Level | Hard days (at most) | Progression warning above (%) | Progression error above (%) | Easy share (at least, %) | Running warning above (%) |
+| ----- | ------------------- | ----------------------------- | --------------------------- | ------------------------ | ------------------------- |
+| `relaxed` | 1 | 115 | 130 | 85 | 105 |
+| `normal` | 2 | 120 | 140 | 80 | 110 |
+| `intensive` | 3 | 130 | 150 | 75 | 120 |
 
-The percentages are of the reference above, as before. "intensive" has the limits that applied to
+The running warning limit is 10 percentage points below the effective general warning limit,
+including an own value, but never below 100 percent. The percentages are of their respective
+references above. "intensive" has the limits that applied to
 every athlete before there were levels.
 
 ## Saving, versions and confirming
@@ -444,6 +453,7 @@ without this page.
 | `goals` | The active goals by `priority` – `main` (A), `secondary` (B), `preparation` (C, a race on the way) – then the nearest date. Each has an `assessment` (`null` for a general goal): whether its target is realistic, judged by code from the athlete's form and the time left (see [goals](goals.md)): `rating` (`realistic`, `ambitious`, `unrealistic` or `unknown`), `reason` (why it is `unknown`), `current` and `needed` (VDOT for a race), `suggested` (the time or value that can be reached by then), `weeks` left, `prep_weeks` a race of that distance should have and `prep_short` (fewer are left). |
 | `goals_not_shown` | How many active goals were left out because of the limit. |
 | `recent_weeks_minutes` | Minutes done in each of the up to 4 weeks before, latest first. |
+| `recent_run_weeks_minutes` | Running minutes in those same recent weeks, latest first; a week with timed activity but no running has 0. |
 | `typical_weekly_minutes` | What the athlete calls a normal week, in minutes; `null` if not given (or 0). The progression rule's reference is the higher of this and the recent average. |
 | `sports` | The sports the athlete wants in a plan (all four if none was chosen), in the order of the format. |
 | `stretching` | Whether stretching may be added to sessions (`stretching_minutes`), never as a session. |
@@ -456,7 +466,7 @@ without this page.
 | `best_times` | The athlete's running best times, in the order 5 km, 10 km, half marathon, marathon (only the ones they entered): the `distance` (`5k`, `10k`, `half_marathon`, `marathon`), the time in `seconds`, the `date` of the race, the `vdot` it is worth, `recent` (the race is less than a year old, so it can count) and `counts` (the threshold pace comes from this one). |
 | `vdot` | The VDOT of the best time that counts, or `null` if none does: a measure of the athlete's running form (see the [athlete profile](../README.md)). |
 | `fixed_sessions` | The sessions that happen every week at a fixed time ([training time page](../README.md)), by day and part of the day: the `date` of the day in the week to plan, the `sport`, the `minutes` and the `slot` (`morning`, `afternoon`, `evening`; `null` if none was named). Fixed words and numbers, no name. Empty if there are none. |
-| `limits` | The limits of the rules that follow from the athlete's [intensity level](#the-intensity-levels): `max_hard_days`, `progression_warning_percent`, `progression_error_percent`, `easy_share_percent`. They are here and not in the system prompt, so that the prompt is the same for every athlete. |
+| `limits` | The limits of the rules that follow from the athlete's [intensity level](#the-intensity-levels): `max_hard_days`, `progression_warning_percent`, `run_progression_warning_percent`, `progression_error_percent`, `easy_share_percent`. They are here and not in the system prompt, so that the prompt is the same for every athlete. |
 | `limitations` | The current injuries and limitations, the newest first, at most 10: `body_part` (a fixed word: foot, ankle, achilles, calf, shin, knee, thigh, hip, back, shoulder, other) and the `sports` it affects (none listed: no particular sport). Healed ones are not told. No text of the athlete. |
 | `limitations_text` | What the athlete wrote in the free text about their limitations, cut to `LIMITATIONS_TEXT_MAX_TOLD` characters, **only if they switched on "Send this text to my AI coach"**; otherwise `null`. Free text: the system prompt says that it is data and never instructions. |
 | `limitations_not_shown` | How many current limitations were left out because of the limit. |
