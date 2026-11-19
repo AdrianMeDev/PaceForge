@@ -103,9 +103,9 @@ save the recovery codes (see [Two-factor authentication](#two-factor-authenticat
 ## Navigation
 
 The pages are in groups: **Training** (Dashboard, Week plan, Week review, Activities), **Planning**
-(Season, Goals, Training time, Coach), **Settings** (Profile, Connections, Security) and, for
-administrators, **Admin** (Invitations). Wherever a page says "in the navigation", this is where it
-is:
+(Season, Goals, Training time, Coach), **Settings** (Profile, Connections, Security, Automation) and,
+for administrators, **Admin** (Invitations). Wherever a page says "in the navigation", this is where
+it is:
 
 - **Wide screens (64 rem and more):** a sidebar with the groups, your name and **Sign out**.
 - **Tablets (40 to 64 rem):** the same as a narrow rail of icons (the name of a page is its tooltip).
@@ -1498,6 +1498,33 @@ has nothing to show says what to do next, with a button.
 A week is a calendar week, Monday to Sunday, on the clock of the time zone of your
 [profile](#athlete-profile) (UTC without one). The number of database queries does not depend on
 how much data you have, and nothing of another user is ever in the answer.
+
+## Background jobs
+
+On the **Automation** page (`/settings/automation`, under **Settings**) you turn three background
+jobs on or off and read what they did. All three are **on by default**; a new account without any
+settings row counts as "all on". Turning one off only stops it from starting, never undoes anything
+it already did.
+
+- **Sync activities** pulls new activities from Intervals.icu (the same import as the button on
+the [Activities](#activities) page), when the latest sync is at least `JOBS_SYNC_HOURS` old.
+- **Week review** lets the coach comment on the week that is ending, on your local Sunday from
+`JOBS_SUNDAY_HOUR` o'clock on.
+- **Draft next week** lets the coach draft the week after the current one, on the same Sunday
+evening, after the review (and a fresh sync, so the draft sees the latest activities).
+
+The jobs run for one athlete in that order: **sync**, then **week review**, then **week draft**.
+They use your own Intervals.icu key and your own AI coach, and they **never confirm** a plan and
+**never push** to Intervals.icu: a draft stays a draft until you confirm it. A week that already
+has a comment or a plan is not asked about again, and a week that keeps failing is tried at most
+`MAX_FAILED_TRIES` (3) times, so nothing is paid twice. The log on the Automation page shows the
+newest runs with a fixed sentence for each reason; it never holds a word from the coach or from
+Intervals.icu (the counts are numbers only).
+
+The jobs run in the `scheduler` service of `compose.dev.yaml` (under the `scheduler` profile), or
+you can run each one by hand with `uv run python manage.py run_scheduler --once` and the commands
+`sync_activities`, `review_weeks` and `draft_next_week`. The order, the timings and all the codes
+are in [docs/background-jobs.md](docs/background-jobs.md).
 
 ## Install as an app
 

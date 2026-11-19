@@ -25,5 +25,22 @@ services:
       - "127.0.0.1:1025:1025" # SMTP
       - "127.0.0.1:8025:8025" # web UI
 
+  # The background jobs (sync, Sunday review and draft). Runs the repo through uv, so it reads
+  # .env from the mounted source. Start with: docker compose -f compose.dev.yaml --profile scheduler up -d
+  scheduler:
+    image: ghcr.io/astral-sh/uv:python3.14-trixie-slim
+    profiles: [scheduler]
+    command: ["uv", "run", "python", "manage.py", "run_scheduler"]
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-paceforge}:${POSTGRES_PASSWORD:-paceforge-dev}@db:5432/${POSTGRES_DB:-paceforge}
+    working_dir: /app/backend
+    volumes:
+      - .:/app
+      - uv-cache:/app/backend/.venv
+    depends_on:
+      db:
+        condition: service_healthy
+
 volumes:
   pgdata:
+  uv-cache:

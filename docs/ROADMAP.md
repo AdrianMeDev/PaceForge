@@ -95,7 +95,7 @@ AI key; several people can share one instance without seeing each other's data.
 - **Depends on:** M5
 - **Size:** L
 
-### M7 [~] Background jobs
+### M7 [x] Background jobs
 - **Goal:** Sync, the Sunday draft of next week and the week review run on their own.
 - **Includes:** management commands per job looping over users in their own context, scheduler service in Compose, a job log per user, settings to turn each job off, sync before drafting; never confirm or push.
 - **Done when:** running the scheduler once syncs, drafts and reviews for two users without mixing data; isolation tests green.
@@ -173,6 +173,7 @@ AI key; several people can share one instance without seeing each other's data.
 - README section and `docs/` updated for every user-visible change.
 
 ## Changelog
+- 2026-11-19: M7 completed — background jobs run sync, the Sunday week review and the next week's draft in a scheduler container (no broker); each athlete turns each job off and reads a log of their own runs, and jobs only ever create drafts (never confirm, never push to Intervals.icu)
 - 2026-11-19: M6 completed — the chat changes a week the athlete names (this week or one of the next four that has a plan), refuses more than one week per answer with a fixed reply, and hands a longer absence (`replan_from`, 7 to 120 days) to the season: the absence is noted and a season draft around it is made and linked from the answer
 - 2026-11-19: M5 completed — `mark_sick` in the chat (symptoms, fever, days) pauses the sick days, plans a 2- or 4-day easy return without intensity, notes the illness as an absence and appends the fever hint; the season marks illness weeks; a confirmed draft removes the paused workouts in Intervals.icu
 - 2026-11-19: M4 completed — season change hints on Season, Goals and Profile, three-week deviation proposal with evidence weeks in Week review, and change requests drafted from current inputs
