@@ -95,7 +95,7 @@ AI key; several people can share one instance without seeing each other's data.
 - **Depends on:** M5
 - **Size:** L
 
-### M7 [ ] Background jobs
+### M7 [~] Background jobs
 - **Goal:** Sync, the Sunday draft of next week and the week review run on their own.
 - **Includes:** management commands per job looping over users in their own context, scheduler service in Compose, a job log per user, settings to turn each job off, sync before drafting; never confirm or push.
 - **Done when:** running the scheduler once syncs, drafts and reviews for two users without mixing data; isolation tests green.
