@@ -102,7 +102,7 @@ AI key; several people can share one instance without seeing each other's data.
 - **Depends on:** M1
 - **Size:** L
 
-### M8 [~] Wellness and readiness
+### M8 [x] Wellness and readiness
 - **Goal:** Sleep, HRV, resting HR and weight from Intervals inform the coach and the dashboard.
 - **Includes:** wellness sync with activities, dashboard tile with the trend, short summary in the week and chat briefing, warning when recovery is clearly worse than usual.
 - **Done when:** synced wellness shows on the dashboard and reaches the briefing; tests green.
@@ -173,6 +173,7 @@ AI key; several people can share one instance without seeing each other's data.
 - README section and `docs/` updated for every user-visible change.
 
 ## Changelog
+- 2026-11-19: M8 completed — daily wellness (sleep, HRV, resting HR and weight) synced from Intervals.icu with activities, shown on the dashboard with 7-day vs 28-day trends and recovery warnings, and passed to week and chat briefings
 - 2026-11-19: M7 completed — background jobs run sync, the Sunday week review and the next week's draft in a scheduler container (no broker); each athlete turns each job off and reads a log of their own runs, and jobs only ever create drafts (never confirm, never push to Intervals.icu)
 - 2026-11-19: M6 completed — the chat changes a week the athlete names (this week or one of the next four that has a plan), refuses more than one week per answer with a fixed reply, and hands a longer absence (`replan_from`, 7 to 120 days) to the season: the absence is noted and a season draft around it is made and linked from the answer
 - 2026-11-19: M5 completed — `mark_sick` in the chat (symptoms, fever, days) pauses the sick days, plans a 2- or 4-day easy return without intensity, notes the illness as an absence and appends the fever hint; the season marks illness weeks; a confirmed draft removes the paused workouts in Intervals.icu

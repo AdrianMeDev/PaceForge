@@ -378,12 +378,15 @@ Strava is imported with one command: see [The whole Strava history](#the-whole-s
    source, newest first, 20 per page; on a phone each activity is a card. The chips above the list
    keep it to one sport (the server filters, so the count and the pages follow).
 3. **Sync from Intervals.icu** (shown when Intervals.icu is connected with a valid key) calls
-   `POST /api/activities/sync/` to import recent non-Strava activities from the last 8–12 weeks
-   (up to today in your time zone; configured via `INTERVALS_SYNC_WEEKS`, default `12`).
+   `POST /api/activities/sync/` to import recent non-Strava activities and daily wellness from the
+   last 8–12 weeks (up to today in your time zone; configured via `INTERVALS_SYNC_WEEKS`, default
+   `12`).
    - **Mapped fields:** sport, start time, elapsed and timer duration, distance, Intervals.icu
      `training_load` (used for unified `load` when present), average and maximum heart rate, average
      pace (`avg_pace_s_per_km`), average power, total ascent and calories (plus the internal
      Intervals.icu id). Estimated thresholds are refreshed once when new activities are imported.
+   - **Daily wellness:** also syncs sleep, HRV, resting heart rate and weight per calendar day
+     (see [`docs/wellness.md`](docs/wellness.md)). Days with no readings are skipped.
    - **Strava activities are skipped:** Intervals.icu does not hand out Strava-sourced activities via
      the API; those are counted as skipped (`skipped_strava`) and must be imported as files.
    - **Duplicates are skipped:** activities already synced (same Intervals.icu id) or matching an
@@ -1145,7 +1148,8 @@ The coach is told only a fixed set of facts: the week and today, the minutes you
 day and your absences, your weekly budget, your zone tables, the sports you ticked and whether
 stretching is allowed, your active goals (title and notes), the minutes you trained in the last
 four weeks, your normal week if you gave one, your current injuries (a body part and the sports it
-affects, no text), a summary of last week's confirmed plan and how that week went (see [Week
+affects, no text), your 7-day wellness summary vs 28-day baseline and any recovery warning (see
+[`docs/wellness.md`](docs/wellness.md)), a summary of last week's confirmed plan and how that week went (see [Week
 review](#week-review)). **Not** your name, e-mail address, activities' names or anything of other
 users, and the free text about your limitations only if you switched on **Send this text to my AI
 coach** (then its first 150 characters). A goal's title and notes (and the limitations text, if you allow it) are free text, and a model can
@@ -1436,8 +1440,9 @@ absence is stored and named. Nothing about it is confirmed or sent from the chat
 **What is stored and what goes to the provider.** The messages are stored (only you see them) and
 **Delete the conversation** removes them all, after a question; the drafts stay. With each message
 the coach is told: today, the plan of the week with the id of each workout, your time per weekday,
-limits and limitations (your free text about limitations only if you turned that on), your last 10
-messages and the new one, as data, never as instructions. Every message is a request to your
+limits and limitations (your free text about limitations only if you turned that on), your 7-day
+wellness summary vs 28-day baseline and any recovery warning (see [`docs/wellness.md`](docs/wellness.md)),
+your last 10 messages and the new one, as data, never as instructions. Every message is a request to your
 provider with your key and is **billed to you**, or two if the coach had to correct its answer; they
 are counted in the usage overview (purpose "chat"). Writing is limited to 10 a minute per user and
 waits for the provider inside the request, so the timeouts named under [Week plan](#week-plan)
@@ -1494,6 +1499,9 @@ has nothing to show says what to do next, with a button.
 - **Coach:** how many calls the coach made in the last 30 days and how many tokens they used (the
   numbers of the [AI coach](#ai-coach-bring-your-own-key) section; there are no costs, because
   there is no price list).
+- **Wellness:** your synced sleep, HRV, resting heart rate and weight over the last 7 days against
+  your 28-day baseline, with trend arrows and a recovery warning banner when sleep, HRV or resting
+  heart rate is clearly worse than usual (see [`docs/wellness.md`](docs/wellness.md)).
 
 A week is a calendar week, Monday to Sunday, on the clock of the time zone of your
 [profile](#athlete-profile) (UTC without one). The number of database queries does not depend on
@@ -1506,8 +1514,8 @@ jobs on or off and read what they did. All three are **on by default**; a new ac
 settings row counts as "all on". Turning one off only stops it from starting, never undoes anything
 it already did.
 
-- **Sync activities** pulls new activities from Intervals.icu (the same import as the button on
-the [Activities](#activities) page), when the latest sync is at least `JOBS_SYNC_HOURS` old.
+- **Sync activities** pulls new activities and daily wellness from Intervals.icu (the same import as
+the button on the [Activities](#activities) page), when the latest sync is at least `JOBS_SYNC_HOURS` old.
 - **Week review** lets the coach comment on the week that is ending, on your local Sunday from
 `JOBS_SUNDAY_HOUR` o'clock on.
 - **Draft next week** lets the coach draft the week after the current one, on the same Sunday

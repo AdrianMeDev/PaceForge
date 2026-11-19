@@ -53,5 +53,6 @@ class TestTheRules:
             "Main goal",
             "Last 8 weeks",
             "Coach",
+            "Wellness",
         ):
             assert f"- **{block}:**" in SECTION

@@ -3,7 +3,7 @@
 PaceForge does three things on its own, for every athlete on the instance, without anyone
 pressing a button:
 
-1. **Sync activities** (`sync`) pulls new activities from Intervals.icu.
+1. **Sync activities** (`sync`) pulls new activities and daily wellness from Intervals.icu.
 2. **Week review** (`week_review`) lets the coach comment on the week that is ending.
 3. **Draft next week** (`week_draft`) lets the coach draft the week after the current one.
 
@@ -33,7 +33,7 @@ due. Between rounds it sleeps `JOBS_INTERVAL_MINUTES`.
   `MAX_FAILED_TRIES` (3) failed attempts it stops being tried again. This caps the cost of a week
   that keeps failing.
 - A job the athlete turned off is never due. A due draft brings a sync with it, so the draft sees
-  the latest activities.
+  the latest activities and daily wellness.
 
 ## Turning the jobs off
 
