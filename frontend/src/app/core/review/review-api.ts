@@ -44,7 +44,7 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 const ACTIVITY_SPORTS: readonly string[] = ['running', 'cycling', 'swimming', 'strength', 'other'];
 const PLANNED_SPORTS: readonly string[] = ['running', 'cycling', 'swimming', 'strength'];
-const SOURCES: readonly string[] = ['fit_file', 'tcx_file', 'gpx_file', 'manual'];
+const SOURCES: readonly string[] = ['fit_file', 'tcx_file', 'gpx_file', 'manual', 'intervals_icu'];
 const GOALS: readonly string[] = [
   'recovery',
   'endurance',

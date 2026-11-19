@@ -11,6 +11,7 @@ import { Activity, ActivityDetail, ManualActivityInput } from './activities-mode
 const URL = '/api/activities/';
 const IMPORT = `${URL}import/`;
 const MANUAL = `${URL}manual/`;
+const SYNC = `${URL}sync/`;
 const ID = '01a1d3d0-2289-74b2-95b2-17e8712141b0';
 
 // The shapes are those of the real API (replayed with curl against a real Django).
@@ -25,9 +26,11 @@ const SUMMARY = {
   distance_m: 10398.0,
   avg_heart_rate: 145,
   max_heart_rate: 166,
+  avg_pace_s_per_km: null,
   avg_power_w: null,
   total_ascent_m: null,
   calories: null,
+  training_load: null,
   manufacturer: 'COROS Wearables',
   rpe: null,
   notes: '',
@@ -160,6 +163,27 @@ describe('ActivitiesApi', () => {
       );
 
       expect(result).toEqual({ kind: 'ok', page: { count: 1, results: [ACTIVITY] } });
+    });
+
+    it('reads intervals_icu activities with pace and training load', async () => {
+      const synced = {
+        ...SUMMARY,
+        source: 'intervals_icu',
+        avg_pace_s_per_km: 300.5,
+        training_load: 75,
+      };
+      const { result } = await run(
+        api.list(50, 0),
+        'GET',
+        URL,
+        { count: 1, results: [synced] },
+        200,
+      );
+
+      expect(result).toEqual({
+        kind: 'ok',
+        page: { count: 1, results: [synced] },
+      });
     });
 
     it.each([401, 403])('says when the session is gone (%i)', async (status) => {
@@ -660,6 +684,120 @@ describe('ActivitiesApi', () => {
 
     it.each([200, 500])('rejects the unexpected status %i', async (status) => {
       await runFailing(api.delete(ID), 'DELETE', `${URL}${ID}/`, 'oops', status);
+    });
+  });
+
+  describe('syncFromIntervals', () => {
+    const SYNCED = {
+      imported: 3,
+      skipped_duplicates: 2,
+      skipped_strava: 1,
+      skipped_invalid: 0,
+      last_sync_at: '2026-11-19T12:00:00Z',
+    };
+
+    it('posts to sync and returns the counts', async () => {
+      const { result, request } = await run(api.syncFromIntervals(), 'POST', SYNC, SYNCED, 200);
+
+      expect(request.request.body).toEqual({});
+      expect(result).toEqual({ kind: 'ok', ...SYNCED });
+    });
+
+    it('accepts a null last_sync_at', async () => {
+      const { result } = await run(
+        api.syncFromIntervals(),
+        'POST',
+        SYNC,
+        { ...SYNCED, last_sync_at: null },
+        200,
+      );
+
+      expect(result).toEqual({ kind: 'ok', ...SYNCED, last_sync_at: null });
+    });
+
+    it('says when Intervals.icu is not connected', async () => {
+      const { result } = await run(
+        api.syncFromIntervals(),
+        'POST',
+        SYNC,
+        { detail: 'Not connected.' },
+        404,
+      );
+
+      expect(result).toEqual({ kind: 'not_connected' });
+    });
+
+    it('says when the stored key was refused', async () => {
+      const { result } = await run(
+        api.syncFromIntervals(),
+        'POST',
+        SYNC,
+        { detail: 'Intervals.icu did not accept the stored key.' },
+        409,
+      );
+
+      expect(result).toEqual({ kind: 'invalid_key' });
+    });
+
+    it('says when the user syncs too fast', async () => {
+      const { result } = await run(api.syncFromIntervals(), 'POST', SYNC, THROTTLED, 429);
+
+      expect(result).toEqual({ kind: 'rate_limited' });
+    });
+
+    it.each([502, 503])('returns the message when Intervals.icu fails (%i)', async (status) => {
+      const { result } = await run(
+        api.syncFromIntervals(),
+        'POST',
+        SYNC,
+        { detail: 'Intervals.icu cannot be reached right now.' },
+        status,
+      );
+
+      expect(result).toEqual({
+        kind: 'unavailable',
+        message: 'Intervals.icu cannot be reached right now.',
+      });
+    });
+
+    it('uses a fixed message when a 502/503 body has no detail', async () => {
+      const { result } = await run(api.syncFromIntervals(), 'POST', SYNC, 'Bad Gateway', 502);
+
+      expect(result).toEqual({
+        kind: 'unavailable',
+        message: 'Intervals.icu cannot be reached right now. Please try again later.',
+      });
+    });
+
+    it.each([401, 403])('says when the session is gone (%i)', async (status) => {
+      const { result } = await run(api.syncFromIntervals(), 'POST', SYNC, NO_SESSION, status);
+
+      expect(result).toEqual({ kind: 'forbidden' });
+    });
+
+    it.each([
+      ['no body', null],
+      ['a list', []],
+      ['missing imported', { ...SYNCED, imported: undefined }],
+      ['a negative count', { ...SYNCED, skipped_duplicates: -1 }],
+      ['a non-integer count', { ...SYNCED, skipped_strava: 1.5 }],
+      ['a non-string last_sync_at', { ...SYNCED, last_sync_at: 123 }],
+    ])('rejects an answer with %s', async (_name, reply) => {
+      await runFailing(api.syncFromIntervals(), 'POST', SYNC, reply, 200);
+    });
+
+    it('rejects a server error', async () => {
+      await runFailing(api.syncFromIntervals(), 'POST', SYNC, 'oops', 500);
+    });
+
+    it('rejects when the network fails', async () => {
+      const action = api.syncFromIntervals();
+      action.catch(() => undefined);
+      const request = await vi.waitFor(() => backend.expectOne((req) => req.url === SYNC));
+
+      request.error(new ProgressEvent('error'));
+
+      await expect(action).rejects.toThrow();
     });
   });
 });

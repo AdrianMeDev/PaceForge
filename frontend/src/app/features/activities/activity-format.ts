@@ -29,6 +29,7 @@ const SOURCE_LABELS: Record<Activity['source'], string> = {
   tcx_file: 'TCX',
   gpx_file: 'GPX',
   manual: 'Entered by hand',
+  intervals_icu: 'Intervals.icu',
 };
 
 export function sourceLabel(source: Activity['source']): string {

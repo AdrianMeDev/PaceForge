@@ -1,5 +1,5 @@
 export type Sport = 'running' | 'cycling' | 'swimming' | 'strength' | 'other';
-export type ActivitySource = 'fit_file' | 'tcx_file' | 'gpx_file' | 'manual';
+export type ActivitySource = 'fit_file' | 'tcx_file' | 'gpx_file' | 'manual' | 'intervals_icu';
 
 /**
  * One lap of an activity. A value the file does not report is `null`; nothing is estimated.
@@ -30,9 +30,12 @@ export interface Activity {
   distance_m: number | null;
   avg_heart_rate: number | null;
   max_heart_rate: number | null;
+  avg_pace_s_per_km: number | null;
   avg_power_w: number | null;
   total_ascent_m: number | null;
   calories: number | null;
+  /** Training load reported by the source (e.g. Intervals.icu); never mixed with `load`. */
+  training_load: number | null;
   manufacturer: string;
   /** How hard the user felt the session was, 1 to 10 (their own rating); `null`: not said. */
   rpe: number | null;
@@ -67,6 +70,27 @@ export interface NotFound {
 export interface RateLimited {
   kind: 'rate_limited';
 }
+
+/** Intervals.icu cannot be reached or answered oddly. `message` is the server's text for users. */
+export interface Unavailable {
+  kind: 'unavailable';
+  message: string;
+}
+
+export type SyncActivitiesResult =
+  | {
+      kind: 'ok';
+      imported: number;
+      skipped_duplicates: number;
+      skipped_strava: number;
+      skipped_invalid: number;
+      last_sync_at: string | null;
+    }
+  | { kind: 'not_connected' }
+  | { kind: 'invalid_key' }
+  | RateLimited
+  | Unavailable
+  | Forbidden;
 
 export type ListActivitiesResult = { kind: 'ok'; page: ActivityPage } | Forbidden;
 
