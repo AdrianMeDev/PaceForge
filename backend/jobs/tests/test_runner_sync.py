@@ -5,9 +5,9 @@ import json
 from collections.abc import Iterator
 from datetime import datetime, timedelta
 from http import HTTPStatus
+from typing import Any
 
 import pytest
-from django.conf import settings as dj_settings
 
 from accounts.models import User
 from activities.models import Activity
@@ -24,10 +24,10 @@ PATH = "/api/v1/athlete/0/activities"
 
 
 @pytest.fixture
-def fake() -> Iterator[FakeIntervals]:
+def fake(settings: Any) -> Iterator[FakeIntervals]:
     """A fake Intervals.icu that the job talks to instead of the real one."""
     with running() as server:
-        dj_settings.INTERVALS_API_BASE_URL = server.url
+        settings.INTERVALS_API_BASE_URL = server.url  # the fixture undoes it after the test
         yield server
 
 

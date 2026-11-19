@@ -12,9 +12,8 @@ ROOT = Path(__file__).resolve().parents[3]
 DOC = (ROOT / "docs" / "background-jobs.md").read_text()
 README = (ROOT / "README.md").read_text()
 FLAT_DOC = " ".join(DOC.split())
-FLAT_README = " ".join(README.split())
 
-# The three management commands that the page documents, by the name a user passes to manage.py.
+# The four management commands that the page documents, by the name a user passes to manage.py.
 COMMANDS = ("run_scheduler", "sync_activities", "review_weeks", "draft_next_week")
 
 # The settings the scheduler reads, with their range in the page.
@@ -68,10 +67,6 @@ class TestTheDefaults:
             assert rows[name][1] == str(default), name
             assert between in rows[name][2], name
 
-    def test_the_defaults_match_the_code(self) -> None:
-        for name, (default, _between) in DEFAULTS.items():
-            assert getattr(settings, name) == default, name
-
 
 class TestTheCommands:
     def test_the_page_gives_every_command_with_manage_py(self) -> None:
@@ -83,7 +78,7 @@ class TestTheCommands:
 
         commands = set(find_commands(str(Path(settings.BASE_DIR) / "jobs" / "management")))
 
-        assert set(COMMANDS) <= commands
+        assert set(COMMANDS) == commands
 
 
 class TestTheSafetyWords:
@@ -113,8 +108,18 @@ class TestTheReadme:
         for name in DEFAULTS:
             assert f"`{name}`" in README, name
 
-    def test_the_readme_string_of_each_setting_matches_the_page(self) -> None:
+    def test_the_readme_gives_the_same_default_as_the_page(self) -> None:
         readme = re.search(r"^## Configuration\n(.*?)^## ", README, re.S | re.M)
         assert readme, "no Configuration section"
-        for name in DEFAULTS:
-            assert f"`{name}`" in readme.group(1), name
+        page = {row[0]: row for row in rows_in(DOC, "Variable")}
+        for name, (default, _between) in DEFAULTS.items():
+            row = next(
+                (
+                    [cell.strip().replace("`", "") for cell in line.strip("|").split("|")]
+                    for line in readme.group(1).splitlines()
+                    if line.startswith(f"| `{name}`")
+                ),
+                None,
+            )
+            assert row, f"{name} has no row in the README table"
+            assert row[1] == page[name][1] == str(default), name

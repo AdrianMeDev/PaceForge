@@ -43,11 +43,12 @@ default**; a new account without any settings row counts as "all on". Turning a 
 it from starting: it never undoes anything the job already did.
 
 An operator can turn the whole scheduler off in development by not starting the `scheduler`
-profile, or by removing the container:
+profile, or by stopping its container (name the service, or the whole stack stops):
 
 ```bash
-docker compose -f compose.dev.yaml --profile scheduler up -d   # start it
-docker compose -f compose.dev.yaml --profile scheduler stop     # stop it
+docker compose -f compose.dev.yaml --profile scheduler up -d scheduler   # start it
+docker compose -f compose.dev.yaml --profile scheduler stop scheduler    # stop it
+docker compose -f compose.dev.yaml --profile scheduler rm -sf scheduler  # stop and remove it
 ```
 
 ## The log

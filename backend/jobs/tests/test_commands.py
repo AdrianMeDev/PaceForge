@@ -11,7 +11,6 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import pytest
-from django.conf import settings as dj_settings
 from django.core.management import call_command
 
 from accounts.models import User
@@ -37,10 +36,10 @@ Status = WeeklyPlan.Status
 
 
 @pytest.fixture
-def fake() -> Iterator[FakeIntervals]:
+def fake(settings: Any) -> Iterator[FakeIntervals]:
     """A fake Intervals.icu that the sync part of a command talks to instead of the real one."""
     with running() as server:
-        dj_settings.INTERVALS_API_BASE_URL = server.url
+        settings.INTERVALS_API_BASE_URL = server.url  # the fixture undoes it after the test
         yield server
 
 
