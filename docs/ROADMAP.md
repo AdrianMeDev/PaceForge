@@ -67,7 +67,7 @@ AI key; several people can share one instance without seeing each other's data.
 - **Depends on:** M1
 - **Size:** M
 
-### M3 [ ] Run volume rises slower than cycling
+### M3 [x] Run volume rises slower than cycling
 - **Goal:** The volume increase check is applied per sport, with a stricter limit for running.
 - **Includes:** per-sport reference (last four weeks), running limit below the general one per intensity level, new warning code, coach briefing and docs.
 - **Done when:** a week that keeps total minutes but jumps in running gets the new warning; tests green.
@@ -176,3 +176,4 @@ AI key; several people can share one instance without seeing each other's data.
 - 2026-11-19: M2 completed — unified activity load (Intervals or duration × RPE), workout load estimates, and planned vs done load across week plan, week review and season chart
 - 2026-11-19: M1 completed — sync non-Strava activities from Intervals.icu (last 8–12 weeks, duplicate check, last sync & error on connection, Activities page button)
 - 2026-11-19: roadmap created from `PROJECT_PLAN.md` §15 and the user stories, checked against `main` (905fee0)
+- 2026-11-19: M3 done (Per-sport run volume check)

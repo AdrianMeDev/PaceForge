@@ -80,6 +80,7 @@ def build_briefing(user: User, monday: date, note: str = "") -> dict[str, Any]:
         "goals": goals,
         "goals_not_shown": goals_not_shown,
         "recent_weeks_minutes": list(context.recent_weeks),
+        "recent_run_weeks_minutes": list(context.recent_run_weeks),
         # The athlete's own idea of a normal week; zero says nothing, so it is not told.
         "typical_weekly_minutes": context.typical_weekly_minutes or None,
         # The sports the athlete wants (all four if none was chosen), in the order of the format,
@@ -228,6 +229,7 @@ def _limits(context: PlanContext) -> dict[str, int]:
     return {
         "max_hard_days": limits.max_hard_days,
         "progression_warning_percent": limits.progression_warning_percent,
+        "run_progression_warning_percent": limits.run_progression_warning_percent,
         "progression_error_percent": limits.progression_error_percent,
         "easy_share_percent": limits.easy_share_percent,
     }

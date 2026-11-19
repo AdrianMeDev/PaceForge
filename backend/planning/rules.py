@@ -395,6 +395,35 @@ def check_progression(plan: WeekPlan, context: PlanContext) -> list[Finding]:
     ]
 
 
+def check_run_progression(plan: WeekPlan, context: PlanContext) -> list[Finding]:
+    """Running minutes stay within their own warning limit of the recent running average.
+
+    Compare exactly, without rounding the reference. Without recent running minutes there is
+    no reference; the typical week has no per-sport value and is not used here."""
+    _same_week(plan, context)
+    weeks = context.recent_run_weeks
+    if not weeks or sum(weeks) <= 0:
+        return []
+    average = Fraction(sum(weeks), len(weeks))
+    planned = sum(
+        workout.duration_minutes
+        for workout in plan.workouts
+        if workout.sport is Sport.RUNNING and context.offset(workout.day) is not None
+    )
+    scaled = Fraction(planned * 100) / average
+    if scaled <= context.limits.run_progression_warning_percent:
+        return []
+    return [
+        Finding(
+            Severity.WARNING,
+            "run_volume_increase",
+            f"The week adds up to {planned} running minutes, {round(scaled)} % of the average "
+            f"of {round(average)} running minutes of the last {len(weeks)} week(s).",
+            "workouts",
+        )
+    ]
+
+
 def check_easy_share(plan: WeekPlan, context: PlanContext) -> list[Finding]:
     """Enough of the endurance minutes of the week are easy (a warning below the athlete's limit).
 
@@ -1065,6 +1094,7 @@ RHYTHM_CHECKS: tuple[Check, ...] = (
     check_double_days,
     check_duplicates,
     check_progression,
+    check_run_progression,
     check_easy_share,
     check_times_of_day,
     check_double_day_order,

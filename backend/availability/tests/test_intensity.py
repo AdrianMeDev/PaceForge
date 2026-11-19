@@ -7,6 +7,8 @@ from availability.intensity import (
     LEVEL_LIMITS,
     LIMIT_NAMES,
     LIMIT_RANGES,
+    PROGRESSION_WARNING_MAX,
+    PROGRESSION_WARNING_MIN,
     IntensityLevel,
     Limits,
     effective_limits,
@@ -54,6 +56,28 @@ class TestLevels:
 
 
 class TestEffectiveLimits:
+    @pytest.mark.parametrize(
+        ("level", "expected"),
+        [
+            (IntensityLevel.RELAXED, 105),
+            (IntensityLevel.NORMAL, 110),
+            (IntensityLevel.INTENSIVE, 120),
+        ],
+    )
+    def test_running_warning_for_each_level(self, level: IntensityLevel, expected: int) -> None:
+        assert effective_limits(level, {}).run_progression_warning_percent == expected
+
+    @pytest.mark.parametrize("level", list(IntensityLevel))
+    def test_running_warning_follows_own_warning_throughout_its_range(
+        self, level: IntensityLevel
+    ) -> None:
+        for warning in range(PROGRESSION_WARNING_MIN, PROGRESSION_WARNING_MAX + 1):
+            own = {"progression_warning_percent": warning, "progression_error_percent": 300}
+            assert limit_problems(level, own) == {}
+            limits = effective_limits(level, own)
+            assert limits.run_progression_warning_percent == max(100, warning - 10)
+            assert 100 <= limits.run_progression_warning_percent <= warning
+
     @pytest.mark.parametrize("level", list(IntensityLevel))
     def test_without_own_values_they_are_the_levels(self, level: IntensityLevel) -> None:
         assert effective_limits(level, {}) == LEVEL_LIMITS[level]
