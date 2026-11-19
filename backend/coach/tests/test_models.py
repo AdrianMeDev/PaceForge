@@ -244,6 +244,36 @@ class TestTheKey:
         assert AIProviderConfiguration._meta.get_field("api_key").editable is False
 
 
+class TestWeekAndChatModels:
+    @pytest.mark.parametrize("field", ["week_model", "chat_model"])
+    def test_they_are_optional_and_valid_names_pass(self, alice: User, field: str) -> None:
+        check(alice, **anthropic())
+        check(alice, **anthropic(**{field: "claude-haiku-5-5"}))
+
+    @pytest.mark.parametrize("field", ["week_model", "chat_model"])
+    @pytest.mark.parametrize("name", ["-bad", "has space", "x" * (MODEL_MAX + 1), "ü"])
+    def test_a_name_that_cannot_be_a_model_is_refused(
+        self, alice: User, field: str, name: str
+    ) -> None:
+        refused(alice, field, **anthropic(**{field: name}))
+
+    def test_each_purpose_gets_its_own_model_and_falls_back_to_the_normal_one(
+        self, alice: User
+    ) -> None:
+        plain = AIProviderConfiguration(owner=alice, **anthropic())
+        special = AIProviderConfiguration(
+            owner=alice, **anthropic(week_model="w", chat_model="c", season_model="s")
+        )
+        purpose = AIUsageRecord.Purpose
+
+        assert {p: plain.model_for(p) for p in purpose} == dict.fromkeys(purpose, plain.model)
+        assert special.model_for(purpose.WEEKLY_PLAN) == "w"
+        assert special.model_for(purpose.CHAT) == "c"
+        assert special.model_for(purpose.SEASON_PLAN) == "s"
+        assert special.model_for(purpose.CHECK) == special.model
+        assert special.model_for(purpose.WEEK_REVIEW) == special.model
+
+
 class TestOwnership:
     def test_for_user_shows_only_the_own_configuration(self, alice: User, bob: User) -> None:
         mine = AIProviderConfiguration.objects.create(owner=alice, **anthropic())

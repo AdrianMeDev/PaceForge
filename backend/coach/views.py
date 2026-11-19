@@ -53,6 +53,8 @@ class ProviderView(APIView):
                 provider=data["provider"],
                 model=data["model"],
                 season_model=data.get("season_model", ""),
+                week_model=data.get("week_model", ""),
+                chat_model=data.get("chat_model", ""),
                 base_url=data.get("base_url", ""),
                 api_key=data.get("api_key"),
             )

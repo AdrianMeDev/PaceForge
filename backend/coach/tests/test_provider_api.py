@@ -27,6 +27,8 @@ STATE_FIELDS = {
     "provider",
     "model",
     "season_model",
+    "week_model",
+    "chat_model",
     "base_url",
     "has_key",
     "status",
@@ -146,6 +148,8 @@ class TestReading:
             "provider": None,
             "model": "",
             "season_model": "",
+            "week_model": "",
+            "chat_model": "",
             "base_url": None,
             "has_key": False,
             "status": None,
@@ -505,6 +509,44 @@ class TestTheSeasonModel:
         assert response.status_code == HTTPStatus.BAD_REQUEST
         assert set(body(response)) == {"season_model"}
         assert not AIProviderConfiguration.objects.exists()
+
+
+class TestTheWeekAndChatModels:
+    @pytest.mark.parametrize("field", ["week_model", "chat_model"])
+    def test_it_is_saved_shown_and_cleared(self, alice: User, field: str) -> None:
+        api = signed_in(alice)
+
+        state = body(save(api, anthropic(**{field: "claude-haiku-5-5"})))
+
+        assert state[field] == "claude-haiku-5-5"
+        assert getattr(stored(alice), field) == "claude-haiku-5-5"
+        assert body(api.call("GET", URL))[field] == "claude-haiku-5-5"
+        assert body(save(api, anthropic(**{field: ""})))[field] == ""
+        assert getattr(stored(alice), field) == ""
+
+    def test_they_are_empty_when_left_out(self, alice: User) -> None:
+        state = body(save(signed_in(alice), anthropic()))
+
+        assert (state["week_model"], state["chat_model"]) == ("", "")
+
+    @pytest.mark.parametrize("field", ["week_model", "chat_model"])
+    @pytest.mark.parametrize("name", ["-bad", "has space", "x" * 101, 5, ["m"], None])
+    def test_a_name_that_is_not_one_is_refused_at_its_field(
+        self, alice: User, field: str, name: Any
+    ) -> None:
+        response = save(signed_in(alice), anthropic(**{field: name}))
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert set(body(response)) == {field}
+        assert not AIProviderConfiguration.objects.exists()
+
+    def test_the_models_of_another_user_are_not_shown(self, alice: User, bob: User) -> None:
+        save(signed_in(bob), anthropic(week_model="bobs-week", chat_model="bobs-chat"))
+
+        state = body(save(signed_in(alice), anthropic()))
+
+        assert (state["week_model"], state["chat_model"]) == ("", "")
+        assert stored(bob).week_model == "bobs-week"
 
 
 class TestChangingTheSetup:

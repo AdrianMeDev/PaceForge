@@ -109,7 +109,7 @@ AI key; several people can share one instance without seeing each other's data.
 - **Depends on:** M1
 - **Size:** M
 
-### M9 [ ] Cost per month and model per task
+### M9 [~] Cost per month and model per task
 - **Goal:** The athlete sees what the coach costs and can use a cheaper model for week and chat.
 - **Includes:** optional price per million input/output/cached tokens per model, monthly cost on the AI page, separate model for week plan and chat (season model exists), docs.
 - **Done when:** with prices set, the AI page shows cost per month; week and chat use their own model when set; tests green.

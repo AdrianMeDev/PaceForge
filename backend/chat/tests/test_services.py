@@ -149,6 +149,17 @@ class TestAQuestion:
         record = AIUsageRecord.objects.for_user(athlete).get()
         assert (record.purpose, record.outcome) == ("chat", "success")
 
+    def test_the_chat_model_is_used_and_recorded_if_there_is_one(
+        self, athlete: User, provide: Callable[..., Scripted]
+    ) -> None:
+        AIProviderConfiguration.objects.filter(owner=athlete).update(chat_model="claude-haiku-5-5")
+        provide(said())
+
+        send(athlete, "Hi")
+
+        record = AIUsageRecord.objects.for_user(athlete).get()
+        assert (record.purpose, record.model) == ("chat", "claude-haiku-5-5")
+
     def test_the_coach_is_told_the_week_the_messages_so_far_and_the_new_one(
         self, athlete: User, provide: Callable[..., Scripted]
     ) -> None:

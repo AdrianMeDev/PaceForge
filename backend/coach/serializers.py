@@ -24,6 +24,9 @@ class ProviderInput(serializers.Serializer[Any]):
     model = TextField(max_length=MODEL_MAX)
     # The model for the plan of the whole season; absent or empty: the normal model.
     season_model = TextField(max_length=MODEL_MAX, allow_blank=True, required=False)
+    # Likewise for the weekly plan and for the coach chat.
+    week_model = TextField(max_length=MODEL_MAX, allow_blank=True, required=False)
+    chat_model = TextField(max_length=MODEL_MAX, allow_blank=True, required=False)
     base_url = TextField(max_length=BASE_URL_MAX, allow_blank=True, required=False)
     # Absent: keep the stored key (while provider and address stay). Empty: no key.
     api_key = TextField(max_length=KEY_MAX, allow_blank=True, required=False)
@@ -38,6 +41,8 @@ def provider_state(user: User) -> dict[str, Any]:
         "provider": None,
         "model": "",
         "season_model": "",
+        "week_model": "",
+        "chat_model": "",
         "base_url": None,
         "has_key": False,
         "status": None,
@@ -59,6 +64,8 @@ def provider_state(user: User) -> dict[str, Any]:
             provider=configuration.provider,
             model=configuration.model,
             season_model=configuration.season_model,
+            week_model=configuration.week_model,
+            chat_model=configuration.chat_model,
             base_url=configuration.base_url or None,
             has_key=_has_key(configuration),
             status=configuration.status,
