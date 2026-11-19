@@ -1,4 +1,4 @@
-import { Component, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 import { Icon } from '../../shared/icon';
 import { Workout } from '../../core/planning/planning-models';
 import {
@@ -10,6 +10,7 @@ import {
   SPORT_LABELS,
   exerciseDetail,
   exportText,
+  loadText,
   minutesText,
   segmentText,
   stretchingText,
@@ -29,6 +30,7 @@ export interface PlanDay {
   imports: [Icon],
   templateUrl: './plan-day.html',
   styleUrl: './plan-day.css',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class PlanDayView {
   readonly day = input.required<PlanDay>();
@@ -40,6 +42,7 @@ export class PlanDayView {
   protected readonly region = REGION_LABELS;
   protected readonly equipment = EQUIPMENT_LABELS;
   protected readonly minutes = minutesText;
+  protected readonly load = loadText;
   protected readonly target = targetText;
   protected readonly segment = segmentText;
   protected readonly exerciseNumbers = exerciseDetail;

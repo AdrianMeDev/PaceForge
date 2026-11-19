@@ -11,6 +11,7 @@ import {
   findingPlace,
   findingsSummary,
   minutesText,
+  loadText,
   exportSummaryText,
   exportText,
   pushText,
@@ -368,5 +369,15 @@ describe('pushText', () => {
     expect(pushText({ ok: false, problem: 'not_connected', message: 'Not connected.' })).toBe(
       'Not connected.',
     );
+  });
+});
+
+describe('loadText', () => {
+  it.each([
+    [0, '0 pts'],
+    [53, '53 pts'],
+    [150, '150 pts'],
+  ])('writes %i load points as "%s"', (load, expected) => {
+    expect(loadText(load)).toBe(expected);
   });
 });

@@ -196,6 +196,7 @@ describe('edit-format', () => {
       title: 'Intervals',
       goal: 'threshold',
       duration_minutes: 70,
+      estimated_load: 117,
       zone_system: 'pace',
       zone: 4,
       target: { low: 240, high: 260, unit: 's/km' },
@@ -239,6 +240,7 @@ describe('edit-format', () => {
 
       expect(text).not.toContain('target');
       expect(text).not.toContain('export');
+      expect(text).not.toContain('estimated_load');
     });
 
     it('makes copies of the segments', () => {

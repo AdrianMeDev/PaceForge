@@ -30,6 +30,9 @@ import {
   GenerateResult,
   GetPlanResult,
   ListWeeksResult,
+  LoadFigures,
+  LoadSummary,
+  SportLoadFigures,
   PlanStatus,
   PushOutcome,
   PushPlanResult,
@@ -442,6 +445,7 @@ function toPlan(raw: unknown, reply: Reply): WeekPlan {
     created_at,
     confirmed_at: confirmedAt,
     workouts: workouts.map((workout: unknown) => toWorkout(workout, reply)),
+    load: toLoadSummary(item['load'], reply),
     report: status === 'draft' ? toReport(item['report'], reply) : null,
     export: toSummary(item['export'], reply),
   };
@@ -449,8 +453,18 @@ function toPlan(raw: unknown, reply: Reply): WeekPlan {
 
 function toWorkout(raw: unknown, reply: Reply): Workout {
   const item = asObject(raw, reply);
-  const { lineage, day, sport, title, goal, duration_minutes, notes, slot, stretching_minutes } =
-    item;
+  const {
+    lineage,
+    day,
+    sport,
+    title,
+    goal,
+    duration_minutes,
+    estimated_load,
+    notes,
+    slot,
+    stretching_minutes,
+  } = item;
   const target = toTarget(item['zone_system'], item['zone']);
   const range = toRange(item['target']);
   const sent = toExport(item['export']);
@@ -466,6 +480,7 @@ function toWorkout(raw: unknown, reply: Reply): Workout {
     !isCount(duration_minutes) ||
     duration_minutes < 1 ||
     duration_minutes > DURATION_MAX ||
+    !isCount(estimated_load) ||
     target === null ||
     range === undefined ||
     sent === undefined ||
@@ -486,6 +501,7 @@ function toWorkout(raw: unknown, reply: Reply): Workout {
     title,
     goal,
     duration_minutes,
+    estimated_load,
     ...target,
     target: range,
     export: sent,
@@ -499,7 +515,7 @@ function toWorkout(raw: unknown, reply: Reply): Workout {
 
 /**
  * What is sent of a plan that was changed by hand: only the fields of the format and the lineage.
- * Whatever else the objects carry (the `target` of a workout, its `export`) is left out on
+ * Whatever else the objects carry (`target`, `export`, `estimated_load`, week `load`) is left out on
  * purpose: the server refuses a field that is not part of the format.
  */
 function toBody(plan: EditedPlan): EditedPlan {
@@ -537,6 +553,38 @@ function toBody(plan: EditedPlan): EditedPlan {
       })),
     })),
   };
+}
+
+function toLoadFigures(raw: unknown, reply: Reply): LoadFigures {
+  const { planned_minutes, done_minutes, planned_load, done_load } = asObject(raw, reply);
+  if (
+    !isCount(planned_minutes) ||
+    !isCount(done_minutes) ||
+    !isCount(planned_load) ||
+    !isCount(done_load)
+  ) {
+    throw unexpected(reply);
+  }
+  return { planned_minutes, done_minutes, planned_load, done_load };
+}
+
+function toLoadSummary(raw: unknown, reply: Reply): LoadSummary {
+  const item = asObject(raw, reply);
+  if (!Array.isArray(item['sports'])) {
+    throw unexpected(reply);
+  }
+  const sports = item['sports'].map((raw: unknown): SportLoadFigures => {
+    const entry = asObject(raw, reply);
+    const sport = entry['sport'];
+    if (!isOneOf<Sport | 'other'>(sport, [...SPORTS, 'other'])) {
+      throw unexpected(reply);
+    }
+    return { sport, ...toLoadFigures(entry, reply) };
+  });
+  if (new Set(sports.map((entry) => entry.sport)).size !== sports.length) {
+    throw unexpected(reply);
+  }
+  return { sports, total: toLoadFigures(item['total'], reply) };
 }
 
 /** `order` of a check: each place of the `count` workouts sent, once. */

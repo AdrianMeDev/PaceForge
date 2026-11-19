@@ -381,7 +381,7 @@ Strava is imported with one command: see [The whole Strava history](#the-whole-s
    `POST /api/activities/sync/` to import recent non-Strava activities from the last 8–12 weeks
    (up to today in your time zone; configured via `INTERVALS_SYNC_WEEKS`, default `12`).
    - **Mapped fields:** sport, start time, elapsed and timer duration, distance, Intervals.icu
-     `training_load` (kept separate from RPE-based `load`), average and maximum heart rate, average
+     `training_load` (used for unified `load` when present), average and maximum heart rate, average
      pace (`avg_pace_s_per_km`), average power, total ascent and calories (plus the internal
      Intervals.icu id). Estimated thresholds are refreshed once when new activities are imported.
    - **Strava activities are skipped:** Intervals.icu does not hand out Strava-sourced activities via
@@ -420,7 +420,8 @@ What you should know:
   home and workplace can be inferred. The database and its backups therefore hold location data and
   need the same care. The file is never returned by the API, and deleting an activity deletes it.
 - Activity summaries also return nullable `avg_pace_s_per_km` (seconds per kilometre) and
-  `training_load` fields. Provider training load is separate from the existing RPE-based `load`.
+  `training_load` fields. The unified `load` uses rounded provider training load when present, otherwise an RPE estimate.
+  The Activities list shows load points with their source: Intervals.icu or RPE estimate.
   The provider activity id stays internal. File imports leave these new measurements empty.
 - **Duplicates are refused:** the same file, or the same session from another source, answers
   *Already imported* (see [the same session twice](#the-same-session-twice)). Each user has their
@@ -488,12 +489,11 @@ not record, and for the sessions that only Strava has (Intervals.icu cannot hand
 - **The coach counts it** like an imported activity: its duration is part of the minutes of the last
   four weeks that the plan builds on. Nothing is estimated beyond that: no heart rate, no power, no
   best efforts, so it does not change your estimated thresholds.
-- **The load** of a session is the duration in minutes times the RPE, rounded, shown as *AU*
-  (arbitrary units; a 45 minute session at 7 is 315 AU). It is an estimate from how it felt and
-  **not the training stress score (TSS)** of a power meter or a platform: the two are on different
-  scales and are never added up. A session without a rating has no load, and neither does one
-  without a duration. (Imported files carry no rating at first; you can rate any activity afterwards
-  on the [Week review](#week-review) page.)
+- **The load** is shown in points with its source. Intervals.icu training load takes precedence,
+  even without a rating. Otherwise load is duration in hours times RPE times 10, rounded to a
+  whole point. A 45 minute session at RPE 7 is 53 points, shown as an *RPE estimate*. Without
+  Intervals load or both duration and a rating, the list shows a dash. You can rate any activity
+  afterwards on the [Week review](#week-review) page.
 
 #### The same session twice
 
@@ -1082,10 +1082,13 @@ are counted in the usage overview of the AI coach (calls and tokens of the last 
 purpose "weekly plan" is stored with each record). Drafting is limited to 5 a minute per user, with
 a counter of its own.
 
-The week plan API also returns a read-only `estimated_load` for each workout and planned versus
-done minutes and load per sport and in total. Estimates use intensity zones or the session goal;
+The Week plan page shows estimated load points next to the duration of every workout.
+A **Planned vs done load** table compares load per sport and in total for the displayed version.
+It includes unplanned sports, including Other. Estimates use intensity zones or the session goal;
 strength uses exercise RPE, with a default when none is given. Done totals cover your activities
-in the plan's week in your time zone. All planning checks still use minutes.
+in the plan's week in your time zone. Activities without known load contribute zero. The API
+returns these values as read-only `estimated_load` on workouts and `load` on the plan, with
+planned and done minutes too. All planning checks still use minutes.
 
 The full description, with the format, the rules, the exact limits and the API, is
 [Drafting with the coach](docs/weekly-plan.md#drafting-with-the-coach).

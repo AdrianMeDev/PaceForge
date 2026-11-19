@@ -524,6 +524,12 @@ in the calendar) and every workout an `export` of its own (`status`, `error_code
 for any other plan these are `null`. An answer of the two sending endpoints has a `push` with what
 the sending did (see [Sending to Intervals.icu](#sending-to-intervalsicu)).
 
+On the Week plan page, every workout shows estimated load points next to its duration.
+The **Planned vs done load** table shows the displayed version's estimates and the load of
+activities in that week, per sport and in total. It includes unplanned sports such as Other.
+Zero is shown as zero points. Activities without known load contribute zero. Estimates and
+week totals are not editable and are never sent with an editor check or revision.
+
 Every plan detail answer also has `load`: `sports` lists each sport that was planned or done,
 and `total` adds them. Each entry has `planned_minutes`, `done_minutes`, `planned_load` and
 `done_load`; a sport entry also has `sport`. Done totals include only your activities in the

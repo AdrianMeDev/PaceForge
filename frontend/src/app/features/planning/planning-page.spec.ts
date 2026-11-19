@@ -65,6 +65,7 @@ function plan(changes: Partial<WeekPlan> = {}): WeekPlan {
         title: 'Endurance ride',
         goal: 'endurance',
         duration_minutes: 60,
+        estimated_load: 50,
         zone_system: 'power',
         zone: 2,
         notes: 'Keep it easy',
@@ -82,6 +83,7 @@ function plan(changes: Partial<WeekPlan> = {}): WeekPlan {
         title: 'Core',
         goal: 'strength',
         duration_minutes: 30,
+        estimated_load: 30,
         zone_system: null,
         zone: null,
         notes: '',
@@ -99,6 +101,7 @@ function plan(changes: Partial<WeekPlan> = {}): WeekPlan {
         title: 'Intervals',
         goal: 'threshold',
         duration_minutes: 70,
+        estimated_load: 97,
         zone_system: null,
         zone: null,
         notes: '',
@@ -113,6 +116,27 @@ function plan(changes: Partial<WeekPlan> = {}): WeekPlan {
         ],
       },
     ],
+    load: {
+      sports: [
+        {
+          sport: 'running',
+          planned_minutes: 70,
+          done_minutes: 60,
+          planned_load: 97,
+          done_load: 75,
+        },
+        { sport: 'cycling', planned_minutes: 60, done_minutes: 0, planned_load: 50, done_load: 0 },
+        {
+          sport: 'strength',
+          planned_minutes: 30,
+          done_minutes: 45,
+          planned_load: 30,
+          done_load: 53,
+        },
+        { sport: 'other', planned_minutes: 0, done_minutes: 30, planned_load: 0, done_load: 20 },
+      ],
+      total: { planned_minutes: 160, done_minutes: 135, planned_load: 177, done_load: 148 },
+    },
     report: { valid: false, findings: [MISMATCH] },
     export: null,
     ...changes,
@@ -533,14 +557,98 @@ describe('PlanningPage', () => {
   });
 
   describe('a plan', () => {
+    it('shows planned estimates vs done load per sport, including unplanned sports and totals', async () => {
+      await setup();
+
+      const table = query(page, '[data-testid=load-summary] table');
+      expect(table.querySelector('caption')?.textContent?.trim()).toBe('Planned vs done load');
+      expect(
+        Array.from(table.querySelectorAll('tbody tr')).map((row) =>
+          Array.from(row.querySelectorAll('th, td')).map((cell) => cell.textContent?.trim()),
+        ),
+      ).toEqual([
+        ['Running', '97 pts', '75 pts'],
+        ['Cycling', '50 pts', '0 pts'],
+        ['Strength', '30 pts', '53 pts'],
+        ['Other', '0 pts', '20 pts'],
+      ]);
+      expect(
+        Array.from(table.querySelectorAll('tfoot th, tfoot td')).map((cell) =>
+          cell.textContent?.trim(),
+        ),
+      ).toEqual(['Total', '177 pts', '148 pts']);
+    });
+
+    it('shows an empty week with zero totals', async () => {
+      await setup({
+        plans: {
+          [DRAFT_ID]: {
+            kind: 'ok',
+            plan: plan({
+              workouts: [],
+              load: {
+                sports: [],
+                total: { planned_minutes: 0, done_minutes: 0, planned_load: 0, done_load: 0 },
+              },
+            }),
+          },
+        },
+      });
+
+      const table = query(page, '[data-testid=load-summary]');
+      expect(table.textContent).toContain('No workouts planned or activities recorded.');
+      expect(
+        Array.from(table.querySelectorAll('tfoot td')).map((cell) => cell.textContent?.trim()),
+      ).toEqual(['0 pts', '0 pts']);
+    });
+
+    it('updates estimates and the summary when another version is opened', async () => {
+      await setup({
+        plans: {
+          [DRAFT_ID]: { kind: 'ok', plan: WITH_ERRORS },
+          [OLD_ID]: {
+            kind: 'ok',
+            plan: plan({
+              id: OLD_ID,
+              status: 'discarded',
+              report: null,
+              workouts: [{ ...plan().workouts[0], estimated_load: 25 }],
+              load: {
+                sports: [
+                  {
+                    sport: 'cycling',
+                    planned_minutes: 60,
+                    done_minutes: 60,
+                    planned_load: 25,
+                    done_load: 75,
+                  },
+                ],
+                total: { planned_minutes: 60, done_minutes: 60, planned_load: 25, done_load: 75 },
+              },
+            }),
+          },
+        },
+      });
+
+      await click('version-1');
+
+      expect(byId('workout-1')?.textContent).toContain('Est. load 25 pts');
+      const table = query(page, '[data-testid=load-summary]');
+      expect(table.querySelectorAll('tbody tr')).toHaveLength(1);
+      expect(table.querySelector('tbody tr')?.textContent).toContain('25 pts');
+      expect(table.querySelector('tbody tr')?.textContent).toContain('75 pts');
+    });
+
     it('shows the workouts by day, with what they need', async () => {
       await setup();
 
       const days = Array.from(page.querySelectorAll('h3')).map((h) => h.textContent?.trim());
       expect(days).toEqual(['Mon 16 Nov', 'Fri 20 Nov']);
       const meta = (n: number) => byId(`workout-${n}`)?.querySelector('[data-testid="meta"]');
-      expect(meta(1)?.textContent?.replace(/\s+/g, ' ').trim()).toBe('1 h · Power zone 2');
-      expect(meta(2)?.textContent?.replace(/\s+/g, ' ').trim()).toBe('30 min');
+      expect(meta(1)?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+        '1 h · Est. load 50 pts · Power zone 2',
+      );
+      expect(meta(2)?.textContent?.replace(/\s+/g, ' ').trim()).toBe('30 min · Est. load 30 pts');
       expect(byId('workout-1')?.textContent).toContain('Endurance ride');
       expect(byId('workout-1')?.textContent).toContain('Cycling');
       expect(byId('workout-1')?.textContent).toContain('Endurance');
@@ -661,7 +769,9 @@ describe('PlanningPage', () => {
 
     it('shows the range next to the zone of a workout', () => {
       const meta = byId('workout-1')?.querySelector('[data-testid="meta"]');
-      expect(meta?.textContent?.replace(/\s+/g, ' ').trim()).toBe('1 h · Power zone 2 · 138–188 W');
+      expect(meta?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+        '1 h · Est. load 50 pts · Power zone 2 · 138–188 W',
+      );
     });
 
     it('shows the range next to the zone of a segment, and none where there is none', () => {

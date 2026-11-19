@@ -116,6 +116,11 @@ export function minutesText(minutes: number): string {
   return rest === 0 ? `${hours} h` : `${hours} h ${rest} min`;
 }
 
+/** Unified load points, for workout estimates and week totals. */
+export function loadText(load: number): string {
+  return `${load} pts`;
+}
+
 /** "138–188 W", "145–152 bpm", "4:20–4:45 /km": the numbers of a zone; empty without a range. */
 export function rangeText(range: ZoneTarget | null): string {
   if (range === null) {

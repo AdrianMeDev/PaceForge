@@ -81,10 +81,13 @@ describe('activity formatting', () => {
       expect(formatRpe(null)).toBe(MISSING);
     });
 
-    it('shows the load in arbitrary units and a dash for none', () => {
-      expect(formatLoad(315)).toBe('315 AU');
-      expect(formatLoad(0)).toBe('0 AU');
-      expect(formatLoad(null)).toBe(MISSING);
+    it('shows unified load points with their source and a dash for none', () => {
+      expect(formatLoad(53, 'rpe')).toBe('53 pts (RPE estimate)');
+      expect(formatLoad(75, 'intervals')).toBe('75 pts (Intervals.icu)');
+      expect(formatLoad(20, null)).toBe('20 pts');
+      expect(formatLoad(0, 'intervals')).toBe('0 pts (Intervals.icu)');
+      expect(formatLoad(0, 'rpe')).toBe('0 pts (RPE estimate)');
+      expect(formatLoad(null, null)).toBe(MISSING);
     });
   });
 
