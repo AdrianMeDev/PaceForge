@@ -1,6 +1,7 @@
 import {
   EditedSegment,
   EditedWorkout,
+  SegmentKind,
   Sport,
   Workout,
   WorkoutGoal,
@@ -14,6 +15,9 @@ export const TITLE_MAX = 100;
 export const NOTES_MAX = 500;
 export const DURATION_MAX = 1440;
 export const STRETCHING_MAX = 60;
+export const MAX_SEGMENTS = 40;
+export const SEGMENT_SECONDS_MAX = 86_400;
+export const REPEAT_MAX = 50;
 
 /** How many zones a system has: the seven power levels, five heart rate zones, five pace zones. */
 export const ZONE_COUNT: Record<ZoneSystem, number> = { power: 7, heart_rate: 5, pace: 5 };
@@ -43,8 +47,17 @@ function choices<T extends string>(labels: Record<T, string>): Choice<T>[] {
   return (Object.keys(labels) as T[]).map((value) => ({ value, label: labels[value] }));
 }
 
+const SEGMENT_KIND_LABELS: Record<SegmentKind, string> = {
+  warmup: 'Warm-up',
+  steady: 'Steady',
+  work: 'Work',
+  recovery: 'Recovery',
+  cooldown: 'Cool-down',
+};
+
 export const SPORT_CHOICES: Choice<Sport>[] = choices(SPORT_LABELS);
 export const GOAL_CHOICES: Choice<WorkoutGoal>[] = choices(GOAL_LABELS);
+export const SEGMENT_KIND_CHOICES: Choice<SegmentKind>[] = choices(SEGMENT_KIND_LABELS);
 /** The times of day, and "no time" first: only the order is meant, there is no clock time. */
 export const SLOT_CHOICES: Choice<WorkoutSlot | ''>[] = [
   { value: '', label: 'Not said' },
@@ -235,4 +248,184 @@ function rank(slot: WorkoutSlot | null): number {
 export function structureText(workout: EditedWorkout): string {
   const parts = workout.segments.length;
   return parts === 0 ? '' : `Interval structure with ${parts} ${parts === 1 ? 'part' : 'parts'}`;
+}
+
+export interface SegmentDraft {
+  kind: SegmentKind;
+  duration: string;
+  repeat: string;
+  zone_system: ZoneSystem | '';
+  zone: string;
+}
+
+export interface SegmentRowError {
+  duration?: string;
+  repeat?: string;
+  zone?: string;
+}
+
+export type ParsedSegments =
+  | { ok: true; segments: EditedSegment[] }
+  | { ok: false; rowErrors: SegmentRowError[]; error: string | null };
+
+/** Seconds ("90"), minutes and seconds ("1:30"), or hours ("1:00:00"), from 1 second to 24 hours. */
+export function parseSegmentDuration(text: string): Parsed<number> {
+  const trimmed = text.trim();
+  const hms = /^(\d{1,2}):([0-5]\d):([0-5]\d)$/.exec(trimmed);
+  const ms = /^(\d{1,4}):([0-5]\d)$/.exec(trimmed);
+  const seconds = /^\d{1,5}$/.test(trimmed)
+    ? Number(trimmed)
+    : hms !== null
+      ? Number(hms[1]) * 3600 + Number(hms[2]) * 60 + Number(hms[3])
+      : ms !== null
+        ? Number(ms[1]) * 60 + Number(ms[2])
+        : NaN;
+  if (Number.isNaN(seconds)) {
+    return {
+      ok: false,
+      error: 'Enter the duration as seconds (90), minutes and seconds (1:30), or hours (1:00:00).',
+    };
+  }
+  if (seconds < 1 || seconds > SEGMENT_SECONDS_MAX) {
+    return { ok: false, error: 'Use a duration from 1 second to 24 hours.' };
+  }
+  return { ok: true, value: seconds };
+}
+
+/** Format segment `seconds` as "m:ss" or "h:mm:ss" so `parseSegmentDuration` reads it back. */
+export function formatSegmentDuration(seconds: number): string {
+  const total = Math.max(0, Math.round(seconds));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const secs = total % 60;
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  }
+  return `${minutes}:${String(secs).padStart(2, '0')}`;
+}
+
+/** How many times a segment is repeated, from 1 to 50. */
+export function parseSegmentRepeat(text: string): Parsed<number> {
+  const trimmed = text.trim();
+  const repeat = /^\d{1,3}$/.test(trimmed) ? Number(trimmed) : NaN;
+  if (Number.isNaN(repeat) || repeat < 1 || repeat > REPEAT_MAX) {
+    return { ok: false, error: `Enter whole repeats from 1 to ${REPEAT_MAX}.` };
+  }
+  return { ok: true, value: repeat };
+}
+
+/** A new segment row: 5 minutes of work, repeated once, without a zone target. */
+export function blankSegment(): SegmentDraft {
+  return {
+    kind: 'work',
+    duration: '5:00',
+    repeat: '1',
+    zone_system: '',
+    zone: '',
+  };
+}
+
+/** Turn saved or edited segments into form drafts. */
+export function draftsFromSegments(segments: readonly EditedSegment[]): SegmentDraft[] {
+  return segments.map((segment) => ({
+    kind: segment.kind,
+    duration: formatSegmentDuration(segment.seconds),
+    repeat: String(segment.repeat),
+    zone_system: segment.zone_system ?? '',
+    zone: segment.zone === null ? '' : String(segment.zone),
+  }));
+}
+
+/** Total duration of all segments in seconds, accounting for repeats. */
+export function segmentsTotalSeconds(segments: readonly EditedSegment[]): number {
+  return segments.reduce((sum, segment) => sum + segment.seconds * segment.repeat, 0);
+}
+
+/** Total duration of all segments in whole minutes (at least 1 when non-empty). */
+export function segmentsDurationMinutes(segments: readonly EditedSegment[]): number {
+  const total = segmentsTotalSeconds(segments);
+  return total === 0 ? 0 : Math.max(1, Math.round(total / 60));
+}
+
+/** Check that the combined duration of all segments does not exceed 24 hours. */
+export function checkSegmentsTotal(segments: readonly EditedSegment[]): string | null {
+  if (segmentsTotalSeconds(segments) > SEGMENT_SECONDS_MAX) {
+    return 'Segments cannot add up to more than 24 hours.';
+  }
+  return null;
+}
+
+/** Validate and parse all segment drafts, checking row fields, count limit, and 24-hour cap. */
+export function parseSegmentDrafts(drafts: readonly SegmentDraft[]): ParsedSegments {
+  const rowErrors: SegmentRowError[] = [];
+  const segments: EditedSegment[] = [];
+  let hasRowError = false;
+
+  for (const draft of drafts) {
+    const rowError: SegmentRowError = {};
+    const duration = parseSegmentDuration(draft.duration);
+    if (!duration.ok) {
+      rowError.duration = duration.error;
+    }
+    const repeat = parseSegmentRepeat(draft.repeat);
+    if (!repeat.ok) {
+      rowError.repeat = repeat.error;
+    }
+
+    let zoneSystem: ZoneSystem | null = null;
+    let zone: number | null = null;
+    if (draft.zone_system !== '') {
+      zoneSystem = draft.zone_system;
+      const parsedZone = /^\d+$/.test(draft.zone.trim()) ? Number(draft.zone.trim()) : NaN;
+      if (Number.isNaN(parsedZone) || parsedZone < 1 || parsedZone > ZONE_COUNT[zoneSystem]) {
+        rowError.zone = 'Choose a zone.';
+      } else {
+        zone = parsedZone;
+      }
+    }
+
+    if (
+      rowError.duration !== undefined ||
+      rowError.repeat !== undefined ||
+      rowError.zone !== undefined
+    ) {
+      hasRowError = true;
+    }
+
+    rowErrors.push(rowError);
+    if (duration.ok && repeat.ok && rowError.zone === undefined) {
+      segments.push({
+        kind: draft.kind,
+        seconds: duration.value,
+        repeat: repeat.value,
+        zone_system: zoneSystem,
+        zone,
+      });
+    }
+  }
+
+  let error: string | null = null;
+  if (drafts.length > MAX_SEGMENTS) {
+    error = `Use at most ${MAX_SEGMENTS} segments.`;
+  } else if (!hasRowError) {
+    error = checkSegmentsTotal(segments);
+  }
+
+  if (hasRowError || error !== null) {
+    return { ok: false, rowErrors, error };
+  }
+  return { ok: true, segments };
+}
+
+/** Clear zone system and zone on segments whose zone system does not fit `sport`. */
+export function sanitizeSegmentZones(
+  drafts: readonly SegmentDraft[],
+  sport: Sport,
+): SegmentDraft[] {
+  const allowed = ZONE_SYSTEMS_OF[sport];
+  return drafts.map((draft) =>
+    draft.zone_system !== '' && !allowed.includes(draft.zone_system)
+      ? { ...draft, zone_system: '', zone: '' }
+      : { ...draft },
+  );
 }
