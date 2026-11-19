@@ -116,7 +116,7 @@ AI key; several people can share one instance without seeing each other's data.
 - **Depends on:** –
 - **Size:** M
 
-### M10 [ ] Edit a workout's structure
+### M10 [~] Edit a workout's structure
 - **Goal:** The athlete can change the segments and intervals of a workout by hand.
 - **Includes:** segment editor (warm-up, blocks with repeats, cool-down, zone, duration) on the Week plan page, checks after each change, saved as a new draft, push updates the same Intervals event.
 - **Done when:** changing 3×10 min to 4×8 min saves a new draft that passes the checks; tests green.

@@ -29,7 +29,7 @@ from planning.push import (
     external_id,
     push,
 )
-from planning.schema import WeekPlan, Workout, to_json
+from planning.schema import Segment, SegmentKind, WeekPlan, Workout, ZoneSystem, to_json
 
 from .fake_calendar import Calendar
 from .test_services import MONDAY, NEXT_MONDAY, good_week, prepared, workout
@@ -286,6 +286,56 @@ class TestAVersionMadeFromAnother:
 
         assert result == PushResult(synced=3, failed=0, removed=1, left_behind=0)
         assert set(calendar.events) < events  # the same events (three of them), none new
+
+    def test_revising_segments_and_pushing_updates_the_existing_event_in_place(
+        self, alice: User, calendar: Calendar, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            goal_services, "_utc_now", lambda: datetime(2027, 7, 14, 12, tzinfo=UTC)
+        )
+        week = WeekPlan(
+            MONDAY,
+            (
+                workout(
+                    MONDAY,
+                    0,
+                    50,
+                    segments=(
+                        Segment(SegmentKind.WARMUP, 600, 1, ZoneSystem.POWER, 2),
+                        Segment(SegmentKind.WORK, 600, 3, ZoneSystem.POWER, 4),
+                        Segment(SegmentKind.COOLDOWN, 600, 1, ZoneSystem.POWER, 1),
+                    ),
+                ),
+            ),
+        )
+        old = confirmed(alice, week)
+        push(alice, old.pk)
+        (event_id,) = calendar.events
+        ext_id = calendar.events[event_id]["external_id"]
+
+        data = to_json(services.load(alice, old.pk))
+        row = PlannedWorkout.objects.get(plan=old)
+        data["workouts"][0]["lineage"] = str(row.lineage)
+        data["workouts"][0]["duration_minutes"] = 52
+        data["workouts"][0]["segments"][1] = {
+            "kind": "work",
+            "seconds": 480,
+            "repeat": 4,
+            "zone_system": "power",
+            "zone": 4,
+        }
+
+        newer = services.confirm(alice, revise(alice, old.pk, data).pk)
+        result = push(alice, newer.pk)
+
+        assert result == PushResult(synced=1, failed=0, removed=0, left_behind=0)
+        assert set(calendar.events) == {event_id}
+        assert calendar.events[event_id]["external_id"] == ext_id
+        description = calendar.events[event_id]["description"]
+        assert "Work 4x" in description
+        assert "- 8m" in description
+        assert "Work 3x" not in description
+        assert calendar.count("delete") == 0
 
     def test_a_workout_that_was_moved_updates_its_event_to_the_new_day(
         self, alice: User, calendar: Calendar

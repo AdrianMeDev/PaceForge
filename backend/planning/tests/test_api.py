@@ -786,6 +786,51 @@ class TestChecking:
 
         assert set(statuses) == {HTTPStatus.OK}
 
+    def test_edited_segments_are_checked_and_isolated_by_user(self, alice: User, bob: User) -> None:
+        valid_workout = Workout(
+            day=MONDAY,
+            sport=Sport.CYCLING,
+            title="Threshold",
+            goal=Goal.THRESHOLD,
+            duration_minutes=52,
+            segments=(
+                Segment(SegmentKind.WARMUP, 600, 1, ZoneSystem.POWER, 2),
+                Segment(SegmentKind.WORK, 480, 4, ZoneSystem.POWER, 4),
+                Segment(SegmentKind.COOLDOWN, 600, 1, ZoneSystem.POWER, 1),
+            ),
+        )
+        data = edited(valid_workout, ride(2, 90), ride(4, 90))
+        alice_resp = signed_in(alice).call("POST", check_url(), data)
+        bob_resp = signed_in(bob).call("POST", check_url(), data)
+
+        assert alice_resp.status_code == HTTPStatus.OK
+        assert body(alice_resp) == {"valid": True, "findings": [], "order": [0, 1, 2]}
+        assert bob_resp.status_code == HTTPStatus.OK
+        assert body(bob_resp)["valid"] is False
+
+    def test_segments_mismatch_is_reported_by_check(self, alice: User) -> None:
+        mismatched = Workout(
+            day=MONDAY,
+            sport=Sport.CYCLING,
+            title="Threshold",
+            goal=Goal.THRESHOLD,
+            duration_minutes=60,
+            segments=(
+                Segment(SegmentKind.WARMUP, 600, 1, ZoneSystem.POWER, 2),
+                Segment(SegmentKind.WORK, 480, 4, ZoneSystem.POWER, 4),
+            ),
+        )
+
+        response = signed_in(alice).call("POST", check_url(), edited(mismatched))
+
+        assert response.status_code == HTTPStatus.OK
+        answer = body(response)
+        assert answer["valid"] is False
+        assert any(
+            f["code"] == "segments_mismatch" and f["path"] == "workouts[0].segments"
+            for f in answer["findings"]
+        )
+
 
 def stored_body(plan: WeeklyPlan) -> dict[str, Any]:
     """What the page sends back for a stored plan: its workouts, each with its lineage."""
@@ -981,6 +1026,61 @@ class TestRevising:
 
         assert scripted.calls == []
         assert not AIUsageRecord.objects.exists()
+
+    def test_revising_segments_updates_targets_estimated_load_and_week_load(
+        self, alice: User, bob: User
+    ) -> None:
+        interval_ride = Workout(
+            day=MONDAY,
+            sport=Sport.CYCLING,
+            title="Threshold intervals",
+            goal=Goal.THRESHOLD,
+            duration_minutes=50,
+            segments=(
+                Segment(SegmentKind.WARMUP, 600, 1, ZoneSystem.POWER, 2),
+                Segment(SegmentKind.WORK, 600, 3, ZoneSystem.POWER, 4),
+                Segment(SegmentKind.COOLDOWN, 600, 1, ZoneSystem.POWER, 1),
+            ),
+        )
+        old = services.confirm(alice, draft(alice, interval_ride, ride(2, 90), ride(4, 90)).pk)
+        old_data = body(signed_in(alice).call("GET", plan_url(old.pk)))
+        old_workout_load = old_data["workouts"][0]["estimated_load"]
+        old_week_load = old_data["load"]["total"]["planned_load"]
+
+        data = stored_body(old)
+        data["workouts"][0]["duration_minutes"] = 52
+        data["workouts"][0]["segments"][1] = {
+            "kind": "work",
+            "seconds": 480,
+            "repeat": 4,
+            "zone_system": "power",
+            "zone": 4,
+        }
+
+        # Another user cannot revise Alice's plan.
+        bob_resp = signed_in(bob).call("POST", plan_url(old.pk, "revise/"), data)
+        assert bob_resp.status_code == HTTPStatus.NOT_FOUND
+
+        response = signed_in(alice).call("POST", plan_url(old.pk, "revise/"), data)
+
+        assert response.status_code == HTTPStatus.CREATED
+        answer = body(response)
+        assert answer["report"] == {"valid": True, "findings": []}
+        updated = answer["workouts"][0]
+        assert updated["duration_minutes"] == 52
+        assert updated["segments"][1] == {
+            "kind": "work",
+            "seconds": 480,
+            "repeat": 4,
+            "zone_system": "power",
+            "zone": 4,
+            "target": {"low": 225, "high": 263, "unit": "W"},
+        }
+        assert updated["estimated_load"] > old_workout_load
+        assert answer["load"]["total"]["planned_minutes"] == 232
+        assert answer["load"]["total"]["planned_load"] == (
+            old_week_load - old_workout_load + updated["estimated_load"]
+        )
 
 
 class TestRestoring:
