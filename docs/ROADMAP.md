@@ -53,7 +53,7 @@ AI key; several people can share one instance without seeing each other's data.
 
 ## Milestones
 
-### M1 [~] Activities from Intervals.icu
+### M1 [x] Activities from Intervals.icu
 - **Goal:** Activities synced to Intervals.icu (not Strava-sourced) appear in PaceForge by button.
 - **Includes:** fetch the last 8–12 weeks (setting), map sport/date/duration/distance/load/HR/pace/power, duplicate check with file imports, last sync and error on the connection, sync button on the Activities page, back-off on 429/5xx, docs.
 - **Done when:** with a stubbed Intervals API, a sync imports activities once (a second sync adds none), duplicates of uploaded files are skipped, the connection shows the last sync; tests green.
@@ -173,4 +173,5 @@ AI key; several people can share one instance without seeing each other's data.
 - README section and `docs/` updated for every user-visible change.
 
 ## Changelog
+- 2026-11-19: M1 completed — sync non-Strava activities from Intervals.icu (last 8–12 weeks, duplicate check, last sync & error on connection, Activities page button)
 - 2026-11-19: roadmap created from `PROJECT_PLAN.md` §15 and the user stories, checked against `main` (905fee0)

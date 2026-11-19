@@ -11,7 +11,8 @@ The long-term goal is described in `PROJECT_PLAN.md`; this repository is in earl
 admin page for invitations, email verification, sign-in and sign-out with server-side sessions,
 password reset, two-factor authentication (authenticator app plus recovery codes, mandatory for
 administrators), a personal Intervals.icu connection with an API key (stored encrypted), importing
-activities from FIT, TCX and GPX files (also the whole Strava export), an athlete profile with your time zone, your thresholds (typed in,
+activities from FIT, TCX and GPX files (also the whole Strava export) and syncing non-Strava
+activities from Intervals.icu, an athlete profile with your time zone, your thresholds (typed in,
 read from Intervals.icu or estimated from your activities) and the training zones that follow from
 them, goals (races, threshold targets and general goals, with priorities A, B and C), your training time
 (minutes per weekday, a weekly budget, injuries and limitations, vacation and illness), your own AI provider
@@ -23,8 +24,7 @@ AI coach drafts a training week that you read, change by hand, confirm or discar
 ([Season](#season)), a **Week review** page that shows how a week went against the confirmed plan, on which you rate your
 sessions, say how the week felt and ask your coach about it ([Week review](#week-review)), and the
 data-isolation foundation the training features will build on.
-**Not there yet:** reading activities from Intervals.icu over that connection (it can only ever
-work for activities that do not come from Strava, see [Activities](#activities)), sending
+**Not there yet:** sending
 invitations by email (the administrator hands the link on) and more of the coach: it drafts a
 week, but you cannot yet change a draft by talking to it, and it has not been tried against a real
 provider (see [Week plan](#week-plan)). Before an instance is exposed to the
@@ -181,25 +181,28 @@ and invite a few others. The findings behind this are in
 1. In Intervals.icu open Settings, Developer Settings and copy your API key.
 2. In PaceForge open **Connections**, paste the key and press **Connect**. The server checks it with
    Intervals.icu, then stores it encrypted together with your athlete id (`i…`).
-3. The page shows the status, the athlete and the time of the last check. **Check connection**
-   tests the stored key again; if Intervals.icu no longer accepts it (you created a new key there),
-   the status says **Needs attention** and you paste the new one under **Replace the API key**.
+3. The page shows the status, the athlete, the time of the last check, **Last sync** (or *Never*)
+   and, if the last activity sync failed, **Last sync error**. **Check connection** tests the stored
+   key again; if Intervals.icu no longer accepts it (you created a new key there), the status says
+   **Needs attention** and you paste the new one under **Replace the API key**.
 4. **Disconnect** (a dialog asks first) deletes the stored key. PaceForge cannot revoke it at Intervals.icu; create a new
    key there if the old one should stop working.
 
 - **The key is write-only.** It is sent once, never shown again (not even in part), not returned
   by any endpoint and not logged. Every user sees and changes only their own connection;
   administrators have no way to read other users' keys.
-- **Limits:** saving and checking together are limited to 10 per minute per user.
-- **Only your thresholds are read from Intervals.icu so far,** see
-  [Athlete profile](#athlete-profile). Reading activities comes next and only works for activities
-  that did not come from Strava; for everything else use the [file import](#activities).
+- **Limits:** saving, checking and syncing activities together are limited to 10 per minute per user.
+- **Thresholds and non-Strava activities are read from Intervals.icu:** see
+  [Athlete profile](#athlete-profile) for thresholds and [Activities](#activities) for syncing
+  recent activities. Activities that Intervals.icu received from Strava cannot be read via the API;
+  for those use the [file import](#activities).
 - **If the instance key is lost,** the stored keys can no longer be used. The page still opens and
   shows **Needs attention** after a check, and each user pastes their key again.
 - `INTERVALS_API_BASE_URL` (see [Configuration](#configuration)) is only for tests and fake servers.
-- The connection API also returns `last_sync_at` (initially `null`) and `last_sync_error`
-  (initially empty). Errors use fixed codes: `invalid_key`, `unavailable` or `unexpected`.
-  Reconnecting or successfully checking the key clears the error.
+- The connection API returns `last_sync_at` (initially `null`) and `last_sync_error` (initially
+  empty). A successful activity sync updates `last_sync_at` and clears `last_sync_error`; a failed
+  sync records a fixed error code (`invalid_key`, `unavailable` or `unexpected`) while keeping the
+  previous `last_sync_at`. Reconnecting or successfully checking the key clears `last_sync_error`.
 - Your AI provider is set up on the same page, in its own section: see
   [AI coach](#ai-coach-bring-your-own-key).
 
@@ -374,10 +377,24 @@ Strava is imported with one command: see [The whole Strava history](#the-whole-s
    large*. The list below shows date, sport, duration, distance, average heart rate, RPE, load and
    source, newest first, 20 per page; on a phone each activity is a card. The chips above the list
    keep it to one sport (the server filters, so the count and the pages follow).
-3. **Enter a session** by hand for what no watch recorded (strength training, a session that only
+3. **Sync from Intervals.icu** (shown when Intervals.icu is connected with a valid key) calls
+   `POST /api/activities/sync/` to import recent non-Strava activities from the last 8–12 weeks
+   (up to today in your time zone; configured via `INTERVALS_SYNC_WEEKS`, default `12`).
+   - **Mapped fields:** sport, start time, elapsed and timer duration, distance, Intervals.icu
+     `training_load` (kept separate from RPE-based `load`), average and maximum heart rate, average
+     pace (`avg_pace_s_per_km`), average power, total ascent and calories (plus the internal
+     Intervals.icu id). Estimated thresholds are refreshed once when new activities are imported.
+   - **Strava activities are skipped:** Intervals.icu does not hand out Strava-sourced activities via
+     the API; those are counted as skipped (`skipped_strava`) and must be imported as files.
+   - **Duplicates are skipped:** activities already synced (same Intervals.icu id) or matching an
+     uploaded file or manual entry (see [the same session twice](#the-same-session-twice)) are
+     skipped (`skipped_duplicates`), so running sync again adds nothing new.
+   - **Rate limit:** shares the 10-per-minute-per-user limit with saving and checking the
+     Intervals.icu connection.
+4. **Enter a session** by hand for what no watch recorded (strength training, a session that only
    Strava has): sport, day, the time it started, the duration in minutes, and optionally the
    distance, how hard it felt and a note. See [Sessions entered by hand](#sessions-entered-by-hand).
-4. **Delete** (a dialog asks first) removes the activity and the file that was stored with it, if
+5. **Delete** (a dialog asks first) removes the activity and the file that was stored with it, if
    it has one.
 
 What you should know:
@@ -1414,6 +1431,7 @@ Set in `.env` or in the environment. Values without a default are required.
 | `REGISTRATION_MODE`            | `invite_only`                       | `closed`, `invite_only` or `open`. Anything else stops Django at startup.         |
 | `INVITATION_TTL_DAYS`          | `7`                                 | How long an invitation stays valid.                                               |
 | `INTERVALS_API_BASE_URL`       | `https://intervals.icu/api/v1`      | Only for tests or a fake server: where the Intervals.icu API is. `http://` or `https://`. |
+| `INTERVALS_SYNC_WEEKS`         | `12`                                | Number of weeks of recent activities fetched from Intervals.icu on sync (whole number from 8 to 12). |
 | `AI_ALLOWED_BASE_URLS`         | empty                               | Comma-separated base URLs of OpenAI-compatible AI endpoints that users may choose, e.g. `https://api.openai.com/v1` or `https://api.deepseek.com`. Empty: none. A bad entry stops Django at startup, see [AI coach](#ai-coach-bring-your-own-key). |
 | `ANTHROPIC_API_BASE_URL`       | `https://api.anthropic.com`         | Only for tests or a fake server: where the Anthropic API is. `http://` or `https://`. |
 | `ACTIVITY_UPLOAD_MAX_BYTES`    | `26214400` (25 MB)                  | Largest FIT, TCX or GPX file accepted for import, in bytes, and the most a compressed file may unpack to. Must be a positive integer. |

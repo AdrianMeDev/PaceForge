@@ -115,8 +115,9 @@ Base URL `https://intervals.icu/api/v1`. All paths below start with `/athlete/{i
   `external_id`, unique per owner and source. They have no file hash. File activities still need
   a hash; manual activities have neither a hash nor an external id. Activity summaries include
   nullable `avg_pace_s_per_km` (seconds per kilometre) and `training_load`. Both must be
-  non-negative. Provider training load stays separate from the RPE-based `load`. These schema
-  fields do not yet provide an activity sync endpoint.
+  non-negative. Provider training load stays separate from the RPE-based `load`. `POST /api/activities/sync/`
+  (and the **Sync from Intervals.icu** button on the Activities page) imports non-Strava activities
+  from the last 8–12 weeks (`INTERVALS_SYNC_WEEKS`), skipping Strava stubs and duplicates.
 
 ### Real activity files (checked 2026-11-13, no personal values recorded)
 
@@ -140,6 +141,9 @@ Base URL `https://intervals.icu/api/v1`. All paths below start with `/athlete/{i
 - [x] **Activity structure:** checked on 2026-11-13. Strava-sourced activities are not readable
       (see "Activities"); the structure of directly synced activities is still unchecked and only
       matters for the later Intervals.icu import.
+- [ ] **Live activity fields:** the Intervals.icu activity importer now exists, but its field
+      mapping has only been tested against a stubbed API; verify against a live account with
+      non-Strava activities.
 - [ ] **Rate limits:** find out the limits for personal keys before an automatic sync runs
       against many users.
 
