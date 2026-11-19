@@ -1592,6 +1592,9 @@ Set in `.env` or in the environment. Values without a default are required.
 | `INVITATION_TTL_DAYS`          | `7`                                 | How long an invitation stays valid.                                               |
 | `INTERVALS_API_BASE_URL`       | `https://intervals.icu/api/v1`      | Only for tests or a fake server: where the Intervals.icu API is. `http://` or `https://`. |
 | `INTERVALS_SYNC_WEEKS`         | `12`                                | Number of weeks of recent activities fetched from Intervals.icu on sync (whole number from 8 to 12). |
+| `JOBS_SYNC_HOURS`              | `6`                                 | Hours between two syncs of the scheduler (whole number from 1 to 24). |
+| `JOBS_SUNDAY_HOUR`             | `18`                                | Hour on Sunday, in the athlete's time zone, from which the week review and the next week's draft run (0 to 23). |
+| `JOBS_INTERVAL_MINUTES`        | `15`                                | Minutes the scheduler sleeps between two rounds (whole number from 1 to 60). |
 | `AI_ALLOWED_BASE_URLS`         | empty                               | Comma-separated base URLs of OpenAI-compatible AI endpoints that users may choose, e.g. `https://api.openai.com/v1` or `https://api.deepseek.com`. Empty: none. A bad entry stops Django at startup, see [AI coach](#ai-coach-bring-your-own-key). |
 | `ANTHROPIC_API_BASE_URL`       | `https://api.anthropic.com`         | Only for tests or a fake server: where the Anthropic API is. `http://` or `https://`. |
 | `ACTIVITY_UPLOAD_MAX_BYTES`    | `26214400` (25 MB)                  | Largest FIT, TCX or GPX file accepted for import, in bytes, and the most a compressed file may unpack to. Must be a positive integer. |
