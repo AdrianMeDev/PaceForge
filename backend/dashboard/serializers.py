@@ -4,6 +4,7 @@ title of the main goal."""
 from typing import Any
 
 from goals.assessing import assessment_data
+from wellness.summary import wellness_data
 
 from .overview import Dashboard, MainGoal, SeasonGlance
 from .summary import NextWorkout, WeekFigures, WeekGlance
@@ -42,6 +43,7 @@ def dashboard_data(found: Dashboard) -> dict[str, Any]:
                 for step in found.setup
             ]
         },
+        "wellness": wellness_data(found.wellness),
     }
 
 

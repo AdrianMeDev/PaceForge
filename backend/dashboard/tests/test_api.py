@@ -14,7 +14,7 @@ from goals.models import Goal
 from reviews.tests.builders import MONDAY, NOW, make_activity, make_plan
 from reviews.tests.conftest import make_user, signed_in
 
-from .test_overview import confirm_season, use_coach
+from .test_overview import confirm_season, fill_wellness, use_coach
 
 pytestmark = pytest.mark.django_db
 
@@ -86,6 +86,7 @@ class TestTheAnswer:
                     {"key": key, "done": False, "optional": key == "intervals"} for key in STEPS
                 ]
             },
+            "wellness": None,
         }
 
     def test_for_an_account_with_data(self, alice: User) -> None:
@@ -94,6 +95,11 @@ class TestTheAnswer:
         confirm_season(alice)
         Goal.objects.create(owner=alice, kind="general", title="My goal", priority="main")
         use_coach(alice)
+        fill_wellness(
+            alice,
+            recent={"sleep_minutes": 450, "resting_hr": 54},
+            baseline={"sleep_minutes": 500, "resting_hr": 50},
+        )
 
         data = body(get(alice))
 
@@ -107,6 +113,14 @@ class TestTheAnswer:
         assert data["weeks"][-1]["sports"] == [{"sport": "running", "minutes": 60}]
         assert [item["day"] for item in data["recent"]] == ["2026-11-10"]
         assert data["usage"]["calls"] == 1
+        assert data["wellness"] == {
+            "sleep": {"recent": 450.0, "baseline": 500.0, "trend": "down"},
+            "hrv": {"recent": None, "baseline": None, "trend": None},
+            "resting_hr": {"recent": 54.0, "baseline": 50.0, "trend": "up"},
+            "weight": {"recent": None, "baseline": None, "trend": None},
+            "warning": True,
+            "warning_signals": ["low_sleep", "high_resting_hr"],
+        }
         steps = {step["key"]: step["done"] for step in data["setup"]["steps"]}
         assert steps["goal"] and steps["activities"] and steps["season"] and steps["first_week"]
         assert not steps["profile"] and not steps["training_time"]
@@ -117,6 +131,7 @@ class TestTheAnswer:
         make_activity(bob, "2026-11-10T08:00:00", rpe=6)
         Goal.objects.create(owner=bob, kind="general", title="Bob's goal", priority="main")
         use_coach(bob)
+        fill_wellness(bob, recent={"sleep_minutes": 450}, baseline={"sleep_minutes": 500})
 
         carol = make_user("carol@example.com")  # nothing of her own, like Alice
 
@@ -142,6 +157,11 @@ class TestTheNumberOfQueries:
             use_coach(alice)
         Goal.objects.create(owner=alice, kind="general", title="Goal", priority="main")
         Goal.objects.create(owner=alice, kind="general", title="Other", priority="secondary")
+        fill_wellness(
+            alice,
+            recent={"sleep_minutes": 450, "hrv": 55.0},
+            baseline={"sleep_minutes": 500, "hrv": 65.0},
+        )
 
         with CaptureQueriesContext(connection) as full:
             assert api.call("GET", URL).status_code == HTTPStatus.OK
