@@ -35,6 +35,7 @@ from planning.rules import (
     check_long_days,
     check_minimum_minutes,
     check_progression,
+    check_run_progression,
     check_sessions_per_sport,
     check_times_of_day,
     check_training_days,
@@ -55,6 +56,7 @@ from planning.schema import (
     Workout,
     ZoneSystem,
 )
+from planning.validation import validate_week
 
 MONDAY = date(2027, 7, 12)
 assert MONDAY.weekday() == 0
@@ -1438,6 +1440,142 @@ class TestProgression:
         )
 
 
+class TestRunProgression:
+    def planned(self, minutes: int) -> WeekPlan:
+        return week(workout(1, minutes, sport=Sport.RUNNING))
+
+    @pytest.mark.parametrize(
+        ("level", "limit"),
+        [
+            (IntensityLevel.RELAXED, 105),
+            (IntensityLevel.NORMAL, 110),
+            (IntensityLevel.INTENSIVE, 120),
+        ],
+    )
+    def test_exactly_at_the_limit_passes_and_one_minute_above_warns(
+        self, level: IntensityLevel, limit: int
+    ) -> None:
+        ctx = context(recent_run_weeks=(100,), limits=LEVEL_LIMITS[level])
+
+        assert check_run_progression(self.planned(limit), ctx) == []
+        assert check_run_progression(self.planned(limit + 1), ctx) == [
+            Finding(
+                Severity.WARNING,
+                "run_volume_increase",
+                f"The week adds up to {limit + 1} running minutes, {limit + 1} % of the average "
+                "of 100 running minutes of the last 1 week(s).",
+                "workouts",
+            )
+        ]
+
+    @pytest.mark.parametrize("weeks", [(), (0,), (0, 0, 0)])
+    def test_without_a_positive_run_reference_nothing_is_checked(
+        self, weeks: tuple[int, ...]
+    ) -> None:
+        ctx = context(recent_run_weeks=weeks, recent_weeks=(100,), typical_weekly_minutes=100)
+
+        assert check_run_progression(self.planned(1440), ctx) == []
+
+    def test_the_reference_is_the_average_including_weeks_without_runs(self) -> None:
+        ctx = context(recent_run_weeks=(100, 0, 200))  # average 100, limit 120
+
+        assert check_run_progression(self.planned(120), ctx) == []
+        assert [f.code for f in check_run_progression(self.planned(121), ctx)] == [
+            "run_volume_increase"
+        ]
+
+    def test_the_average_is_not_rounded_before_comparing(self) -> None:
+        ctx = context(recent_run_weeks=(100, 103))  # average 101.5, limit 121.8
+
+        assert check_run_progression(self.planned(121), ctx) == []
+        assert [f.code for f in check_run_progression(self.planned(122), ctx)] == [
+            "run_volume_increase"
+        ]
+
+    def test_all_runs_inside_the_week_and_only_those_count(self) -> None:
+        plan = week(
+            workout(1, 60, sport=Sport.RUNNING),
+            workout(2, 60, sport=Sport.RUNNING),
+            workout(3, 100, sport=Sport.CYCLING),
+            workout(4, 100, sport=Sport.SWIMMING),
+            workout(5, 100, sport=Sport.STRENGTH),
+            workout(-1, 1440, sport=Sport.RUNNING),
+            workout(7, 1440, sport=Sport.RUNNING),
+        )
+        ctx = context(recent_run_weeks=(100,))
+
+        assert check_run_progression(plan, ctx) == []
+        longer = dataclasses.replace(
+            plan, workouts=(*plan.workouts, workout(6, 1, sport=Sport.RUNNING))
+        )
+        assert [f.code for f in check_run_progression(longer, ctx)] == ["run_volume_increase"]
+
+    @pytest.mark.parametrize("run_minutes", [60, 120])
+    def test_unchanged_total_volume_warns_only_when_running_jumps(self, run_minutes: int) -> None:
+        plan = week(workout(1, run_minutes, sport=Sport.RUNNING), workout(2, 400 - run_minutes))
+        ctx = context(recent_weeks=(400,), recent_run_weeks=(60,))
+
+        report = validate_week(plan, ctx)
+
+        assert report.valid
+        assert [f.code for f in report.findings] == (
+            ["run_volume_increase"] if run_minutes == 120 else []
+        )
+
+    def test_stable_running_with_more_cycling_only_warns_about_total_volume(self) -> None:
+        plan = week(workout(1, 100, sport=Sport.RUNNING), workout(2, 301))
+
+        report = validate_week(plan, context(recent_weeks=(300,), recent_run_weeks=(100,)))
+
+        assert report.valid
+        assert [f.code for f in report.findings] == ["volume_increase"]
+
+    def test_both_warnings_can_appear_together(self) -> None:
+        plan = week(workout(1, 131, sport=Sport.RUNNING), workout(2, 270))
+
+        report = validate_week(plan, context(recent_weeks=(300,), recent_run_weeks=(100,)))
+
+        assert report.valid
+        assert [f.code for f in report.findings] == ["volume_increase", "run_volume_increase"]
+
+    def test_even_a_large_running_jump_is_only_a_warning(self) -> None:
+        found = check_run_progression(self.planned(1440), context(recent_run_weeks=(10,)))
+
+        assert [(f.code, f.severity) for f in found] == [("run_volume_increase", Severity.WARNING)]
+
+    def test_the_athletes_own_warning_limit_counts(self) -> None:
+        limits = dataclasses.replace(INTENSIVE, progression_warning_percent=105)
+        ctx = context(recent_run_weeks=(100,), limits=limits)
+
+        assert check_run_progression(self.planned(100), ctx) == []
+        assert [f.code for f in check_run_progression(self.planned(101), ctx)] == [
+            "run_volume_increase"
+        ]
+
+    def test_the_message_names_the_numbers_and_never_repeats_coach_text(self) -> None:
+        marker = "SECRET-TITLE-MARKER"
+        plan = dataclasses.replace(
+            week(workout(1, 400, sport=Sport.RUNNING, title=marker, notes=marker)),
+            rationale=marker,
+        )
+        ctx = context(recent_run_weeks=(100, 200, 300, 200))
+
+        found = check_run_progression(plan, ctx)
+
+        assert found[0].message == (
+            "The week adds up to 400 running minutes, 200 % of the average "
+            "of 200 running minutes of the last 4 week(s)."
+        )
+        assert marker not in repr(found)
+
+    def test_a_smaller_or_empty_running_week_is_fine(self) -> None:
+        ctx = context(recent_run_weeks=(100,))
+
+        assert check_run_progression(self.planned(10), ctx) == []
+        assert check_run_progression(week(), ctx) == []
+        assert check_run_progression(week(workout(1, 1440)), ctx) == []
+
+
 class TestTheTypicalWeek:
     """The athlete's own word about a normal week: the reference when it is higher than the recent
     weeks (a break must not keep a returning athlete at the few weeks since)."""
@@ -1774,6 +1912,7 @@ class TestTheLists:
             check_double_days,
             check_duplicates,
             check_progression,
+            check_run_progression,
             check_easy_share,
             check_times_of_day,
             check_double_day_order,
