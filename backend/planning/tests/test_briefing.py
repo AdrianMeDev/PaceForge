@@ -38,6 +38,7 @@ from planning.context import PlanContext
 from planning.models import NOTE_MAX, PlannedWorkout, WeeklyPlan
 from planning.schema import Sport, ZoneSystem
 from reviews.models import WeekComment, WeekFeedback
+from wellness.models import DailyWellness
 
 pytestmark = pytest.mark.django_db
 
@@ -166,6 +167,18 @@ ALLOWED_KEYS = {
     "pain",
     "verdict",
     "next_week",
+    # wellness: the last 7 days against the 28 before them, with a recovery warning
+    "wellness",
+    "sleep",
+    "hrv",
+    "weight",
+    "baseline",
+    "trend",
+    "warning",
+    "warning_signals",
+    "low_sleep",
+    "low_hrv",
+    "high_resting_hr",
 }
 
 
@@ -319,6 +332,14 @@ class TestTheBriefingOfAUserWithNothing:
             "season_week": None,
             "previous_week_plan": [],
             "previous_week_review": None,
+            "wellness": {
+                "sleep": {"recent": None, "baseline": None, "trend": None},
+                "hrv": {"recent": None, "baseline": None, "trend": None},
+                "resting_hr": {"recent": None, "baseline": None, "trend": None},
+                "weight": {"recent": None, "baseline": None, "trend": None},
+                "warning": False,
+                "warning_signals": [],
+            },
             "athlete_note": None,
         }
 
@@ -729,6 +750,7 @@ class TestTheGoals:
             "season_week",
             "previous_week_plan",
             "previous_week_review",
+            "wellness",
             "athlete_note",
         ]
 
@@ -1500,6 +1522,18 @@ class TestWhatIsSent:
         # the season week at its limits: the longest texts, every character a six-byte escape
         confirm_season(alice, reason="\u00e9" * 300, detail="\u00e9" * 60, sessions=3)
 
+        # wellness at its fullest: every metric on every day of both windows, the means at the
+        # widest values the code reports (rounded to one decimal, the signal names at once)
+        for offset in range(35):
+            DailyWellness.objects.create(
+                owner=alice,
+                day=MONDAY - timedelta(days=offset),
+                sleep_minutes=1440,
+                hrv=299.9,
+                resting_hr=120,
+                weight_kg=299.9,
+            )
+
         # and the longest note, in the characters that take the most bytes
         note = "\U0001f600" * NOTE_MAX
 
@@ -1521,8 +1555,8 @@ class TestWhatIsSent:
         with CaptureQueriesContext(connection) as full:
             build_briefing(alice, MONDAY)
 
-        # 14 of the briefing (one of them the season week) and 8 of the review of the week before
-        assert len(empty) == len(full) == 25
+        # 15 of the briefing (one of them the wellness summary) and 8 of the review of the week
+        assert len(empty) == len(full) == 26
 
 
 class TestHowTheWeekBeforeWent:
@@ -1742,3 +1776,58 @@ class TestTheSeasonWeek:
         confirm_season(alice)
 
         assert to_json(build_briefing(alice, MONDAY)) == to_json(build_briefing(alice, MONDAY))
+
+
+class TestTheWellness:
+    """``wellness``: the last 7 days against the 28 days before, with a recovery warning."""
+
+    TODAY = NOW.date()  # Sunday, the day it is for a user without a time zone
+
+    def fill_constant(
+        self, user: User, recent: float, baseline: float, field: str = "sleep_minutes"
+    ) -> None:
+        # recent window: the 7 days ending on the day it is for the user
+        for offset in range(7):
+            DailyWellness.objects.update_or_create(
+                owner=user, day=self.TODAY - timedelta(days=offset), defaults={field: recent}
+            )
+        # baseline window: the 28 days just before the recent window
+        for offset in range(7, 35):
+            DailyWellness.objects.update_or_create(
+                owner=user,
+                day=self.TODAY - timedelta(days=offset),
+                defaults={field: baseline},
+            )
+
+    def test_a_user_with_no_rows_has_an_empty_summary_and_no_warning(self, alice: User) -> None:
+        wellness = build_briefing(alice, MONDAY)["wellness"]
+
+        assert wellness["warning"] is False
+        assert wellness["warning_signals"] == []
+        for name in ("sleep", "hrv", "resting_hr", "weight"):
+            assert wellness[name] == {"recent": None, "baseline": None, "trend": None}
+
+    def test_a_recovery_warning_is_told_with_its_signals(self, alice: User) -> None:
+        self.fill_constant(alice, recent=450, baseline=500, field="sleep_minutes")
+
+        wellness = build_briefing(alice, MONDAY)["wellness"]
+
+        assert wellness["warning"] is True
+        assert wellness["warning_signals"] == ["low_sleep"]
+        assert wellness["sleep"] == {"recent": 450, "baseline": 500, "trend": "down"}
+
+    def test_the_summary_is_in_the_text_the_coach_gets(self, alice: User) -> None:
+        self.fill_constant(alice, recent=54, baseline=50, field="resting_hr")
+
+        text = to_json(build_briefing(alice, MONDAY))
+
+        assert '"wellness":{"hrv":' in text
+        assert '"warning_signals":["high_resting_hr"]' in text
+
+    def test_the_wellness_of_another_user_is_not_told(self, alice: User, bob: User) -> None:
+        self.fill_constant(bob, recent=450, baseline=500, field="sleep_minutes")
+
+        wellness = build_briefing(alice, MONDAY)["wellness"]
+
+        assert wellness["warning"] is False
+        assert wellness["sleep"]["recent"] is None

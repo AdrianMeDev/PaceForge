@@ -10,6 +10,7 @@ from goals import services as goal_services
 from planning import services as plan_services
 from planning.models import PlannedWorkout
 from reviews.tests.builders import MONDAY, NOW, make_plan
+from wellness.models import DailyWellness
 
 pytestmark = pytest.mark.django_db
 
@@ -111,3 +112,35 @@ class TestTheBriefing:
         AvailabilitySettings.objects.filter(owner=alice).update(share_limitations_text=True)
 
         assert briefing_of(alice)["limitations_text"] == "Sore knee"
+
+    def test_the_wellness_reaches_the_chat_briefing(self, alice: User) -> None:
+        today = NOW.date()
+        for offset in range(7):
+            DailyWellness.objects.create(
+                owner=alice, day=today - timedelta(days=offset), sleep_minutes=450
+            )
+        for offset in range(7, 35):
+            DailyWellness.objects.create(
+                owner=alice, day=today - timedelta(days=offset), sleep_minutes=500
+            )
+
+        wellness = briefing_of(alice)["wellness"]
+
+        assert wellness["warning"] is True
+        assert wellness["warning_signals"] == ["low_sleep"]
+
+    def test_the_wellness_stays_isolated_per_user(self, alice: User, bob: User) -> None:
+        today = NOW.date()
+        for offset in range(7):
+            DailyWellness.objects.create(
+                owner=bob, day=today - timedelta(days=offset), sleep_minutes=450
+            )
+        for offset in range(7, 35):
+            DailyWellness.objects.create(
+                owner=bob, day=today - timedelta(days=offset), sleep_minutes=500
+            )
+
+        wellness = briefing_of(alice)["wellness"]
+
+        assert wellness["warning"] is False
+        assert wellness["sleep"]["recent"] is None

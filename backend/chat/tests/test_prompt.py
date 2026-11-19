@@ -74,6 +74,25 @@ class TestTheSystemPrompt:
         assert "One week per answer" in SYSTEM_PROMPT
         assert "several weeks" in SYSTEM_PROMPT
 
+    def test_explains_the_wellness_and_its_recovery_warning(self) -> None:
+        flat = " ".join(SYSTEM_PROMPT.split())
+
+        assert '"wellness" holds the athlete\'s recent wellness' in flat
+        for word in (
+            '"sleep"',
+            '"hrv"',
+            '"resting_hr"',
+            '"weight"',
+            '"recent"',
+            '"baseline"',
+            '"trend"',
+        ):
+            assert word in flat, word
+        assert '"warning" (true when tracked recovery has clearly worsened)' in flat
+        assert '"warning_signals"' in flat
+        assert '"low_sleep", "low_hrv", "high_resting_hr"' in flat
+        assert "advisory recovery context" in flat
+
 
 class TestTheFirstMessage:
     def test_holds_the_data_the_conversation_and_the_message_as_data(self) -> None:
