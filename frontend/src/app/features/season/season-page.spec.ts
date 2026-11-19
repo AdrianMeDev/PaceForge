@@ -13,8 +13,8 @@ import {
   GetSeasonResult,
   GetSeasonReassessmentResult,
   ListSeasonPlansResult,
+  LiveSeason,
   RestoreSeasonResult,
-  Season,
   SeasonPlan,
   SeasonPlanVersion,
   SeasonRace,
@@ -43,7 +43,7 @@ function week(changes: Partial<SeasonWeek> = {}): SeasonWeek {
   };
 }
 
-const SEASON: Season = {
+const SEASON: LiveSeason = {
   rolling: false,
   truncated: false,
   main_race: MAIN,
@@ -59,8 +59,9 @@ const SEASON: Season = {
     }),
     week({ week_start: '2026-12-07', phase: 'taper', target_minutes: 135, races: [MAIN] }),
   ],
+  absences: [],
 };
-const ROLLING: Season = {
+const ROLLING: LiveSeason = {
   ...SEASON,
   rolling: true,
   main_race: null,
@@ -379,6 +380,49 @@ describe('SeasonPage', () => {
       });
 
       expect(cells(0).slice(2, 4)).toEqual(['0 min', '0 min']);
+    });
+  });
+
+  describe('illness on the timeline', () => {
+    const ILL_SEASON: LiveSeason = {
+      ...SEASON,
+      absences: [{ kind: 'illness', start_date: '2026-11-18', end_date: '2026-11-20' }],
+    };
+
+    it('marks weeks overlapped by an illness from the live season', async () => {
+      await setup({ kind: 'ok', season: ILL_SEASON });
+
+      const timeline = Array.from(page.querySelectorAll('[data-testid="timeline-cell"]'));
+      expect(timeline[0].getAttribute('data-illness')).toBe('true');
+      expect(timeline[0].querySelector('[data-testid="timeline-illness"]')).not.toBeNull();
+      expect(timeline[0].getAttribute('aria-label')).toContain('Illness, 3 days');
+      expect(timeline[1].getAttribute('data-illness')).toBeNull();
+    });
+
+    it('keeps showing illness markers from the live season when a plan version is open', async () => {
+      const confirmed = version();
+      get = vi
+        .fn<() => Promise<GetSeasonResult>>()
+        .mockResolvedValue({ kind: 'ok', season: ILL_SEASON });
+      plans = vi
+        .fn<() => Promise<ListSeasonPlansResult>>()
+        .mockResolvedValue({ kind: 'ok', plans: [confirmed] });
+      const { absences: _unused, ...storedSkeleton } = SEASON;
+      void _unused;
+      open = vi
+        .fn<(id: string) => Promise<GetSeasonPlanResult>>()
+        .mockResolvedValue({ kind: 'ok', plan: plan({ skeleton: storedSkeleton }) });
+      TestBed.configureTestingModule({
+        imports: [SeasonPage],
+        providers: providers(),
+      });
+      fixture = TestBed.createComponent(SeasonPage);
+      page = fixture.nativeElement as HTMLElement;
+      await settle(fixture);
+
+      const timeline = Array.from(page.querySelectorAll('[data-testid="timeline-cell"]'));
+      expect(timeline[0].getAttribute('data-illness')).toBe('true');
+      expect(timeline[0].getAttribute('title')).toContain('Illness, 3 days');
     });
   });
 

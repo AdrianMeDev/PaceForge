@@ -1,3 +1,4 @@
+import { PeriodKind } from '../availability/availability-models';
 import { Forbidden, Invalid } from '../goals/goals-models';
 import { ProviderProblemResult } from '../api/coach-replies';
 import {
@@ -9,7 +10,7 @@ import {
   Sport,
 } from '../planning/planning-models';
 
-export type { Forbidden, Invalid, PlanProblem, PlanStatus, RateLimited, Report, Sport };
+export type { Forbidden, Invalid, PeriodKind, PlanProblem, PlanStatus, RateLimited, Report, Sport };
 
 /** What a week of the season is for. `transition` is the rest after the main race. */
 export type SeasonPhase = 'base' | 'build' | 'specific' | 'taper' | 'transition';
@@ -41,6 +42,14 @@ export interface SeasonWeek {
   races: SeasonRace[];
 }
 
+/** An absence period overlapping the season, without the athlete's own note. */
+export interface SeasonAbsence {
+  kind: PeriodKind;
+  /** Calendar date, `YYYY-MM-DD`; both dates belong to the period. */
+  start_date: string;
+  end_date: string;
+}
+
 /**
  * The skeleton of the season: the weeks up to the last A or B race, worked out by the server on
  * every request. `rolling`: there is no race to work towards (twelve weeks of base and build);
@@ -55,7 +64,12 @@ export interface Season {
   weeks: SeasonWeek[];
 }
 
-export type GetSeasonResult = { kind: 'ok'; season: Season } | Forbidden;
+/** The live season from `GET /api/season/`: the skeleton plus the absences overlapping its weeks. */
+export interface LiveSeason extends Season {
+  absences: SeasonAbsence[];
+}
+
+export type GetSeasonResult = { kind: 'ok'; season: LiveSeason } | Forbidden;
 
 /** Stable reasons why the confirmed season may need an adjustment. */
 export type SeasonChangeReason =

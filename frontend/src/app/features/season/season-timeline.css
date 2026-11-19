@@ -56,6 +56,18 @@ li[data-current='true'] {
   font-weight: 600;
 }
 
+.illness {
+  margin-bottom: 2px;
+  padding: 0 0.25rem;
+  border: 1px solid var(--danger);
+  border-radius: 999px;
+  background: var(--danger-bg);
+  color: var(--danger);
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
 .races {
   display: flex;
   flex-wrap: wrap;
