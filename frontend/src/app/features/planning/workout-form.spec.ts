@@ -27,7 +27,7 @@ const INTERVALS: EditedWorkout = {
   sport: 'running',
   title: 'Intervals',
   goal: 'threshold',
-  duration_minutes: 70,
+  duration_minutes: 45,
   zone_system: null,
   zone: null,
   notes: '',
@@ -454,12 +454,27 @@ describe('WorkoutForm', () => {
   });
 
   describe('an interval structure', () => {
+    const click = (testid: string) => {
+      query<HTMLButtonElement>(page, `[data-testid="${testid}"]`).click();
+      fixture.detectChanges();
+    };
+    const rowInput = (row: number, field: string) =>
+      query<HTMLInputElement>(page, `[data-testid="segment-row-${row}"] [id$="-${field}-${row}"]`);
+    const rowSet = (row: number, field: string, value: string) => {
+      const element = rowInput(row, field);
+      element.value = value;
+      element.dispatchEvent(new Event(element instanceof HTMLSelectElement ? 'change' : 'input'));
+      fixture.detectChanges();
+    };
+    const rows = () => page.querySelectorAll('[data-testid^="segment-row-"]').length;
+    const hint = () => query(page, '[data-testid="structure-hint"]').textContent;
+
     it('is kept as it is, and the duration follows it', () => {
       setup(INTERVALS);
 
       expect(input('workout-duration').readOnly).toBe(true);
-      expect(input('workout-duration').value).toBe('1 h 10 min');
-      expect(query(page, '[data-testid="structure-hint"]').textContent).toContain('kept as it is');
+      expect(input('workout-duration').value).toBe('45 min');
+      expect(hint()).toContain('follows the interval structure');
 
       choose('workout-day', '2026-11-19');
       submit();
@@ -467,51 +482,174 @@ describe('WorkoutForm', () => {
       expect(lastSaved()).toEqual({ ...INTERVALS, day: '2026-11-19' });
     });
 
-    it('can be removed, and then the duration is the one in the field', () => {
+    it('is changed from 3 x 10 min to 4 x 8 min, with the duration following live', () => {
       setup(INTERVALS);
 
-      const box = input('workout-drop-structure');
-      box.checked = true;
-      box.dispatchEvent(new Event('change'));
-      fixture.detectChanges();
-      expect(input('workout-duration').readOnly).toBe(false);
-      expect(input('workout-duration').value).toBe('70');
-      expect(query(page, '[data-testid="structure-hint"]').textContent).toContain('is removed');
+      rowSet(1, 'repeat', '4');
+      rowSet(1, 'duration', '8:00');
 
-      type('workout-duration', '45');
+      // 15 min + 4 x 8 min
+      expect(input('workout-duration').value).toBe('47 min');
       submit();
 
-      expect(lastSaved()).toEqual({ ...INTERVALS, duration_minutes: 45, segments: [] });
+      expect(lastSaved()).toEqual({
+        ...INTERVALS,
+        duration_minutes: 47,
+        segments: [
+          INTERVALS.segments[0],
+          { kind: 'work', seconds: 480, repeat: 4, zone_system: 'pace', zone: 4 },
+        ],
+      });
+      expect(lastSaved().lineage).toBe(INTERVALS.lineage);
     });
 
-    it('is not offered for a workout without one', () => {
+    it('is added to a workout without one', () => {
+      setup(RIDE);
+      expect(input('workout-duration').readOnly).toBe(false);
+
+      click('add-warmup');
+      click('add-block');
+
+      expect(input('workout-duration').readOnly).toBe(true);
+      // 10 min + 3 x 5 min
+      expect(input('workout-duration').value).toBe('25 min');
+      submit();
+
+      expect(lastSaved().duration_minutes).toBe(25);
+      expect(lastSaved().segments).toEqual([
+        { kind: 'warmup', seconds: 600, repeat: 1, zone_system: null, zone: null },
+        { kind: 'work', seconds: 300, repeat: 3, zone_system: null, zone: null },
+      ]);
+    });
+
+    it('has its parts moved and removed', () => {
+      setup(INTERVALS);
+
+      click('segment-down');
+      expect(rowInput(0, 'repeat').value).toBe('3');
+      submit();
+      expect(lastSaved().segments.map((segment) => segment.kind)).toEqual(['work', 'warmup']);
+
+      click('segment-remove');
+      expect(rows()).toBe(1);
+      expect(input('workout-duration').value).toBe('15 min');
+      submit();
+      expect(lastSaved().segments.map((segment) => segment.kind)).toEqual(['warmup']);
+      expect(lastSaved().duration_minutes).toBe(15);
+    });
+
+    it('can be removed in one click, and then the duration is the one it was', () => {
+      setup(INTERVALS);
+
+      click('drop-structure');
+
+      expect(rows()).toBe(0);
+      expect(page.querySelector('[data-testid="drop-structure"]')).toBeNull();
+      expect(input('workout-duration').readOnly).toBe(false);
+      expect(input('workout-duration').value).toBe('45');
+
+      type('workout-duration', '60');
+      submit();
+
+      expect(lastSaved()).toEqual({ ...INTERVALS, duration_minutes: 60, segments: [] });
+    });
+
+    it('frees the duration when the last part is removed', () => {
+      setup({ ...INTERVALS, segments: [INTERVALS.segments[1]] });
+
+      click('segment-remove');
+
+      expect(input('workout-duration').readOnly).toBe(false);
+      expect(input('workout-duration').value).toBe('30');
+    });
+
+    it('offers no removal for a workout without one', () => {
       setup(RIDE);
 
-      expect(page.querySelector('#workout-drop-structure')).toBeNull();
-      expect(input('workout-duration').readOnly).toBe(false);
-    });
-
-    it('is not touched by the duration field while it is kept', () => {
-      setup(INTERVALS);
-
-      submit();
-
-      expect(lastSaved().duration_minutes).toBe(70);
-      expect(error('duration')).toBeUndefined();
+      expect(page.querySelector('[data-testid="drop-structure"]')).toBeNull();
     });
 
     it('is kept again for the next workout', () => {
       setup(INTERVALS);
-      const box = input('workout-drop-structure');
-      box.checked = true;
-      box.dispatchEvent(new Event('change'));
-      fixture.detectChanges();
+      click('drop-structure');
 
       fixture.componentRef.setInput('workout', { ...INTERVALS, lineage: RIDE.lineage });
       fixture.detectChanges();
 
-      expect(input('workout-drop-structure').checked).toBe(false);
+      expect(rows()).toBe(2);
       expect(input('workout-duration').readOnly).toBe(true);
+    });
+
+    it('loses the zones that the new sport does not have', () => {
+      setup(INTERVALS);
+
+      choose('workout-sport', 'strength');
+      choose('workout-sport', 'running');
+      submit();
+
+      // the zones are kept through strength, which hides the rows without changing them
+      expect(lastSaved().segments).toEqual(INTERVALS.segments);
+
+      choose('workout-sport', 'cycling');
+      submit();
+      expect(lastSaved().segments).toEqual([
+        { ...INTERVALS.segments[0], zone_system: null, zone: null },
+        { ...INTERVALS.segments[1], zone_system: null, zone: null },
+      ]);
+    });
+
+    it('is hidden and announced as removed for strength, and back again after', () => {
+      setup(INTERVALS);
+
+      choose('workout-sport', 'strength');
+      expect(page.querySelector('app-segment-editor')).toBeNull();
+      expect(query(page, '[data-testid="structure-removed-hint"]').textContent).toContain(
+        'removed when you save',
+      );
+      expect(input('workout-duration').readOnly).toBe(false);
+
+      choose('workout-sport', 'running');
+      expect(rows()).toBe(2);
+      expect(page.querySelector('[data-testid="structure-removed-hint"]')).toBeNull();
+      expect(input('workout-duration').readOnly).toBe(true);
+    });
+
+    it('is not saved with a strength workout', () => {
+      setup(INTERVALS);
+      choose('workout-sport', 'strength');
+
+      submit();
+
+      expect(lastSaved()).toMatchObject({ sport: 'strength', segments: [], duration_minutes: 45 });
+    });
+
+    it('is refused next to its fields', () => {
+      setup(INTERVALS);
+      rowSet(0, 'duration', 'soon');
+      rowSet(1, 'repeat', '99');
+
+      submit();
+
+      expect(saved).not.toHaveBeenCalled();
+      expect(page.querySelectorAll('[data-testid="error-duration"]').length).toBe(1);
+      expect(page.querySelectorAll('[data-testid="error-repeat"]').length).toBe(1);
+
+      rowSet(0, 'duration', '15:00');
+      rowSet(1, 'repeat', '3');
+      expect(page.querySelector('[data-testid="error-duration"]')).toBeNull();
+      submit();
+      expect(lastSaved().segments).toEqual(INTERVALS.segments);
+    });
+
+    it('is refused when it adds up to more than 24 hours', () => {
+      setup(INTERVALS);
+      rowSet(0, 'duration', '20:00:00');
+      rowSet(1, 'duration', '2:00:00');
+
+      submit();
+
+      expect(saved).not.toHaveBeenCalled();
+      expect(error('total')).toContain('24 hours');
     });
   });
 
