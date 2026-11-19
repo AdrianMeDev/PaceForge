@@ -2,10 +2,19 @@
 
 import threading
 import time
+from collections import deque
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
+
+
+@dataclass(frozen=True)
+class QueuedResponse:
+    status: int = 200
+    headers: dict[str, str] = field(default_factory=dict)
+    body: bytes | None = None
 
 
 class FakeIntervals:
@@ -15,6 +24,7 @@ class FakeIntervals:
         # Answers for single paths (without the query), e.g. "/api/v1/athlete/0/sport-settings".
         self.bodies: dict[str, bytes] = {}
         self.headers: dict[str, str] = {}
+        self.responses: deque[QueuedResponse] = deque()
         self.delay = 0.0
         # Announce more bytes than are sent, then hang up: an answer that is cut off.
         self.missing_bytes = 0
@@ -43,9 +53,18 @@ class FakeIntervals:
                 )
                 if outer.delay:
                     time.sleep(outer.delay)
-                body = outer.bodies.get(self.path.split("?")[0], outer.body)
-                self.send_response(outer.status)
-                for name, value in outer.headers.items():
+                default_body = outer.bodies.get(self.path.split("?")[0], outer.body)
+                if outer.responses:
+                    queued = outer.responses.popleft()
+                    status = queued.status
+                    headers = queued.headers
+                    body = queued.body if queued.body is not None else default_body
+                else:
+                    status = outer.status
+                    headers = outer.headers
+                    body = default_body
+                self.send_response(status)
+                for name, value in headers.items():
                     self.send_header(name, value)
                 self.send_header("Content-Length", str(len(body) + outer.missing_bytes))
                 self.end_headers()
@@ -62,6 +81,15 @@ class FakeIntervals:
     @property
     def url(self) -> str:
         return f"http://127.0.0.1:{self._server.server_port}/api/v1"
+
+    def queue(
+        self,
+        status: int = 200,
+        *,
+        headers: dict[str, str] | None = None,
+        body: bytes | None = None,
+    ) -> None:
+        self.responses.append(QueuedResponse(status=status, headers=dict(headers or {}), body=body))
 
     def start(self) -> None:
         self._thread.start()

@@ -7,8 +7,11 @@ import {
   EnterActivityResult,
   ImportActivityResult,
   ListActivitiesResult,
+  SyncActivitiesResult,
 } from '../../core/activities/activities-models';
-import { query, required, settle, typeInto } from '../../testing/dom';
+import { IntervalsConnectionApi } from '../../core/integrations/intervals-api';
+import { GetConnectionResult, IntervalsConnection } from '../../core/integrations/intervals-models';
+import { dayOf, query, required, settle, typeInto } from '../../testing/dom';
 import { ActivitiesPage } from './activities-page';
 
 const RUN: Activity = {
@@ -22,9 +25,11 @@ const RUN: Activity = {
   distance_m: 12766.23,
   avg_heart_rate: 155,
   max_heart_rate: 169,
+  avg_pace_s_per_km: null,
   avg_power_w: 325,
   total_ascent_m: 11,
   calories: 1133,
+  training_load: null,
   manufacturer: 'coros',
   rpe: null,
   notes: '',
@@ -43,6 +48,23 @@ const BARE: Activity = {
   distance_m: null,
   avg_heart_rate: null,
 };
+const CONNECTION: IntervalsConnection = {
+  status: 'connected',
+  athlete_id: 'i123',
+  connected_at: '2026-11-01T10:00:00Z',
+  last_checked_at: '2026-11-01T10:00:00Z',
+  last_sync_at: null,
+  last_sync_error: '',
+};
+const CONNECTED: GetConnectionResult = { kind: 'connected', connection: CONNECTION };
+const SYNCED: Extract<SyncActivitiesResult, { kind: 'ok' }> = {
+  kind: 'ok',
+  imported: 0,
+  skipped_duplicates: 0,
+  skipped_strava: 0,
+  skipped_invalid: 0,
+  last_sync_at: '2026-11-19T12:30:00Z',
+};
 
 const ok = (results: Activity[], count = results.length): ListActivitiesResult => ({
   kind: 'ok',
@@ -58,6 +80,7 @@ function createApiStub() {
     import: vi.fn<(file: File) => Promise<ImportActivityResult>>(),
     enter: vi.fn<() => Promise<EnterActivityResult>>(),
     delete: vi.fn<(id: string) => Promise<DeleteActivityResult>>(),
+    syncFromIntervals: vi.fn<() => Promise<SyncActivitiesResult>>(),
   };
 }
 
@@ -82,13 +105,28 @@ describe('ActivitiesPage', () => {
   });
 
   let api: ReturnType<typeof createApiStub>;
+  let intervals: { get: ReturnType<typeof vi.fn<() => Promise<GetConnectionResult>>> };
   let fixture: ComponentFixture<ActivitiesPage>;
   let page: HTMLElement;
   let inputValue: string;
 
-  async function setup(first: ListActivitiesResult = ok([])) {
+  beforeEach(() => {
+    intervals = {
+      get: vi.fn<() => Promise<GetConnectionResult>>().mockResolvedValue({ kind: 'not_connected' }),
+    };
+    TestBed.configureTestingModule({
+      providers: [{ provide: IntervalsConnectionApi, useValue: intervals }],
+    });
+  });
+
+  async function setup(
+    first: ListActivitiesResult = ok([]),
+    connection: GetConnectionResult | Promise<GetConnectionResult> = { kind: 'not_connected' },
+  ) {
     api = createApiStub();
     api.list.mockResolvedValue(first);
+    api.syncFromIntervals.mockResolvedValue(SYNCED);
+    intervals.get.mockReturnValue(Promise.resolve(connection));
     TestBed.configureTestingModule({
       imports: [ActivitiesPage],
       providers: [provideRouter([]), { provide: ActivitiesApi, useValue: api }],
@@ -219,6 +257,272 @@ describe('ActivitiesPage', () => {
       expect(text()).toContain('No activities yet.');
       expect(page.querySelector('table')).toBeNull();
       expect(page.querySelector('.paging')).toBeNull();
+    });
+  });
+
+  describe('Intervals.icu sync', () => {
+    const syncButton = () => button('Sync from Intervals.icu');
+    const lastSync = () => query(page, '[data-testid="intervals-last-sync"]').textContent ?? '';
+    const connectionLink = () => query<HTMLAnchorElement>(page, 'a[href="/settings/connections"]');
+
+    it('offers sync, a last sync hint and the Strava note when connected', async () => {
+      await setup(ok([]), CONNECTED);
+
+      expect(intervals.get).toHaveBeenCalledExactlyOnceWith();
+      expect(syncButton().disabled).toBe(false);
+      expect(lastSync()).toContain('Never');
+      expect(text()).toContain('Strava activities cannot be read');
+      expect(api.syncFromIntervals).not.toHaveBeenCalled();
+    });
+
+    it('shows the previous successful sync time', async () => {
+      await setup(ok([]), {
+        kind: 'connected',
+        connection: { ...CONNECTION, last_sync_at: '2026-11-15T09:00:00Z' },
+      });
+
+      expect(lastSync()).toContain(dayOf('2026-11-15T09:00:00Z'));
+    });
+
+    it('links to Connections when not connected', async () => {
+      await setup();
+
+      expect(connectionLink().textContent).toContain('Connect Intervals.icu');
+      expect(text()).not.toContain('Sync from Intervals.icu');
+      expect(text()).not.toContain('Strava activities cannot be read');
+    });
+
+    it('links to Connections for an invalid key and keeps the last sync hint', async () => {
+      await setup(ok([]), {
+        kind: 'connected',
+        connection: { ...CONNECTION, status: 'invalid' },
+      });
+
+      expect(connectionLink().textContent).toContain('Update it');
+      expect(text()).toContain('did not accept the stored key');
+      expect(text()).not.toContain('Sync from Intervals.icu');
+      expect(lastSync()).toContain('Never');
+    });
+
+    it('loads the list without waiting for connection status', async () => {
+      const pending = deferred<GetConnectionResult>();
+      await setup(ok([RUN]), pending.promise);
+
+      expect(rows()).toHaveLength(1);
+      expect(text()).not.toContain('Sync from Intervals.icu');
+      expect(page.querySelector('a[href="/settings/connections"]')).toBeNull();
+
+      pending.resolve(CONNECTED);
+      await settle(fixture);
+
+      expect(syncButton().disabled).toBe(false);
+    });
+
+    it('quietly keeps the activity list usable when connection status fails', async () => {
+      intervals.get.mockRejectedValueOnce(new Error('offline'));
+      await setup(ok([RUN]));
+
+      expect(rows()).toHaveLength(1);
+      expect(alerts()).toEqual([]);
+      expect(query<HTMLInputElement>(page, '#file').disabled).toBe(false);
+      expect(page.querySelector('a[href="/settings/connections"]')).toBeNull();
+    });
+
+    it('syncs only on click and reports all counts', async () => {
+      await setup(ok([]), CONNECTED);
+      api.syncFromIntervals.mockResolvedValue({
+        ...SYNCED,
+        imported: 2,
+        skipped_duplicates: 3,
+        skipped_strava: 4,
+        skipped_invalid: 5,
+      });
+
+      await click('Sync from Intervals.icu');
+
+      expect(api.syncFromIntervals).toHaveBeenCalledExactlyOnceWith();
+      expect(query(page, '.notice[role="status"]').textContent).toBe(
+        'Intervals.icu sync: 2 imported; 3 duplicates skipped; 4 Strava activities skipped; 5 invalid activities skipped.',
+      );
+      expect(lastSync()).toContain(dayOf('2026-11-19T12:30:00Z'));
+    });
+
+    it('shows zero counts and leaves the list alone when nothing is imported', async () => {
+      await setup(ok([RUN]), CONNECTED);
+
+      await click('Sync from Intervals.icu');
+
+      expect(query(page, '.notice').textContent).toContain(
+        '0 imported; 0 duplicates skipped; 0 Strava activities skipped; 0 invalid activities skipped.',
+      );
+      expect(api.list).toHaveBeenCalledTimes(1);
+      expect(rows()).toHaveLength(1);
+      expect(lastSync()).toContain(dayOf('2026-11-19T12:30:00Z'));
+    });
+
+    it('refreshes page zero after imports from a later page', async () => {
+      await setup(ok(many(20), 45), CONNECTED);
+      api.list.mockResolvedValue(ok(many(20, 20), 45));
+      await click('Next');
+      api.syncFromIntervals.mockResolvedValue({ ...SYNCED, imported: 1 });
+      api.list.mockResolvedValue(ok([{ ...RUN, source: 'intervals_icu' }, ...many(19)], 46));
+
+      await click('Sync from Intervals.icu');
+
+      expect(api.list).toHaveBeenLastCalledWith(20, 0);
+      expect(query(page, '[data-testid="range"]').textContent).toBe('1–20 of 46');
+      expect(cells(rows()[0])[7]).toBe('Intervals.icu');
+    });
+
+    it('keeps the sport filter when refreshing after a sync', async () => {
+      await setup(ok([RUN]), CONNECTED);
+      await click('Running', query(page, '[data-testid="sport-filter"]'));
+      api.syncFromIntervals.mockResolvedValue({ ...SYNCED, imported: 1 });
+
+      await click('Sync from Intervals.icu');
+
+      expect(api.list).toHaveBeenLastCalledWith(20, 0, 'running');
+    });
+
+    it('disables actions until both the sync and list refresh have finished', async () => {
+      await setup(ok([RUN]), CONNECTED);
+      const pending = deferred<SyncActivitiesResult>();
+      const refresh = deferred<ListActivitiesResult>();
+      api.syncFromIntervals.mockReturnValue(pending.promise);
+      api.list.mockReturnValue(refresh.promise);
+
+      syncButton().click();
+      await settle(fixture);
+
+      expect(syncButton().disabled).toBe(true);
+      expect(query<HTMLInputElement>(page, '#file').disabled).toBe(true);
+      expect(button('Save session').disabled).toBe(true);
+      expect(button('Delete').disabled).toBe(true);
+      syncButton().click();
+      await choose(file('ignored.fit'));
+      expect(api.syncFromIntervals).toHaveBeenCalledTimes(1);
+      expect(api.import).not.toHaveBeenCalled();
+
+      pending.resolve({ ...SYNCED, imported: 1 });
+      await settle(fixture);
+      expect(syncButton().disabled).toBe(true);
+
+      refresh.resolve(ok([RUN]));
+      await settle(fixture);
+      expect(syncButton().disabled).toBe(false);
+      expect(query<HTMLInputElement>(page, '#file').disabled).toBe(false);
+    });
+
+    it('disables sync while files are importing', async () => {
+      await setup(ok([]), CONNECTED);
+      const pending = deferred<ImportActivityResult>();
+      api.import.mockReturnValue(pending.promise);
+
+      await choose(file('a.fit'));
+      expect(syncButton().disabled).toBe(true);
+      syncButton().click();
+      expect(api.syncFromIntervals).not.toHaveBeenCalled();
+
+      pending.resolve({ kind: 'duplicate', existingId: RUN.id });
+      await settle(fixture);
+      expect(syncButton().disabled).toBe(false);
+    });
+
+    it('disables sync while a page is being fetched', async () => {
+      await setup(ok(many(20), 45), CONNECTED);
+      const pending = deferred<ListActivitiesResult>();
+      api.list.mockReturnValue(pending.promise);
+
+      await click('Next');
+      expect(syncButton().disabled).toBe(true);
+      syncButton().click();
+      expect(api.syncFromIntervals).not.toHaveBeenCalled();
+
+      pending.resolve(ok(many(20, 20), 45));
+      await settle(fixture);
+      expect(syncButton().disabled).toBe(false);
+    });
+
+    it.each([
+      ['not_connected', 'is no longer connected', 'Connect Intervals.icu'],
+      ['invalid_key', 'did not accept the stored key', 'Update it'],
+    ] as const)('handles a connection that becomes %s during sync', async (kind, error, link) => {
+      await setup(ok([RUN]), CONNECTED);
+      api.syncFromIntervals.mockResolvedValue({ kind });
+
+      await click('Sync from Intervals.icu');
+
+      expect(alerts()[0]).toContain(error);
+      expect(connectionLink().textContent).toContain(link);
+      expect(text()).not.toContain('Sync from Intervals.icu');
+      expect(api.list).toHaveBeenCalledTimes(1);
+      expect(rows()).toHaveLength(1);
+    });
+
+    it.each([
+      [{ kind: 'rate_limited' }, 'Too many sync attempts. Please wait a minute and try again.'],
+      [
+        { kind: 'unavailable', message: 'Intervals.icu is temporarily unavailable.' },
+        'Intervals.icu is temporarily unavailable.',
+      ],
+    ] satisfies [SyncActivitiesResult, string][])(
+      'shows a %j error and allows retry',
+      async (result, message) => {
+        await setup(ok([RUN]), CONNECTED);
+        api.syncFromIntervals.mockResolvedValueOnce(result);
+
+        await click('Sync from Intervals.icu');
+
+        expect(alerts()).toEqual([message]);
+        expect(lastSync()).toContain('Never');
+        expect(api.list).toHaveBeenCalledTimes(1);
+        expect(syncButton().disabled).toBe(false);
+
+        await click('Sync from Intervals.icu');
+
+        expect(alerts()).toEqual([]);
+        expect(query(page, '.notice').textContent).toContain('0 imported');
+      },
+    );
+
+    it('shows a fallback error and keeps the last successful sync time on a failed request', async () => {
+      await setup(ok([RUN]), {
+        kind: 'connected',
+        connection: { ...CONNECTION, last_sync_at: '2026-11-15T09:00:00Z' },
+      });
+      api.syncFromIntervals.mockRejectedValue(new Error('offline'));
+
+      await click('Sync from Intervals.icu');
+
+      expect(alerts()).toEqual(['Something went wrong. Please try again.']);
+      expect(lastSync()).toContain(dayOf('2026-11-15T09:00:00Z'));
+      expect(syncButton().disabled).toBe(false);
+      expect(api.list).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps the summary and updated sync time if refreshing the list fails', async () => {
+      await setup(ok([RUN]), CONNECTED);
+      api.syncFromIntervals.mockResolvedValue({ ...SYNCED, imported: 1 });
+      api.list.mockRejectedValue(new Error('offline'));
+
+      await click('Sync from Intervals.icu');
+
+      expect(alerts()).toEqual(['The list could not be refreshed. Please try again.']);
+      expect(query(page, '.notice').textContent).toContain('1 imported');
+      expect(lastSync()).toContain(dayOf('2026-11-19T12:30:00Z'));
+      expect(rows()).toHaveLength(1);
+      expect(syncButton().disabled).toBe(false);
+    });
+
+    it('shows the sign-in link if the sync finds an expired session', async () => {
+      await setup(ok([RUN]), CONNECTED);
+      api.syncFromIntervals.mockResolvedValue({ kind: 'forbidden' });
+
+      await click('Sync from Intervals.icu');
+
+      expect(alerts()).toEqual(['Your session has ended. Please sign in again.']);
+      expect(query(page, 'a').getAttribute('href')).toBe('/login');
+      expect(api.list).toHaveBeenCalledTimes(1);
     });
   });
 

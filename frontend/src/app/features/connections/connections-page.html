@@ -43,6 +43,14 @@
             <dd data-testid="athlete">{{ current.athlete_id }}</dd>
             <dt>Last checked</dt>
             <dd data-testid="checked">{{ current.last_checked_at | date: 'medium' }}</dd>
+            <dt>Last sync</dt>
+            <dd data-testid="synced">
+              {{ current.last_sync_at ? (current.last_sync_at | date: 'medium') : 'Never' }}
+            </dd>
+            @if (syncErrorMessage(current.last_sync_error); as syncError) {
+              <dt>Last sync error</dt>
+              <dd data-testid="sync-error">{{ syncError }}</dd>
+            }
           </dl>
 
           <div class="actions">

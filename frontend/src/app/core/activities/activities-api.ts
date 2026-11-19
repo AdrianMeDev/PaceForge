@@ -19,17 +19,21 @@ import {
   RatingField,
   RatingInput,
   Sport,
+  SyncActivitiesResult,
+  Unavailable,
 } from './activities-models';
 
 const URL = `${API_BASE}/activities/`;
 const IMPORT_URL = `${URL}import/`;
 const MANUAL_URL = `${URL}manual/`;
+const SYNC_URL = `${URL}sync/`;
 const REJECTED_FALLBACK = 'The file could not be imported.';
 const REJECTED_MANUAL = 'The session could not be saved. Please check your entries.';
 const REJECTED_RATING = 'The rating could not be saved. Please check your entries.';
-const HANDLED_ERRORS = [400, 401, 403, 404, 409, 413, 429];
+const UNAVAILABLE_FALLBACK = 'Intervals.icu cannot be reached right now. Please try again later.';
+const HANDLED_ERRORS = [400, 401, 403, 404, 409, 413, 429, 502, 503];
 const SPORTS: readonly string[] = ['running', 'cycling', 'swimming', 'strength', 'other'];
-const SOURCES: readonly string[] = ['fit_file', 'tcx_file', 'gpx_file', 'manual'];
+const SOURCES: readonly string[] = ['fit_file', 'tcx_file', 'gpx_file', 'manual', 'intervals_icu'];
 const MANUAL_FIELDS: readonly ManualField[] = [
   'sport',
   'date',
@@ -169,6 +173,29 @@ export class ActivitiesApi {
     }
   }
 
+  /** Imports recent activities from the user's connected Intervals.icu account. */
+  async syncFromIntervals(): Promise<SyncActivitiesResult> {
+    const reply = await this.send(this.http.post(SYNC_URL, {}, { observe: 'response' }));
+    switch (reply.status) {
+      case 200:
+        return { kind: 'ok', ...toSyncSummary(reply) };
+      case 404:
+        return { kind: 'not_connected' };
+      case 409:
+        return { kind: 'invalid_key' };
+      case 429:
+        return { kind: 'rate_limited' };
+      case 502:
+      case 503:
+        return unavailable(reply);
+      case 401:
+      case 403:
+        return { kind: 'forbidden' };
+      default:
+        throw unexpected(reply);
+    }
+  }
+
   private async send(request: Observable<HttpResponse<unknown>>): Promise<Reply> {
     try {
       const response = await firstValueFrom(request);
@@ -228,9 +255,11 @@ function toActivity(raw: unknown, reply: Reply): Activity {
     distance_m: numberOrNull(item['distance_m'], reply),
     avg_heart_rate: numberOrNull(item['avg_heart_rate'], reply),
     max_heart_rate: numberOrNull(item['max_heart_rate'], reply),
+    avg_pace_s_per_km: numberOrNull(item['avg_pace_s_per_km'], reply),
     avg_power_w: numberOrNull(item['avg_power_w'], reply),
     total_ascent_m: numberOrNull(item['total_ascent_m'], reply),
     calories: numberOrNull(item['calories'], reply),
+    training_load: numberOrNull(item['training_load'], reply),
     manufacturer: item['manufacturer'],
     rpe: numberOrNull(item['rpe'], reply),
     notes: item['notes'],
@@ -310,6 +339,44 @@ function toRefusal<F extends string>(
 function detailOf(body: unknown): string | null {
   const detail = (body as { detail?: unknown } | null)?.detail;
   return typeof detail === 'string' && detail ? detail : null;
+}
+
+function toSyncSummary(reply: Reply): {
+  imported: number;
+  skipped_duplicates: number;
+  skipped_strava: number;
+  skipped_invalid: number;
+  last_sync_at: string | null;
+} {
+  if (typeof reply.body !== 'object' || reply.body === null || Array.isArray(reply.body)) {
+    throw unexpected(reply);
+  }
+  const item = reply.body as Record<string, unknown>;
+  const lastSyncAt = item['last_sync_at'];
+  if (lastSyncAt !== null && typeof lastSyncAt !== 'string') {
+    throw unexpected(reply);
+  }
+  return {
+    imported: nonNegativeInt(item['imported'], reply),
+    skipped_duplicates: nonNegativeInt(item['skipped_duplicates'], reply),
+    skipped_strava: nonNegativeInt(item['skipped_strava'], reply),
+    skipped_invalid: nonNegativeInt(item['skipped_invalid'], reply),
+    last_sync_at: lastSyncAt,
+  };
+}
+
+function nonNegativeInt(value: unknown, reply: Reply): number {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+    throw unexpected(reply);
+  }
+  return value;
+}
+
+function unavailable(reply: Reply): Unavailable {
+  return {
+    kind: 'unavailable',
+    message: detailOf(reply.body) ?? UNAVAILABLE_FALLBACK,
+  };
 }
 
 function unexpected(reply: Reply): Error {

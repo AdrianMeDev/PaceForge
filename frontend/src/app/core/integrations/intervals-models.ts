@@ -1,5 +1,7 @@
 export type ConnectionStatus = 'connected' | 'invalid';
 
+export type SyncErrorCode = '' | 'invalid_key' | 'unavailable' | 'unexpected';
+
 /**
  * The state of the signed-in user's Intervals.icu connection. The API key is not part of it and
  * never comes back from the server; it only travels in the request that saves it.
@@ -12,6 +14,9 @@ export interface IntervalsConnection {
   /** ISO 8601 timestamps. */
   connected_at: string;
   last_checked_at: string;
+  last_sync_at: string | null;
+  /** Fixed error code from the last sync attempt, or `''` when none. */
+  last_sync_error: SyncErrorCode;
 }
 
 /** The session is gone or the request was refused (CSRF): the user has to sign in again. */

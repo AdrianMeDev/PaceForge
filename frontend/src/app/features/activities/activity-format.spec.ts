@@ -92,5 +92,9 @@ describe('activity formatting', () => {
     it('names a session entered by hand', () => {
       expect(sourceLabel('manual')).toBe('Entered by hand');
     });
+
+    it('names a session synced from Intervals.icu', () => {
+      expect(sourceLabel('intervals_icu')).toBe('Intervals.icu');
+    });
   });
 });

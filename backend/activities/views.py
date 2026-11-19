@@ -1,3 +1,4 @@
+from dataclasses import asdict
 from http import HTTPStatus
 from typing import Any
 
@@ -11,7 +12,12 @@ from rest_framework.views import APIView
 
 from accounts.models import User
 from athletes.estimates import refresh_estimates_safely
+from athletes.views import KEY_NOT_ACCEPTED
 from core.views import OwnedModelViewSet
+from integrations import services as integrations
+from integrations.intervals import IntervalsError, InvalidKeyError
+from integrations.throttles import ProviderConnectionThrottle
+from integrations.views import failure_response
 
 from . import services
 from .models import Activity
@@ -23,6 +29,7 @@ from .serializers import (
     ActivitySerializer,
     ManualActivitySerializer,
 )
+from .sync import sync_from_intervals
 from .throttles import ActivityImportThrottle
 
 NO_FILE = "No file was uploaded."
@@ -136,3 +143,25 @@ class ManualActivityView(APIView):
         except services.DuplicateActivityError as duplicate:
             return _refused(DUPLICATE, HTTPStatus.CONFLICT, existing_id=str(duplicate.existing_id))
         return Response(ActivitySerializer(activity).data, status=HTTPStatus.CREATED)
+
+
+class ActivitySyncView(APIView):
+    """Import the recent activities from the user's own Intervals.icu connection."""
+
+    # The same counter as connecting and checking: all of them make the server call Intervals.icu.
+    throttle_classes = [ProviderConnectionThrottle]
+    http_method_names = ["post", "options"]
+
+    def post(self, request: Request) -> Response:
+        user = _user(request)
+        try:
+            counts = sync_from_intervals(user)
+        except integrations.NotConnectedError:
+            return _refused("Not connected.", HTTPStatus.NOT_FOUND)
+        except InvalidKeyError:
+            return _refused(KEY_NOT_ACCEPTED, HTTPStatus.CONFLICT)
+        except IntervalsError as error:
+            return failure_response(error)
+        connection = integrations.get_connection(user)
+        last_sync_at = connection.last_sync_at if connection is not None else None
+        return Response({**asdict(counts), "last_sync_at": last_sync_at})

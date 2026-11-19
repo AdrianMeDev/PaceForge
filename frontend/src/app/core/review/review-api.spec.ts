@@ -318,6 +318,19 @@ describe('ReviewApi', () => {
       expect(result).toEqual({ kind: 'ok', review: REVIEW });
     });
 
+    it('accepts activities synced from Intervals.icu', async () => {
+      const synced = changed((review) => {
+        Object.assign(review.activities[0], { source: 'intervals_icu' });
+      });
+
+      const { result } = await run(api.week(WEEK), 'GET', `${BASE}${WEEK}/`, synced, 200);
+
+      expect(result).toMatchObject({
+        kind: 'ok',
+        review: { activities: [{ source: 'intervals_icu' }] },
+      });
+    });
+
     it('does not even ask for something that is no date', async () => {
       for (const week of ['', 'Monday', '2026-11-9', '../planning', '2026-11-09/x']) {
         expect(await api.week(week)).toEqual({ kind: 'not_reviewable' });

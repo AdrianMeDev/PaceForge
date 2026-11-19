@@ -27,3 +27,6 @@ MFA_TOTP_TOLERANCE = 1
 # password. The tests that check the production hashers set them with the `settings` fixture
 # (`accounts/tests/test_models.py`, `accounts/tests/test_setup_admin.py`).
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
+
+# Keep retryable 429/5xx tests fast; retry behaviour itself is tested with explicit delays.
+INTERVALS_RETRY_DELAYS = (0.0, 0.0, 0.0)

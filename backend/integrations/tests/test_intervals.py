@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 import traceback
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -26,7 +27,7 @@ from .fake_intervals import FakeIntervals, running
 KEY = "k3y-0123456789-abcdefghij"
 
 
-def client(fake: FakeIntervals, key: str = KEY, **options: float) -> IntervalsClient:
+def client(fake: FakeIntervals, key: str = KEY, **options: Any) -> IntervalsClient:
     return IntervalsClient(key, base_url=fake.url, **options)
 
 
@@ -201,6 +202,91 @@ class TestRefusalsAndFailures:
 
         with pytest.raises(IntervalsUnavailableError, match="cut off"):
             client(fake).get_athlete()
+
+
+class TestRetries:
+    def test_retries_429_and_5xx_with_exponential_backoff_until_200(
+        self, fake: FakeIntervals
+    ) -> None:
+        sleeps: list[float] = []
+        fake.queue(429)
+        fake.queue(500)
+        fake.queue(503)
+        fake.queue(200, body=b'{"id": "i42"}')
+
+        athlete = client(fake, retry_delays=(1.0, 2.0, 4.0), sleep=sleeps.append).get_athlete()
+
+        assert athlete == Athlete(id="i42")
+        assert len(fake.requests) == 4
+        assert sleeps == [1.0, 2.0, 4.0]
+
+    def test_retry_after_numeric_header_is_used_and_capped(self, fake: FakeIntervals) -> None:
+        sleeps: list[float] = []
+        fake.queue(429, headers={"Retry-After": "5"})
+        fake.queue(429, headers={"Retry-After": "9999"})
+        fake.queue(503, headers={"Retry-After": "2.5"})
+        fake.queue(200, body=b'{"id": "i42"}')
+
+        athlete = client(fake, retry_delays=(1.0, 2.0, 4.0), sleep=sleeps.append).get_athlete()
+
+        assert athlete == Athlete(id="i42")
+        assert sleeps == [5.0, intervals.MAX_RETRY_AFTER, 2.5]
+
+    @pytest.mark.parametrize(
+        "header",
+        ["Wed, 21 Oct 2015 07:28:00 GMT", "-5", "soon", ""],
+    )
+    def test_non_numeric_retry_after_falls_back_to_backoff(
+        self, fake: FakeIntervals, header: str
+    ) -> None:
+        sleeps: list[float] = []
+        fake.queue(429, headers={"Retry-After": header})
+        fake.queue(200, body=b'{"id": "i1"}')
+
+        athlete = client(fake, retry_delays=(1.5, 3.0), sleep=sleeps.append).get_athlete()
+
+        assert athlete == Athlete(id="i1")
+        assert sleeps == [1.5]
+
+    @pytest.mark.parametrize("status", [429, 500, 502, 503, 504])
+    def test_exhausting_retries_raises_unavailable_without_leaking_key(
+        self, fake: FakeIntervals, status: int
+    ) -> None:
+        sleeps: list[float] = []
+        fake.status = status
+        encoded = base64.b64encode(f"API_KEY:{KEY}".encode()).decode()
+
+        with pytest.raises(IntervalsUnavailableError) as raised:
+            client(fake, retry_delays=(1.0, 2.0, 4.0), sleep=sleeps.append).get_athlete()
+
+        assert len(fake.requests) == 4
+        assert sleeps == [1.0, 2.0, 4.0]
+        assert KEY not in everything_printed(raised.value)
+        assert encoded not in everything_printed(raised.value)
+
+    @pytest.mark.parametrize("status", [401, 403, 400, 422, 404, 301, 302])
+    def test_non_retryable_statuses_are_not_retried(self, fake: FakeIntervals, status: int) -> None:
+        sleeps: list[float] = []
+        fake.status = status
+        if status in {301, 302}:
+            fake.headers = {"Location": fake.url}
+
+        with pytest.raises(intervals.IntervalsError):
+            client(fake, retry_delays=(1.0, 2.0, 4.0), sleep=sleeps.append).get_athlete()
+
+        assert len(fake.requests) == 1
+        assert sleeps == []
+
+    def test_test_settings_use_zero_retry_delays(self, fake: FakeIntervals, settings: Any) -> None:
+        sleeps: list[float] = []
+        fake.status = 429
+
+        with pytest.raises(IntervalsUnavailableError):
+            client(fake, sleep=sleeps.append).get_athlete()
+
+        assert settings.INTERVALS_RETRY_DELAYS == (0.0, 0.0, 0.0)
+        assert len(fake.requests) == 4
+        assert sleeps == [0.0, 0.0, 0.0]
 
 
 class TestRedirects:
@@ -653,6 +739,202 @@ class TestTheSetting:
 
         assert result.returncode != 0
         assert "INTERVALS_API_BASE_URL" in result.stderr
+
+
+OLDEST = date(2027, 7, 1)
+NEWEST = date(2027, 7, 31)
+ACTIVITY = {"id": "i456", "type": "Run", "start_date": "2027-07-19T07:00:00Z"}
+
+
+class TestActivities:
+    def read(self, fake: FakeIntervals, *entries: object) -> intervals.ActivityBatch:
+        fake.body = json.dumps(entries).encode()
+        return client(fake).get_activities(OLDEST, NEWEST)
+
+    def test_requests_the_date_range_for_the_connected_athlete(self, fake: FakeIntervals) -> None:
+        assert self.read(fake) == intervals.ActivityBatch((), 0, 0)
+
+        [request] = fake.requests
+        assert request["method"] == "GET"
+        assert request["path"] == "/api/v1/athlete/0/activities?oldest=2027-07-01&newest=2027-07-31"
+        encoded = base64.b64encode(f"API_KEY:{KEY}".encode()).decode()
+        assert request["headers"]["Authorization"] == f"Basic {encoded}"
+
+    def test_only_summary_fields_are_returned(self, fake: FakeIntervals) -> None:
+        batch = self.read(
+            fake,
+            {
+                **ACTIVITY,
+                "start_date": "2027-07-19T09:00:00+02:00",
+                "start_date_local": "2027-07-19T09:00:00",
+                "elapsed_time": 1900,
+                "moving_time": 1800,
+                "distance": 6000.5,
+                "icu_training_load": 47,
+                "average_heartrate": 150,
+                "max_heartrate": 180,
+                "average_speed": 10 / 3,
+                "icu_average_watts": 195,
+                "total_elevation_gain": 85.7,
+                "calories": 420,
+                "name": "PRIVATE TITLE",
+                "description": KEY,
+                "laps": [{"name": "PRIVATE LAP"}],
+            },
+        )
+
+        [activity] = batch.activities
+        assert dataclasses.asdict(activity) == {
+            "external_id": "i456",
+            "sport": "running",
+            "source_sport": "Run",
+            "start_time": datetime(2027, 7, 19, 7, tzinfo=UTC),
+            "elapsed_seconds": 1900,
+            "timer_seconds": 1800,
+            "distance_m": 6000.5,
+            "training_load": 47,
+            "avg_heart_rate": 150,
+            "max_heart_rate": 180,
+            "avg_pace_s_per_km": pytest.approx(300),
+            "avg_power_w": 195,
+            "total_ascent_m": 86,
+            "calories": 420,
+        }
+        assert (batch.skipped_strava, batch.skipped_invalid) == (0, 0)
+
+    @pytest.mark.parametrize(
+        ("raw", "sport"),
+        [
+            ("Run", "running"),
+            ("VirtualRun", "running"),
+            ("TrailRun", "running"),
+            ("Ride", "cycling"),
+            ("VirtualRide", "cycling"),
+            ("GravelRide", "cycling"),
+            ("MountainBikeRide", "cycling"),
+            ("EBikeRide", "cycling"),
+            ("Swim", "swimming"),
+            ("OpenWaterSwim", "swimming"),
+            ("WeightTraining", "strength"),
+            ("Rowing", "other"),
+        ],
+    )
+    def test_maps_sports_and_preserves_the_provider_type(
+        self, fake: FakeIntervals, raw: str, sport: str
+    ) -> None:
+        [activity] = self.read(fake, {**ACTIVITY, "type": raw}).activities
+
+        assert (activity.sport, activity.source_sport) == (sport, raw)
+
+    def test_counts_stubs_and_invalid_entries_and_continues(self, fake: FakeIntervals) -> None:
+        invalid: list[object] = [
+            None,
+            [],
+            {},
+            {**ACTIVITY, "id": True},
+            {**ACTIVITY, "id": "../unknown"},
+            {**ACTIVITY, "type": []},
+            {**ACTIVITY, "type": "free text"},
+            {**ACTIVITY, "start_date": "yesterday"},
+            {**ACTIVITY, "start_date": None},
+            {**ACTIVITY, "start_date": "2027-07-19T07:00:00"},
+            {**ACTIVITY, "start_date": "0001-01-01T00:00:00+01:00"},
+        ]
+        batch = self.read(
+            fake,
+            ACTIVITY,
+            {"source": "STRAVA", "_note": "unavailable"},
+            *invalid,
+            {**ACTIVITY, "source": "STRAVA"},
+            {**ACTIVITY, "id": "i789", "source": "UPLOAD"},
+        )
+
+        assert [activity.external_id for activity in batch.activities] == ["i456", "i789"]
+        assert batch.skipped_strava == 2
+        assert batch.skipped_invalid == len(invalid)
+
+    @pytest.mark.parametrize("bad", [True, "17", -1, 10**400, float("nan"), float("inf")])
+    def test_drops_unusable_measurements_independently(
+        self, fake: FakeIntervals, bad: object
+    ) -> None:
+        fields = dict.fromkeys(
+            [
+                "elapsed_time",
+                "moving_time",
+                "distance",
+                "icu_training_load",
+                "average_heartrate",
+                "max_heartrate",
+                "average_speed",
+                "icu_average_watts",
+                "total_elevation_gain",
+                "calories",
+            ],
+            bad,
+        )
+        batch = self.read(fake, {**ACTIVITY, **fields, "moving_time": 120})
+
+        [activity] = batch.activities
+        assert activity.timer_seconds == 120
+        assert (
+            activity.elapsed_seconds,
+            activity.distance_m,
+            activity.training_load,
+            activity.avg_heart_rate,
+            activity.max_heart_rate,
+            activity.avg_pace_s_per_km,
+            activity.avg_power_w,
+            activity.total_ascent_m,
+            activity.calories,
+        ) == (None,) * 9
+        assert batch.skipped_invalid == 0
+
+    def test_zero_distance_and_load_are_valid_but_zero_speed_and_hr_are_unusable(
+        self, fake: FakeIntervals
+    ) -> None:
+        [activity] = self.read(
+            fake,
+            {
+                **ACTIVITY,
+                "icu_distance": 0,
+                "distance": 100,
+                "icu_training_load": 0,
+                "average_speed": 0,
+                "average_heartrate": 0,
+            },
+        ).activities
+
+        assert (activity.distance_m, activity.training_load) == (0, 0)
+        assert (activity.avg_pace_s_per_km, activity.avg_heart_rate) == (None, None)
+
+    def test_activity_size_limit_is_independent_and_inclusive(
+        self, fake: FakeIntervals, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        fake.body = json.dumps([ACTIVITY]).encode()
+        monkeypatch.setattr(intervals, "MAX_RESPONSE_BYTES", 1)
+        monkeypatch.setattr(intervals, "MAX_ACTIVITIES_RESPONSE_BYTES", len(fake.body))
+        assert len(client(fake).get_activities(OLDEST, NEWEST).activities) == 1
+
+        fake.body += b" "
+        with pytest.raises(UnexpectedResponseError, match="larger"):
+            client(fake).get_activities(OLDEST, NEWEST)
+
+    @pytest.mark.parametrize("status", [200, 401, 503])
+    def test_errors_and_logs_exclude_secrets_and_activity_text(
+        self, fake: FakeIntervals, status: int, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        caplog.set_level(logging.DEBUG)
+        encoded = base64.b64encode(f"API_KEY:{KEY}".encode()).decode()
+        private = {"name": "PRIVATE TITLE", "description": KEY, "echo": encoded}
+        batch = self.read(fake, {**ACTIVITY, **private})
+        fake.status = status
+        fake.body = json.dumps(private).encode()
+
+        with pytest.raises(intervals.IntervalsError) as raised:
+            client(fake).get_activities(OLDEST, NEWEST)
+
+        shown = repr(batch) + everything_printed(raised.value) + caplog.text
+        assert all(value not in shown for value in private.values())
 
 
 EVENT = {

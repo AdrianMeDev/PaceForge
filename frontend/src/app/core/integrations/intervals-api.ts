@@ -9,6 +9,7 @@ import {
   DisconnectResult,
   GetConnectionResult,
   IntervalsConnection,
+  SyncErrorCode,
   Unavailable,
 } from './intervals-models';
 
@@ -114,23 +115,32 @@ export class IntervalsConnectionApi {
   }
 }
 
+const SYNC_ERRORS: readonly SyncErrorCode[] = ['', 'invalid_key', 'unavailable', 'unexpected'];
+
 /** Only the known fields are taken over, whatever else an answer might carry. */
 function toConnection(reply: Reply): IntervalsConnection {
   const body = reply.body as Record<string, unknown> | null;
-  const { status, athlete_id, connected_at, last_checked_at } = body ?? {};
+  const { status, athlete_id, connected_at, last_checked_at, last_sync_at, last_sync_error } =
+    body ?? {};
   if (
     !isStatus(status) ||
     typeof athlete_id !== 'string' ||
     typeof connected_at !== 'string' ||
-    typeof last_checked_at !== 'string'
+    typeof last_checked_at !== 'string' ||
+    (last_sync_at !== null && typeof last_sync_at !== 'string') ||
+    !isSyncErrorCode(last_sync_error)
   ) {
     throw unexpected(reply);
   }
-  return { status, athlete_id, connected_at, last_checked_at };
+  return { status, athlete_id, connected_at, last_checked_at, last_sync_at, last_sync_error };
 }
 
 function isStatus(value: unknown): value is ConnectionStatus {
   return value === 'connected' || value === 'invalid';
+}
+
+function isSyncErrorCode(value: unknown): value is SyncErrorCode {
+  return typeof value === 'string' && SYNC_ERRORS.includes(value as SyncErrorCode);
 }
 
 /** DRF reports field errors as `{"api_key": ["…"]}`; all messages are collected. */

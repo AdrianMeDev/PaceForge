@@ -132,6 +132,9 @@ class TestTheValues:
         assert created.avg_heart_rate is None
         assert created.max_heart_rate is None
         assert created.avg_power_w is None
+        assert created.avg_pace_s_per_km is None
+        assert created.training_load is None
+        assert created.external_id == ""
         assert created.total_ascent_m is None
         assert created.calories is None
         assert created.manufacturer == ""
@@ -160,6 +163,8 @@ class TestTheValues:
             avg_heart_rate=155,
             max_heart_rate=169,
             avg_power_w=230,
+            avg_pace_s_per_km=305.5,
+            training_load=65.25,
             total_ascent_m=120,
             calories=850,
             manufacturer="coros",
@@ -175,9 +180,13 @@ class TestTheValues:
             230,
         )
         assert created.laps == laps
+        assert (created.avg_pace_s_per_km, created.training_load) == (305.5, 65.25)
         assert created.start_time == START
 
-    @pytest.mark.parametrize("field", ["elapsed_seconds", "timer_seconds", "distance_m"])
+    @pytest.mark.parametrize(
+        "field",
+        ["elapsed_seconds", "timer_seconds", "distance_m", "avg_pace_s_per_km", "training_load"],
+    )
     def test_a_negative_measurement_is_refused_by_the_database(
         self, alice: User, field: str
     ) -> None:
@@ -187,10 +196,18 @@ class TestTheValues:
             activity(alice, **values)
 
     def test_zero_is_a_valid_measurement(self, alice: User) -> None:
-        created = activity(alice, elapsed_seconds=0.0, distance_m=0.0)
+        created = activity(
+            alice,
+            elapsed_seconds=0.0,
+            timer_seconds=0.0,
+            distance_m=0.0,
+            avg_pace_s_per_km=0.0,
+            training_load=0.0,
+        )
 
         created.refresh_from_db()
         assert created.distance_m == 0.0
+        assert created.avg_pace_s_per_km == created.training_load == 0.0
 
     @pytest.mark.parametrize(
         ("field", "value"), [("sport", "golf"), ("source", "kml_file"), ("source_hash", "x" * 65)]
@@ -369,7 +386,9 @@ class TestEnteredByHand:
         ):
             by_hand(alice, source_hash=hash_of(1))
 
-    @pytest.mark.parametrize("source", [Activity.Source.FIT_FILE, Activity.Source.TCX_FILE])
+    @pytest.mark.parametrize(
+        "source", [Activity.Source.FIT_FILE, Activity.Source.TCX_FILE, Activity.Source.GPX_FILE]
+    )
     def test_a_file_activity_must_have_a_hash(self, alice: User, source: str) -> None:
         with (
             pytest.raises(IntegrityError, match="activities_hash_goes_with_a_file"),
@@ -397,3 +416,92 @@ class TestEnteredByHand:
             found.full_clean(exclude=["owner", "id"])
 
         assert "notes" in raised.value.message_dict
+
+
+def from_intervals(owner: User, **fields: Any) -> Activity:
+    return Activity.objects.create(
+        **{
+            "owner": owner,
+            "source": Activity.Source.INTERVALS_ICU,
+            "external_id": "i123",
+            "sport": Activity.Sport.RUNNING,
+            "start_time": START,
+            **fields,
+        }
+    )
+
+
+class TestFromIntervals:
+    def test_it_has_an_external_id_and_no_file_hash(self, alice: User) -> None:
+        created = from_intervals(alice, avg_pace_s_per_km=305.5, training_load=65.25)
+
+        created.refresh_from_db()
+        created.full_clean()
+        assert created.get_source_display() == "Intervals.icu"
+        assert (created.external_id, created.source_hash) == ("i123", "")
+        assert (created.avg_pace_s_per_km, created.training_load) == (305.5, 65.25)
+        assert not ActivityFile.objects.filter(activity=created).exists()
+
+    def test_an_external_id_is_used_once_per_owner_and_source(self, alice: User) -> None:
+        from_intervals(alice)
+
+        with (
+            pytest.raises(IntegrityError, match="activities_one_per_external_id_and_owner"),
+            transaction.atomic(),
+        ):
+            from_intervals(alice, start_time=START + timedelta(days=1))
+
+    def test_another_owner_can_have_the_same_external_id(self, alice: User, bob: User) -> None:
+        from_intervals(alice)
+        from_intervals(bob)
+
+        assert Activity.objects.count() == 2
+
+    def test_other_external_ids_do_not_clash_on_the_empty_hash(self, alice: User) -> None:
+        from_intervals(alice)
+        from_intervals(alice, external_id="i124", start_time=START + timedelta(days=1))
+
+        assert Activity.objects.filter(source_hash="").count() == 2
+
+    def test_an_external_id_is_required(self, alice: User) -> None:
+        with (
+            pytest.raises(IntegrityError, match="activities_external_id_goes_with_provider"),
+            transaction.atomic(),
+        ):
+            from_intervals(alice, external_id="")
+
+    def test_a_file_hash_is_refused(self, alice: User) -> None:
+        with (
+            pytest.raises(IntegrityError, match="activities_hash_goes_with_a_file"),
+            transaction.atomic(),
+        ):
+            from_intervals(alice, source_hash=hash_of(1))
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            Activity.Source.MANUAL,
+            Activity.Source.FIT_FILE,
+            Activity.Source.TCX_FILE,
+            Activity.Source.GPX_FILE,
+        ],
+    )
+    def test_other_sources_cannot_have_an_external_id(self, alice: User, source: str) -> None:
+        with (
+            pytest.raises(IntegrityError, match="activities_external_id_goes_with_provider"),
+            transaction.atomic(),
+        ):
+            from_intervals(
+                alice,
+                source=source,
+                source_hash="" if source == Activity.Source.MANUAL else hash_of(1),
+            )
+
+    def test_it_still_cannot_duplicate_a_file_activitys_start_and_sport(self, alice: User) -> None:
+        activity(alice)
+
+        with (
+            pytest.raises(IntegrityError, match="activities_one_per_start_and_owner"),
+            transaction.atomic(),
+        ):
+            from_intervals(alice)

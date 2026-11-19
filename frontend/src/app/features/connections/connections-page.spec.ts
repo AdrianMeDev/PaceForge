@@ -9,6 +9,7 @@ import {
   DisconnectResult,
   GetConnectionResult,
   IntervalsConnection,
+  SyncErrorCode,
 } from '../../core/integrations/intervals-models';
 import { dayOf, query, required, settle, typeInto } from '../../testing/dom';
 import { ConnectionsPage } from './connections-page';
@@ -20,6 +21,8 @@ const CONNECTION: IntervalsConnection = {
   athlete_id: 'i555',
   connected_at: '2026-11-12T11:55:00Z',
   last_checked_at: '2026-11-12T12:00:00Z',
+  last_sync_at: null,
+  last_sync_error: '',
 };
 const INVALID: IntervalsConnection = { ...CONNECTION, status: 'invalid' };
 
@@ -157,9 +160,35 @@ describe('ConnectionsPage', () => {
       expect(testId('status')).toBe('Connected');
       expect(testId('athlete')).toBe('i555');
       expect(testId('checked')).toContain(dayOf(CONNECTION.last_checked_at));
+      expect(testId('synced')).toBe('Never');
+      expect(page.querySelector('[data-testid="sync-error"]')).toBeNull();
       expect(button('Check connection')).toBeDefined();
       expect(button('Disconnect')).toBeDefined();
       expect(button('Save new key')).toBeDefined();
+    });
+
+    it('shows the formatted last sync timestamp when present', async () => {
+      const last_sync_at = '2026-11-13T08:15:00Z';
+      await setup(connected({ ...CONNECTION, last_sync_at }));
+
+      expect(testId('synced')).toContain(dayOf(last_sync_at));
+      expect(page.querySelector('[data-testid="sync-error"]')).toBeNull();
+    });
+
+    it.each<[Exclude<SyncErrorCode, ''>, string]>([
+      [
+        'invalid_key',
+        'Intervals.icu did not accept the stored key during the last sync. Enter a new key below.',
+      ],
+      [
+        'unavailable',
+        'Intervals.icu could not be reached during the last sync. Sync will try again later.',
+      ],
+      ['unexpected', 'The last sync failed unexpectedly. Try again later.'],
+    ])('shows a user-facing message for sync error %s', async (last_sync_error, expected) => {
+      await setup(connected({ ...CONNECTION, last_sync_error }));
+
+      expect(testId('sync-error')).toBe(expected);
     });
 
     it('points out an invalid connection', async () => {

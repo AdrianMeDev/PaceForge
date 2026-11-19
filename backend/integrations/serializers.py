@@ -24,7 +24,14 @@ class ConnectionSerializer(serializers.ModelSerializer[ProviderConnection]):
 
     class Meta:
         model = ProviderConnection
-        fields = ["status", "athlete_id", "connected_at", "last_checked_at"]
+        fields = [
+            "status",
+            "athlete_id",
+            "connected_at",
+            "last_checked_at",
+            "last_sync_at",
+            "last_sync_error",
+        ]
         read_only_fields = fields
 
     def to_representation(self, instance: ProviderConnection) -> dict[str, Any]:

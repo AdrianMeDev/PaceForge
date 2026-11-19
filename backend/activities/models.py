@@ -13,7 +13,7 @@ RPE_MAX = 10
 
 
 class Activity(OwnedModel):
-    """A finished activity with the summary values its source file reports.
+    """A finished activity with the summary values its source reports.
 
     Every measurement may be empty: a value that the file does not contain is never estimated.
     Times are UTC; which local day an activity belongs to needs the user's time zone.
@@ -23,6 +23,7 @@ class Activity(OwnedModel):
         FIT_FILE = "fit_file", "FIT file"
         TCX_FILE = "tcx_file", "TCX file"
         GPX_FILE = "gpx_file", "GPX file"
+        INTERVALS_ICU = "intervals_icu", "Intervals.icu"
         # Entered by hand: no file, so no hash, and the user's own RPE and note.
         MANUAL = "manual", "Entered by hand"
 
@@ -36,8 +37,10 @@ class Activity(OwnedModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid7, editable=False)
     source = models.CharField(max_length=20, choices=Source.choices)
     # SHA-256 (hex) of the uploaded file: the same file cannot be imported twice by one user.
-    # Empty for an activity entered by hand, which has no file.
+    # Empty for manual and Intervals.icu activities, which have no uploaded file.
     source_hash = models.CharField(max_length=64, blank=True)
+    # The provider's activity id, internal to the import and never returned by the API.
+    external_id = models.CharField(max_length=100, blank=True)
     sport = models.CharField(max_length=20, choices=Sport.choices)
     # The sport as the file calls it, kept when ``sport`` had to fall back to ``other``.
     source_sport = models.CharField(max_length=50, blank=True)
@@ -48,6 +51,9 @@ class Activity(OwnedModel):
     avg_heart_rate = models.PositiveSmallIntegerField(null=True, blank=True)
     max_heart_rate = models.PositiveSmallIntegerField(null=True, blank=True)
     avg_power_w = models.PositiveSmallIntegerField(null=True, blank=True)
+    avg_pace_s_per_km = models.FloatField(null=True, blank=True)
+    # The provider's load, separate from the duration-times-RPE estimate.
+    training_load = models.FloatField(null=True, blank=True)
     total_ascent_m = models.PositiveIntegerField(null=True, blank=True)
     calories = models.PositiveIntegerField(null=True, blank=True)
     manufacturer = models.CharField(max_length=50, blank=True)
@@ -73,9 +79,22 @@ class Activity(OwnedModel):
             # A file has a hash and nothing else has one.
             models.CheckConstraint(
                 condition=(
-                    Q(source="manual", source_hash="") | (~Q(source="manual") & ~Q(source_hash=""))
+                    Q(source__in=["manual", "intervals_icu"], source_hash="")
+                    | (Q(source__in=["fit_file", "tcx_file", "gpx_file"]) & ~Q(source_hash=""))
                 ),
                 name="activities_hash_goes_with_a_file",
+            ),
+            models.UniqueConstraint(
+                fields=["owner", "source", "external_id"],
+                condition=~Q(external_id=""),
+                name="activities_one_per_external_id_and_owner",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    (Q(source="intervals_icu") & ~Q(external_id=""))
+                    | (~Q(source="intervals_icu") & Q(external_id=""))
+                ),
+                name="activities_external_id_goes_with_provider",
             ),
             models.CheckConstraint(
                 condition=Q(rpe__isnull=True) | Q(rpe__gte=1, rpe__lte=RPE_MAX),
@@ -88,7 +107,9 @@ class Activity(OwnedModel):
             models.CheckConstraint(
                 condition=(Q(elapsed_seconds__isnull=True) | Q(elapsed_seconds__gte=0))
                 & (Q(timer_seconds__isnull=True) | Q(timer_seconds__gte=0))
-                & (Q(distance_m__isnull=True) | Q(distance_m__gte=0)),
+                & (Q(distance_m__isnull=True) | Q(distance_m__gte=0))
+                & (Q(avg_pace_s_per_km__isnull=True) | Q(avg_pace_s_per_km__gte=0))
+                & (Q(training_load__isnull=True) | Q(training_load__gte=0)),
                 name="activities_measurements_not_negative",
             ),
         ]
