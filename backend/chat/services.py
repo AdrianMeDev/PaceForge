@@ -89,7 +89,7 @@ def clean_text(text: str) -> str:
 
 def history(user: User) -> list[ChatMessage]:
     """The whole conversation, oldest first."""
-    return list(ChatMessage.objects.for_user(user).select_related("plan"))
+    return list(ChatMessage.objects.for_user(user).select_related("plan", "season_plan"))
 
 
 def clear(user: User) -> int:
