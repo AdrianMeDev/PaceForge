@@ -18,6 +18,7 @@ from planning.models import PlannedWorkout
 from planning.tests.scripted import Scripted
 from reviews.tests.builders import MONDAY, NOW, make_plan
 from reviews.tests.conftest import signed_in
+from season.models import SeasonPlanVersion
 
 pytestmark = pytest.mark.django_db
 
@@ -65,6 +66,7 @@ class TestWriting:
         assert (first["role"], first["text"]) == ("user", "How is my week?")
         assert (second["role"], second["text"]) == ("coach", "Fine.")
         assert second["plan"] is None and second["changes"] == []
+        assert second["season_plan"] is None
         assert first["created_at"] and first["id"] != second["id"]
         # the same as the GET shows afterwards
         assert body(signed_in(athlete).call("GET", URL)) == body(response)
@@ -84,6 +86,7 @@ class TestWriting:
 
         assert coach["changes"] == ["Run on Sat (60 min) moved to Sun"]
         assert coach["plan"]["week_start"] == MONDAY.isoformat()
+        assert coach["season_plan"] is None
 
     def test_the_text_is_shown_as_it_was_written(
         self, athlete: User, provide: Callable[..., Scripted]
@@ -170,14 +173,42 @@ class TestReading:
 
         assert texts == ["Mine", "Done."]
 
+    def test_an_answer_names_the_season_draft_it_made(
+        self, athlete: User, provide: Callable[..., Scripted]
+    ) -> None:
+        provide(said("Fine."))
+        season = SeasonPlanVersion.objects.create(owner=athlete, version=2)
+        ChatMessage.objects.create(
+            owner=athlete, role="coach", text="Season changed.", season_plan=season, changes=["y"]
+        )
+
+        messages = body(signed_in(athlete).call("GET", URL))["messages"]
+
+        assert messages[-1]["season_plan"] == {"id": str(season.pk), "version": 2}
+        assert messages[-1]["plan"] is None
+
+    def test_another_users_season_drafts_are_never_listed(self, athlete: User, bob: User) -> None:
+        season = SeasonPlanVersion.objects.create(owner=bob)
+        ChatMessage.objects.create(
+            owner=bob, role="coach", text="Bob's season.", season_plan=season, changes=["y"]
+        )
+
+        messages = body(signed_in(athlete).call("GET", URL))["messages"]
+
+        assert messages == []
+
     def test_the_number_of_queries_does_not_depend_on_the_messages(self, athlete: User) -> None:
         api = signed_in(athlete)
         with CaptureQueriesContext(connection) as few:
             api.call("GET", URL)
         plan = make_plan(athlete, MONDAY, status="draft")
+        season = SeasonPlanVersion.objects.create(owner=athlete)
         for n in range(30):
             ChatMessage.objects.create(
                 owner=athlete, role="coach", text=f"m{n}", plan=plan, changes=["x"]
+            )
+            ChatMessage.objects.create(
+                owner=athlete, role="coach", text=f"s{n}", season_plan=season, changes=["y"]
             )
         with CaptureQueriesContext(connection) as many:
             api.call("GET", URL)

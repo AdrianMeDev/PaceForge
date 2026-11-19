@@ -4,12 +4,17 @@ from django.db import IntegrityError, transaction
 from accounts.models import User
 from chat.models import COACH_TEXT_MAX, USER_TEXT_MAX, ChatMessage
 from reviews.tests.builders import make_plan
+from season.models import SeasonPlanVersion
 
 pytestmark = pytest.mark.django_db
 
 
 def say(owner: User, role: str, text: str = "Hello", **fields: object) -> ChatMessage:
     return ChatMessage.objects.create(owner=owner, role=role, text=text, **fields)
+
+
+def make_season(owner: User, version: int = 1) -> SeasonPlanVersion:
+    return SeasonPlanVersion.objects.create(owner=owner, version=version)
 
 
 class TestTheConversation:
@@ -54,11 +59,37 @@ class TestWhatAMessageHolds:
         assert message.plan is None
         assert message.changes == ["x"]
 
+    def test_a_message_of_the_coach_can_name_the_season_draft_and_the_changes(
+        self, alice: User
+    ) -> None:
+        season = make_season(alice, 3)
+
+        message = say(
+            alice, "coach", "Moved.", season_plan=season, changes=["Absence handed to season"]
+        )
+
+        message.refresh_from_db()
+        assert message.season_plan == season
+        assert message.changes == ["Absence handed to season"]
+
+    def test_the_message_stays_when_the_season_draft_is_deleted(self, alice: User) -> None:
+        season = make_season(alice)
+        message = say(alice, "coach", "Moved.", season_plan=season, changes=["x"])
+
+        season.delete()
+
+        message.refresh_from_db()
+        assert message.season_plan is None
+        assert message.changes == ["x"]
+
     def test_only_the_coach_changes_a_plan(self, alice: User) -> None:
         plan = make_plan(alice, status="draft")
+        season = make_season(alice)
 
         with pytest.raises(IntegrityError), transaction.atomic():
             say(alice, "user", plan=plan)
+        with pytest.raises(IntegrityError), transaction.atomic():
+            say(alice, "user", season_plan=season)
         with pytest.raises(IntegrityError), transaction.atomic():
             say(alice, "user", changes=["x"])
 

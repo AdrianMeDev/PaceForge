@@ -32,6 +32,14 @@ SICK_DAYS_MAX = 14
 RETURN_DAYS_MILD = 2
 RETURN_DAYS_SEVERE = 4
 RETURN_DURATION_PERCENT = 60
+# A longer absence is handed to the season: the week actions cannot plan around it.
+REPLAN_DAYS_MIN = 7
+REPLAN_DAYS_MAX = 120
+# How far ahead an absence may start (days from today).
+REPLAN_START_MAX_DAYS = 365
+REPLAN_KINDS = ("vacation", "other")
+ALONE_PROBLEM = "A change of the season stands alone: name no other action with it."
+OTHER_WEEK_PROBLEM = "One week per answer: this is in another week."
 
 TOOLS = (
     "move_workout",
@@ -41,6 +49,7 @@ TOOLS = (
     "reduce_week",
     "free_day",
     "mark_sick",
+    "replan_from",
 )
 _DAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 _NAMES = {
@@ -107,7 +116,26 @@ class MarkSick:
     days: int
 
 
-Action = MoveWorkout | SkipWorkout | SwapSport | ShortenWorkout | ReduceWeek | FreeDay | MarkSick
+@dataclass(frozen=True)
+class ReplanFrom:
+    """An absence of ``days`` days from ``start`` that the season has to be planned around. It
+    changes no week: ``apply`` leaves the plan as it is and the service asks for a season draft."""
+
+    start: date
+    days: int
+    kind: str
+
+
+Action = (
+    MoveWorkout
+    | SkipWorkout
+    | SwapSport
+    | ShortenWorkout
+    | ReduceWeek
+    | FreeDay
+    | MarkSick
+    | ReplanFrom
+)
 
 _FIELDS: dict[str, set[str]] = {
     "move_workout": {"tool", "id", "day", "slot"},
@@ -117,6 +145,7 @@ _FIELDS: dict[str, set[str]] = {
     "reduce_week": {"tool", "percent"},
     "free_day": {"tool", "day"},
     "mark_sick": {"tool", "symptoms", "fever", "days"},
+    "replan_from": {"tool", "start", "days", "kind"},
 }
 _REQUIRED: dict[str, set[str]] = {
     "move_workout": {"id", "day"},
@@ -126,19 +155,38 @@ _REQUIRED: dict[str, set[str]] = {
     "reduce_week": {"percent"},
     "free_day": {"day"},
     "mark_sick": {"symptoms", "fever", "days"},
+    "replan_from": {"start", "days", "kind"},
 }
 
 
-def read_actions(data: object, plan: WeekPlan, today: date) -> tuple[Action, ...]:
+def read_actions(
+    data: object,
+    plan: WeekPlan,
+    today: date,
+    other_weeks: Sequence[WeekPlan] = (),
+) -> tuple[Action, ...]:
     """The actions in ``data`` (a list of objects with a ``tool``), checked against ``plan`` and
-    ``today``. Raises ``ActionFormatError`` with every problem found."""
+    ``today``. Any workout id or day belonging to one of ``other_weeks`` is reported as
+    ``OTHER_WEEK_PROBLEM``. Raises ``ActionFormatError`` with every problem found."""
     if not isinstance(data, list):
         raise ActionFormatError((Problem("actions", "The actions are not a list."),))
     if len(data) > MAX_ACTIONS:
         raise ActionFormatError((Problem("actions", f"At most {MAX_ACTIONS} actions at once."),))
+    others = tuple(week for week in other_weeks if week.week_start != plan.week_start)
+    other_workouts = frozenset(
+        workout.lineage
+        for week in others
+        for workout in week.workouts
+        if workout.lineage is not None
+    )
+    other_starts = tuple(week.week_start for week in others)
     problems: list[Problem] = []
     actions: list[Action] = []
     seen_sick = False
+    if len(data) > 1:
+        for index, item in enumerate(data):
+            if isinstance(item, dict) and item.get("tool") == "replan_from":
+                problems.append(Problem(f"actions[{index}]", ALONE_PROBLEM))
     for index, item in enumerate(data):
         path = f"actions[{index}]"
         if isinstance(item, dict) and item.get("tool") == "mark_sick":
@@ -146,7 +194,7 @@ def read_actions(data: object, plan: WeekPlan, today: date) -> tuple[Action, ...
                 problems.append(Problem(path, "At most one mark_sick action per answer."))
                 continue
             seen_sick = True
-        found = _read_one(item, path, plan, today, problems)
+        found = _read_one(item, path, plan, today, other_workouts, other_starts, problems)
         if found is not None:
             actions.append(found)
     if problems:
@@ -155,7 +203,13 @@ def read_actions(data: object, plan: WeekPlan, today: date) -> tuple[Action, ...
 
 
 def _read_one(
-    item: object, path: str, plan: WeekPlan, today: date, problems: list[Problem]
+    item: object,
+    path: str,
+    plan: WeekPlan,
+    today: date,
+    other_workouts: frozenset[UUID],
+    other_starts: tuple[date, ...],
+    problems: list[Problem],
 ) -> Action | None:
     if not isinstance(item, dict):
         problems.append(Problem(path, "An action is an object."))
@@ -173,24 +227,24 @@ def _read_one(
         return None
     match tool:
         case "move_workout":
-            workout = _workout(item["id"], f"{path}.id", plan, today, problems)
-            day = _day(item["day"], f"{path}.day", plan, today, problems)
+            workout = _workout(item["id"], f"{path}.id", plan, today, other_workouts, problems)
+            day = _day(item["day"], f"{path}.day", plan, today, other_starts, problems)
             slot = _slot(item.get("slot"), f"{path}.slot", problems)
             if workout is None or day is None or len(problems) > before:
                 return None
             return MoveWorkout(workout.lineage, day, slot)  # type: ignore[arg-type]
         case "skip_workout":
-            workout = _workout(item["id"], f"{path}.id", plan, today, problems)
+            workout = _workout(item["id"], f"{path}.id", plan, today, other_workouts, problems)
             return None if workout is None else SkipWorkout(workout.lineage)  # type: ignore[arg-type]
         case "swap_sport":
-            workout = _workout(item["id"], f"{path}.id", plan, today, problems)
+            workout = _workout(item["id"], f"{path}.id", plan, today, other_workouts, problems)
             sport = _sport(item["sport"], f"{path}.sport", problems)
             minutes = _minutes(item.get("minutes"), f"{path}.minutes", problems, optional=True)
             if workout is None or sport is None or len(problems) > before:
                 return None
             return SwapSport(workout.lineage, sport, minutes)  # type: ignore[arg-type]
         case "shorten_workout":
-            workout = _workout(item["id"], f"{path}.id", plan, today, problems)
+            workout = _workout(item["id"], f"{path}.id", plan, today, other_workouts, problems)
             minutes = _minutes(item["minutes"], f"{path}.minutes", problems)
             if workout is not None and minutes is not None:
                 if minutes >= workout.duration_minutes:
@@ -213,8 +267,17 @@ def _read_one(
                 return None
             return ReduceWeek(percent)
         case "free_day":
-            day = _day(item["day"], f"{path}.day", plan, today, problems)
+            day = _day(item["day"], f"{path}.day", plan, today, other_starts, problems)
             return None if day is None else FreeDay(day)
+        case "replan_from":
+            start = _start(item["start"], f"{path}.start", today, problems)
+            days = _replan_days(item["days"], f"{path}.days", problems)
+            kind = item["kind"]
+            if kind not in REPLAN_KINDS:
+                problems.append(Problem(f"{path}.kind", "Either vacation or other."))
+            if start is None or days is None or len(problems) > before:
+                return None
+            return ReplanFrom(start, days, kind)
         case _:  # mark_sick
             symptoms = _symptoms(item["symptoms"], f"{path}.symptoms", problems)
             fever = _fever(item["fever"], f"{path}.fever", problems)
@@ -225,7 +288,12 @@ def _read_one(
 
 
 def _workout(
-    value: object, path: str, plan: WeekPlan, today: date, problems: list[Problem]
+    value: object,
+    path: str,
+    plan: WeekPlan,
+    today: date,
+    other_workouts: frozenset[UUID],
+    problems: list[Problem],
 ) -> Workout | None:
     try:
         wanted = UUID(value) if isinstance(value, str) else None
@@ -233,7 +301,10 @@ def _workout(
         wanted = None
     found = next((w for w in plan.workouts if wanted is not None and w.lineage == wanted), None)
     if found is None:
-        problems.append(Problem(path, "This is not a workout of the plan."))
+        if wanted is not None and wanted in other_workouts:
+            problems.append(Problem(path, OTHER_WEEK_PROBLEM))
+        else:
+            problems.append(Problem(path, "This is not a workout of the plan."))
         return None
     if found.day < today:
         problems.append(Problem(path, "This workout is in the past and cannot be changed."))
@@ -242,7 +313,12 @@ def _workout(
 
 
 def _day(
-    value: object, path: str, plan: WeekPlan, today: date, problems: list[Problem]
+    value: object,
+    path: str,
+    plan: WeekPlan,
+    today: date,
+    other_starts: tuple[date, ...],
+    problems: list[Problem],
 ) -> date | None:
     try:
         day = date.fromisoformat(value) if isinstance(value, str) else None
@@ -252,7 +328,10 @@ def _day(
         problems.append(Problem(path, "This is not a date (YYYY-MM-DD)."))
         return None
     if not plan.week_start <= day <= plan.week_start + timedelta(days=6):
-        problems.append(Problem(path, "This day is not in the week of the plan."))
+        if any(start <= day <= start + timedelta(days=6) for start in other_starts):
+            problems.append(Problem(path, OTHER_WEEK_PROBLEM))
+        else:
+            problems.append(Problem(path, "This day is not in the week of the plan."))
         return None
     if day < today:
         problems.append(Problem(path, "This day is in the past."))
@@ -289,6 +368,36 @@ def _minutes(
         or not MIN_MINUTES <= value <= DURATION_MAX
     ):
         problems.append(Problem(path, f"A whole number of minutes, at least {MIN_MINUTES}."))
+        return None
+    return value
+
+
+def _start(value: object, path: str, today: date, problems: list[Problem]) -> date | None:
+    try:
+        day = date.fromisoformat(value) if isinstance(value, str) else None
+    except ValueError:
+        day = None
+    if day is None:
+        problems.append(Problem(path, "This is not a date (YYYY-MM-DD)."))
+        return None
+    if day < today:
+        problems.append(Problem(path, "This day is in the past."))
+        return None
+    if day > today + timedelta(days=REPLAN_START_MAX_DAYS):
+        problems.append(Problem(path, f"At most {REPLAN_START_MAX_DAYS} days from today."))
+        return None
+    return day
+
+
+def _replan_days(value: object, path: str, problems: list[Problem]) -> int | None:
+    if (
+        not isinstance(value, int)
+        or isinstance(value, bool)
+        or not REPLAN_DAYS_MIN <= value <= REPLAN_DAYS_MAX
+    ):
+        problems.append(
+            Problem(path, f"A whole number from {REPLAN_DAYS_MIN} to {REPLAN_DAYS_MAX}.")
+        )
         return None
     return value
 
@@ -346,6 +455,8 @@ def apply(
                 changes.extend(_free(workouts, day))
             case MarkSick():
                 changes.extend(_mark_sick(workouts, action, today))
+            case ReplanFrom():
+                pass  # no week changes: the season is changed instead
             case _:
                 place = next(
                     (n for n, w in enumerate(workouts) if w.lineage == action.id),
@@ -487,4 +598,5 @@ def _tool(action: Action) -> str:
         ReduceWeek: "reduce_week",
         FreeDay: "free_day",
         MarkSick: "mark_sick",
+        ReplanFrom: "replan_from",
     }[type(action)]

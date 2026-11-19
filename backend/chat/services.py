@@ -2,9 +2,9 @@
 that may come of it.
 
 ``send`` asks the coach (``chat.prompt``: the data, the last messages and the new one), reads the
-answer strictly, lets the code do the actions on the week that can be changed (``chat.actions``)
-and stores the result as a **new draft** of that week, which the athlete reads, confirms or
-discards on the Week plan page. Nothing is confirmed or sent anywhere from here.
+answer strictly, lets the code do the actions on the named week (or the first week in the briefing)
+(``chat.actions``) and stores the result as a **new draft** of that week, which the athlete reads,
+confirms or discards on the Week plan page. Nothing is confirmed or sent anywhere from here.
 
 A message of the athlete is only stored together with its answer, so a failed request leaves
 nothing behind to show again. If the coach does not give a usable answer, even after being told
@@ -14,6 +14,7 @@ call at ``coach`` is the usage record (facts, never text).
 """
 
 import unicodedata
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 
@@ -21,17 +22,26 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 
 from accounts.models import User
-from availability.absences import note_illness
+from availability.absences import note_absence, note_illness
 from coach import services as coach
 from coach.models import AIUsageRecord
-from coach.providers.base import Message
+from coach.providers.base import Message, ProviderError
 from goals.services import today_of
 from planning import services as plans
 from planning.generation import plannable_weeks
 from planning.models import WeeklyPlan
 from planning.schema import Problem, WeekPlan
+from season import generation as season_generation
+from season.models import SeasonPlanVersion
 
-from .actions import ActionFormatError, MarkSick, apply, read_actions
+from .actions import (
+    OTHER_WEEK_PROBLEM,
+    ActionFormatError,
+    MarkSick,
+    ReplanFrom,
+    apply,
+    read_actions,
+)
 from .briefing import build_briefing
 from .models import USER_TEXT_MAX, ChatMessage
 from .prompt import SYSTEM_PROMPT, AnswerNotUsable, extract_answer, first_message, repair_message
@@ -53,6 +63,22 @@ DOCTOR_HINT = (
 NOT_USABLE = (
     "I could not turn that into a change of your plan. Please try again, "
     "or change the plan yourself on the Week plan page."
+)
+# What the athlete is told when the coach still tried to change more than one week at once.
+ONE_WEEK_ONLY = (
+    "I can only change one week at a time. Please tell me which week to change first, "
+    "then ask for the next one."
+)
+# The sentences that tell what became of a longer absence (made by the code, never by the coach).
+ABSENCE_NOTED = "Absence noted ({span})"
+ABSENCE_NOT_NOTED = "The absence could not be noted: you have too many periods"
+SEASON_DRAFT_MADE = "Season draft made around the absence"
+NO_SEASON_PLAN = "No season plan to change: make one on the Season page first"
+SEASON_CHANGE_FAILED = "The season could not be changed: try again on the Season page"
+# What the season coach is asked; written here from the checked action, never from the chat text.
+SEASON_REQUEST = (
+    "The athlete is away from {start} to {end} ({days} days, {kind}). Plan the season around "
+    "this absence: no training in those days, and build up again carefully afterwards."
 )
 
 
@@ -83,7 +109,7 @@ def clean_text(text: str) -> str:
 
 def history(user: User) -> list[ChatMessage]:
     """The whole conversation, oldest first."""
-    return list(ChatMessage.objects.for_user(user).select_related("plan"))
+    return list(ChatMessage.objects.for_user(user).select_related("plan", "season_plan"))
 
 
 def clear(user: User) -> int:
@@ -103,15 +129,16 @@ def send(user: User, text: str) -> Sent:
     """
     text = clean_text(text)
     today = today_of(user)
-    stored = _plan_to_change(user)
-    plan = plans.load(user, stored.pk) if stored else WeekPlan(_this_week(today), ())
+    stored_plans = _plans_to_change(user)
+    loaded = [plans.load(user, row.pk) for row in stored_plans]
+    available = list(zip(stored_plans, loaded, strict=True))
     told = [
         ("athlete" if message.role == ChatMessage.Role.USER else "coach", message.text)
         for message in ChatMessage.objects.for_user(user).order_by("-created_at", "-id")[
             :HISTORY_TOLD
         ]
     ][::-1]
-    messages = [first_message(build_briefing(user, plan), told, text)]
+    messages = [first_message(build_briefing(user, loaded), told, text)]
     problems: tuple[Problem, ...] = ()
     for attempt in range(1, ATTEMPTS + 1):
         completion = coach.call(
@@ -126,31 +153,59 @@ def send(user: User, text: str) -> Sent:
             problems = (Problem("", "The answer was cut off before its end; make it shorter."),)
         else:
             try:
-                reply, changed, changes, sick = _understand(completion.text, plan, today)
+                reply, parent, changed, changes, sick, replan = _understand(
+                    completion.text, available, today
+                )
             except (AnswerNotUsable, ActionFormatError) as error:
                 problems = error.problems
             else:
-                return _store(user, text, reply, stored, changed, changes, sick, today)
+                return _store(user, text, reply, parent, changed, changes, sick, replan, today)
         if attempt < ATTEMPTS:
             answer = completion.text if completion.text.strip() else "(no answer)"
             messages = [messages[0], Message("assistant", answer), repair_message(problems)]
-    return _store(user, text, NOT_USABLE, None, None, (), None, today)
+    fallback = ONE_WEEK_ONLY if _names_other_week(problems) else NOT_USABLE
+    return _store(user, text, fallback, None, None, (), None, None, today)
+
+
+def _names_other_week(problems: Sequence[Problem]) -> bool:
+    return any(problem.message == OTHER_WEEK_PROBLEM for problem in problems)
 
 
 def _understand(
-    answer: str, plan: WeekPlan, today: date
-) -> tuple[str, WeekPlan | None, tuple[str, ...], MarkSick | None]:
-    """The reply, the changed plan, what changed and any illness action; ``None`` and no changes if
-    the coach proposed nothing, or nothing that makes a difference."""
+    answer: str,
+    available: Sequence[tuple[WeeklyPlan, WeekPlan]],
+    today: date,
+) -> tuple[
+    str, WeeklyPlan | None, WeekPlan | None, tuple[str, ...], MarkSick | None, ReplanFrom | None
+]:
+    """The reply, the parent plan, the changed plan, what changed, any illness action and any
+    absence for the season; ``None`` and no changes if the coach proposed nothing, or nothing that
+    makes a difference."""
     found = extract_answer(answer)
+    stored, plan = _pick_week(found.week, available, today)
     if not found.actions:
-        return found.reply, None, (), None
-    actions = read_actions(found.actions, plan, today)
+        return found.reply, None, None, (), None, None
+    others = [other for _, other in available if other.week_start != plan.week_start]
+    actions = read_actions(found.actions, plan, today, other_weeks=others)
     sick = next((action for action in actions if isinstance(action, MarkSick)), None)
+    replan = next((action for action in actions if isinstance(action, ReplanFrom)), None)
     changed, changes = apply(plan, actions, today)
     if changed == plan:
-        return found.reply, None, (), sick
-    return found.reply, changed, changes, sick
+        return found.reply, None, None, (), sick, replan
+    return found.reply, stored, changed, changes, sick, replan
+
+
+def _pick_week(
+    wanted: date | None,
+    available: Sequence[tuple[WeeklyPlan, WeekPlan]],
+    today: date,
+) -> tuple[WeeklyPlan | None, WeekPlan]:
+    if wanted is None:
+        return available[0] if available else (None, WeekPlan(_this_week(today), ()))
+    for row, plan in available:
+        if plan.week_start == wanted:
+            return row, plan
+    raise AnswerNotUsable((Problem("week", "This week is not in the weeks that can be changed."),))
 
 
 def _store(
@@ -161,15 +216,21 @@ def _store(
     changed: WeekPlan | None,
     changes: tuple[str, ...],
     sick: MarkSick | None,
+    replan: ReplanFrom | None,
     today: date,
 ) -> Sent:
     draft: WeeklyPlan | None = None
+    season_draft: SeasonPlanVersion | None = None
+    season_changes: list[str] = []
     if parent is not None and changed is not None:
         draft = plans.save_draft(user, changed, reason=REASON, parent=parent.pk)
     if sick is not None and sick.fever:
         reply = f"{reply}\n\n{DOCTOR_HINT}"
+    if replan is not None:
+        season_draft, season_changes = _replan_season(user, replan)
     with transaction.atomic():
         stored_changes = list(changes) if draft else []
+        stored_changes.extend(season_changes)
         if sick is not None:
             end = today + timedelta(days=sick.days - 1)
             period = note_illness(user, today, end)
@@ -186,28 +247,61 @@ def _store(
             role=ChatMessage.Role.COACH,
             text=reply,
             plan=draft,
+            season_plan=season_draft,
             changes=stored_changes,
         )
     return Sent(athlete, answered)
+
+
+def _replan_season(user: User, replan: ReplanFrom) -> tuple[SeasonPlanVersion | None, list[str]]:
+    """Note the absence, then ask for a season draft around it, made from the newest draft or
+    confirmed version. The absence is kept whatever comes of the season. Nothing is confirmed."""
+    end = replan.start + timedelta(days=replan.days - 1)
+    if note_absence(user, replan.start, end, replan.kind) is None:
+        return None, [ABSENCE_NOT_NOTED]
+    changes = [ABSENCE_NOTED.format(span=f"{replan.start.isoformat()} to {end.isoformat()}")]
+    base = (
+        SeasonPlanVersion.objects.for_user(user)
+        .filter(status__in=[SeasonPlanVersion.Status.DRAFT, SeasonPlanVersion.Status.CONFIRMED])
+        .order_by("-version")
+        .first()
+    )
+    if base is None:
+        return None, [*changes, NO_SEASON_PLAN]
+    request = SEASON_REQUEST.format(
+        start=replan.start.isoformat(),
+        end=end.isoformat(),
+        days=replan.days,
+        kind=replan.kind,
+    )
+    try:
+        made = season_generation.change(user, base.pk, request)
+    except (
+        season_generation.PlanNotUsable,
+        season_generation.PlanUnchanged,
+        season_generation.NothingToPlan,
+        ProviderError,
+    ):
+        return None, [*changes, SEASON_CHANGE_FAILED]
+    return made.plan, [*changes, SEASON_DRAFT_MADE]
 
 
 def _this_week(today: date) -> date:
     return today - timedelta(days=today.weekday())
 
 
-def _plan_to_change(user: User) -> WeeklyPlan | None:
-    """The plan the chat works on: the newest draft or confirmed version of the first week (this
-    one, then the next ones) that has one."""
-    for monday in plannable_weeks(user):
-        found = (
-            WeeklyPlan.objects.for_user(user)
-            .filter(
-                week_start=monday,
-                status__in=[WeeklyPlan.Status.DRAFT, WeeklyPlan.Status.CONFIRMED],
-            )
-            .order_by("-version")
-            .first()
+def _plans_to_change(user: User) -> list[WeeklyPlan]:
+    """The newest draft or confirmed version of every plannable week that has one, in order."""
+    mondays = plannable_weeks(user)
+    rows = (
+        WeeklyPlan.objects.for_user(user)
+        .filter(
+            week_start__in=mondays,
+            status__in=[WeeklyPlan.Status.DRAFT, WeeklyPlan.Status.CONFIRMED],
         )
-        if found is not None:
-            return found
-    return None
+        .order_by("week_start", "-version")
+    )
+    newest: dict[date, WeeklyPlan] = {}
+    for row in rows:
+        newest.setdefault(row.week_start, row)
+    return [newest[monday] for monday in mondays if monday in newest]

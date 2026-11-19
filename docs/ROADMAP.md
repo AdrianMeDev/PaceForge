@@ -88,7 +88,7 @@ AI key; several people can share one instance without seeing each other's data.
 - **Depends on:** –
 - **Size:** L
 
-### M6 [ ] Chat for other weeks and the season
+### M6 [x] Chat for other weeks and the season
 - **Goal:** The chat can change the next weeks and turn longer changes into a season change request.
 - **Includes:** actions for a named week (e.g. business trip next week), `replan_from` that hands a longer absence to the season change request, more than one week in one answer refused clearly, docs.
 - **Done when:** "only running next week" creates a draft for next week; a three-week absence creates a season draft; tests green.
@@ -173,6 +173,7 @@ AI key; several people can share one instance without seeing each other's data.
 - README section and `docs/` updated for every user-visible change.
 
 ## Changelog
+- 2026-11-19: M6 completed — the chat changes a week the athlete names (this week or one of the next four that has a plan), refuses more than one week per answer with a fixed reply, and hands a longer absence (`replan_from`, 7 to 120 days) to the season: the absence is noted and a season draft around it is made and linked from the answer
 - 2026-11-19: M5 completed — `mark_sick` in the chat (symptoms, fever, days) pauses the sick days, plans a 2- or 4-day easy return without intensity, notes the illness as an absence and appends the fever hint; the season marks illness weeks; a confirmed draft removes the paused workouts in Intervals.icu
 - 2026-11-19: M4 completed — season change hints on Season, Goals and Profile, three-week deviation proposal with evidence weeks in Week review, and change requests drafted from current inputs
 - 2026-11-19: M2 completed — unified activity load (Intervals or duration × RPE), workout load estimates, and planned vs done load across week plan, week review and season chart

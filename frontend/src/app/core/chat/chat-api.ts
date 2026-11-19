@@ -119,6 +119,7 @@ function toMessages(reply: Reply): ChatMessage[] {
 function toMessage(raw: unknown, reply: Reply): ChatMessage {
   const item = object(raw, reply);
   const plan = item['plan'];
+  const seasonPlan = item['season_plan'];
   return {
     id: text(item['id'], reply),
     role: oneOf(item['role'], ROLES, reply) as ChatRole,
@@ -129,12 +130,28 @@ function toMessage(raw: unknown, reply: Reply): ChatMessage {
       plan === null
         ? null
         : { id: text(object(plan, reply)['id'], reply), week_start: weekOf(plan, reply) },
+    season_plan:
+      seasonPlan === null
+        ? null
+        : {
+            id: text(object(seasonPlan, reply)['id'], reply),
+            version: versionOf(seasonPlan, reply),
+          },
   };
 }
 
 function weekOf(plan: unknown, reply: Reply): string {
   const found = string(object(plan, reply)['week_start'], reply);
   if (!DATE.test(found)) {
+    throw unexpected(reply);
+  }
+  return found;
+}
+
+/** The number of a version of the season plan: a whole number, counted from 1. */
+function versionOf(plan: unknown, reply: Reply): number {
+  const found = object(plan, reply)['version'];
+  if (typeof found !== 'number' || !Number.isInteger(found) || found < 1) {
     throw unexpected(reply);
   }
   return found;

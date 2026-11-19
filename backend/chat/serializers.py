@@ -15,6 +15,7 @@ _TIME = serializers.DateTimeField()
 
 def message_data(message: ChatMessage) -> dict[str, Any]:
     plan = message.plan
+    season_plan = message.season_plan
     return {
         "id": str(message.id),
         "role": message.role,
@@ -24,6 +25,9 @@ def message_data(message: ChatMessage) -> dict[str, Any]:
         "plan": None
         if plan is None
         else {"id": str(plan.pk), "week_start": plan.week_start.isoformat()},
+        "season_plan": None
+        if season_plan is None
+        else {"id": str(season_plan.pk), "version": season_plan.version},
     }
 
 
