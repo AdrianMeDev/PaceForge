@@ -80,3 +80,24 @@ jobs:
       - run: npm run lint
       - run: npx ng test --no-watch
       - run: npx ng build
+
+  containers:
+    name: Containers (Docker, Caddy)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate production Compose config
+        run: |
+          docker compose -f compose.prod.yaml config >/dev/null
+          docker compose --env-file .env.prod.example -f compose.prod.yaml config >/dev/null
+      - name: Validate Caddyfile
+        run: |
+          docker run --rm \
+            -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            -e APP_DOMAIN=localhost \
+            caddy:2.10-alpine caddy validate --config /etc/caddy/Caddyfile
+      - name: Build production images
+        run: docker compose -f compose.prod.yaml build
