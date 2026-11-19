@@ -626,3 +626,45 @@ class TestTheReadmeOnChangingAPlan:
     def test_the_page_of_the_api_names_the_three_endpoints(self) -> None:
         for path in ("/check/", "/revise/", "/restore/"):
             assert "/api/planning/" in DOC and path in DOC, path
+
+
+class TestLoadEstimation:
+    def test_the_load_constants_match_the_code(self) -> None:
+        from activities import load as activity_load
+        from planning import load
+
+        table = {row[0]: row[1] for row in rows(section("Estimating workout load"))}
+
+        assert table["FIVE_ZONE_LOAD_PER_HOUR"] == ", ".join(
+            str(v) for v in load.FIVE_ZONE_LOAD_PER_HOUR
+        )
+        assert table["POWER_LOAD_PER_HOUR"] == ", ".join(str(v) for v in load.POWER_LOAD_PER_HOUR)
+        for goal, rate in load.GOAL_LOAD_PER_HOUR.items():
+            assert int(table[f"GOAL_LOAD_PER_HOUR ({goal.value})"]) == rate, goal
+        assert int(table["DEFAULT_STRENGTH_RPE"]) == load.DEFAULT_STRENGTH_RPE
+        assert int(table["RPE_LOAD_PER_HOUR"]) == activity_load.RPE_LOAD_PER_HOUR
+
+    def test_the_api_documents_read_only_load_fields_and_minute_checks(self) -> None:
+        text = subsection("The API")
+
+        for field in (
+            "estimated_load",
+            "load",
+            "sports",
+            "total",
+            "planned_minutes",
+            "done_minutes",
+            "planned_load",
+            "done_load",
+        ):
+            assert f"`{field}`" in text, field
+        assert "All planning checks still use minutes." in " ".join(text.split())
+
+    def test_the_readme_describes_unified_load_and_planned_vs_done(self) -> None:
+        for phrase in (
+            "Planned vs done load",
+            "estimated_load",
+            "training_load",
+            "All planning checks still use minutes.",
+        ):
+            assert phrase in FLAT_README, phrase

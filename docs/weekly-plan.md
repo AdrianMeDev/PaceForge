@@ -168,6 +168,38 @@ duration: a segment is easy if its zone is 2 or less; without a zone a warm-up, 
 cool-down is easy and any other segment is as easy as the workout itself (its goal and its own
 zone). A share is told rounded down, and a week exactly at the limit passes.
 
+## Estimating workout load
+
+Every planned workout has a read-only `estimated_load` in whole load points (`planning/load.py`),
+on the same scale as unified activity load (`activities/load.py`: Intervals.icu `training_load`
+when present, else duration in hours × RPE × `RPE_LOAD_PER_HOUR`). Estimates are for comparison
+only; all planning checks remain minute-based.
+
+- **Endurance workouts** (`running`, `cycling`, `swimming`): if the workout has segments, each
+  segment gets an hourly rate from its own zone (`POWER_LOAD_PER_HOUR` for `power`,
+  `FIVE_ZONE_LOAD_PER_HOUR` for `heart_rate` and `pace`) or falls back to the workout's rate when
+  the segment has no zone; the session rate is the time-weighted average across segments
+  (`seconds` × `repeat`), scaled to `duration_minutes`. Without segments, the workout uses its own
+  zone, or `GOAL_LOAD_PER_HOUR` for its `goal` (`other` as fallback).
+- **Strength workouts** (`strength`): the session uses the mean of specified exercise `rpe` values,
+  or `DEFAULT_STRENGTH_RPE` when no exercise gives one, multiplied by `RPE_LOAD_PER_HOUR` per hour
+  and scaled to `duration_minutes`.
+- **Stretching and rounding:** `stretching_minutes` adds no load. Each workout's load is rounded
+  half up once (`max(0, floor(duration_minutes * rate / 60 + 0.5))`).
+
+| Zone / Goal / Constant | Rate or Value | Meaning |
+| ---------------------- | ------------- | ------- |
+| `FIVE_ZONE_LOAD_PER_HOUR` | 35, 55, 75, 100, 120 | Load per hour for `heart_rate` and `pace` zones 1 to 5. |
+| `POWER_LOAD_PER_HOUR` | 30, 50, 70, 95, 115, 130, 145 | Load per hour for `power` zones 1 to 7. |
+| `GOAL_LOAD_PER_HOUR` (`recovery`) | 35 | Load per hour for a `recovery` workout without a zone. |
+| `GOAL_LOAD_PER_HOUR` (`endurance`) | 55 | Load per hour for an `endurance` workout without a zone. |
+| `GOAL_LOAD_PER_HOUR` (`tempo`) | 75 | Load per hour for a `tempo` workout without a zone. |
+| `GOAL_LOAD_PER_HOUR` (`threshold`) | 95 | Load per hour for a `threshold` workout without a zone. |
+| `GOAL_LOAD_PER_HOUR` (`vo2max`) | 115 | Load per hour for a `vo2max` workout without a zone. |
+| `GOAL_LOAD_PER_HOUR` (`other`) | 55 | Load per hour for `other` (and the fallback goal). |
+| `DEFAULT_STRENGTH_RPE` | 6 | Default RPE for a strength workout when no exercise has an `rpe`. |
+| `RPE_LOAD_PER_HOUR` | 10 | Load points per hour per RPE point (`activities/load.py`). |
+
 ## What the checks know
 
 Each plan is checked against the facts of its user for that week, collected when the check runs:

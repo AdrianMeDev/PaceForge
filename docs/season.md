@@ -271,10 +271,12 @@ ever to the page as text.
 
 The Season page draws the skeleton it shows (the one of the open version, else today's) as a
 **timeline** (one cell a week: phase colour and two letters, `R` for a recovery week, the letter of
-each race, the current week outlined) and as a **chart** of stacked bars (the plan's minutes by
-sport, else the aim of the skeleton), with hours on a round axis of at most six steps. The geometry
-is in pure functions (`timelineCells`, `chartLayout`) that the specs test; the SVG is drawn by hand
-without a library.
+each race, the current week outlined) and as a **chart** of stacked bars with a **Minutes** /
+**Load** toggle (the plan's minutes or `planned_load` by sport, else the aim of the skeleton in
+minutes mode), with hours or load points on a round axis of at most six steps. For the confirmed
+plan, begun weeks show a narrower bar beside the plan for `done` minutes or `done_load`. The
+geometry is in pure functions (`timelineCells`, `chartLayout`) that the specs test; the SVG is
+drawn by hand without a library.
 
 `season/done.py` counts the minutes done for the chart. `done_minutes(user, mondays)` adds up the
 activities of each calendar week (Monday to Sunday) in the **time zone of the athlete**, by sport
@@ -316,6 +318,6 @@ positive done sport totals are listed. A week without known positive load has `d
 ## Not there yet
 
 The skeleton itself knows minutes only. The coach adds the split by sport, the key sessions and the
-reasons, and the Season page shows, drafts, confirms and discards them, with a timeline and a chart.
-The chart shows minutes. Whether a goal time is realistic is judged separately (see
+reasons, and the Season page shows, drafts, confirms and discards them, with a timeline and a chart
+for minutes and load. Whether a goal time is realistic is judged separately (see
 [goals](goals.md)); the coach is told it with every race.

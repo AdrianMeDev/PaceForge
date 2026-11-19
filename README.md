@@ -943,14 +943,17 @@ sessions (a long run, a threshold session, the race …) and a reason. The model
   for every week, coloured and lettered by phase (Ba base, Bu build, Sp specific, Ta taper, Tr
   transition), an R for a recovery week, the letter of every race (A, B, C) and an outline round
   the current week; the full text of a cell (week, phase, races with their titles) is its tooltip.
-  The **chart** shows the minutes of every week as a stacked bar, one colour per sport, with hours
-  on the axis: the plan of the open version, or, without one, the aim of the skeleton in one
-  colour. For the **confirmed** plan and the weeks that have begun a narrower bar beside the plan
-  shows what you actually trained, in the same colours, and the table has a **Done** column. Done
-  minutes come from your activities: the timer time (else the elapsed time), added up per week
-  (Monday to Sunday in your time zone) and sport, activities of no sport of the plan as *Other*;
-  the current week counts with what is done so far. Every bar has its numbers as text and the
-  table has all of them; the page scrolls sideways on a narrow screen. The chart shows minutes.
+  The **chart** has a **Minutes** / **Load** toggle and shows every week as a stacked bar, one
+  colour per sport: the plan of the open version, or, without one, the aim of the skeleton in one
+  colour (in **Load** mode, planned load estimates from confirmed weekly workouts when present,
+  otherwise from the season's sport minutes and key sessions). For the **confirmed** plan and the
+  weeks that have begun a narrower bar beside the plan shows what you actually trained, in the same
+  colours, and the table has a **Done** column (with both minutes and done load). Done minutes
+  come from your activities: the timer time (else the elapsed time), added up per week (Monday to
+  Sunday in your time zone) and sport, activities of no sport of the plan as *Other*; the current
+  week counts with what is done so far. Done load uses Intervals.icu training load when present,
+  otherwise duration × RPE. Every bar has its numbers as text and the table has all of them; the
+  page scrolls sideways on a narrow screen.
 - **The week plan follows the confirmed plan:** a week that lies in the **confirmed** season plan
   (never a draft) is told to the coach with its phase, minutes of each sport, focus, key sessions
   and reason, and the Week plan page shows the same above the versions. See

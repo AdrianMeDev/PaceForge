@@ -247,3 +247,21 @@ class TestTheFilledPlans:
             "confirmed_at",
         ):
             assert f"`{field}`" in text, field
+
+
+class TestLoad:
+    def test_the_api_documents_season_load_fields(self) -> None:
+        text = section("The API")
+
+        for field in ("planned_load", "total_planned_load", "done_load"):
+            assert f"`{field}`" in text, field
+
+    def test_the_chart_documents_the_minutes_and_load_toggle(self) -> None:
+        text = section("The timeline, the chart and the minutes done")
+        readme = (ROOT / "README.md").read_text()
+
+        assert "**Minutes**" in text and "**Load**" in text
+        assert "**Minutes**" in readme and "**Load**" in readme
+        assert "The chart shows minutes." not in DOC
+        assert "The chart shows minutes." not in readme
+        assert "checks still use minutes" in text
