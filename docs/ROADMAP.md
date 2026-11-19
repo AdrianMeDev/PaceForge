@@ -123,7 +123,7 @@ AI key; several people can share one instance without seeing each other's data.
 - **Depends on:** –
 - **Size:** M
 
-### M11 [~] Production deployment
+### M11 [x] Production deployment
 - **Goal:** A new person can run PaceForge on a VPS with HTTPS from the docs.
 - **Includes:** `compose.prod.yaml` with Caddy (HTTPS), backend, frontend, PostgreSQL, scheduler; production settings from environment; first setup without database edits; registration closed/invite only documented; update and migration docs.
 - **Done when:** `docker compose -f compose.prod.yaml config` is valid, a CI job builds the images, the setup doc covers install to first login.
@@ -173,6 +173,7 @@ AI key; several people can share one instance without seeing each other's data.
 - README section and `docs/` updated for every user-visible change.
 
 ## Changelog
+- 2026-11-20: M11 completed — production deployment stack (`compose.prod.yaml`, Caddy with automatic HTTPS, non-root backend and frontend containers, `scheduler` service, `/api/health/`, production settings via `APP_DOMAIN`, CI container validation/build, and end-to-end VPS deployment docs)
 - 2026-11-19: M10 completed — segment editor on the Week plan page (warm-up, repeated blocks, cool-down, duration, zone, reordering, removing structure) with automatic duration calculation, checks after each change, new draft on save, and updating the same Intervals.icu event on push
 - 2026-11-19: M9 completed — optional per-model prices (input, output and cached input per million tokens), monthly usage and estimated cost in the athlete's time zone on the Connections page, and separate optional models for the week plan and coach chat
 - 2026-11-19: M8 completed — daily wellness (sleep, HRV, resting HR and weight) synced from Intervals.icu with activities, shown on the dashboard with 7-day vs 28-day trends and recovery warnings, and passed to week and chat briefings
