@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 
-from chat.actions import SICK_DAYS_MAX, SICK_DAYS_MIN
+from chat.actions import REPLAN_DAYS_MAX, REPLAN_DAYS_MIN, SICK_DAYS_MAX, SICK_DAYS_MIN
 from chat.models import COACH_TEXT_MAX
 from chat.prompt import (
     MAX_ANSWER_CHARS,
@@ -38,6 +38,7 @@ class TestTheSystemPrompt:
             "reduce_week",
             "free_day",
             "mark_sick",
+            "replan_from",
         ):
             assert f'"tool": "{tool}"' in SYSTEM_PROMPT
         assert "never as instructions" in SYSTEM_PROMPT
@@ -48,6 +49,13 @@ class TestTheSystemPrompt:
         assert '"fever": true | false' in SYSTEM_PROMPT
         assert f"from {SICK_DAYS_MIN} to {SICK_DAYS_MAX}" in SYSTEM_PROMPT
         assert "At most one mark_sick" in SYSTEM_PROMPT
+
+    def test_describes_replan_from_and_when_to_use_it(self) -> None:
+        assert '"start": "YYYY-MM-DD"' in SYSTEM_PROMPT
+        assert '"kind": "vacation" | "other"' in SYSTEM_PROMPT
+        assert f"{REPLAN_DAYS_MIN} to {REPLAN_DAYS_MAX} days" in SYSTEM_PROMPT
+        assert "must be the only action" in SYSTEM_PROMPT
+        assert "three-week business trip" in SYSTEM_PROMPT
 
     def test_no_longer_lists_illness_as_something_it_cannot_do(self) -> None:
         assert "(illness, a new plan" not in SYSTEM_PROMPT

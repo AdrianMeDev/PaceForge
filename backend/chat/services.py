@@ -22,17 +22,26 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 
 from accounts.models import User
-from availability.absences import note_illness
+from availability.absences import note_absence, note_illness
 from coach import services as coach
 from coach.models import AIUsageRecord
-from coach.providers.base import Message
+from coach.providers.base import Message, ProviderError
 from goals.services import today_of
 from planning import services as plans
 from planning.generation import plannable_weeks
 from planning.models import WeeklyPlan
 from planning.schema import Problem, WeekPlan
+from season import generation as season_generation
+from season.models import SeasonPlanVersion
 
-from .actions import OTHER_WEEK_PROBLEM, ActionFormatError, MarkSick, apply, read_actions
+from .actions import (
+    OTHER_WEEK_PROBLEM,
+    ActionFormatError,
+    MarkSick,
+    ReplanFrom,
+    apply,
+    read_actions,
+)
 from .briefing import build_briefing
 from .models import USER_TEXT_MAX, ChatMessage
 from .prompt import SYSTEM_PROMPT, AnswerNotUsable, extract_answer, first_message, repair_message
@@ -59,6 +68,17 @@ NOT_USABLE = (
 ONE_WEEK_ONLY = (
     "I can only change one week at a time. Please tell me which week to change first, "
     "then ask for the next one."
+)
+# The sentences that tell what became of a longer absence (made by the code, never by the coach).
+ABSENCE_NOTED = "Absence noted ({span})"
+ABSENCE_NOT_NOTED = "The absence could not be noted: you have too many periods"
+SEASON_DRAFT_MADE = "Season draft made around the absence"
+NO_SEASON_PLAN = "No season plan to change: make one on the Season page first"
+SEASON_CHANGE_FAILED = "The season could not be changed: try again on the Season page"
+# What the season coach is asked; written here from the checked action, never from the chat text.
+SEASON_REQUEST = (
+    "The athlete is away from {start} to {end} ({days} days, {kind}). Plan the season around "
+    "this absence: no training in those days, and build up again carefully afterwards."
 )
 
 
@@ -133,18 +153,18 @@ def send(user: User, text: str) -> Sent:
             problems = (Problem("", "The answer was cut off before its end; make it shorter."),)
         else:
             try:
-                reply, parent, changed, changes, sick = _understand(
+                reply, parent, changed, changes, sick, replan = _understand(
                     completion.text, available, today
                 )
             except (AnswerNotUsable, ActionFormatError) as error:
                 problems = error.problems
             else:
-                return _store(user, text, reply, parent, changed, changes, sick, today)
+                return _store(user, text, reply, parent, changed, changes, sick, replan, today)
         if attempt < ATTEMPTS:
             answer = completion.text if completion.text.strip() else "(no answer)"
             messages = [messages[0], Message("assistant", answer), repair_message(problems)]
     fallback = ONE_WEEK_ONLY if _names_other_week(problems) else NOT_USABLE
-    return _store(user, text, fallback, None, None, (), None, today)
+    return _store(user, text, fallback, None, None, (), None, None, today)
 
 
 def _names_other_week(problems: Sequence[Problem]) -> bool:
@@ -155,20 +175,24 @@ def _understand(
     answer: str,
     available: Sequence[tuple[WeeklyPlan, WeekPlan]],
     today: date,
-) -> tuple[str, WeeklyPlan | None, WeekPlan | None, tuple[str, ...], MarkSick | None]:
-    """The reply, the parent plan, the changed plan, what changed and any illness action; ``None``
-    and no changes if the coach proposed nothing, or nothing that makes a difference."""
+) -> tuple[
+    str, WeeklyPlan | None, WeekPlan | None, tuple[str, ...], MarkSick | None, ReplanFrom | None
+]:
+    """The reply, the parent plan, the changed plan, what changed, any illness action and any
+    absence for the season; ``None`` and no changes if the coach proposed nothing, or nothing that
+    makes a difference."""
     found = extract_answer(answer)
     stored, plan = _pick_week(found.week, available, today)
     if not found.actions:
-        return found.reply, None, None, (), None
+        return found.reply, None, None, (), None, None
     others = [other for _, other in available if other.week_start != plan.week_start]
     actions = read_actions(found.actions, plan, today, other_weeks=others)
     sick = next((action for action in actions if isinstance(action, MarkSick)), None)
+    replan = next((action for action in actions if isinstance(action, ReplanFrom)), None)
     changed, changes = apply(plan, actions, today)
     if changed == plan:
-        return found.reply, None, None, (), sick
-    return found.reply, stored, changed, changes, sick
+        return found.reply, None, None, (), sick, replan
+    return found.reply, stored, changed, changes, sick, replan
 
 
 def _pick_week(
@@ -192,15 +216,21 @@ def _store(
     changed: WeekPlan | None,
     changes: tuple[str, ...],
     sick: MarkSick | None,
+    replan: ReplanFrom | None,
     today: date,
 ) -> Sent:
     draft: WeeklyPlan | None = None
+    season_draft: SeasonPlanVersion | None = None
+    season_changes: list[str] = []
     if parent is not None and changed is not None:
         draft = plans.save_draft(user, changed, reason=REASON, parent=parent.pk)
     if sick is not None and sick.fever:
         reply = f"{reply}\n\n{DOCTOR_HINT}"
+    if replan is not None:
+        season_draft, season_changes = _replan_season(user, replan)
     with transaction.atomic():
         stored_changes = list(changes) if draft else []
+        stored_changes.extend(season_changes)
         if sick is not None:
             end = today + timedelta(days=sick.days - 1)
             period = note_illness(user, today, end)
@@ -217,9 +247,43 @@ def _store(
             role=ChatMessage.Role.COACH,
             text=reply,
             plan=draft,
+            season_plan=season_draft,
             changes=stored_changes,
         )
     return Sent(athlete, answered)
+
+
+def _replan_season(user: User, replan: ReplanFrom) -> tuple[SeasonPlanVersion | None, list[str]]:
+    """Note the absence, then ask for a season draft around it, made from the newest draft or
+    confirmed version. The absence is kept whatever comes of the season. Nothing is confirmed."""
+    end = replan.start + timedelta(days=replan.days - 1)
+    if note_absence(user, replan.start, end, replan.kind) is None:
+        return None, [ABSENCE_NOT_NOTED]
+    changes = [ABSENCE_NOTED.format(span=f"{replan.start.isoformat()} to {end.isoformat()}")]
+    base = (
+        SeasonPlanVersion.objects.for_user(user)
+        .filter(status__in=[SeasonPlanVersion.Status.DRAFT, SeasonPlanVersion.Status.CONFIRMED])
+        .order_by("-version")
+        .first()
+    )
+    if base is None:
+        return None, [*changes, NO_SEASON_PLAN]
+    request = SEASON_REQUEST.format(
+        start=replan.start.isoformat(),
+        end=end.isoformat(),
+        days=replan.days,
+        kind=replan.kind,
+    )
+    try:
+        made = season_generation.change(user, base.pk, request)
+    except (
+        season_generation.PlanNotUsable,
+        season_generation.PlanUnchanged,
+        season_generation.NothingToPlan,
+        ProviderError,
+    ):
+        return None, [*changes, SEASON_CHANGE_FAILED]
+    return made.plan, [*changes, SEASON_DRAFT_MADE]
 
 
 def _this_week(today: date) -> date:

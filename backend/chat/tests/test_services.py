@@ -1,6 +1,6 @@
 import json
 from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -15,9 +15,13 @@ from chat.services import (
     ATTEMPTS,
     DOCTOR_HINT,
     HISTORY_TOLD,
+    NO_SEASON_PLAN,
     NOT_USABLE,
     ONE_WEEK_ONLY,
     REASON,
+    SEASON_CHANGE_FAILED,
+    SEASON_DRAFT_MADE,
+    SEASON_REQUEST,
     clean_text,
     clear,
     send,
@@ -26,14 +30,25 @@ from coach import services as coach_services
 from coach.models import AIProviderConfiguration, AIUsageRecord
 from coach.providers.base import Completion, ProviderUnavailableError, RateLimitedError
 from goals import services as goal_services
+from goals.models import Goal as GoalRow
 from integrations.models import ProviderConnection
 from planning import services as plan_services
 from planning.models import PlannedWorkout, WeeklyPlan, WorkoutExport
 from planning.push import export_state, push
 from planning.rules import Intensity, intensity_of
+from planning.schema import Sport
 from planning.tests.fake_calendar import Calendar
 from planning.tests.scripted import Scripted
 from reviews.tests.builders import MONDAY, NOW, make_plan
+from season import generation as season_generation
+from season import services as season_services
+from season.generation import PlanUnchanged
+from season.inputs import skeleton_for
+from season.models import SeasonPlanVersion
+from season.rules import SeasonContext
+from season.schema import Focus, KeySession, PlanWeek, SeasonPlan, SessionKind
+from season.schema import to_json as season_json
+from season.snapshots import collect_inputs
 
 pytestmark = pytest.mark.django_db
 
@@ -909,3 +924,226 @@ class TestTheConversation:
         assert services.history(athlete) == []
         assert len(drafts(athlete)) == 1
         assert ChatMessage.objects.for_user(bob).count() == 1
+
+
+def season_following(user: User) -> SeasonPlan:
+    """A season that follows the skeleton: all minutes in running."""
+    return SeasonPlan(
+        tuple(
+            PlanWeek(
+                week.week_start,
+                ((Sport.RUNNING, week.target_minutes),),
+                Focus.ENDURANCE,
+                "Because.",
+                (KeySession(Sport.RUNNING, SessionKind.RACE, 1),) if week.races else (),
+            )
+            for week in skeleton_for(user).weeks
+        ),
+        "The season.",
+    )
+
+
+def following_trip(user: User, days: int = 21) -> str:
+    """The season answer for the trip: the skeleton is the one with the absence in it."""
+    period = UnavailablePeriod.objects.create(
+        owner=user,
+        kind=UnavailablePeriod.Kind.OTHER,
+        start_date=date(2026, 11, 23),
+        end_date=date(2026, 11, 23) + timedelta(days=days - 1),
+    )
+    try:
+        return json.dumps(season_json(season_following(user)))
+    finally:
+        period.delete()
+
+
+def confirmed_season(user: User) -> SeasonPlanVersion:
+    GoalRow.objects.create(
+        owner=user,
+        kind="race",
+        title="Race",
+        priority="main",
+        target_date=MONDAY + timedelta(weeks=9, days=6),
+        discipline="running",
+        distance_m=10_000,
+    )
+    skeleton = skeleton_for(user)
+    plan = season_following(user)
+    stored = season_services.save_draft(
+        user, plan, SeasonContext(skeleton), input_snapshot=collect_inputs(user)
+    )
+    return season_services.confirm(user, stored.pk)
+
+
+TRIP = [{"tool": "replan_from", "start": "2026-11-23", "days": 21, "kind": "other"}]
+TRIP_END = "2026-12-13"
+
+
+class TestALongerAbsence:
+    def test_a_three_week_trip_stores_the_absence_and_a_season_draft(
+        self, athlete: User, provide: Callable[..., Scripted]
+    ) -> None:
+        room_to_train(athlete)
+        base = confirmed_season(athlete)
+        provider = provide(said("A new season around your trip.", TRIP), following_trip(athlete))
+
+        sent = send(athlete, "I am on a business trip for three weeks from 23 November.")
+
+        (period,) = UnavailablePeriod.objects.for_user(athlete)
+        assert period.kind == UnavailablePeriod.Kind.OTHER
+        assert (period.start_date.isoformat(), period.end_date.isoformat()) == (
+            "2026-11-23",
+            TRIP_END,
+        )
+        (draft,) = SeasonPlanVersion.objects.for_user(athlete).filter(status="draft")
+        assert draft.parent == base
+        assert draft.request == SEASON_REQUEST.format(
+            start="2026-11-23", end=TRIP_END, days=21, kind="other"
+        )
+        assert sent.coach.season_plan == draft
+        assert sent.coach.plan is None
+        assert sent.coach.text == "A new season around your trip."
+        assert sent.coach.changes == [
+            f"Absence noted (2026-11-23 to {TRIP_END})",
+            SEASON_DRAFT_MADE,
+        ]
+        assert drafts(athlete) == []
+        assert len(provider.calls) == 2
+
+    def test_nothing_is_confirmed_or_pushed(
+        self, athlete: User, provide: Callable[..., Scripted], calendar: Calendar
+    ) -> None:
+        room_to_train(athlete)
+        base = confirmed_season(athlete)
+        provide(said("Around it.", TRIP), following_trip(athlete))
+        confirmed_weeks = WeeklyPlan.objects.for_user(athlete).filter(status="confirmed").count()
+
+        send(athlete, "Away for three weeks.")
+
+        base.refresh_from_db()
+        assert base.status == "confirmed"
+        assert (
+            not SeasonPlanVersion.objects.for_user(athlete)
+            .filter(status="confirmed")
+            .exclude(pk=base.pk)
+        )
+        assert (
+            WeeklyPlan.objects.for_user(athlete).filter(status="confirmed").count()
+            == confirmed_weeks
+        )
+        assert WorkoutExport.objects.count() == 0
+        assert calendar.events == {}
+
+    def test_the_newest_draft_is_the_one_to_change(
+        self, athlete: User, provide: Callable[..., Scripted]
+    ) -> None:
+        room_to_train(athlete)
+        confirmed_season(athlete)
+        provide(said("Around it.", TRIP), following_trip(athlete))
+        first = send(athlete, "Away for three weeks.").coach.season_plan
+        provide(said("Longer.", [{**TRIP[0], "days": 28}]), following_trip(athlete, 28))
+
+        second = send(athlete, "Make it four weeks.").coach.season_plan
+
+        assert first is not None and second is not None
+        assert second.parent == first
+        assert second.version == first.version + 1
+
+    def test_without_a_season_the_absence_is_kept_and_it_is_said(
+        self, athlete: User, provide: Callable[..., Scripted]
+    ) -> None:
+        provide(said("Around it.", TRIP))
+
+        sent = send(athlete, "Away for three weeks.")
+
+        assert UnavailablePeriod.objects.for_user(athlete).count() == 1
+        assert sent.coach.season_plan is None
+        assert sent.coach.changes == [f"Absence noted (2026-11-23 to {TRIP_END})", NO_SEASON_PLAN]
+
+    @pytest.mark.parametrize(
+        "season_answer",
+        [
+            "not json",
+            ProviderUnavailableError("down"),
+            RateLimitedError("slow"),
+        ],
+    )
+    def test_when_the_season_change_fails_the_absence_is_kept(
+        self, athlete: User, provide: Callable[..., Scripted], season_answer: object
+    ) -> None:
+        room_to_train(athlete)
+        confirmed_season(athlete)
+        provide(said("Around it.", TRIP), *([season_answer] * 3))
+
+        sent = send(athlete, "Away for three weeks.")
+
+        assert UnavailablePeriod.objects.for_user(athlete).count() == 1
+        assert SeasonPlanVersion.objects.for_user(athlete).count() == 1
+        assert sent.coach.season_plan is None
+        assert sent.coach.changes == [
+            f"Absence noted (2026-11-23 to {TRIP_END})",
+            SEASON_CHANGE_FAILED,
+        ]
+        assert [m.role for m in services.history(athlete)] == ["user", "coach"]
+
+    def test_a_season_that_stays_the_same_is_said_to_have_failed(
+        self, athlete: User, provide: Callable[..., Scripted], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        room_to_train(athlete)
+        confirmed_season(athlete)
+        provide(said("Around it.", TRIP))
+
+        def unchanged(*args: Any, **kwargs: Any) -> None:
+            raise PlanUnchanged
+
+        monkeypatch.setattr(season_generation, "change", unchanged)
+
+        sent = send(athlete, "Away for three weeks.")
+
+        assert sent.coach.changes[-1] == SEASON_CHANGE_FAILED
+
+    def test_no_time_to_plan_is_said_to_have_failed(
+        self, athlete: User, provide: Callable[..., Scripted]
+    ) -> None:
+        room_to_train(athlete)
+        confirmed_season(athlete)
+        WeekdayMinutes.objects.for_user(athlete).delete()
+        provide(said("Around it.", TRIP))
+
+        sent = send(athlete, "Away for three weeks.")
+
+        assert sent.coach.changes == [
+            f"Absence noted (2026-11-23 to {TRIP_END})",
+            SEASON_CHANGE_FAILED,
+        ]
+
+    def test_another_action_with_it_is_refused_and_nothing_is_stored(
+        self, athlete: User, provide: Callable[..., Scripted]
+    ) -> None:
+        room_to_train(athlete)
+        confirmed_season(athlete)
+        both: list[dict[str, Any]] = [*TRIP, {"tool": "free_day", "day": SUNDAY}]
+        provide(said("Both.", both), said("Both.", both))
+
+        sent = send(athlete, "Away for three weeks.")
+
+        assert sent.coach.text == NOT_USABLE
+        assert UnavailablePeriod.objects.for_user(athlete).count() == 0
+        assert SeasonPlanVersion.objects.for_user(athlete).count() == 1
+
+    def test_the_season_of_another_user_is_untouched(
+        self, athlete: User, bob: User, provide: Callable[..., Scripted]
+    ) -> None:
+        room_to_train(athlete)
+        confirmed_season(athlete)
+        room_to_train(bob)
+        theirs = confirmed_season(bob)
+        provide(said("Around it.", TRIP), following_trip(athlete))
+
+        send(athlete, "Away for three weeks.")
+
+        assert list(SeasonPlanVersion.objects.for_user(bob)) == [theirs]
+        theirs.refresh_from_db()
+        assert theirs.status == "confirmed"
+        assert UnavailablePeriod.objects.for_user(bob).count() == 0
+        assert ChatMessage.objects.for_user(bob).count() == 0

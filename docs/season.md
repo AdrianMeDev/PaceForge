@@ -468,7 +468,10 @@ included. All three kinds are listed; the answer never says which week they touc
 works that out. One query reads them, scoped to the user (`season/absences.py`); another user's
 periods are never in the answer. An **illness** can come from the chat: `mark_sick` stores it with
 `availability.absences.note_illness`, which extends an overlapping or adjacent illness instead of
-adding a second one, so the season shows one period for one illness. The note of a period is never
+adding a second one, so the season shows one period for one illness. A longer absence can come from the chat too:
+`replan_from` stores it with `availability.absences.note_absence` and asks for a season draft
+around it (`season.generation.change`, parent the newest draft or confirmed version), which the
+athlete confirms or discards here. The note of a period is never
 part of the answer, and the stored skeleton of a plan stays as it was: the absences are only told,
 never kept with a version.
 

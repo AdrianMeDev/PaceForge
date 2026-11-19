@@ -22,6 +22,8 @@ from chat.actions import (
     MIN_MINUTES,
     PERCENT_MAX,
     PERCENT_MIN,
+    REPLAN_DAYS_MAX,
+    REPLAN_DAYS_MIN,
     SICK_DAYS_MAX,
     SICK_DAYS_MIN,
 )
@@ -79,6 +81,10 @@ each an object with a "tool":
 {SICK_DAYS_MIN} to {SICK_DAYS_MAX}. At most one mark_sick action; name no other action for those \
 days, the app plans the return itself.
 - {{"tool": "free_day", "day": "YYYY-MM-DD"}}: no training on that day.
+- {{"tool": "replan_from", "start": "YYYY-MM-DD", "days": n, "kind": "vacation" | "other"}}: a \
+longer absence (a trip, a holiday) of {REPLAN_DAYS_MIN} to {REPLAN_DAYS_MAX} days from "start", \
+which is today or later. The app notes the absence and asks for a new draft of the season around \
+it; no week is changed. It must be the only action in the answer.
 
 Rules:
 - "weeks" lists every upcoming week that has a plan, in order; each entry has "week_start", \
@@ -96,6 +102,9 @@ first) and propose no action ("actions": []).
 - If the athlete asks to change a week that is not in "weeks" (a past week or a week without a \
 plan yet), or for anything that none of the actions can do (a new plan, a different season), say \
 so in the reply and propose no action.
+- Use replan_from, and nothing else, when the athlete will be away for {REPLAN_DAYS_MIN} days or \
+more (for example a three-week business trip). For a shorter absence change the week with \
+free_day or the other actions. Say in the reply that you propose a new draft of the season.
 - A question that needs no change gets an answer and "actions": [].
 - Use only what is in the data. Where data is missing, say so instead of guessing. Keep to the \
 athlete's limitations and times; if what they ask conflicts with them, say so.
