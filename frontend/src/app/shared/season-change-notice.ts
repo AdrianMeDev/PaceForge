@@ -3,6 +3,7 @@ import {
   Component,
   DestroyRef,
   OnInit,
+  computed,
   inject,
   signal,
 } from '@angular/core';
@@ -40,6 +41,7 @@ const REASON_TEXT: Record<SeasonChangeReason, string> = {
             <li>{{ reasonText[reason] }}</li>
           }
         </ul>
+        <ng-content />
         <a routerLink="/season" [queryParams]="{ change: current.id }" fragment="season-change"
           >Ask for a change to confirmed version {{ current.version }}</a
         >
@@ -63,6 +65,12 @@ export class SeasonChangeNotice implements OnInit {
   private request = 0;
   protected readonly state = signal<State>({ kind: 'hidden' });
   protected readonly reasonText = REASON_TEXT;
+
+  /** Evidence Mondays for the active notice, empty unless training deviation is shown. */
+  readonly deviationWeeks = computed<readonly string[]>(() => {
+    const current = this.state();
+    return current.kind === 'notice' ? current.reassessment.deviation_weeks : [];
+  });
 
   ngOnInit(): void {
     void this.reload();

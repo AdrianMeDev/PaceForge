@@ -88,6 +88,28 @@ describe('SeasonChangeNotice', () => {
     });
     expect(page.querySelectorAll('li')).toHaveLength(2);
     expect(page.textContent).toContain('Consider adjusting your season.');
+    expect(fixture.componentInstance.deviationWeeks()).toEqual([
+      '2026-10-26',
+      '2026-11-02',
+      '2026-11-09',
+    ]);
+  });
+
+  it('clears exposed deviation weeks when reloading or hidden', async () => {
+    await show({
+      ...HINT,
+      reasons: ['training_deviation'],
+      deviation_weeks: ['2026-10-26', '2026-11-02', '2026-11-09'],
+    });
+    expect(fixture.componentInstance.deviationWeeks()).toHaveLength(3);
+
+    void fixture.componentInstance.reload();
+    await render();
+    expect(fixture.componentInstance.deviationWeeks()).toEqual([]);
+
+    (await take()).flush(EMPTY);
+    await render();
+    expect(fixture.componentInstance.deviationWeeks()).toEqual([]);
   });
 
   it.each([EMPTY, { ...HINT, reasons: [] }])('hides without reasons: %j', async (body) => {

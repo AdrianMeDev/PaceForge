@@ -1,3 +1,4 @@
+import { Component } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angular/router';
 import { ActivitiesApi } from '../../core/activities/activities-api';
@@ -16,8 +17,20 @@ import {
   ReviewableWeek,
   WeekReview,
 } from '../../core/review/review-models';
+import { SeasonApi } from '../../core/season/season-api';
+import {
+  ChangeSeasonResult,
+  ConfirmSeasonResult,
+  GenerateSeasonResult,
+  GetSeasonReassessmentResult,
+  ListSeasonPlansResult,
+  SeasonPlanVersion,
+} from '../../core/season/season-models';
 import { query, settle } from '../../testing/dom';
 import { ReviewPage } from './review-page';
+
+@Component({ template: '' })
+class SeasonRouteStub {}
 
 const FIRST = '2026-11-02';
 const SECOND = '2026-11-09';
@@ -162,6 +175,41 @@ const weeksOk = (list: ReviewableWeek[] = WEEKS): ListReviewWeeksResult => ({
   weeks: list,
 });
 
+const CONFIRMED_ID = '0195f3a0-0000-7000-8000-000000000004';
+const CONFIRMED_VERSION: SeasonPlanVersion = {
+  id: CONFIRMED_ID,
+  version: 4,
+  status: 'confirmed',
+  reason: 'Drafted by the coach',
+  week_count: 12,
+  created_at: '2026-10-01T10:00:00Z',
+  confirmed_at: '2026-10-01T11:00:00Z',
+};
+const NO_PLAN_REASSESSMENT: GetSeasonReassessmentResult = {
+  kind: 'ok',
+  reassessment: { confirmed_plan_id: null, reasons: [], deviation_weeks: [] },
+};
+const UNCHANGED_REASSESSMENT: GetSeasonReassessmentResult = {
+  kind: 'ok',
+  reassessment: { confirmed_plan_id: CONFIRMED_ID, reasons: [], deviation_weeks: [] },
+};
+const DEVIATION_REASSESSMENT: GetSeasonReassessmentResult = {
+  kind: 'ok',
+  reassessment: {
+    confirmed_plan_id: CONFIRMED_ID,
+    reasons: ['training_deviation'],
+    deviation_weeks: ['2026-10-26', '2026-11-02', '2026-11-09'],
+  },
+};
+const GOALS_CHANGED_REASSESSMENT: GetSeasonReassessmentResult = {
+  kind: 'ok',
+  reassessment: {
+    confirmed_plan_id: CONFIRMED_ID,
+    reasons: ['goals_changed'],
+    deviation_weeks: [],
+  },
+};
+
 function createStubs() {
   return {
     api: {
@@ -173,6 +221,17 @@ function createStubs() {
     },
     activities: { rate: vi.fn<(id: string, input: unknown) => Promise<RateActivityResult>>() },
     planning: { generate: vi.fn<(week: string, note?: string) => Promise<GenerateResult>>() },
+    season: {
+      reassessment: vi
+        .fn<() => Promise<GetSeasonReassessmentResult>>()
+        .mockResolvedValue(NO_PLAN_REASSESSMENT),
+      plans: vi
+        .fn<() => Promise<ListSeasonPlansResult>>()
+        .mockResolvedValue({ kind: 'ok', plans: [] }),
+      generate: vi.fn<() => Promise<GenerateSeasonResult>>(),
+      change: vi.fn<(id: string, request: string) => Promise<ChangeSeasonResult>>(),
+      confirm: vi.fn<(id: string) => Promise<ConfirmSeasonResult>>(),
+    },
   };
 }
 
@@ -188,11 +247,17 @@ describe('ReviewPage', () => {
   let page: HTMLElement;
 
   async function setup(
-    options: { weeks?: ListReviewWeeksResult; shown?: GetReviewResult; address?: string } = {},
+    options: {
+      weeks?: ListReviewWeeksResult;
+      shown?: GetReviewResult;
+      address?: string;
+      season?: (stub: ReturnType<typeof createStubs>['season']) => void;
+    } = {},
   ) {
     stubs = createStubs();
     stubs.api.weeks.mockResolvedValue(options.weeks ?? weeksOk());
     stubs.api.week.mockResolvedValue(options.shown ?? ok());
+    options.season?.(stubs.season);
     create(options.address);
     await settle(fixture);
   }
@@ -202,7 +267,7 @@ describe('ReviewPage', () => {
     TestBed.configureTestingModule({
       imports: [ReviewPage],
       providers: [
-        provideRouter([]),
+        provideRouter([{ path: 'season', component: SeasonRouteStub }]),
         {
           provide: ActivatedRoute,
           useValue: {
@@ -214,6 +279,7 @@ describe('ReviewPage', () => {
         { provide: ReviewApi, useValue: stubs.api },
         { provide: ActivitiesApi, useValue: stubs.activities },
         { provide: PlanningApi, useValue: stubs.planning },
+        { provide: SeasonApi, useValue: stubs.season },
       ],
     });
     fixture = TestBed.createComponent(ReviewPage);
@@ -1446,6 +1512,142 @@ describe('ReviewPage', () => {
 
       expect(byId('coach-message')?.textContent).toContain('No AI provider is set up.');
       expect(byId('week')).toBeTruthy();
+    });
+  });
+
+  describe('season adjustment proposal', () => {
+    const noticeBox = () => page.querySelector('[data-testid="season-change-notice"]');
+
+    it('shows the three-week proposal with evidence weeks and links to Ask for a change without drafting', async () => {
+      await setup({
+        season: (stub) => {
+          stub.reassessment.mockResolvedValue(DEVIATION_REASSESSMENT);
+          stub.plans.mockResolvedValue({ kind: 'ok', plans: [CONFIRMED_VERSION] });
+        },
+      });
+
+      expect(stubs.season.reassessment).toHaveBeenCalledTimes(1);
+      const box = query(page, '[data-testid="season-change-notice"]');
+      expect(box.textContent).toContain(
+        'Training in each of the latest three completed weeks was below 70% or above 130% of planned minutes. Consider adjusting your season.',
+      );
+      expect(byId('deviation-weeks')?.textContent?.trim()).toBe(
+        'Evidence weeks: 26 Oct – 1 Nov, 2 Nov – 8 Nov, 9 Nov – 15 Nov.',
+      );
+      const link = query<HTMLAnchorElement>(box, 'a');
+      expect(link.textContent).toContain('Ask for a change to confirmed version 4');
+      expect(link.getAttribute('href')).toBe(`/season?change=${CONFIRMED_ID}#season-change`);
+
+      link.click();
+      await settle(fixture);
+
+      expect(TestBed.inject(Router).url).toBe(`/season?change=${CONFIRMED_ID}#season-change`);
+      expect(stubs.planning.generate).not.toHaveBeenCalled();
+      expect(stubs.season.generate).not.toHaveBeenCalled();
+      expect(stubs.season.change).not.toHaveBeenCalled();
+      expect(stubs.season.confirm).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['without a confirmed plan', NO_PLAN_REASSESSMENT],
+      ['when no reasons apply', UNCHANGED_REASSESSMENT],
+    ])('hides the proposal and evidence weeks %s', async (_label, reply) => {
+      await setup({
+        season: (stub) => {
+          stub.reassessment.mockResolvedValue(reply);
+        },
+      });
+
+      expect(noticeBox()).toBeNull();
+      expect(byId('deviation-weeks')).toBeNull();
+      expect(page.querySelector('app-season-change-notice')?.textContent?.trim()).toBe('');
+    });
+
+    it('omits evidence weeks for input-only hints and shows both when combined', async () => {
+      await setup({
+        season: (stub) => {
+          stub.reassessment.mockResolvedValue(GOALS_CHANGED_REASSESSMENT);
+          stub.plans.mockResolvedValue({ kind: 'ok', plans: [CONFIRMED_VERSION] });
+        },
+      });
+
+      expect(noticeBox()?.textContent).toContain('active goals have changed');
+      expect(byId('deviation-weeks')).toBeNull();
+
+      stubs.season.reassessment.mockResolvedValue({
+        kind: 'ok',
+        reassessment: {
+          confirmed_plan_id: CONFIRMED_ID,
+          reasons: ['goals_changed', 'training_deviation'],
+          deviation_weeks: ['2026-10-26', '2026-11-02', '2026-11-09'],
+        },
+      });
+      await selectWeek('2026-10-19');
+
+      expect(noticeBox()?.textContent).toContain('active goals have changed');
+      expect(byId('deviation-weeks')?.textContent?.trim()).toBe(
+        'Evidence weeks: 26 Oct – 1 Nov, 2 Nov – 8 Nov, 9 Nov – 15 Nov.',
+      );
+    });
+
+    it('refreshes the proposal after switching weeks, rating a session, correcting a workout and reloading weeks', async () => {
+      await setup({
+        season: (stub) => {
+          stub.reassessment.mockResolvedValue(UNCHANGED_REASSESSMENT);
+          stub.plans.mockResolvedValue({ kind: 'ok', plans: [CONFIRMED_VERSION] });
+        },
+      });
+      expect(noticeBox()).toBeNull();
+      expect(stubs.season.reassessment).toHaveBeenCalledTimes(1);
+
+      stubs.season.reassessment.mockResolvedValue(DEVIATION_REASSESSMENT);
+      await selectWeek('2026-10-19');
+      expect(stubs.season.reassessment).toHaveBeenCalledTimes(2);
+      expect(byId('deviation-weeks')?.textContent?.trim()).toBe(
+        'Evidence weeks: 26 Oct – 1 Nov, 2 Nov – 8 Nov, 9 Nov – 15 Nov.',
+      );
+
+      stubs.activities.rate.mockResolvedValue({ kind: 'ok', activity: {} as never });
+      stubs.season.reassessment.mockResolvedValue(UNCHANGED_REASSESSMENT);
+      query<HTMLButtonElement>(page, '[data-testid="rating-save-a1"]').click();
+      await settle(fixture);
+      expect(stubs.season.reassessment).toHaveBeenCalledTimes(3);
+      expect(noticeBox()).toBeNull();
+      expect(byId('deviation-weeks')).toBeNull();
+
+      stubs.api.correct.mockResolvedValue({ kind: 'ok', review: review() });
+      stubs.season.reassessment.mockResolvedValue(DEVIATION_REASSESSMENT);
+      await press('w1');
+      expect(stubs.season.reassessment).toHaveBeenCalledTimes(4);
+      expect(byId('deviation-weeks')).toBeTruthy();
+
+      stubs.api.week.mockResolvedValue({ kind: 'not_reviewable' });
+      stubs.api.weeks.mockResolvedValue(weeksOk([week(SECOND)]));
+      stubs.season.reassessment.mockResolvedValue(UNCHANGED_REASSESSMENT);
+      await selectWeek(FIRST);
+      expect(stubs.season.reassessment).toHaveBeenCalledTimes(5);
+      expect(noticeBox()).toBeNull();
+    });
+
+    it('keeps Week review usable when adjustment status fails and recovers on reload', async () => {
+      await setup({
+        season: (stub) => {
+          stub.reassessment.mockRejectedValueOnce(new Error('offline'));
+          stub.plans.mockResolvedValue({ kind: 'ok', plans: [CONFIRMED_VERSION] });
+        },
+      });
+
+      const host = query(page, 'app-season-change-notice');
+      expect(host.textContent).toContain('Season adjustment status is unavailable.');
+      expect(byId('deviation-weeks')).toBeNull();
+      expect(byId('summary')?.textContent?.trim()).toBe('1 of 2 workouts done (50 %).');
+
+      stubs.season.reassessment.mockResolvedValue(DEVIATION_REASSESSMENT);
+      await selectWeek('2026-10-19');
+
+      expect(byId('deviation-weeks')?.textContent?.trim()).toBe(
+        'Evidence weeks: 26 Oct – 1 Nov, 2 Nov – 8 Nov, 9 Nov – 15 Nov.',
+      );
     });
   });
 });

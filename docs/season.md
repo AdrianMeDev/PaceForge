@@ -274,15 +274,18 @@ plan as a draft:
 
 ## Changes from the confirmed plan
 
-The Season, Goals and Profile pages show an adjustment notice when the confirmed plan needs
-attention. On **Goals**, it reloads right after saving, changing status or priority, or deleting a
-goal. On **Profile**, it reloads after threshold saves, switching back to an automatic value,
-Intervals.icu sync (including automatic sync on open) and best-time changes. Missing plans and
-unchanged inputs show no hint, and status failures leave normal editing usable. Follow
-**Ask for a change to confirmed version N** to open that version's **Ask for a change** form.
-A link from another page works the same way. It selects the named confirmed version even if
-a draft or an older version was open. After loading, the request field gets focus. A link to
-a version that is no longer confirmed shows a message. Opening the form makes no coach call.
+The Season, Goals, Profile and Week review pages show an adjustment notice when the confirmed plan
+needs attention. On **Goals**, it reloads right after saving, changing status or priority, or
+deleting a goal. On **Profile**, it reloads after threshold saves, switching back to an automatic
+value, Intervals.icu sync (including automatic sync on open) and best-time changes. On **Week
+review**, it also lists the three formatted evidence weeks when `training_deviation` applies and
+reloads after switching weeks, saving a workout correction, rating a session or refreshing the
+week list. Missing plans and unchanged inputs show no hint, and status failures leave normal
+editing and review usable. Follow **Ask for a change to confirmed version N** to open that
+version's **Ask for a change** form. A link from another page works the same way. It selects the
+named confirmed version even if a draft or an older version was open. After loading, the request
+field gets focus. A link to a version that is no longer confirmed shows a message. Opening the
+form makes no coach call.
 
 Write your request and submit it to create a draft against the current weeks and inputs.
 Read the comparison, including added and removed weeks, before confirming it yourself.
@@ -345,6 +348,39 @@ eligible window, including when restoring old content. Three new full weeks must
 another proposal can appear. Reading, drafting, restoring or discarding alone does not reset it.
 The reason is a proposal only. It never drafts, confirms or exports training automatically.
 
+### Athlete walkthrough
+
+1. **Input change (A race moved):** Edit an active A race date on **Goals** (or update FTP or best
+   times on **Profile**). The adjustment notice appears immediately without touching the confirmed
+   season.
+2. **Repeated deviation (three weak weeks):** After three consecutive completed local weeks below
+   70% or above 130% of confirmed planned minutes, open **Week review**. The notice explains the
+   deviation and lists the three evidence weeks.
+3. **Open the change form:** Follow **Ask for a change to confirmed version N**. PaceForge opens
+   that confirmed version on **Season** and focuses the request box without calling the coach.
+4. **Draft and review:** Submit your change request. The coach drafts a new version against the
+   current skeleton, race dates, capacities and sports while comparing against the old plan.
+   Drafting or discarding keeps the notice in place.
+5. **Confirm explicitly:** Inspect the week-by-week comparison (including added and removed weeks)
+   and confirm the draft yourself. Confirmation supersedes the previous version, clears hints
+   covered by the new baseline and resets the three-week deviation window.
+
+### Acceptance checklist
+
+- Moving an A race date shows `goals_changed` on Goals and Season until a current replacement is
+  confirmed; discarding or leaving a draft unconfirmed keeps the hint, and confirming an outdated
+  draft retains hints for later changes.
+- Effective FTP changes, best-time changes and qualifying training-time changes show the matching
+  reasons; identical saves, inactive goals, overridden FTP candidates and week rollover do not.
+- Three consecutive completed local weeks strictly below 70% or above 130% of confirmed weekly
+  planned minutes show `training_deviation` and the three evidence weeks in Week review; two weeks,
+  an interrupted streak, an unfinished week, missing plans, zero planned minutes or unknown
+  durations do not.
+- Following the notice opens **Ask for a change** for the named confirmed version without making
+  any AI call; only explicit submission drafts and only explicit confirmation changes the season.
+- `GET /api/season/reassessment/` is authenticated, read-only, user-scoped and isolated across
+  users, with no external AI or Intervals.icu calls.
+
 ## The week plan follows the season
 
 `season/weeks.py` gives the week plan the week it is about: `confirmed_weeks` reads the
@@ -405,12 +441,14 @@ The endpoint has no user or plan selector. It writes nothing and makes no coach 
 call. Write methods are refused. Reading it repeatedly never clears a reason.
 
 The shared frontend `SeasonChangeNotice` validates the response through `SeasonApi.reassessment()`.
-It explains each input change or training deviation and hides when no reasons exist. It reads
-the version list to name the matching confirmed version in a link to
-`/season?change=<id>#season-change`. If that version is no longer confirmed, status is unavailable
-and Retry reads it again. Other status failures also offer Retry. An expired session shows a
-sign-in link. Parents can call `reload()` after a change. Reloading clears the old notice and
-ignores late results from earlier reads or a destroyed component. No load drafts or confirms a plan.
+It explains each input change or training deviation and hides when no reasons exist. It exposes
+the active `deviationWeeks` and projects optional page context (such as Week review's evidence
+weeks) inside the notice. It reads the version list to name the matching confirmed version in a
+link to `/season?change=<id>#season-change`. If that version is no longer confirmed, status is
+unavailable and Retry reads it again. Other status failures also offer Retry. An expired session
+shows a sign-in link. Parents can call `reload()` after a change. Reloading clears the old notice
+and ignores late results from earlier reads or a destroyed component. No load drafts or confirms a
+plan.
 
 `GET /api/season/` answers the skeleton of the signed-in user and writes nothing. The filled plans are at `/api/season/plans/`: `GET` lists the versions (`id`, `version`, `status`, `reason`, `week_count`, `created_at`, `confirmed_at`), `POST generate/` drafts one (`201` with the plan, limited to 3 a minute), `GET <id>/` reads one and `POST <id>/confirm/` and `POST <id>/discard/` decide on a draft and `POST <id>/change/` with `{"request": "…"}` asks the coach to change a version as the athlete wishes (`201` with the new draft; `400` with the messages of the field `request`; `404`; `409` `not_changeable`, `no_time` or `not_configured`; `422` `unchanged` or `not_usable`; the codes of the provider; limited to 3 a minute together with drafting), and `POST <id>/restore/` brings back a replaced or discarded version as a new draft (`201` with the plan; `409` `not_restorable` for any other). A plan has `rationale`, `parent`, the `skeleton` it was made for, its `weeks` (the format with a `total_minutes` and `done`: for the **confirmed** version and the weeks that have begun the minutes the athlete trained by sport, `[{sport, minutes}]`, `other` for activities of no sport of the plan, `[]` for a week without any; `null` for every other week and version) and, for a draft, a `report` of `valid` and `findings`. Errors have a fixed text, a `code` and, where it helps, `problems` or `findings`. The answer has
 `rolling`, `truncated`, `main_race` (or `null`), `peak_minutes` and `weeks`. A **week** has

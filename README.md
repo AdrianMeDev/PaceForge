@@ -949,17 +949,22 @@ sessions (a long run, a threshold session, the race …) and a reason. The model
   Without a confirmed plan, the id is `null` and both lists are empty. It calls neither the coach
   nor Intervals.icu.
   The reusable frontend notice explains each reason and names the confirmed version in its
-  change link. It appears on [Season](#season), [Goals](#goals) and [Profile](#athlete-profile),
-  and refreshes after goal mutations, threshold saves, automatic-value selection, Intervals.icu
-  sync (including automatic sync on open) and best-time changes. It hides when there are no
-  reasons. Status failures offer Retry without blocking editing, and an expired
-  session asks you to sign in again. Loading or reloading the notice only reads status and versions.
-  On Season, follow **Ask for a change to confirmed version N** to open that version's form.
-  Links from another page do the same, even if you were viewing a draft or an older version.
-  The request field gets focus once the version loads. Opening the form makes no coach call.
-  Submit your request to draft an adjustment, read the comparison, then confirm it yourself.
-  Drafting, a provider failure and discarding keep the hint. Successful confirmation refreshes
-  it; changes made since the draft was created can still leave a hint.
+  change link. It appears on [Season](#season), [Goals](#goals), [Profile](#athlete-profile) and
+  [Week review](#week-review). It refreshes after goal mutations, threshold saves,
+  automatic-value selection, Intervals.icu sync (including automatic sync on open), best-time
+  changes and week review reloads (switching weeks, workout corrections, session ratings and
+  week-list reloads). On Week review, a `training_deviation` proposal also lists the three
+  evidence weeks. The notice hides when there are no reasons. Status failures offer Retry without
+  blocking editing, and an expired session asks you to sign in again. Loading or reloading the
+  notice only reads status and versions.
+  **Walkthrough.** (1) Move an A race date on **Goals** (or change FTP/best times on **Profile**,
+  or finish three weak weeks and open **Week review**). (2) Read the notice and its evidence weeks
+  if shown, then follow **Ask for a change to confirmed version N**. (3) The **Season** page opens
+  that confirmed version and focuses the request box without calling the coach. (4) Write your
+  wish and submit it to draft an adjustment against the current weeks and inputs. (5) Inspect the
+  comparison (including added and removed weeks) and confirm the draft yourself, or discard it to
+  keep the old plan and its hint. Only explicit confirmation replaces the confirmed season and
+  refreshes or resets the notice; changes made after drafting can still leave a hint.
 - **Restoring:** a version that was **replaced or discarded** can be brought back with **Make this
   the new draft**. That copies it as the next version, a draft (its reason says "Restored from
   version N"), with the skeleton and the sports it was made for; the old version is not touched
@@ -1262,6 +1267,14 @@ provider, no training time that week, an answer that cannot be used), the page s
 feedback stays saved and the note stays in the form. The note belongs to the draft and is shown
 with it; it is not part of the feedback. Nothing runs by itself: there is no automatic weekly
 run.
+
+**Season adjustment proposal.** When you have a confirmed [season plan](#season) and actual
+minutes in each of the latest three completed local weeks fall below 70% or above 130% of
+confirmed planned minutes, Week review shows the shared adjustment notice at the top of the page.
+It lists the three evidence weeks and links to **Ask for a change** for that confirmed version on
+the Season page. The notice refreshes after switching weeks, saving a workout correction, rating a
+session or reloading the week list. Status failures keep the review usable and offer Retry.
+Following the link never drafts or confirms a plan on its own.
 
 **Planned and done.** Mobile tiles and a desktop table compare planned workouts, minutes and
 estimated load against activities done, minutes and done load, per sport and for the week.
