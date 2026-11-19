@@ -14,6 +14,7 @@ import {
   STATUS_LABELS,
   dayLabel,
   findingsSummary,
+  loadText,
   minutesText,
   weekRange,
 } from '../planning/plan-format';
@@ -186,6 +187,7 @@ export class SeasonPage implements OnInit {
   protected readonly letter = PRIORITY_LETTERS;
   protected readonly race = raceText;
   protected readonly minutes = minutesText;
+  protected readonly loadPoints = loadText;
   protected readonly range = weekRange;
   protected readonly day = dayLabel;
   protected readonly share = usedShare;

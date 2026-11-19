@@ -20,6 +20,7 @@ import {
 import {
   ChangeSeasonResult,
   ConfirmSeasonResult,
+  DoneLoad,
   DoneMinutes,
   DiscardSeasonResult,
   Focus,
@@ -393,9 +394,11 @@ function toPlan(raw: unknown, reply: Reply): SeasonPlan {
 
 function toPlanWeek(raw: unknown, reply: Reply): PlanWeek {
   const item = asObject(raw, reply);
-  const { week_start, focus, reason, total_minutes } = item;
+  const { week_start, focus, reason, total_minutes, total_planned_load } = item;
   const minutes = asObject(item['minutes'], reply);
   const done = toDone(item['done'], reply);
+  const planned_load = toPlannedLoad(item['planned_load'], reply);
+  const done_load = toDoneLoad(item['done_load'], reply);
   const sessions = item['key_sessions'];
   const amounts = Object.entries(minutes);
   if (
@@ -406,6 +409,8 @@ function toPlanWeek(raw: unknown, reply: Reply): PlanWeek {
     sessions.length > KEY_SESSIONS_MAX ||
     amounts.some(([sport, amount]) => !isOneOf<Sport>(sport, SPORTS) || !isCount(amount)) ||
     !isCount(total_minutes) ||
+    !isCount(total_planned_load) ||
+    total_planned_load !== Object.values(planned_load).reduce((sum, amount) => sum + amount, 0) ||
     total_minutes > WEEK_MINUTES_MAX ||
     // the total is the sum of what the week plans
     total_minutes !== amounts.reduce((sum, [, amount]) => sum + (amount as number), 0)
@@ -420,11 +425,47 @@ function toPlanWeek(raw: unknown, reply: Reply): PlanWeek {
     week_start,
     minutes: taken,
     total_minutes,
+    planned_load,
+    total_planned_load,
     focus,
     key_sessions: sessions.map((session: unknown) => toKeySession(session, reply)),
     reason,
     done,
+    done_load,
   };
+}
+
+function toPlannedLoad(raw: unknown, reply: Reply): Partial<Record<Sport, number>> {
+  const amounts = Object.entries(asObject(raw, reply));
+  const taken: Partial<Record<Sport, number>> = {};
+  for (const [sport, amount] of amounts) {
+    if (!isOneOf<Sport>(sport, SPORTS) || !isCount(amount)) {
+      throw unexpected(reply);
+    }
+    taken[sport] = amount;
+  }
+  return taken;
+}
+
+/** Known load done in a week: `null`, or each sport at most once with positive load. */
+function toDoneLoad(raw: unknown, reply: Reply): DoneLoad[] | null {
+  if (raw === null) {
+    return null;
+  }
+  if (!Array.isArray(raw) || raw.length > DONE_SPORTS.length) {
+    throw unexpected(reply);
+  }
+  const done = raw.map((entry: unknown) => {
+    const { sport, load } = asObject(entry, reply);
+    if (!isOneOf<DoneLoad['sport']>(sport, DONE_SPORTS) || !isCount(load) || load < 1) {
+      throw unexpected(reply);
+    }
+    return { sport, load };
+  });
+  if (new Set(done.map((entry) => entry.sport)).size !== done.length) {
+    throw unexpected(reply);
+  }
+  return done;
 }
 
 /** The minutes done in a week: `null`, or each sport at most once with at least a minute. */
