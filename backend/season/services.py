@@ -7,8 +7,10 @@ plan with errors is stored as it is, so that the athlete sees what is wrong, and
 confirmed. Nothing here calls the coach: see ``season.generation``.
 """
 
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from django.core.exceptions import ValidationError
@@ -66,9 +68,11 @@ def save_draft(
     reason: str = "",
     parent: UUID | None = None,
     request: str = "",
+    input_snapshot: dict[str, Any] | None = None,
 ) -> SeasonPlanVersion:
     """Store ``plan`` as the next version of the season plan of ``user``, as a draft, with the
-    skeleton and the sports it was made for.
+    skeleton, sports and explicit input snapshot it was made for. Without a snapshot the baseline
+    stays unknown; this service never collects today's inputs.
 
     ``parent`` is the version it replaces; ``reason`` is a short plain line saying why; ``request``
     is what the athlete asked for if this version was made on request (plain text, line breaks
@@ -82,7 +86,7 @@ def save_draft(
     for attempt in (1, 2):
         try:
             with transaction.atomic():
-                return _store(user, plan, context, reason, parent, request)
+                return _store(user, plan, context, reason, parent, request, input_snapshot)
         except IntegrityError:
             # Another request took the version number first; the next round counts again.
             if attempt == 2:
@@ -170,6 +174,7 @@ def restore(user: User, plan_id: UUID) -> SeasonPlanVersion:
         loaded.context,
         reason=f"Restored from version {old.version}",
         parent=old.pk,
+        input_snapshot=old.input_snapshot,
     )
 
 
@@ -190,6 +195,7 @@ def _store(
     reason: str,
     parent: UUID | None,
     request: str = "",
+    input_snapshot: dict[str, Any] | None = None,
 ) -> SeasonPlanVersion:
     last = (
         SeasonPlanVersion.objects.for_user(user)
@@ -208,6 +214,7 @@ def _store(
         weeks=data["weeks"],
         skeleton=skeleton_data(context.skeleton),
         sports=[sport.value for sport in Sport if sport in context.sports],
+        input_snapshot=deepcopy(input_snapshot),
     )
 
 

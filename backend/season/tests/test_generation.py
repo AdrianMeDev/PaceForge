@@ -35,6 +35,7 @@ from season.prompt import SEASON_MAX_TOKENS, SYSTEM_PROMPT, change_message, firs
 from season.rules import SeasonContext, validate_season
 from season.schema import Focus, KeySession, PlanWeek, SeasonPlan, SessionKind, to_json
 from season.skeleton import Skeleton
+from season.snapshots import collect_inputs
 
 pytestmark = pytest.mark.django_db
 
@@ -121,6 +122,28 @@ def versions(user: User) -> list[SeasonPlanVersion]:
 
 
 class TestADraftFromTheFirstAnswer:
+    @pytest.mark.parametrize("repair", [False, True])
+    def test_the_snapshot_is_captured_before_calls_and_kept_across_repairs(
+        self, alice: User, provide: Callable[..., Scripted], repair: bool
+    ) -> None:
+        AvailabilitySettings.objects.create(owner=alice, typical_weekly_minutes=300)
+        snapshot = collect_inputs(alice)
+        replies = [broken(alice), good(alice)] if repair else [good(alice)]
+        scripted = provide(*replies)
+
+        def change_inputs() -> None:
+            Goal.objects.for_user(alice).update(title="Changed during generation")
+            AvailabilitySettings.objects.for_user(alice).update(typical_weekly_minutes=600)
+
+        scripted.before_answer = change_inputs
+
+        stored = generate(alice).plan
+
+        stored.refresh_from_db()
+        assert stored.input_snapshot == snapshot
+        assert stored.input_snapshot != collect_inputs(alice)
+        assert len(scripted.calls) == (2 if repair else 1)
+
     def test_a_good_answer_is_stored_as_a_draft(
         self, alice: User, provide: Callable[..., Scripted]
     ) -> None:
@@ -218,6 +241,7 @@ class TestADraftFromTheFirstAnswer:
 
         assert "secret" not in scripted.calls[0][1][0].content
         assert "bob" not in scripted.calls[0][1][0].content
+        assert versions(alice)[0].input_snapshot == collect_inputs(alice)
 
     def test_the_draft_can_be_confirmed(
         self, alice: User, provide: Callable[..., Scripted]
@@ -520,6 +544,31 @@ WISH = "Less cycling in January"
 
 
 class TestChangingASeason:
+    @pytest.mark.parametrize("known", [True, False])
+    @pytest.mark.parametrize("status", ["draft", "confirmed"])
+    def test_a_change_keeps_the_original_snapshot_including_unknown_inputs(
+        self, alice: User, provide: Callable[..., Scripted], known: bool, status: str
+    ) -> None:
+        skeleton = skeleton_for(alice)
+        snapshot = collect_inputs(alice) if known else None
+        base = services.save_draft(
+            alice, following(skeleton), SeasonContext(skeleton), input_snapshot=snapshot
+        )
+        if status == "confirmed":
+            services.confirm(alice, base.pk)
+        answer = tempo(alice)
+        Goal.objects.for_user(alice).update(title="Changed after drafting")
+        AvailabilitySettings.objects.create(owner=alice, typical_weekly_minutes=600)
+        provide(answer)
+
+        changed = change(alice, base.pk, WISH).plan
+
+        changed.refresh_from_db()
+        base.refresh_from_db()
+        assert changed.input_snapshot == snapshot
+        assert base.input_snapshot == snapshot
+        assert changed.input_snapshot != collect_inputs(alice)
+
     def test_a_changed_answer_is_stored_as_the_next_draft_made_from_the_old_version(
         self, alice: User, provide: Callable[..., Scripted]
     ) -> None:

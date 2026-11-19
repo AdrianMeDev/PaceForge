@@ -29,6 +29,7 @@ from season.services import (
     validate,
 )
 from season.skeleton import Race, Skeleton, SkeletonInputs, build_skeleton
+from season.snapshots import collect_inputs
 from season.storage import skeleton_data, skeleton_from_data
 
 pytestmark = pytest.mark.django_db
@@ -109,6 +110,26 @@ class TestTheSkeletonAsStored:
 
 
 class TestSavingADraft:
+    def test_an_explicit_snapshot_is_stored_without_recapturing(self, alice: User) -> None:
+        snapshot = collect_inputs(alice)
+        Goal.objects.create(owner=alice, kind="general", title="New goal")
+
+        stored = draft(alice, input_snapshot=snapshot)
+
+        stored.refresh_from_db()
+        assert stored.input_snapshot == snapshot
+        assert stored.input_snapshot != collect_inputs(alice)
+
+    def test_the_stored_snapshot_is_independent_of_the_callers_object(self, alice: User) -> None:
+        snapshot = collect_inputs(alice)
+        stored = draft(alice, input_snapshot=snapshot)
+
+        snapshot["goals"].append({"kind": "general"})
+
+        assert stored.input_snapshot == collect_inputs(alice)
+        stored.refresh_from_db()
+        assert stored.input_snapshot == collect_inputs(alice)
+
     def test_a_plan_is_stored_as_a_draft_of_version_one(self, alice: User) -> None:
         plan = draft(alice)
 
@@ -230,6 +251,13 @@ class TestReadingAPlanBack:
         assert loaded.plan == good(skel)
         assert loaded.context == SeasonContext(skel)
 
+    def test_a_legacy_version_is_readable_without_a_snapshot(self, alice: User) -> None:
+        stored = draft(alice)
+        stored.refresh_from_db()
+
+        assert stored.input_snapshot is None
+        assert load(alice, stored.pk).plan == good(skeleton())
+
     def test_it_is_the_same_after_a_copy(self, alice: User) -> None:
         first = draft(alice)
 
@@ -288,6 +316,18 @@ class TestTheReport:
 
 
 class TestConfirming:
+    @pytest.mark.parametrize("known", [True, False])
+    def test_confirmation_keeps_the_original_snapshot(self, alice: User, known: bool) -> None:
+        snapshot = collect_inputs(alice) if known else None
+        stored = draft(alice, input_snapshot=snapshot)
+        Goal.objects.create(owner=alice, kind="general", title="New goal")
+
+        confirmed = confirm(alice, stored.pk)
+
+        confirmed.refresh_from_db()
+        assert confirmed.input_snapshot == snapshot
+        assert confirmed.input_snapshot != collect_inputs(alice)
+
     def test_a_draft_is_confirmed(self, alice: User) -> None:
         plan = confirm(alice, draft(alice).pk)
 
@@ -411,6 +451,27 @@ class TestDiscarding:
 
 
 class TestRestoring:
+    @pytest.mark.parametrize("known", [True, False])
+    @pytest.mark.parametrize("status", ["superseded", "discarded"])
+    def test_restore_copies_the_original_snapshot(
+        self, alice: User, known: bool, status: str
+    ) -> None:
+        snapshot = collect_inputs(alice) if known else None
+        old = draft(alice, input_snapshot=snapshot)
+        if status == "superseded":
+            confirm(alice, old.pk)
+            confirm(alice, draft(alice).pk)
+        else:
+            discard(alice, old.pk)
+        Goal.objects.create(owner=alice, kind="general", title="New goal")
+
+        restored = restore(alice, old.pk)
+
+        restored.refresh_from_db()
+        assert restored.input_snapshot == snapshot
+        assert restored.input_snapshot != collect_inputs(alice)
+        assert confirm(alice, restored.pk).input_snapshot == snapshot
+
     def replaced(self, user: User, skel: Skeleton | None = None) -> SeasonPlanVersion:
         first = draft(user, skel)
         confirm(user, first.pk)

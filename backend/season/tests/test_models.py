@@ -43,6 +43,7 @@ class TestTheDefaults:
             None,
         )
         assert (plan.weeks, plan.skeleton, plan.sports) == ([], {}, [])
+        assert plan.input_snapshot is None
         assert plan.pk.version == 7
 
     def test_the_newest_version_comes_first(self, alice: User) -> None:
@@ -173,6 +174,8 @@ class TestClean:
             ("skeleton", "x"),
             ("sports", {}),
             ("sports", 5),
+            ("input_snapshot", []),
+            ("input_snapshot", "x"),
         ],
     )
     def test_the_json_has_its_shape(self, alice: User, field: str, value: Any) -> None:
@@ -205,12 +208,14 @@ class TestAPlanThatIsNoDraftAnyMore:
 
     @pytest.mark.parametrize("status", [Status.CONFIRMED, Status.SUPERSEDED])
     @pytest.mark.parametrize(
-        "field", ["weeks", "skeleton", "sports", "reason", "request", "rationale"]
+        "field", ["weeks", "skeleton", "sports", "reason", "request", "rationale", "input_snapshot"]
     )
     def test_its_content_cannot_be_changed(self, alice: User, status: str, field: str) -> None:
         plan = make(alice, status=status, confirmed_at=NOW)
         value: Any = (
-            {"x": 1} if field == "skeleton" else ([1] if field in ("weeks", "sports") else "x")
+            {"x": 1}
+            if field in ("skeleton", "input_snapshot")
+            else ([1] if field in ("weeks", "sports") else "x")
         )
 
         setattr(plan, field, value)
@@ -219,6 +224,34 @@ class TestAPlanThatIsNoDraftAnyMore:
             plan.save()
         plan.refresh_from_db()
         assert getattr(plan, field) != value
+
+    @pytest.mark.parametrize("status", [Status.CONFIRMED, Status.SUPERSEDED, Status.DISCARDED])
+    def test_a_known_snapshot_cannot_be_edited_or_cleared(self, alice: User, status: str) -> None:
+        plan = make(
+            alice,
+            status=status,
+            confirmed_at=None if status == Status.DISCARDED else NOW,
+            input_snapshot={"version": 1, "goals": []},
+        )
+        assert plan.input_snapshot is not None
+        plan.input_snapshot["goals"].append({"kind": "general"})
+        with pytest.raises(ValidationError, match="cannot be changed"):
+            plan.save(update_fields=["input_snapshot"])
+
+        plan.input_snapshot = None
+        with pytest.raises(ValidationError, match="cannot be changed"):
+            plan.save()
+
+        plan.refresh_from_db()
+        assert plan.input_snapshot == {"version": 1, "goals": []}
+
+    def test_a_draft_snapshot_can_be_changed(self, alice: User) -> None:
+        plan = make(alice)
+        plan.input_snapshot = {"version": 1, "goals": []}
+        plan.save()
+
+        plan.refresh_from_db()
+        assert plan.input_snapshot == {"version": 1, "goals": []}
 
     def test_its_status_can_move(self, alice: User) -> None:
         plan = confirmed(alice)

@@ -38,6 +38,7 @@ from .prompt import (
 )
 from .rules import SeasonContext, validate_season
 from .schema import SeasonPlan
+from .snapshots import collect_inputs
 
 # The answers the coach may give for one season: one try and two repairs.
 ATTEMPTS = 3
@@ -105,10 +106,13 @@ def generate(user: User) -> Generated:
     skeleton = skeleton_for(user)
     if not any(week.capacity_minutes for week in skeleton.weeks):
         raise NothingToPlan
+    input_snapshot = collect_inputs(user)
     briefing = build_briefing(user, today_of(user), skeleton)
     context = SeasonContext(skeleton, frozenset(Sport(sport) for sport in briefing["sports"]))
     best = _ask(user, context, first_message(briefing))
-    stored = services.save_draft(user, best.plan, context, reason=REASON)
+    stored = services.save_draft(
+        user, best.plan, context, reason=REASON, input_snapshot=input_snapshot
+    )
     return Generated(stored, best.report)
 
 
@@ -141,6 +145,7 @@ def change(user: User, plan_id: UUID, request: str) -> Generated:
         reason=CHANGE_REASON.format(version=base.version),
         parent=base.pk,
         request=request,
+        input_snapshot=base.input_snapshot,
     )
     return Generated(stored, best.report)
 

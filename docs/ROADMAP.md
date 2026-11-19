@@ -74,7 +74,7 @@ AI key; several people can share one instance without seeing each other's data.
 - **Depends on:** –
 - **Size:** S
 
-### M4 [ ] Season plan reacts to changes
+### M4 [~] Season plan reacts to changes
 - **Goal:** The athlete is told when the confirmed season plan no longer fits and can ask for an update.
 - **Includes:** detect changed goals, new FTP or best time, larger changes of training time since the confirmed plan; hint on Season, Goals and Profile pages with a link to "Ask for a change"; after several weeks of strong deviation in the week review, a proposal to adjust the season.
 - **Done when:** changing an A race date shows the hint until a new plan is confirmed; three weak weeks show the proposal; tests green.

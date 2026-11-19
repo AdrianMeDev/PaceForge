@@ -910,6 +910,9 @@ sessions (a long run, a threshold session, the race …) and a reason. The model
   confirmed version, which stays as **superseded**) or **discarded**. A confirmed plan is never
   changed. A plan keeps the skeleton and the sports it was made for, so it stays readable and is
   checked against them when goals, time or the week move on; it is **not updated** by that.
+  New coach drafts also keep the active goals, effective FTP, best times and typical weekly
+  minutes from before the coach was asked. Confirmation keeps these original inputs. Restoring
+  or changing a version copies them. Older versions may have no recorded inputs.
 - **Restoring:** a version that was **replaced or discarded** can be brought back with **Make this
   the new draft**. That copies it as the next version, a draft (its reason says "Restored from
   version N"), with the skeleton and the sports it was made for; the old version is not touched

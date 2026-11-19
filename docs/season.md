@@ -228,6 +228,14 @@ plan as a draft:
 - **Stored with its frame.** A version (`SeasonPlanVersion`) holds the weeks, the rationale, the
   skeleton and the sports it was made for. It is read back through the parser again and checked
   against **its own** skeleton, not the one of today.
+- **Original inputs.** Before asking the coach, generation collects a versioned `input_snapshot`:
+  active goals in id order, effective cycling FTP, best times in distance order and typical
+  weekly minutes. Goal and race dates are included; notes and creation or update timestamps are
+  excluded. FTP stores only the effective number. Best times keep their distance, seconds and
+  race date without a moving age window. Missing FTP and typical minutes are `null`; missing
+  goals and best times are empty lists. Confirmation keeps this snapshot. Restore and change
+  requests copy the original snapshot, including `null` when unknown. Confirmed snapshots are
+  immutable with the plan content. Legacy versions stay readable with `input_snapshot: null`.
 - **Status.** `draft`, `confirmed`, `superseded` or `discarded`; at most one confirmed plan per
   user. Confirming a draft with errors is refused. The content of a plan that is not a draft is
   never changed.
