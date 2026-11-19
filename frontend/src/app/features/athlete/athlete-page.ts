@@ -1,5 +1,5 @@
 import { DatePipe } from '@angular/common';
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { AthleteApi } from '../../core/athlete/athlete-api';
 import { CoachApi } from '../../core/coach/coach-api';
@@ -21,6 +21,7 @@ import {
 } from './athlete-format';
 import { BestTimesPanel } from './best-times-panel';
 import { PageHeader } from '../../shared/page-header';
+import { SeasonChangeNotice } from '../../shared/season-change-notice';
 import { AppearancePanel } from './appearance-panel';
 import { BodyDataPanel } from './body-data-panel';
 import { UNKNOWN_PROVIDER, providerLine } from '../availability/provider-line';
@@ -92,13 +93,22 @@ const RUN_ROWS: Row[] = [
  */
 @Component({
   selector: 'app-athlete-page',
-  imports: [RouterLink, DatePipe, PageHeader, AppearancePanel, BestTimesPanel, BodyDataPanel],
+  imports: [
+    RouterLink,
+    DatePipe,
+    PageHeader,
+    AppearancePanel,
+    BestTimesPanel,
+    BodyDataPanel,
+    SeasonChangeNotice,
+  ],
   templateUrl: './athlete-page.html',
   styleUrl: './athlete-page.css',
 })
 export class AthletePage implements OnInit {
   private readonly api = inject(AthleteApi);
   private readonly coach = inject(CoachApi);
+  private readonly changeNotice = viewChild(SeasonChangeNotice);
 
   protected readonly view = signal<View>('loading');
   protected readonly profile = signal<AthleteProfile | null>(null);
@@ -184,6 +194,11 @@ export class AthletePage implements OnInit {
 
   protected onProfileChanged(profile: AthleteProfile): void {
     this.profile.set(profile);
+  }
+
+  protected onBestTimesChanged(profile: AthleteProfile): void {
+    this.onProfileChanged(profile);
+    void this.changeNotice()?.reload();
   }
 
   protected endSession(): void {
@@ -273,6 +288,7 @@ export class AthletePage implements OnInit {
           this.take(result.profile);
           this.editing.set(null);
           this.notice.set(`${item.label} was saved.`);
+          void this.changeNotice()?.reload();
           break;
         case 'invalid':
           this.rowError.set(result.errors.join(' '));
@@ -308,6 +324,7 @@ export class AthletePage implements OnInit {
           // A field that is open (another row's, since this row's offers no such button) stays.
           this.take(result.profile);
           this.notice.set(`${item.label} is automatic again.`);
+          void this.changeNotice()?.reload();
           break;
         case 'not_found':
           this.errors.set([`${item.label} does not exist for this sport.`]);
@@ -343,6 +360,8 @@ export class AthletePage implements OnInit {
       switch (result.kind) {
         case 'ok':
           this.take(result.profile);
+          // If the notice has not mounted yet, its initial read will include this sync.
+          void this.changeNotice()?.reload();
           if (!automatic) {
             this.notice.set('The thresholds were updated from Intervals.icu.');
           }

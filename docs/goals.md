@@ -74,7 +74,11 @@ This is said with or without a target time.
 - **Goals page:** every active goal has a badge, a sentence, the numbers behind it, the suggested
   target and the warning for a short preparation. **Edit** a goal and the form offers *Use it* next
   to the time or the value: it only fills the field, nothing is saved until you save, and your own
-  target is yours to keep.
+  target is yours to keep. When a confirmed [season plan](season.md#changes-from-the-confirmed-plan)
+  needs attention, the page also shows a read-only adjustment notice that refreshes after saving,
+  changing status or priority, or deleting a goal, and links to that confirmed version's **Ask for
+  a change** form. Missing plans and unchanged inputs show no hint, and status failures leave
+  normal goal editing usable.
 - **API:** `GET /api/goals/` and the other goal endpoints give every goal an `assessment` (`rating`,
   `reason`, `current`, `needed`, `suggested`, `weeks`, `prep_short`, `prep_weeks`). `current` and
   `needed` are VDOT for a race, watts for FTP and seconds per kilometre for the pace; `suggested`

@@ -612,6 +612,13 @@ there are several, the first one in that order counts and the others are listed 
    - **The coach** is told your best times (distance, time, day, VDOT, whether the race is recent
      and whether it counts) and the VDOT that counts, as numbers and fixed words.
 
+**Season adjustment hints.** When your confirmed [season plan](#filling-the-season-with-your-coach)
+needs attention, the Profile page shows a read-only notice above your settings with a link to that
+version's **Ask for a change** form. It refreshes after saving a threshold, switching back to an
+automatic value, updating from Intervals.icu (including an automatic sync on open) and saving or
+removing a best time. Without a confirmed plan or with unchanged inputs, no hint is shown. If the
+status cannot be read, editing stays usable.
+
 Thresholds and the data about you are personal: every user sees and changes only their own,
 administrators included, and no answer contains another user's values.
 
@@ -677,6 +684,12 @@ stays yours**: it is a hint and never changes anything. Cycling, swimming and tr
 goals without a target, a date or a form to start from, say why they cannot be judged. Your coach
 is told the judgement in the briefing of the week and of the season. The rules, every number and
 what is not judged are in [`docs/goals.md`](docs/goals.md).
+
+**Season adjustment hints.** When your confirmed [season plan](#filling-the-season-with-your-coach)
+needs attention, the Goals page shows a read-only notice above the list with a link to that
+version's **Ask for a change** form. It refreshes right after you add, edit, change the status or
+priority of, or delete a goal. Without a confirmed plan or with unchanged inputs, no hint is shown.
+If the status cannot be read, goal editing stays usable.
 
 **Limits.** At most 30 goals per user (finished ones included), so delete old ones when it is full.
 Titles and notes are shown as plain text, never as markup.
@@ -936,7 +949,10 @@ sessions (a long run, a threshold session, the race …) and a reason. The model
   Without a confirmed plan, the id is `null` and both lists are empty. It calls neither the coach
   nor Intervals.icu.
   The reusable frontend notice explains each reason and names the confirmed version in its
-  change link. It hides when there are no reasons. Status failures offer Retry, and an expired
+  change link. It appears on [Season](#season), [Goals](#goals) and [Profile](#athlete-profile),
+  and refreshes after goal mutations, threshold saves, automatic-value selection, Intervals.icu
+  sync (including automatic sync on open) and best-time changes. It hides when there are no
+  reasons. Status failures offer Retry without blocking editing, and an expired
   session asks you to sign in again. Loading or reloading the notice only reads status and versions.
   On Season, follow **Ask for a change to confirmed version N** to open that version's form.
   Links from another page do the same, even if you were viewing a draft or an older version.

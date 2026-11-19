@@ -5,6 +5,7 @@ import { GoalsApi } from '../../core/goals/goals-api';
 import { Goal, GoalChanges, GoalStatus } from '../../core/goals/goals-models';
 import { ConfirmDialog } from '../../shared/confirm-dialog';
 import { PageHeader } from '../../shared/page-header';
+import { SeasonChangeNotice } from '../../shared/season-change-notice';
 import { GoalForm } from './goal-form';
 import {
   KIND_LABELS,
@@ -42,12 +43,13 @@ const NOTICES: Record<GoalStatus, string> = {
  */
 @Component({
   selector: 'app-goals-page',
-  imports: [RouterLink, DatePipe, ConfirmDialog, GoalForm, PageHeader],
+  imports: [RouterLink, DatePipe, ConfirmDialog, GoalForm, PageHeader, SeasonChangeNotice],
   templateUrl: './goals-page.html',
   styleUrl: './goals-page.css',
 })
 export class GoalsPage implements OnInit {
   private readonly api = inject(GoalsApi);
+  private readonly changeNotice = viewChild(SeasonChangeNotice);
 
   protected readonly view = signal<View>('loading');
   protected readonly goals = signal<Goal[]>([]);
@@ -135,6 +137,7 @@ export class GoalsPage implements OnInit {
     this.form.set('closed');
     this.clearMessages();
     this.notice.set('The goal was saved.');
+    void this.changeNotice()?.reload();
     await this.refresh();
   }
 
@@ -172,6 +175,7 @@ export class GoalsPage implements OnInit {
         return;
       }
       this.notice.set(result.kind === 'deleted' ? 'The goal was deleted.' : GONE);
+      if (result.kind === 'deleted') void this.changeNotice()?.reload();
       await this.refresh();
     } catch {
       this.errors.set([FALLBACK]);
@@ -191,6 +195,7 @@ export class GoalsPage implements OnInit {
       switch (result.kind) {
         case 'ok':
           this.notice.set(notice);
+          void this.changeNotice()?.reload();
           await this.refresh();
           break;
         case 'invalid':

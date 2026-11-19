@@ -10,6 +10,12 @@ import {
   ListGoalsResult,
   UpdateGoalResult,
 } from '../../core/goals/goals-models';
+import { SeasonApi } from '../../core/season/season-api';
+import {
+  GetSeasonReassessmentResult,
+  ListSeasonPlansResult,
+  SeasonPlanVersion,
+} from '../../core/season/season-models';
 import { query, required, settle, typeInto } from '../../testing/dom';
 import { GoalsPage } from './goals-page';
 
@@ -81,12 +87,50 @@ const DROPPED = goal({ id: 'dropped', title: 'Ultra', status: 'dropped' });
 const ok = (...goals: Goal[]): ListGoalsResult => ({ kind: 'ok', goals });
 const updated = (changed: Goal): UpdateGoalResult => ({ kind: 'ok', goal: changed });
 
+const CONFIRMED_ID = '0195f3a0-0000-7000-8000-000000000004';
+const CONFIRMED_VERSION: SeasonPlanVersion = {
+  id: CONFIRMED_ID,
+  version: 4,
+  status: 'confirmed',
+  reason: 'Drafted by the coach',
+  week_count: 12,
+  created_at: '2026-10-01T10:00:00Z',
+  confirmed_at: '2026-10-01T11:00:00Z',
+};
+const NO_PLAN_REASSESSMENT: GetSeasonReassessmentResult = {
+  kind: 'ok',
+  reassessment: { confirmed_plan_id: null, reasons: [], deviation_weeks: [] },
+};
+const UNCHANGED_REASSESSMENT: GetSeasonReassessmentResult = {
+  kind: 'ok',
+  reassessment: { confirmed_plan_id: CONFIRMED_ID, reasons: [], deviation_weeks: [] },
+};
+const GOALS_CHANGED_REASSESSMENT: GetSeasonReassessmentResult = {
+  kind: 'ok',
+  reassessment: {
+    confirmed_plan_id: CONFIRMED_ID,
+    reasons: ['goals_changed'],
+    deviation_weeks: [],
+  },
+};
+
 function createApiStub() {
   return {
     list: vi.fn<() => Promise<ListGoalsResult>>(),
     create: vi.fn<() => Promise<CreateGoalResult>>(),
     update: vi.fn<(id: string, changes: GoalChanges) => Promise<UpdateGoalResult>>(),
     delete: vi.fn<(id: string) => Promise<DeleteGoalResult>>(),
+  };
+}
+
+function createSeasonStub() {
+  return {
+    reassessment: vi
+      .fn<() => Promise<GetSeasonReassessmentResult>>()
+      .mockResolvedValue(NO_PLAN_REASSESSMENT),
+    plans: vi
+      .fn<() => Promise<ListSeasonPlansResult>>()
+      .mockResolvedValue({ kind: 'ok', plans: [] }),
   };
 }
 
@@ -111,15 +155,29 @@ describe('GoalsPage', () => {
   });
 
   let api: ReturnType<typeof createApiStub>;
+  let season: ReturnType<typeof createSeasonStub>;
   let fixture: ComponentFixture<GoalsPage>;
   let page: HTMLElement;
 
-  async function setup(first: ListGoalsResult = ok(MAIN, FTP, GENERAL)) {
+  function providers() {
+    return [
+      provideRouter([]),
+      { provide: GoalsApi, useValue: api },
+      { provide: SeasonApi, useValue: season },
+    ];
+  }
+
+  async function setup(
+    first: ListGoalsResult = ok(MAIN, FTP, GENERAL),
+    configureSeason?: (stub: ReturnType<typeof createSeasonStub>) => void,
+  ) {
     api = createApiStub();
+    season = createSeasonStub();
+    configureSeason?.(season);
     api.list.mockResolvedValue(first);
     TestBed.configureTestingModule({
       imports: [GoalsPage],
-      providers: [provideRouter([]), { provide: GoalsApi, useValue: api }],
+      providers: providers(),
     });
     fixture = TestBed.createComponent(GoalsPage);
     page = fixture.nativeElement as HTMLElement;
@@ -159,10 +217,11 @@ describe('GoalsPage', () => {
   describe('loading', () => {
     it('shows a loading note until the goals arrive', () => {
       api = createApiStub();
+      season = createSeasonStub();
       api.list.mockReturnValue(new Promise<never>(() => undefined));
       TestBed.configureTestingModule({
         imports: [GoalsPage],
-        providers: [provideRouter([]), { provide: GoalsApi, useValue: api }],
+        providers: providers(),
       });
       fixture = TestBed.createComponent(GoalsPage);
       fixture.detectChanges();
@@ -181,10 +240,11 @@ describe('GoalsPage', () => {
 
     it('offers a retry when the goals cannot be loaded', async () => {
       api = createApiStub();
+      season = createSeasonStub();
       api.list.mockRejectedValueOnce(new Error('offline')).mockResolvedValue(ok(MAIN));
       TestBed.configureTestingModule({
         imports: [GoalsPage],
-        providers: [provideRouter([]), { provide: GoalsApi, useValue: api }],
+        providers: providers(),
       });
       fixture = TestBed.createComponent(GoalsPage);
       page = fixture.nativeElement as HTMLElement;
@@ -875,6 +935,164 @@ describe('GoalsPage', () => {
 
       expect(within('f', 'figures')).toBe('Your FTP: 240 W. The target: 280 W.');
       expect(within('f', 'suggestion')).toBe('A target that can be reached by then: 252 W.');
+    });
+  });
+
+  describe('season adjustment hint', () => {
+    const noticeBox = () => page.querySelector('[data-testid="season-change-notice"]');
+
+    it('shows the hint on load and links to the confirmed season change form', async () => {
+      await setup(ok(MAIN), (stub) => {
+        stub.reassessment.mockResolvedValue(GOALS_CHANGED_REASSESSMENT);
+        stub.plans.mockResolvedValue({ kind: 'ok', plans: [CONFIRMED_VERSION] });
+      });
+
+      const notice = query(page, '[data-testid="season-change-notice"]');
+      expect(notice.textContent).toContain(
+        'Your active goals have changed since this season was drafted.',
+      );
+      const link = query<HTMLAnchorElement>(notice, 'a');
+      expect(link.textContent).toContain('Ask for a change to confirmed version 4');
+      expect(link.getAttribute('href')).toBe(`/season?change=${CONFIRMED_ID}#season-change`);
+    });
+
+    it.each([
+      ['without a confirmed plan', NO_PLAN_REASSESSMENT],
+      ['when inputs are unchanged', UNCHANGED_REASSESSMENT],
+    ])('shows no adjustment hint %s', async (_label, reply) => {
+      await setup(ok(MAIN), (stub) => {
+        stub.reassessment.mockResolvedValue(reply);
+      });
+
+      expect(noticeBox()).toBeNull();
+      expect(page.querySelector('app-season-change-notice')?.textContent?.trim()).toBe('');
+    });
+
+    it('shows the hint immediately after moving an A race', async () => {
+      await setup(ok(MAIN, FTP), (stub) => {
+        stub.reassessment.mockResolvedValue(UNCHANGED_REASSESSMENT);
+        stub.plans.mockResolvedValue({ kind: 'ok', plans: [CONFIRMED_VERSION] });
+      });
+      expect(noticeBox()).toBeNull();
+
+      const moved = goal({ ...MAIN, target_date: '2027-10-10' });
+      api.update.mockResolvedValue(updated(moved));
+      api.list.mockResolvedValue(ok(moved, FTP));
+      season.reassessment.mockResolvedValue(GOALS_CHANGED_REASSESSMENT);
+
+      await click(button('Edit Berlin Marathon'));
+      typeInto(page, '#goal-date', '2027-10-10');
+      query<HTMLFormElement>(page, 'form').dispatchEvent(new Event('submit', { cancelable: true }));
+      await settle(fixture);
+
+      expect(season.reassessment).toHaveBeenCalledTimes(2);
+      const notice = query(page, '[data-testid="season-change-notice"]');
+      expect(notice.textContent).toContain(
+        'Your active goals have changed since this season was drafted.',
+      );
+      expect(query<HTMLAnchorElement>(notice, 'a').getAttribute('href')).toBe(
+        `/season?change=${CONFIRMED_ID}#season-change`,
+      );
+    });
+
+    it('reloads the hint after adding a goal', async () => {
+      await setup(ok(MAIN), (stub) => {
+        stub.reassessment.mockResolvedValue(UNCHANGED_REASSESSMENT);
+        stub.plans.mockResolvedValue({ kind: 'ok', plans: [CONFIRMED_VERSION] });
+      });
+      const created = goal({ id: 'new', title: 'Spring Half' });
+      api.create.mockResolvedValue({ kind: 'ok', goal: created });
+      api.list.mockResolvedValue(ok(MAIN, created));
+      season.reassessment.mockResolvedValue(GOALS_CHANGED_REASSESSMENT);
+
+      await click(buttonWithText('Add goal'));
+      typeInto(page, '#goal-title', 'Spring Half');
+      typeInto(page, '#goal-date', '2027-04-18');
+      const discipline = query<HTMLSelectElement>(page, '#goal-discipline');
+      discipline.value = 'running';
+      discipline.dispatchEvent(new Event('change'));
+      await settle(fixture);
+      query<HTMLFormElement>(page, 'form').dispatchEvent(new Event('submit', { cancelable: true }));
+      await settle(fixture);
+
+      expect(season.reassessment).toHaveBeenCalledTimes(2);
+      expect(noticeBox()?.textContent).toContain('active goals have changed');
+    });
+
+    it.each([
+      ['Drop Raise FTP', ok(MAIN, goal({ ...FTP, status: 'dropped' }))],
+      ['Mark Raise FTP as achieved', ok(MAIN, goal({ ...FTP, status: 'achieved' }))],
+      ['Make Berlin Marathon a secondary goal', ok(goal({ ...MAIN, priority: 'secondary' }), FTP)],
+    ])('reloads the hint after "%s"', async (label, nextList) => {
+      await setup(ok(MAIN, FTP), (stub) => {
+        stub.reassessment.mockResolvedValue(UNCHANGED_REASSESSMENT);
+        stub.plans.mockResolvedValue({ kind: 'ok', plans: [CONFIRMED_VERSION] });
+      });
+      api.update.mockResolvedValue(updated(FTP));
+      api.list.mockResolvedValue(nextList);
+      season.reassessment.mockResolvedValue(GOALS_CHANGED_REASSESSMENT);
+
+      await click(button(label));
+
+      expect(season.reassessment).toHaveBeenCalledTimes(2);
+      expect(noticeBox()?.textContent).toContain('active goals have changed');
+    });
+
+    it('does not reload the hint when a goal update is rejected', async () => {
+      await setup(ok(MAIN, FTP), (stub) => {
+        stub.reassessment.mockResolvedValue(UNCHANGED_REASSESSMENT);
+      });
+      api.update.mockResolvedValue({
+        kind: 'invalid',
+        errors: ['You already have a main goal. Change it first.'],
+        fields: {},
+      });
+
+      await click(button('Make Raise FTP the main goal'));
+
+      expect(season.reassessment).toHaveBeenCalledTimes(1);
+    });
+
+    it('reloads the hint after deleting a goal, and skips when already gone', async () => {
+      await setup(ok(MAIN, FTP), (stub) => {
+        stub.reassessment.mockResolvedValue(UNCHANGED_REASSESSMENT);
+        stub.plans.mockResolvedValue({ kind: 'ok', plans: [CONFIRMED_VERSION] });
+      });
+      api.delete.mockResolvedValueOnce({ kind: 'not_found' }).mockResolvedValueOnce({
+        kind: 'deleted',
+      });
+      api.list.mockResolvedValue(ok(MAIN));
+      season.reassessment.mockResolvedValue(GOALS_CHANGED_REASSESSMENT);
+
+      await click(button('Delete Raise FTP'));
+      await click(buttonWithText('Delete goal'));
+      expect(season.reassessment).toHaveBeenCalledTimes(1);
+
+      await click(button('Delete Berlin Marathon'));
+      await click(buttonWithText('Delete goal'));
+      expect(season.reassessment).toHaveBeenCalledTimes(2);
+      expect(noticeBox()?.textContent).toContain('active goals have changed');
+    });
+
+    it('leaves normal editing usable when adjustment status fails', async () => {
+      await setup(ok(MAIN, FTP), (stub) => {
+        stub.reassessment.mockRejectedValueOnce(new Error('offline'));
+      });
+
+      const host = query(page, 'app-season-change-notice');
+      expect(host.textContent).toContain('Season adjustment status is unavailable.');
+      expect(titles()).toEqual(['Berlin Marathon', 'Raise FTP']);
+
+      api.update.mockResolvedValue(updated(goal({ ...FTP, status: 'dropped' })));
+      api.list.mockResolvedValue(ok(MAIN, goal({ ...FTP, status: 'dropped' })));
+      season.reassessment.mockResolvedValue(GOALS_CHANGED_REASSESSMENT);
+      season.plans.mockResolvedValue({ kind: 'ok', plans: [CONFIRMED_VERSION] });
+
+      await click(button('Drop Raise FTP'));
+
+      expect(api.update).toHaveBeenCalledExactlyOnceWith('ftp', { status: 'dropped' });
+      expect(text()).toContain('The goal was dropped.');
+      expect(noticeBox()?.textContent).toContain('active goals have changed');
     });
   });
 });

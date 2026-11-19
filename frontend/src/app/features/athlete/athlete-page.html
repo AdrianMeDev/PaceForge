@@ -20,6 +20,7 @@
       <p><a routerLink="/login">Go to sign in</a></p>
     }
     @case ('ready') {
+      <app-season-change-notice />
       @for (message of errors(); track $index) {
         <p class="alert" role="alert">{{ message }}</p>
       }
@@ -281,7 +282,7 @@
         @if (section.sport === 'run' && profile(); as current) {
           <app-best-times-panel
             [profile]="current"
-            (changed)="onProfileChanged($event)"
+            (changed)="onBestTimesChanged($event)"
             (signedOut)="endSession()"
           />
         }

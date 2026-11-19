@@ -274,7 +274,11 @@ plan as a draft:
 
 ## Changes from the confirmed plan
 
-The Season page shows an adjustment notice when the confirmed plan needs attention. Follow
+The Season, Goals and Profile pages show an adjustment notice when the confirmed plan needs
+attention. On **Goals**, it reloads right after saving, changing status or priority, or deleting a
+goal. On **Profile**, it reloads after threshold saves, switching back to an automatic value,
+Intervals.icu sync (including automatic sync on open) and best-time changes. Missing plans and
+unchanged inputs show no hint, and status failures leave normal editing usable. Follow
 **Ask for a change to confirmed version N** to open that version's **Ask for a change** form.
 A link from another page works the same way. It selects the named confirmed version even if
 a draft or an older version was open. After loading, the request field gets focus. A link to

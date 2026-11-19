@@ -24,6 +24,12 @@ import {
   ThresholdValue,
   ZoneSet,
 } from '../../core/athlete/athlete-models';
+import { SeasonApi } from '../../core/season/season-api';
+import {
+  GetSeasonReassessmentResult,
+  ListSeasonPlansResult,
+  SeasonPlanVersion,
+} from '../../core/season/season-models';
 import { query, required, settle, typeInto } from '../../testing/dom';
 import { AthletePage } from './athlete-page';
 
@@ -155,6 +161,52 @@ function createCoachStub() {
   };
 }
 
+const CONFIRMED_ID = '0195f3a0-0000-7000-8000-000000000004';
+const CONFIRMED_VERSION: SeasonPlanVersion = {
+  id: CONFIRMED_ID,
+  version: 4,
+  status: 'confirmed',
+  reason: 'Drafted by the coach',
+  week_count: 12,
+  created_at: '2026-10-01T10:00:00Z',
+  confirmed_at: '2026-10-01T11:00:00Z',
+};
+const NO_PLAN_REASSESSMENT: GetSeasonReassessmentResult = {
+  kind: 'ok',
+  reassessment: { confirmed_plan_id: null, reasons: [], deviation_weeks: [] },
+};
+const UNCHANGED_REASSESSMENT: GetSeasonReassessmentResult = {
+  kind: 'ok',
+  reassessment: { confirmed_plan_id: CONFIRMED_ID, reasons: [], deviation_weeks: [] },
+};
+const FTP_CHANGED_REASSESSMENT: GetSeasonReassessmentResult = {
+  kind: 'ok',
+  reassessment: {
+    confirmed_plan_id: CONFIRMED_ID,
+    reasons: ['ftp_changed'],
+    deviation_weeks: [],
+  },
+};
+const BEST_TIMES_CHANGED_REASSESSMENT: GetSeasonReassessmentResult = {
+  kind: 'ok',
+  reassessment: {
+    confirmed_plan_id: CONFIRMED_ID,
+    reasons: ['best_times_changed'],
+    deviation_weeks: [],
+  },
+};
+
+function createSeasonStub() {
+  return {
+    reassessment: vi
+      .fn<() => Promise<GetSeasonReassessmentResult>>()
+      .mockResolvedValue(NO_PLAN_REASSESSMENT),
+    plans: vi
+      .fn<() => Promise<ListSeasonPlansResult>>()
+      .mockResolvedValue({ kind: 'ok', plans: [] }),
+  };
+}
+
 function createApiStub() {
   return {
     get: vi.fn<() => Promise<GetAthleteResult>>(),
@@ -177,19 +229,30 @@ function deferred<T>() {
 
 describe('AthletePage', () => {
   let api: ReturnType<typeof createApiStub>;
+  let season: ReturnType<typeof createSeasonStub>;
   let fixture: ComponentFixture<AthletePage>;
   let page: HTMLElement;
 
-  async function setup(first: GetAthleteResult = ok()) {
+  function providers() {
+    return [
+      provideRouter([]),
+      { provide: AthleteApi, useValue: api },
+      { provide: CoachApi, useValue: createCoachStub() },
+      { provide: SeasonApi, useValue: season },
+    ];
+  }
+
+  async function setup(
+    first: GetAthleteResult = ok(),
+    configureSeason?: (stub: ReturnType<typeof createSeasonStub>) => void,
+  ) {
     api = createApiStub();
+    season = createSeasonStub();
+    configureSeason?.(season);
     api.get.mockResolvedValue(first);
     TestBed.configureTestingModule({
       imports: [AthletePage],
-      providers: [
-        provideRouter([]),
-        { provide: AthleteApi, useValue: api },
-        { provide: CoachApi, useValue: createCoachStub() },
-      ],
+      providers: providers(),
     });
     fixture = TestBed.createComponent(AthletePage);
     page = fixture.nativeElement as HTMLElement;
@@ -244,14 +307,11 @@ describe('AthletePage', () => {
   describe('loading', () => {
     it('shows a loading note until the profile arrives', () => {
       api = createApiStub();
+      season = createSeasonStub();
       api.get.mockReturnValue(new Promise<never>(() => undefined));
       TestBed.configureTestingModule({
         imports: [AthletePage],
-        providers: [
-          provideRouter([]),
-          { provide: AthleteApi, useValue: api },
-          { provide: CoachApi, useValue: createCoachStub() },
-        ],
+        providers: providers(),
       });
       fixture = TestBed.createComponent(AthletePage);
       fixture.detectChanges();
@@ -270,14 +330,11 @@ describe('AthletePage', () => {
 
     it('offers a retry when the profile cannot be loaded', async () => {
       api = createApiStub();
+      season = createSeasonStub();
       api.get.mockRejectedValueOnce(new Error('offline')).mockResolvedValue(ok());
       TestBed.configureTestingModule({
         imports: [AthletePage],
-        providers: [
-          provideRouter([]),
-          { provide: AthleteApi, useValue: api },
-          { provide: CoachApi, useValue: createCoachStub() },
-        ],
+        providers: providers(),
       });
       fixture = TestBed.createComponent(AthletePage);
       page = fixture.nativeElement as HTMLElement;
@@ -934,15 +991,12 @@ describe('AthletePage', () => {
 
     it('reads once on opening when it never has been read', async () => {
       api = createApiStub();
+      season = createSeasonStub();
       api.get.mockResolvedValue(ok({ intervals: connected(null) }));
       api.syncFromIntervals.mockResolvedValue(updated);
       TestBed.configureTestingModule({
         imports: [AthletePage],
-        providers: [
-          provideRouter([]),
-          { provide: AthleteApi, useValue: api },
-          { provide: CoachApi, useValue: createCoachStub() },
-        ],
+        providers: providers(),
       });
       fixture = TestBed.createComponent(AthletePage);
       page = fixture.nativeElement as HTMLElement;
@@ -987,16 +1041,13 @@ describe('AthletePage', () => {
 
     it('shows a note while it is reading', async () => {
       api = createApiStub();
+      season = createSeasonStub();
       api.get.mockResolvedValue(ok({ intervals: connected(null) }));
       const pending = deferred<SyncResult>();
       api.syncFromIntervals.mockReturnValue(pending.promise);
       TestBed.configureTestingModule({
         imports: [AthletePage],
-        providers: [
-          provideRouter([]),
-          { provide: AthleteApi, useValue: api },
-          { provide: CoachApi, useValue: createCoachStub() },
-        ],
+        providers: providers(),
       });
       fixture = TestBed.createComponent(AthletePage);
       page = fixture.nativeElement as HTMLElement;
@@ -1034,16 +1085,13 @@ describe('AthletePage', () => {
     ])('when %s', (_name, result, message) => {
       it('shows a note on opening and leaves the page usable', async () => {
         api = createApiStub();
+        season = createSeasonStub();
         api.get.mockResolvedValue(ok({ intervals: connected(null) }));
         api.syncFromIntervals.mockResolvedValue(result);
         api.setThreshold.mockResolvedValue(ok());
         TestBed.configureTestingModule({
           imports: [AthletePage],
-          providers: [
-            provideRouter([]),
-            { provide: AthleteApi, useValue: api },
-            { provide: CoachApi, useValue: createCoachStub() },
-          ],
+          providers: providers(),
         });
         fixture = TestBed.createComponent(AthletePage);
         page = fixture.nativeElement as HTMLElement;
@@ -1140,15 +1188,12 @@ describe('AthletePage', () => {
 
     it('says "never" instead of failing when the time is no date', async () => {
       api = createApiStub();
+      season = createSeasonStub();
       api.get.mockResolvedValue(ok({ intervals: { connected: true, synced_at: 'yesterday' } }));
       api.syncFromIntervals.mockResolvedValue({ kind: 'not_connected' });
       TestBed.configureTestingModule({
         imports: [AthletePage],
-        providers: [
-          provideRouter([]),
-          { provide: AthleteApi, useValue: api },
-          { provide: CoachApi, useValue: createCoachStub() },
-        ],
+        providers: providers(),
       });
       fixture = TestBed.createComponent(AthletePage);
       page = fixture.nativeElement as HTMLElement;
@@ -1160,15 +1205,12 @@ describe('AthletePage', () => {
 
     it('says "never" when they were not read yet', async () => {
       api = createApiStub();
+      season = createSeasonStub();
       api.get.mockResolvedValue(ok({ intervals: connected(null) }));
       api.syncFromIntervals.mockResolvedValue({ kind: 'not_connected' });
       TestBed.configureTestingModule({
         imports: [AthletePage],
-        providers: [
-          provideRouter([]),
-          { provide: AthleteApi, useValue: api },
-          { provide: CoachApi, useValue: createCoachStub() },
-        ],
+        providers: providers(),
       });
       fixture = TestBed.createComponent(AthletePage);
       page = fixture.nativeElement as HTMLElement;
@@ -1269,6 +1311,201 @@ describe('AthletePage', () => {
       await settle(fixture);
 
       expect(text()).toContain('Your session has ended.');
+    });
+  });
+
+  describe('season adjustment hint', () => {
+    const noticeBox = () => page.querySelector('[data-testid="season-change-notice"]');
+    const connected = (hoursAgo: number | null) => ({
+      connected: true,
+      synced_at: hoursAgo === null ? null : new Date(Date.now() - hoursAgo * HOUR).toISOString(),
+    });
+
+    it('shows the hint on load and links to the confirmed season change form', async () => {
+      await setup(ok(), (stub) => {
+        stub.reassessment.mockResolvedValue(FTP_CHANGED_REASSESSMENT);
+        stub.plans.mockResolvedValue({ kind: 'ok', plans: [CONFIRMED_VERSION] });
+      });
+
+      const notice = query(page, '[data-testid="season-change-notice"]');
+      expect(notice.textContent).toContain(
+        'Your effective cycling FTP has changed since this season was drafted.',
+      );
+      const link = query<HTMLAnchorElement>(notice, 'a');
+      expect(link.textContent).toContain('Ask for a change to confirmed version 4');
+      expect(link.getAttribute('href')).toBe(`/season?change=${CONFIRMED_ID}#season-change`);
+    });
+
+    it.each([
+      ['without a confirmed plan', NO_PLAN_REASSESSMENT],
+      ['when inputs are unchanged', UNCHANGED_REASSESSMENT],
+    ])('shows no adjustment hint %s', async (_label, reply) => {
+      await setup(ok(), (stub) => {
+        stub.reassessment.mockResolvedValue(reply);
+      });
+
+      expect(noticeBox()).toBeNull();
+      expect(page.querySelector('app-season-change-notice')?.textContent?.trim()).toBe('');
+    });
+
+    it('refreshes the hint after saving an effective FTP change', async () => {
+      await setup(ok(), (stub) => {
+        stub.reassessment.mockResolvedValue(UNCHANGED_REASSESSMENT);
+        stub.plans.mockResolvedValue({ kind: 'ok', plans: [CONFIRMED_VERSION] });
+      });
+      expect(noticeBox()).toBeNull();
+
+      api.setThreshold.mockResolvedValue(ok({ ride: { ftp: threshold(value(265)) } }));
+      season.reassessment.mockResolvedValue(FTP_CHANGED_REASSESSMENT);
+
+      await edit('ride-ftp', 'FTP (Cycling)', '265');
+
+      expect(season.reassessment).toHaveBeenCalledTimes(2);
+      const notice = query(page, '[data-testid="season-change-notice"]');
+      expect(notice.textContent).toContain('effective cycling FTP has changed');
+      expect(query<HTMLAnchorElement>(notice, 'a').getAttribute('href')).toBe(
+        `/season?change=${CONFIRMED_ID}#season-change`,
+      );
+    });
+
+    it('does not reload the hint when saving a threshold is rejected', async () => {
+      await setup(ok(), (stub) => {
+        stub.reassessment.mockResolvedValue(UNCHANGED_REASSESSMENT);
+      });
+      api.setThreshold.mockResolvedValue({
+        kind: 'invalid',
+        errors: ['Cannot be above the maximum heart rate (190 bpm).'],
+      });
+
+      await edit('ride-lthr', 'Lactate threshold heart rate (Cycling)', '195');
+
+      expect(season.reassessment).toHaveBeenCalledTimes(1);
+    });
+
+    it('refreshes the hint after switching a threshold back to automatic', async () => {
+      await setup(ok(), (stub) => {
+        stub.reassessment.mockResolvedValue(UNCHANGED_REASSESSMENT);
+        stub.plans.mockResolvedValue({ kind: 'ok', plans: [CONFIRMED_VERSION] });
+      });
+      api.clearThreshold.mockResolvedValue(
+        ok({ ride: { ftp: threshold(value(262, 'intervals', 'x')) } }),
+      );
+      season.reassessment.mockResolvedValue(FTP_CHANGED_REASSESSMENT);
+
+      await click(button('Use automatic value for FTP (Cycling)'));
+
+      expect(season.reassessment).toHaveBeenCalledTimes(2);
+      expect(noticeBox()?.textContent).toContain('effective cycling FTP has changed');
+    });
+
+    it('refreshes the hint after a manual Intervals.icu sync', async () => {
+      await setup(ok({ intervals: connected(1) }), (stub) => {
+        stub.reassessment.mockResolvedValue(UNCHANGED_REASSESSMENT);
+        stub.plans.mockResolvedValue({ kind: 'ok', plans: [CONFIRMED_VERSION] });
+      });
+      api.syncFromIntervals.mockResolvedValue(
+        ok({ ride: { ftp: threshold(value(262, 'intervals', 'x')) } }),
+      );
+      season.reassessment.mockResolvedValue(FTP_CHANGED_REASSESSMENT);
+
+      await click(buttonWithText('Update from Intervals.icu'));
+
+      expect(season.reassessment).toHaveBeenCalledTimes(2);
+      expect(noticeBox()?.textContent).toContain('effective cycling FTP has changed');
+    });
+
+    it('refreshes the hint after an automatic Intervals.icu sync finishes', async () => {
+      api = createApiStub();
+      season = createSeasonStub();
+      api.get.mockResolvedValue(ok({ intervals: connected(null) }));
+      const pending = deferred<SyncResult>();
+      api.syncFromIntervals.mockReturnValue(pending.promise);
+      season.reassessment.mockResolvedValueOnce(UNCHANGED_REASSESSMENT);
+      season.plans.mockResolvedValue({ kind: 'ok', plans: [CONFIRMED_VERSION] });
+      TestBed.configureTestingModule({
+        imports: [AthletePage],
+        providers: providers(),
+      });
+      fixture = TestBed.createComponent(AthletePage);
+      page = fixture.nativeElement as HTMLElement;
+      await settle(fixture);
+
+      expect(noticeBox()).toBeNull();
+      expect(season.reassessment).toHaveBeenCalledTimes(1);
+
+      season.reassessment.mockResolvedValueOnce(FTP_CHANGED_REASSESSMENT);
+      pending.resolve(ok({ ride: { ftp: threshold(value(268, 'intervals', 'x')) } }));
+      await settle(fixture);
+
+      expect(season.reassessment).toHaveBeenCalledTimes(2);
+      const notice = query(page, '[data-testid="season-change-notice"]');
+      expect(notice.textContent).toContain('effective cycling FTP has changed');
+      expect(query<HTMLAnchorElement>(notice, 'a').getAttribute('href')).toBe(
+        `/season?change=${CONFIRMED_ID}#season-change`,
+      );
+    });
+
+    it('refreshes the hint after saving and removing a best time', async () => {
+      await setup(ok(), (stub) => {
+        stub.reassessment.mockResolvedValue(UNCHANGED_REASSESSMENT);
+        stub.plans.mockResolvedValue({ kind: 'ok', plans: [CONFIRMED_VERSION] });
+      });
+      const withTime: AthleteProfile = {
+        ...profile(),
+        best_times: {
+          '5k': {
+            seconds: 1197,
+            date: '2026-10-03',
+            vdot: 50,
+            recent: true,
+            counts: true,
+          },
+          '10k': null,
+          half_marathon: null,
+          marathon: null,
+        },
+        vdot: { value: 50, distance: '5k', date: '2026-10-03' },
+      };
+      api.setBestTime.mockResolvedValue({ kind: 'ok', profile: withTime });
+      season.reassessment.mockResolvedValueOnce(BEST_TIMES_CHANGED_REASSESSMENT);
+
+      typeInto(page, '#best-time-5k', '19:57');
+      typeInto(page, '#best-date-5k', '2026-10-03');
+      query<HTMLFormElement>(page, '[data-testid="best-5k"] form').dispatchEvent(
+        new Event('submit', { cancelable: true }),
+      );
+      await settle(fixture);
+
+      expect(season.reassessment).toHaveBeenCalledTimes(2);
+      expect(noticeBox()?.textContent).toContain('best times have changed');
+
+      api.clearBestTime.mockResolvedValue(ok());
+      season.reassessment.mockResolvedValueOnce(UNCHANGED_REASSESSMENT);
+
+      await click(button('Remove the 5 km time'));
+
+      expect(season.reassessment).toHaveBeenCalledTimes(3);
+      expect(noticeBox()).toBeNull();
+    });
+
+    it('leaves normal editing usable when adjustment status fails', async () => {
+      await setup(ok(), (stub) => {
+        stub.reassessment.mockRejectedValueOnce(new Error('offline'));
+      });
+
+      const host = query(page, 'app-season-change-notice');
+      expect(host.textContent).toContain('Season adjustment status is unavailable.');
+      expect(shown('ride-ftp')).toBe('250 W');
+
+      api.setThreshold.mockResolvedValue(ok({ ride: { ftp: threshold(value(260)) } }));
+      season.reassessment.mockResolvedValue(FTP_CHANGED_REASSESSMENT);
+      season.plans.mockResolvedValue({ kind: 'ok', plans: [CONFIRMED_VERSION] });
+
+      await edit('ride-ftp', 'FTP (Cycling)', '260');
+
+      expect(shown('ride-ftp')).toBe('260 W');
+      expect(text()).toContain('FTP was saved.');
+      expect(noticeBox()?.textContent).toContain('effective cycling FTP has changed');
     });
   });
 });
