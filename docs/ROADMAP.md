@@ -81,7 +81,7 @@ AI key; several people can share one instance without seeing each other's data.
 - **Depends on:** –
 - **Size:** M
 
-### M5 [ ] Illness in the coach chat
+### M5 [~] Illness in the coach chat
 - **Goal:** "I am sick" in the chat leads to a new draft with paused days and a careful return.
 - **Includes:** `mark_sick` action (symptoms above/below the neck, fever, expected days), affected days paused, return rules (easy and shorter first, no intensity for the first days), doctor hint for fever, illness stored as absence and visible in the season; confirmed draft removes workouts in Intervals.
 - **Done when:** with a scripted provider, a sick message creates a draft without intensity in the return days and an absence; tests green.

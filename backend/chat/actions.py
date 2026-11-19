@@ -13,18 +13,35 @@ checks (``planning.validation``), which run on the draft that is stored from it.
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import date, timedelta
+from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
-from planning.schema import DURATION_MAX, Problem, Slot, Sport, WeekPlan, Workout
+from planning.rules import EASY_UP_TO_ZONE
+from planning.schema import DURATION_MAX, Goal, Problem, Slot, Sport, WeekPlan, Workout
 
 MAX_ACTIONS = 10
 # The shortest workout the chat makes; a shorter one is a removed one.
 MIN_MINUTES = 10
 PERCENT_MIN = 5
 PERCENT_MAX = 50
+SICK_DAYS_MIN = 1
+SICK_DAYS_MAX = 14
+# Return rules after an illness: 2 easy days for mild above-the-neck symptoms without fever,
+# 4 otherwise; every return-day workout is cut to 60 % of its length (never below MIN_MINUTES).
+RETURN_DAYS_MILD = 2
+RETURN_DAYS_SEVERE = 4
+RETURN_DURATION_PERCENT = 60
 
-TOOLS = ("move_workout", "skip_workout", "swap_sport", "shorten_workout", "reduce_week", "free_day")
+TOOLS = (
+    "move_workout",
+    "skip_workout",
+    "swap_sport",
+    "shorten_workout",
+    "reduce_week",
+    "free_day",
+    "mark_sick",
+)
 _DAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 _NAMES = {
     Sport.RUNNING: "Run",
@@ -32,6 +49,12 @@ _NAMES = {
     Sport.SWIMMING: "Swim",
     Sport.STRENGTH: "Strength",
 }
+_INTENSE_GOALS = frozenset({Goal.TEMPO, Goal.THRESHOLD, Goal.VO2MAX})
+
+
+class Symptoms(StrEnum):
+    ABOVE_NECK = "above_neck"
+    BELOW_NECK = "below_neck"
 
 
 class ActionFormatError(Exception):
@@ -77,7 +100,14 @@ class FreeDay:
     day: date
 
 
-Action = MoveWorkout | SkipWorkout | SwapSport | ShortenWorkout | ReduceWeek | FreeDay
+@dataclass(frozen=True)
+class MarkSick:
+    symptoms: Symptoms
+    fever: bool
+    days: int
+
+
+Action = MoveWorkout | SkipWorkout | SwapSport | ShortenWorkout | ReduceWeek | FreeDay | MarkSick
 
 _FIELDS: dict[str, set[str]] = {
     "move_workout": {"tool", "id", "day", "slot"},
@@ -86,6 +116,7 @@ _FIELDS: dict[str, set[str]] = {
     "shorten_workout": {"tool", "id", "minutes"},
     "reduce_week": {"tool", "percent"},
     "free_day": {"tool", "day"},
+    "mark_sick": {"tool", "symptoms", "fever", "days"},
 }
 _REQUIRED: dict[str, set[str]] = {
     "move_workout": {"id", "day"},
@@ -94,6 +125,7 @@ _REQUIRED: dict[str, set[str]] = {
     "shorten_workout": {"id", "minutes"},
     "reduce_week": {"percent"},
     "free_day": {"day"},
+    "mark_sick": {"symptoms", "fever", "days"},
 }
 
 
@@ -106,8 +138,15 @@ def read_actions(data: object, plan: WeekPlan, today: date) -> tuple[Action, ...
         raise ActionFormatError((Problem("actions", f"At most {MAX_ACTIONS} actions at once."),))
     problems: list[Problem] = []
     actions: list[Action] = []
+    seen_sick = False
     for index, item in enumerate(data):
-        found = _read_one(item, f"actions[{index}]", plan, today, problems)
+        path = f"actions[{index}]"
+        if isinstance(item, dict) and item.get("tool") == "mark_sick":
+            if seen_sick:
+                problems.append(Problem(path, "At most one mark_sick action per answer."))
+                continue
+            seen_sick = True
+        found = _read_one(item, path, plan, today, problems)
         if found is not None:
             actions.append(found)
     if problems:
@@ -173,9 +212,16 @@ def _read_one(
                 )
                 return None
             return ReduceWeek(percent)
-        case _:  # free_day
+        case "free_day":
             day = _day(item["day"], f"{path}.day", plan, today, problems)
             return None if day is None else FreeDay(day)
+        case _:  # mark_sick
+            symptoms = _symptoms(item["symptoms"], f"{path}.symptoms", problems)
+            fever = _fever(item["fever"], f"{path}.fever", problems)
+            days = _sick_days(item["days"], f"{path}.days", problems)
+            if symptoms is None or fever is None or days is None:
+                return None
+            return MarkSick(symptoms, fever, days)
 
 
 def _workout(
@@ -247,6 +293,41 @@ def _minutes(
     return value
 
 
+def _symptoms(value: object, path: str, problems: list[Problem]) -> Symptoms | None:
+    if isinstance(value, str):
+        try:
+            return Symptoms(value)
+        except ValueError:
+            pass
+    problems.append(Problem(path, "Either above_neck or below_neck."))
+    return None
+
+
+def _fever(value: object, path: str, problems: list[Problem]) -> bool | None:
+    if not isinstance(value, bool):
+        problems.append(Problem(path, "Either true or false."))
+        return None
+    return value
+
+
+def _sick_days(value: object, path: str, problems: list[Problem]) -> int | None:
+    if (
+        not isinstance(value, int)
+        or isinstance(value, bool)
+        or not SICK_DAYS_MIN <= value <= SICK_DAYS_MAX
+    ):
+        problems.append(Problem(path, f"A whole number from {SICK_DAYS_MIN} to {SICK_DAYS_MAX}."))
+        return None
+    return value
+
+
+def return_days_for(action: MarkSick) -> int:
+    """How many careful return days follow the illness."""
+    if action.symptoms is Symptoms.ABOVE_NECK and not action.fever:
+        return RETURN_DAYS_MILD
+    return RETURN_DAYS_SEVERE
+
+
 def apply(
     plan: WeekPlan, actions: Sequence[Action], today: date
 ) -> tuple[WeekPlan, tuple[str, ...]]:
@@ -263,6 +344,8 @@ def apply(
                 changes.extend(_reduce(workouts, percent, today))
             case FreeDay(day):
                 changes.extend(_free(workouts, day))
+            case MarkSick():
+                changes.extend(_mark_sick(workouts, action, today))
             case _:
                 place = next(
                     (n for n, w in enumerate(workouts) if w.lineage == action.id),
@@ -343,6 +426,53 @@ def _free(workouts: list[Workout], day: date) -> list[str]:
     return [f"{_DAYS[day.weekday()]} freed: {removed} {word} removed"]
 
 
+def _mark_sick(workouts: list[Workout], action: MarkSick, today: date) -> list[str]:
+    sick_end = today + timedelta(days=action.days - 1)
+    return_days = return_days_for(action)
+    return_start = sick_end + timedelta(days=1)
+    return_end = return_start + timedelta(days=return_days - 1)
+
+    kept = [w for w in workouts if not (today <= w.day <= sick_end)]
+    removed = len(workouts) - len(kept)
+    workouts[:] = kept
+
+    eased = 0
+    for place, workout in enumerate(workouts):
+        if not (return_start <= workout.day <= return_end):
+            continue
+        updated = _easy_return(workout)
+        if updated != workout:
+            workouts[place] = updated
+            eased += 1
+
+    days_word = "day" if action.days == 1 else "days"
+    pause_span = (
+        today.isoformat() if action.days == 1 else f"{today.isoformat()} to {sick_end.isoformat()}"
+    )
+    removed_word = "workout" if removed == 1 else "workouts"
+    eased_word = "workout" if eased == 1 else "workouts"
+    return [
+        f"Sick pause ({action.days} {days_word}, {pause_span}): {removed} {removed_word} removed",
+        f"Easy return ({return_days} days, {return_start.isoformat()} to "
+        f"{return_end.isoformat()}): {eased} {eased_word} made easy and shorter",
+    ]
+
+
+def _easy_return(workout: Workout) -> Workout:
+    """A return-day workout: easy goal, no segments, zone capped at easy, and shortened."""
+    goal = Goal.ENDURANCE if workout.goal in _INTENSE_GOALS else workout.goal
+    zone = None if workout.zone is None else min(workout.zone, EASY_UP_TO_ZONE)
+    shortened = max(MIN_MINUTES, round(workout.duration_minutes * RETURN_DURATION_PERCENT / 100))
+    minutes = min(workout.duration_minutes, shortened)
+    return replace(
+        workout,
+        goal=goal,
+        duration_minutes=minutes,
+        segments=(),
+        zone=zone,
+    )
+
+
 def as_data(actions: Sequence[Action]) -> list[dict[str, Any]]:
     """The actions as plain data, for a log or a test."""
     return [{"tool": _tool(action), **vars(action)} for action in actions]
@@ -356,4 +486,5 @@ def _tool(action: Action) -> str:
         ShortenWorkout: "shorten_workout",
         ReduceWeek: "reduce_week",
         FreeDay: "free_day",
+        MarkSick: "mark_sick",
     }[type(action)]

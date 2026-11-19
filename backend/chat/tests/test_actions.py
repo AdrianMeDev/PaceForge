@@ -8,14 +8,18 @@ import pytest
 from chat.actions import (
     ActionFormatError,
     FreeDay,
+    MarkSick,
     MoveWorkout,
     ReduceWeek,
     ShortenWorkout,
     SkipWorkout,
     SwapSport,
+    Symptoms,
     apply,
+    as_data,
     read_actions,
 )
+from planning.rules import EASY_UP_TO_ZONE, Intensity, intensity_of
 from planning.schema import Goal, Segment, SegmentKind, Slot, Sport, WeekPlan, Workout, ZoneSystem
 
 MONDAY = date(2026, 11, 16)
@@ -86,6 +90,7 @@ class TestReadingTheActions:
             {"tool": "shorten_workout", "id": str(RIDE), "minutes": 60},
             {"tool": "reduce_week", "percent": 20},
             {"tool": "free_day", "day": day(5).isoformat()},
+            {"tool": "mark_sick", "symptoms": "above_neck", "fever": False, "days": 2},
         )
 
         assert actions == (
@@ -95,7 +100,19 @@ class TestReadingTheActions:
             ShortenWorkout(RIDE, 60),
             ReduceWeek(20),
             FreeDay(day(5)),
+            MarkSick(Symptoms.ABOVE_NECK, False, 2),
         )
+
+    def test_mark_sick_boundaries_and_as_data(self) -> None:
+        (mild,) = read({"tool": "mark_sick", "symptoms": "above_neck", "fever": False, "days": 1})
+        (severe,) = read({"tool": "mark_sick", "symptoms": "below_neck", "fever": True, "days": 14})
+
+        assert mild == MarkSick(Symptoms.ABOVE_NECK, False, 1)
+        assert severe == MarkSick(Symptoms.BELOW_NECK, True, 14)
+        assert as_data([mild, severe]) == [
+            {"tool": "mark_sick", "symptoms": "above_neck", "fever": False, "days": 1},
+            {"tool": "mark_sick", "symptoms": "below_neck", "fever": True, "days": 14},
+        ]
 
     def test_no_actions_are_no_change(self) -> None:
         assert read_actions([], make_plan(), TODAY) == ()
@@ -177,6 +194,52 @@ class TestWhatIsRefused:
         )
 
         assert set(found) == {"actions[0].id", "actions[1].day"}
+
+    @pytest.mark.parametrize("symptoms", ["cough", "ABOVE_NECK", "", 1, True, None])
+    def test_mark_sick_requires_known_symptoms(self, symptoms: object) -> None:
+        found = problems_of({"tool": "mark_sick", "symptoms": symptoms, "fever": False, "days": 2})
+
+        assert "actions[0].symptoms" in found
+        if isinstance(symptoms, str) and symptoms:
+            assert symptoms not in found["actions[0].symptoms"]
+
+    @pytest.mark.parametrize("fever", [0, 1, "true", "false", None, []])
+    def test_mark_sick_requires_a_bool_fever(self, fever: object) -> None:
+        found = problems_of(
+            {"tool": "mark_sick", "symptoms": "above_neck", "fever": fever, "days": 2}
+        )
+
+        assert "actions[0].fever" in found
+
+    @pytest.mark.parametrize("days", [0, -1, 15, 2.5, "3", True, False, None])
+    def test_mark_sick_requires_days_in_range(self, days: object) -> None:
+        found = problems_of(
+            {"tool": "mark_sick", "symptoms": "above_neck", "fever": False, "days": days}
+        )
+
+        assert "actions[0].days" in found
+
+    def test_mark_sick_checks_missing_extra_and_all_bad_fields(self) -> None:
+        missing = problems_of({"tool": "mark_sick", "symptoms": "above_neck"})
+        assert set(missing) == {"actions[0].fever", "actions[0].days"}
+
+        extra = problems_of(
+            {"tool": "mark_sick", "symptoms": "above_neck", "fever": False, "days": 2, "note": "x"}
+        )
+        assert set(extra) == {"actions[0].note"}
+
+        all_bad = problems_of({"tool": "mark_sick", "symptoms": "bad", "fever": "yes", "days": 99})
+        assert set(all_bad) == {"actions[0].symptoms", "actions[0].fever", "actions[0].days"}
+
+    def test_at_most_one_mark_sick_per_answer(self) -> None:
+        found = problems_of(
+            {"tool": "mark_sick", "symptoms": "above_neck", "fever": False, "days": 2},
+            {"tool": "free_day", "day": day(5).isoformat()},
+            {"tool": "mark_sick", "symptoms": "below_neck", "fever": True, "days": 4},
+        )
+
+        assert "actions[2]" in found
+        assert "mark_sick" in found["actions[2]"]
 
 
 class TestApplyingThem:
@@ -272,3 +335,178 @@ class TestApplyingThem:
         plan, _ = apply_(make_plan(), [ReduceWeek(50), FreeDay(day(5))])
 
         assert by_lineage(plan, OLD) == by_lineage(make_plan(), OLD)
+
+
+def day_lineage(n: int) -> UUID:
+    return UUID(f"0195f3a0-0000-7000-8000-00000000010{n}")
+
+
+def full_week_plan() -> WeekPlan:
+    """One hard workout per day from Monday (day 0) to Sunday (day 6)."""
+    workouts = tuple(
+        Workout(
+            day(n),
+            Sport.RUNNING,
+            f"Hard {n}",
+            Goal.THRESHOLD,
+            60,
+            segments=(
+                Segment(SegmentKind.WARMUP, 900),
+                Segment(SegmentKind.WORK, 2400, 1, ZoneSystem.PACE, 4),
+                Segment(SegmentKind.COOLDOWN, 300),
+            ),
+            zone_system=ZoneSystem.PACE,
+            zone=4,
+            lineage=day_lineage(n),
+        )
+        for n in range(7)
+    )
+    return WeekPlan(MONDAY, workouts, "Rationale.")
+
+
+class TestMarkSick:
+    def test_pauses_sick_days_and_leaves_the_past_untouched(self) -> None:
+        original = full_week_plan()
+        # Today is Tue (day 1); 2 sick days pause Tue-Wed, then 2 return days cover Thu-Fri.
+        plan, changes = apply_(original, [MarkSick(Symptoms.ABOVE_NECK, False, 2)])
+
+        remaining_days = {w.day for w in plan.workouts}
+        assert day(1) not in remaining_days
+        assert day(2) not in remaining_days
+        assert by_lineage(plan, day_lineage(0)) == original.workouts[0]
+        assert changes == (
+            "Sick pause (2 days, 2026-11-17 to 2026-11-18): 2 workouts removed",
+            "Easy return (2 days, 2026-11-19 to 2026-11-20): 2 workouts made easy and shorter",
+        )
+
+    def test_pauses_multiple_workouts_on_the_same_sick_day(self) -> None:
+        am = Workout(
+            day(1), Sport.RUNNING, "AM", Goal.ENDURANCE, 40, slot=Slot.MORNING, lineage=RUN
+        )
+        pm = Workout(
+            day(1), Sport.STRENGTH, "PM", Goal.STRENGTH, 30, slot=Slot.EVENING, lineage=STRENGTH
+        )
+        plan = WeekPlan(MONDAY, (am, pm))
+
+        changed, changes = apply_(plan, [MarkSick(Symptoms.ABOVE_NECK, False, 1)])
+
+        assert changed.workouts == ()
+        assert changes[0] == "Sick pause (1 day, 2026-11-17): 2 workouts removed"
+
+    @pytest.mark.parametrize(
+        ("symptoms", "fever", "expected_return_days"),
+        [
+            (Symptoms.ABOVE_NECK, False, 2),
+            (Symptoms.ABOVE_NECK, True, 4),
+            (Symptoms.BELOW_NECK, False, 4),
+            (Symptoms.BELOW_NECK, True, 4),
+        ],
+    )
+    def test_return_window_depends_on_severity(
+        self, symptoms: Symptoms, fever: bool, expected_return_days: int
+    ) -> None:
+        original = full_week_plan()
+        # Today is Tue (day 1); 1 sick day => Tue (1) paused.
+        # Mild: Wed (2), Thu (3) return; Fri (4), Sat (5), Sun (6) untouched.
+        # Severe: Wed (2), Thu (3), Fri (4), Sat (5) return; Sun (6) untouched.
+        plan, _ = apply_(original, [MarkSick(symptoms, fever, 1)])
+
+        return_indices = range(2, 2 + expected_return_days)
+        later_indices = range(2 + expected_return_days, 7)
+
+        for n in return_indices:
+            workout = by_lineage(plan, day_lineage(n))
+            assert intensity_of(workout) is Intensity.EASY
+            assert workout.duration_minutes == 36
+            assert workout.goal is Goal.ENDURANCE
+            assert workout.segments == ()
+            assert workout.zone == EASY_UP_TO_ZONE
+
+        for n in later_indices:
+            assert by_lineage(plan, day_lineage(n)) == original.workouts[n]
+
+    @pytest.mark.parametrize(
+        ("goal", "expected_goal"),
+        [
+            (Goal.TEMPO, Goal.ENDURANCE),
+            (Goal.THRESHOLD, Goal.ENDURANCE),
+            (Goal.VO2MAX, Goal.ENDURANCE),
+            (Goal.RECOVERY, Goal.RECOVERY),
+            (Goal.ENDURANCE, Goal.ENDURANCE),
+            (Goal.STRENGTH, Goal.STRENGTH),
+            (Goal.OTHER, Goal.OTHER),
+        ],
+    )
+    def test_return_days_have_no_intensity_for_every_goal(
+        self, goal: Goal, expected_goal: Goal
+    ) -> None:
+        sport = Sport.STRENGTH if goal is Goal.STRENGTH else Sport.RUNNING
+        zone_system = None if sport is Sport.STRENGTH else ZoneSystem.PACE
+        zone = None if sport is Sport.STRENGTH else 5
+        workout = Workout(
+            day(2),
+            sport,
+            "Session",
+            goal,
+            50,
+            segments=(Segment(SegmentKind.WORK, 3000, 1, ZoneSystem.PACE, 5),)
+            if sport is Sport.RUNNING
+            else (),
+            zone_system=zone_system,
+            zone=zone,
+            lineage=RUN,
+        )
+        plan = WeekPlan(MONDAY, (workout,))
+
+        changed, _ = apply_(plan, [MarkSick(Symptoms.ABOVE_NECK, False, 1)])
+
+        updated = by_lineage(changed, RUN)
+        assert intensity_of(updated) is Intensity.EASY
+        assert updated.goal is expected_goal
+        assert updated.segments == ()
+        assert updated.duration_minutes == 30
+        assert updated.zone == (None if zone is None else EASY_UP_TO_ZONE)
+
+    def test_return_day_keeps_zone_1_and_respects_minimum_minutes(self) -> None:
+        z1 = Workout(
+            day(2),
+            Sport.RUNNING,
+            "Easy",
+            Goal.RECOVERY,
+            15,
+            zone_system=ZoneSystem.HEART_RATE,
+            zone=1,
+            lineage=RUN,
+        )
+        tiny = Workout(day(3), Sport.STRENGTH, "Core", Goal.STRENGTH, 8, lineage=STRENGTH)
+        plan = WeekPlan(MONDAY, (z1, tiny))
+
+        changed, _ = apply_(plan, [MarkSick(Symptoms.ABOVE_NECK, False, 1)])
+
+        updated_z1 = by_lineage(changed, RUN)
+        assert updated_z1.zone == 1
+        assert updated_z1.duration_minutes == 10
+        assert intensity_of(updated_z1) is Intensity.EASY
+        # Already below MIN_MINUTES: never made longer.
+        assert by_lineage(changed, STRENGTH).duration_minutes == 8
+
+    def test_illness_reaching_past_the_week_pauses_the_rest_of_this_week(self) -> None:
+        original = full_week_plan()
+
+        plan, changes = apply_(original, [MarkSick(Symptoms.BELOW_NECK, True, 10)])
+
+        # Only Monday (past) stays in this week.
+        assert [w.day for w in plan.workouts] == [day(0)]
+        assert changes == (
+            "Sick pause (10 days, 2026-11-17 to 2026-11-26): 6 workouts removed",
+            "Easy return (4 days, 2026-11-27 to 2026-11-30): 0 workouts made easy and shorter",
+        )
+
+    def test_later_action_on_a_paused_workout_is_refused(self) -> None:
+        with pytest.raises(ActionFormatError) as caught:
+            apply_(
+                make_plan(),
+                [MarkSick(Symptoms.ABOVE_NECK, False, 1), ShortenWorkout(RUN, 30)],
+            )
+
+        assert caught.value.problems[0].path == "actions[1].id"
