@@ -22,6 +22,7 @@ from planning.models import WeeklyPlan
 from planning.schema import Goal, Sport, WeekPlan, Workout, ZoneSystem, to_json
 from planning.tests.scripted import Scripted
 from reviews.models import WeekComment
+from wellness.models import DailyWellness
 
 from .conftest import NOW, make_user
 
@@ -32,6 +33,7 @@ THIS_MONDAY = date(2026, 11, 16)
 NEXT_MONDAY = THIS_MONDAY + timedelta(weeks=1)
 KEY = "sk-ant-test-0123456789-abcdefghij"
 PATH = "/api/v1/athlete/0/activities"
+WELLNESS_PATH = "/api/v1/athlete/0/wellness"
 Status = WeeklyPlan.Status
 
 
@@ -40,6 +42,7 @@ def fake(settings: Any) -> Iterator[FakeIntervals]:
     """A fake Intervals.icu that the sync part of a command talks to instead of the real one."""
     with running() as server:
         settings.INTERVALS_API_BASE_URL = server.url  # the fixture undoes it after the test
+        server.bodies[WELLNESS_PATH] = b"[]"  # sync asks for wellness too
         yield server
 
 
@@ -66,6 +69,27 @@ def connect(owner: User, key: str = "k3y-0123456789-abcdefghij") -> ProviderConn
 
 def answer(fake: FakeIntervals, *entries: object) -> None:
     fake.bodies[PATH] = json.dumps(list(entries)).encode()
+
+
+def wellness_entry(day: str, *, sleep_minutes: int = 480) -> dict[str, object]:
+    return {
+        "id": day,
+        "sleepSecs": sleep_minutes * 60,
+        "hrv": 62.5,
+        "restingHR": 48,
+        "weight": 72.4,
+    }
+
+
+def answer_wellness(fake: FakeIntervals, *entries: object) -> None:
+    fake.bodies[WELLNESS_PATH] = json.dumps(list(entries)).encode()
+
+
+def queue_sync(fake: FakeIntervals, *activity_bodies: list[dict[str, object]]) -> None:
+    """Queue one sync per user: their activities followed by an empty wellness answer."""
+    for activities in activity_bodies:
+        fake.queue(body=json.dumps(activities).encode())
+        fake.queue(body=b"[]")
 
 
 def entry(external_id: str, start: datetime) -> dict[str, object]:
@@ -146,9 +170,10 @@ class TestSyncActivities:
         alice_key, bob_key = "k3y-alice-0000000000", "k3y-bob-00000000000"
         connect(alice, alice_key)
         connect(bob, bob_key)
-        fake.queue(body=json.dumps([entry("a1", NOW)]).encode())
-        fake.queue(
-            body=json.dumps([entry("b1", NOW), entry("b2", NOW - timedelta(hours=2))]).encode()
+        queue_sync(
+            fake,
+            [entry("a1", NOW)],
+            [entry("b1", NOW), entry("b2", NOW - timedelta(hours=2))],
         )
 
         call_command("sync_activities")
@@ -166,6 +191,26 @@ class TestSyncActivities:
         assert runs[bob.id].counts["imported"] == 2
         assert {r.outcome for r in runs.values()} == {Outcome.DONE}
 
+    def test_each_users_wellness_is_synced_separately(self, fake: FakeIntervals) -> None:
+        alice = make_user("alice@example.com")
+        bob = make_user("bob@example.com")
+        connect(alice)
+        connect(bob)
+        # Each sync asks twice: activities, then wellness; give both users their own wellness.
+        fake.queue(body=json.dumps([entry("a1", NOW)]).encode())
+        fake.queue(body=json.dumps([wellness_entry("2026-11-19", sleep_minutes=480)]).encode())
+        fake.queue(body=json.dumps([entry("b1", NOW)]).encode())
+        fake.queue(body=json.dumps([wellness_entry("2026-11-19", sleep_minutes=360)]).encode())
+
+        call_command("sync_activities")
+
+        alices = DailyWellness.objects.for_user(alice).get(day=date(2026, 11, 19))
+        bobs = DailyWellness.objects.for_user(bob).get(day=date(2026, 11, 19))
+        assert (alices.sleep_minutes, bobs.sleep_minutes) == (480, 360)
+        runs = {r.owner_id: r for r in JobRun.objects.filter(job=Job.SYNC)}
+        assert runs[alice.id].counts["wellness_synced"] == 1
+        assert runs[bob.id].counts["wellness_synced"] == 1
+
     def test_an_inactive_user_is_not_synced(self, fake: FakeIntervals) -> None:
         active = make_user("active@example.com")
         idle = make_user("idle@example.com")
@@ -173,7 +218,7 @@ class TestSyncActivities:
         connect(idle)
         idle.is_active = False
         idle.save(update_fields=["is_active"])
-        fake.queue(body=json.dumps([entry("a1", NOW)]).encode())
+        queue_sync(fake, [entry("a1", NOW)])
 
         call_command("sync_activities")
 
@@ -203,8 +248,11 @@ class TestDraftNextWeek:
         bob = athlete("bob@example.com")
         connect(alice)
         connect(bob)
+        # Each sync asks for activities then wellness; give both users their own wellness.
         fake.queue(body=json.dumps([entry("a1", NOW)]).encode())
+        fake.queue(body=json.dumps([wellness_entry("2026-11-19", sleep_minutes=480)]).encode())
         fake.queue(body=json.dumps([entry("b1", NOW)]).encode())
+        fake.queue(body=json.dumps([wellness_entry("2026-11-19", sleep_minutes=360)]).encode())
         # Two replies per user: the synced run changes the volume, so a repair is asked.
         provide(good_plan(), good_plan(), good_plan(), good_plan())
 
@@ -220,6 +268,10 @@ class TestDraftNextWeek:
         plans = {p.owner_id: p for p in WeeklyPlan.objects.filter(owner__in=[alice, bob])}
         assert set(plans) == {alice.id, bob.id}
         assert {p.status for p in plans.values()} == {Status.DRAFT}
+        # Wellness is also stored per user.
+        alices = DailyWellness.objects.for_user(alice).get(day=date(2026, 11, 19))
+        bobs = DailyWellness.objects.for_user(bob).get(day=date(2026, 11, 19))
+        assert (alices.sleep_minutes, bobs.sleep_minutes) == (480, 360)
         # Each sync ran before its draft.
         for user in (alice, bob):
             sync_run = JobRun.objects.get(owner=user, job=Job.SYNC)
@@ -236,8 +288,7 @@ class TestDraftNextWeek:
         bob = athlete("bob@example.com")
         connect(alice)
         connect(bob)
-        fake.queue(body=json.dumps([entry("a1", NOW)]).encode())
-        fake.queue(body=json.dumps([entry("b1", NOW)]).encode())
+        queue_sync(fake, [entry("a1", NOW)], [entry("b1", NOW)])
         # Bob's synced run still changes the volume, so his draft asks twice.
         provide(good_plan(), good_plan())
 
@@ -269,7 +320,7 @@ class TestDraftNextWeek:
         bob = athlete("bob@example.com")
         connect(alice)
         connect(bob)
-        fake.queue(body=json.dumps([entry("a1", NOW)]).encode())
+        queue_sync(fake, [entry("a1", NOW)])
         provide(good_plan(), good_plan())
 
         call_command("draft_next_week", email="alice@example.com")

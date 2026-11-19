@@ -64,6 +64,7 @@ const SYNCED: Extract<SyncActivitiesResult, { kind: 'ok' }> = {
   skipped_duplicates: 0,
   skipped_strava: 0,
   skipped_invalid: 0,
+  wellness_synced: 0,
   last_sync_at: '2026-11-19T12:30:00Z',
 };
 
@@ -337,13 +338,14 @@ describe('ActivitiesPage', () => {
         skipped_duplicates: 3,
         skipped_strava: 4,
         skipped_invalid: 5,
+        wellness_synced: 6,
       });
 
       await click('Sync from Intervals.icu');
 
       expect(api.syncFromIntervals).toHaveBeenCalledExactlyOnceWith();
       expect(query(page, '.notice[role="status"]').textContent).toBe(
-        'Intervals.icu sync: 2 imported; 3 duplicates skipped; 4 Strava activities skipped; 5 invalid activities skipped.',
+        'Intervals.icu sync: 2 imported; 3 duplicates skipped; 4 Strava activities skipped; 5 invalid activities skipped; 6 wellness days synced.',
       );
       expect(lastSync()).toContain(dayOf('2026-11-19T12:30:00Z'));
     });
@@ -354,7 +356,7 @@ describe('ActivitiesPage', () => {
       await click('Sync from Intervals.icu');
 
       expect(query(page, '.notice').textContent).toContain(
-        '0 imported; 0 duplicates skipped; 0 Strava activities skipped; 0 invalid activities skipped.',
+        '0 imported; 0 duplicates skipped; 0 Strava activities skipped; 0 invalid activities skipped; 0 wellness days synced.',
       );
       expect(api.list).toHaveBeenCalledTimes(1);
       expect(rows()).toHaveLength(1);

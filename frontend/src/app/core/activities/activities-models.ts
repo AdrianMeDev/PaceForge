@@ -86,6 +86,7 @@ export type SyncActivitiesResult =
       skipped_duplicates: number;
       skipped_strava: number;
       skipped_invalid: number;
+      wellness_synced: number;
       last_sync_at: string | null;
     }
   | { kind: 'not_connected' }

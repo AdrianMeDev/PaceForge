@@ -721,6 +721,7 @@ describe('ActivitiesApi', () => {
       skipped_duplicates: 2,
       skipped_strava: 1,
       skipped_invalid: 0,
+      wellness_synced: 4,
       last_sync_at: '2026-11-19T12:00:00Z',
     };
 
@@ -810,6 +811,10 @@ describe('ActivitiesApi', () => {
       ['a negative count', { ...SYNCED, skipped_duplicates: -1 }],
       ['a non-integer count', { ...SYNCED, skipped_strava: 1.5 }],
       ['a non-string last_sync_at', { ...SYNCED, last_sync_at: 123 }],
+      ['missing wellness count', { ...SYNCED, wellness_synced: undefined }],
+      ['a negative wellness count', { ...SYNCED, wellness_synced: -2 }],
+      ['a non-integer wellness count', { ...SYNCED, wellness_synced: 1.5 }],
+      ['a text wellness count', { ...SYNCED, wellness_synced: '4' }],
     ])('rejects an answer with %s', async (_name, reply) => {
       await runFailing(api.syncFromIntervals(), 'POST', SYNC, reply, 200);
     });
