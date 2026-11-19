@@ -1123,15 +1123,20 @@ to change a single exercise by hand yet. Older plans have none.
 **Changing a plan by hand.** **Change this plan** (on a draft and on a confirmed plan) opens an
 editor in place of the plan. Change a workout (day, time of day, sport, goal, title, duration,
 target zone, stretching, notes), **move** it by changing its day and its time of day (there is no
-drag and drop), **remove** it or **add** one. After every change the page asks the server to run
-the checks, which stores nothing, and shows what they say at the workout they name; while it asks,
-no finding is shown. A workout with an interval structure keeps it, and its duration follows it,
-unless you tick *Remove the interval structure*. **Save as a new version** stores the plan as a new
-**draft** (its reason is "Changed by hand") made from the version you started from, which stays as
-it is: a confirmed plan is never changed. A plan with errors can be saved too; it only cannot be
-confirmed. **Discard changes** drops everything: nothing is stored before you save. Nothing else on
-the page can be started while the editor is open. Like drafting, changing is for the weeks that
-can be planned.
+drag and drop), **remove** it or **add** one. For endurance workouts you can also add or change
+its **Interval structure**: add a warm-up (**Add warm-up**), repeated blocks (**Add block**), or a
+cool-down (**Add cool-down**), set each part's kind, repeats, duration, and target zone, reorder
+parts up or down, or **Remove** a part. When a workout has an interval structure, its duration is
+calculated automatically from its parts and cannot be typed by hand; press **Remove the interval
+structure** to clear the parts and set the duration yourself. After every change the page asks the
+server to run the checks, which stores nothing, and shows what they say at the workout they name;
+while it asks, no finding is shown. **Save as a new version** stores the plan as a new **draft**
+(its reason is "Changed by hand") made from the version you started from, which stays as it is: a
+confirmed plan is never changed. A plan with errors can be saved too; it only cannot be confirmed.
+When you confirm and send the new version to Intervals.icu, each changed workout keeps its lineage
+and updates the same Intervals.icu event. **Discard changes** drops everything: nothing is stored
+before you save. Nothing else on the page can be started while the editor is open. Like drafting,
+changing is for the weeks that can be planned.
 
 **Restoring a version.** A version that was replaced or discarded has **Make this the new draft**.
 It is copied as the next version of the week, a draft (its reason is "Restored from version N"),
