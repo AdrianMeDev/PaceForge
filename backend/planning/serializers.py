@@ -8,6 +8,7 @@ from typing import Any
 
 from rest_framework import serializers
 
+from .load import LoadSummary, estimate_workout_load
 from .models import WeeklyPlan
 from .push import ExportState, PushResult
 from .rules import Finding
@@ -40,6 +41,7 @@ def plan_data(
     week_plan: WeekPlan,
     report: Report | None,
     targets: Targets,
+    load: LoadSummary,
     export: ExportState | None = None,
 ) -> dict[str, Any]:
     """One plan with its workouts and, for a draft, what the checks say about it. Every zone
@@ -60,6 +62,7 @@ def plan_data(
             for index, workout in enumerate(week_plan.workouts)
         ],
         "report": None if report is None else report_data(report),
+        "load": load,
         "export": None if export is None else _summary(export),
     }
 
@@ -104,6 +107,7 @@ def push_problem_data(code: str, message: str) -> dict[str, Any]:
 def workout_data(workout: Workout, targets: Targets) -> dict[str, Any]:
     """The workout in the format of the plan, with ``target`` on it and on each segment."""
     data = workout_to_json(workout)
+    data["estimated_load"] = estimate_workout_load(workout)
     data["lineage"] = None if workout.lineage is None else str(workout.lineage)
     data["target"] = _target(targets, workout.sport, workout.zone_system, workout.zone)
     for segment, shown in zip(workout.segments, data["segments"], strict=True):

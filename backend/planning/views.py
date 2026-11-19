@@ -1,5 +1,5 @@
 import re
-from datetime import date
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -12,9 +12,11 @@ from rest_framework.throttling import BaseThrottle
 from rest_framework.views import APIView
 
 from accounts.models import User
+from activities.models import Activity
 from coach.providers.base import ProviderError
 from coach.services import NotConfiguredError
 from coach.views import provider_problem
+from goals.services import time_zone_of
 from integrations import services as integrations
 from integrations.intervals import IntervalsError
 from integrations.intervals import InvalidKeyError as IntervalsKeyError
@@ -24,6 +26,7 @@ from . import services
 from .briefing import season_week_data
 from .editing import PlanNotRestorable, PlanNotRevisable, check, restore, revise
 from .generation import NoTimeAvailable, PlanNotUsable, WeekNotPlannable, generate, plannable_weeks
+from .load import week_load
 from .models import WeeklyPlan
 from .push import NotConfirmed, PushResult, export_state, push
 from .schema import PlanFormatError
@@ -97,7 +100,19 @@ def _detail(
     elif report is None:
         report = services.validate(user, plan.pk)
     export = export_state(user, plan) if plan.status == WeeklyPlan.Status.CONFIRMED else None
-    data = plan_data(plan, week_plan, report, Targets(user), export)
+    zone = time_zone_of(user)
+    since = datetime.combine(plan.week_start, time.min, tzinfo=zone).astimezone(UTC)
+    until = datetime.combine(plan.week_start + timedelta(days=7), time.min, tzinfo=zone).astimezone(
+        UTC
+    )
+    activities = (
+        Activity.objects.for_user(user)
+        .filter(start_time__gte=since, start_time__lt=until)
+        .only("sport", "training_load", "timer_seconds", "elapsed_seconds", "rpe")
+    )
+    data = plan_data(
+        plan, week_plan, report, Targets(user), week_load(week_plan, activities), export
+    )
     if sent is not None:
         data["push"] = sent
     return Response(data)

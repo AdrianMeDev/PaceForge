@@ -524,6 +524,21 @@ in the calendar) and every workout an `export` of its own (`status`, `error_code
 for any other plan these are `null`. An answer of the two sending endpoints has a `push` with what
 the sending did (see [Sending to Intervals.icu](#sending-to-intervalsicu)).
 
+Every plan detail answer also has `load`: `sports` lists each sport that was planned or done,
+and `total` adds them. Each entry has `planned_minutes`, `done_minutes`, `planned_load` and
+`done_load`; a sport entry also has `sport`. Done totals include only your activities in the
+plan's local week, Monday through Sunday. Missing duration or load contributes zero. Timer
+duration takes precedence over elapsed duration. Done minutes are rounded half up after adding
+seconds per sport; total minutes add the rounded sport minutes. Done load uses Intervals load
+when present, then duration times RPE on the unified load scale.
+
+Each workout has a non-negative integer `estimated_load`, computed by `planning/load.py` from
+its zones or goal. Segments give a time-weighted rate scaled to `duration_minutes`; an unzoned
+segment uses the workout zone, then its goal. Strength uses the mean of specified exercise RPEs
+or a default RPE of 6. Stretching adds no load. Estimates round half up once per workout. These
+fields are read-only response fields, outside the coach and editor JSON format. All planning
+checks still use minutes.
+
 Errors have a fixed text and a `code`; nothing the provider or the coach said is in one. A 429
 without a code is the limit of PaceForge itself.
 

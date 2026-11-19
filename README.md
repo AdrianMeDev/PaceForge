@@ -1078,6 +1078,11 @@ are counted in the usage overview of the AI coach (calls and tokens of the last 
 purpose "weekly plan" is stored with each record). Drafting is limited to 5 a minute per user, with
 a counter of its own.
 
+The week plan API also returns a read-only `estimated_load` for each workout and planned versus
+done minutes and load per sport and in total. Estimates use intensity zones or the session goal;
+strength uses exercise RPE, with a default when none is given. Done totals cover your activities
+in the plan's week in your time zone. All planning checks still use minutes.
+
 The full description, with the format, the rules, the exact limits and the API, is
 [Drafting with the coach](docs/weekly-plan.md#drafting-with-the-coach).
 
