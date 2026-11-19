@@ -26,7 +26,7 @@ from .fake_intervals import FakeIntervals, running
 KEY = "k3y-0123456789-abcdefghij"
 
 
-def client(fake: FakeIntervals, key: str = KEY, **options: float) -> IntervalsClient:
+def client(fake: FakeIntervals, key: str = KEY, **options: Any) -> IntervalsClient:
     return IntervalsClient(key, base_url=fake.url, **options)
 
 
@@ -201,6 +201,91 @@ class TestRefusalsAndFailures:
 
         with pytest.raises(IntervalsUnavailableError, match="cut off"):
             client(fake).get_athlete()
+
+
+class TestRetries:
+    def test_retries_429_and_5xx_with_exponential_backoff_until_200(
+        self, fake: FakeIntervals
+    ) -> None:
+        sleeps: list[float] = []
+        fake.queue(429)
+        fake.queue(500)
+        fake.queue(503)
+        fake.queue(200, body=b'{"id": "i42"}')
+
+        athlete = client(fake, retry_delays=(1.0, 2.0, 4.0), sleep=sleeps.append).get_athlete()
+
+        assert athlete == Athlete(id="i42")
+        assert len(fake.requests) == 4
+        assert sleeps == [1.0, 2.0, 4.0]
+
+    def test_retry_after_numeric_header_is_used_and_capped(self, fake: FakeIntervals) -> None:
+        sleeps: list[float] = []
+        fake.queue(429, headers={"Retry-After": "5"})
+        fake.queue(429, headers={"Retry-After": "9999"})
+        fake.queue(503, headers={"Retry-After": "2.5"})
+        fake.queue(200, body=b'{"id": "i42"}')
+
+        athlete = client(fake, retry_delays=(1.0, 2.0, 4.0), sleep=sleeps.append).get_athlete()
+
+        assert athlete == Athlete(id="i42")
+        assert sleeps == [5.0, intervals.MAX_RETRY_AFTER, 2.5]
+
+    @pytest.mark.parametrize(
+        "header",
+        ["Wed, 21 Oct 2015 07:28:00 GMT", "-5", "soon", ""],
+    )
+    def test_non_numeric_retry_after_falls_back_to_backoff(
+        self, fake: FakeIntervals, header: str
+    ) -> None:
+        sleeps: list[float] = []
+        fake.queue(429, headers={"Retry-After": header})
+        fake.queue(200, body=b'{"id": "i1"}')
+
+        athlete = client(fake, retry_delays=(1.5, 3.0), sleep=sleeps.append).get_athlete()
+
+        assert athlete == Athlete(id="i1")
+        assert sleeps == [1.5]
+
+    @pytest.mark.parametrize("status", [429, 500, 502, 503, 504])
+    def test_exhausting_retries_raises_unavailable_without_leaking_key(
+        self, fake: FakeIntervals, status: int
+    ) -> None:
+        sleeps: list[float] = []
+        fake.status = status
+        encoded = base64.b64encode(f"API_KEY:{KEY}".encode()).decode()
+
+        with pytest.raises(IntervalsUnavailableError) as raised:
+            client(fake, retry_delays=(1.0, 2.0, 4.0), sleep=sleeps.append).get_athlete()
+
+        assert len(fake.requests) == 4
+        assert sleeps == [1.0, 2.0, 4.0]
+        assert KEY not in everything_printed(raised.value)
+        assert encoded not in everything_printed(raised.value)
+
+    @pytest.mark.parametrize("status", [401, 403, 400, 422, 404, 301, 302])
+    def test_non_retryable_statuses_are_not_retried(self, fake: FakeIntervals, status: int) -> None:
+        sleeps: list[float] = []
+        fake.status = status
+        if status in {301, 302}:
+            fake.headers = {"Location": fake.url}
+
+        with pytest.raises(intervals.IntervalsError):
+            client(fake, retry_delays=(1.0, 2.0, 4.0), sleep=sleeps.append).get_athlete()
+
+        assert len(fake.requests) == 1
+        assert sleeps == []
+
+    def test_test_settings_use_zero_retry_delays(self, fake: FakeIntervals, settings: Any) -> None:
+        sleeps: list[float] = []
+        fake.status = 429
+
+        with pytest.raises(IntervalsUnavailableError):
+            client(fake, sleep=sleeps.append).get_athlete()
+
+        assert settings.INTERVALS_RETRY_DELAYS == (0.0, 0.0, 0.0)
+        assert len(fake.requests) == 4
+        assert sleeps == [0.0, 0.0, 0.0]
 
 
 class TestRedirects:

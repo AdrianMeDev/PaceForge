@@ -13,9 +13,10 @@ import base64
 import http.client
 import json
 import re
+import time
 import urllib.error
 import urllib.request
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, TypeGuard
 from urllib.parse import urlsplit
@@ -25,6 +26,8 @@ from django.conf import settings
 TIMEOUT_SECONDS = 10.0
 # The athlete object has about 160 fields and stays far below this.
 MAX_RESPONSE_BYTES = 1_000_000
+DEFAULT_RETRY_DELAYS: tuple[float, ...] = (1.0, 2.0, 4.0)
+MAX_RETRY_AFTER = 60.0
 
 ATHLETE_ID = re.compile(r"[A-Za-z0-9_-]{1,50}")
 
@@ -106,7 +109,13 @@ _opener = urllib.request.build_opener(_RefuseRedirects)
 
 class IntervalsClient:
     def __init__(
-        self, api_key: str, *, base_url: str | None = None, timeout: float = TIMEOUT_SECONDS
+        self,
+        api_key: str,
+        *,
+        base_url: str | None = None,
+        timeout: float = TIMEOUT_SECONDS,
+        retry_delays: Sequence[float] | None = None,
+        sleep: Callable[[float], object] = time.sleep,
     ) -> None:
         if not api_key:
             raise ValueError("The API key is empty.")
@@ -114,6 +123,9 @@ class IntervalsClient:
         if urlsplit(self._base_url).scheme not in {"http", "https"}:
             raise ValueError("The Intervals.icu base URL must start with http:// or https://.")
         self._timeout = timeout
+        configured_delays = getattr(settings, "INTERVALS_RETRY_DELAYS", DEFAULT_RETRY_DELAYS)
+        self._retry_delays = tuple(configured_delays if retry_delays is None else retry_delays)
+        self._sleep = sleep
         credentials = base64.b64encode(f"API_KEY:{api_key}".encode()).decode("ascii")
         self._authorization = f"Basic {credentials}"
 
@@ -206,17 +218,24 @@ class IntervalsClient:
         request = urllib.request.Request(
             self._base_url + path, data=data, headers=headers, method=method
         )
-        try:
-            with _opener.open(request, timeout=self._timeout) as response:
-                body = response.read(MAX_RESPONSE_BYTES + 1)
-                # ``read(n)`` returns what arrived without complaint; bytes still owed mean
-                # the connection broke off in the middle of the answer.
-                cut_off = bool(response.length)
-        except urllib.error.HTTPError as error:
-            raise self._for_status(error.code) from None
-        except OSError, http.client.HTTPException:
-            # Connection refused or reset, DNS, TLS, timeouts, a cut-off answer.
-            raise IntervalsUnavailableError("Intervals.icu could not be reached.") from None
+        for attempt in range(len(self._retry_delays) + 1):
+            try:
+                with _opener.open(request, timeout=self._timeout) as response:
+                    body = response.read(MAX_RESPONSE_BYTES + 1)
+                    # ``read(n)`` returns what arrived without complaint; bytes still owed mean
+                    # the connection broke off in the middle of the answer.
+                    cut_off = bool(response.length)
+                break
+            except urllib.error.HTTPError as error:
+                if _is_retryable_status(error.code) and attempt < len(self._retry_delays):
+                    retry_after = _retry_after_seconds(error.headers.get("Retry-After"))
+                    delay = retry_after if retry_after is not None else self._retry_delays[attempt]
+                    self._sleep(delay)
+                    continue
+                raise self._for_status(error.code) from None
+            except OSError, http.client.HTTPException:
+                # Connection refused or reset, DNS, TLS, timeouts, a cut-off answer.
+                raise IntervalsUnavailableError("Intervals.icu could not be reached.") from None
         if len(body) > MAX_RESPONSE_BYTES:
             raise UnexpectedResponseError("The answer is larger than expected.")
         if cut_off:
@@ -239,6 +258,20 @@ class IntervalsClient:
         if status == 404:
             return NotFoundError("Intervals.icu has nothing at that address (HTTP 404).")
         return UnexpectedResponseError(f"Unexpected answer from Intervals.icu (HTTP {status}).")
+
+
+def _is_retryable_status(status: int) -> bool:
+    return status == 429 or status >= 500
+
+
+def _retry_after_seconds(value: str | None) -> float | None:
+    """Non-negative seconds from a numeric ``Retry-After`` header, capped at ``MAX_RETRY_AFTER``."""
+    if value is None:
+        return None
+    stripped = value.strip()
+    if not re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", stripped):
+        return None
+    return min(float(stripped), MAX_RETRY_AFTER)
 
 
 def _is_event_id(value: object) -> TypeGuard[int]:
