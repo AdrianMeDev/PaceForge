@@ -393,6 +393,13 @@ the user can be shown what is wrong. Its statuses:
   this order (`planning.services.canonical`) so that the paths of the findings are the places in
   what is stored.
 - Everything belongs to one user: another user's plan, version or workout does not exist for them.
+- **From the chat.** The [coach chat](../README.md#coach-chat) also stores drafts of later weeks:
+the coach names the Monday of one of the plannable weeks (`plannable_weeks`: this week and the
+next `WEEKS_AHEAD`) that has a plan, and the draft is made from the plan of **that** week with the
+reason "Changed in the chat" and that plan as `parent`. The other weeks are not touched. A week
+without a plan is never drafted from the chat, and an answer that changes workouts or days of more
+than one week is refused (fixed reply, no draft). A longer absence is not a week change: it goes
+to the [season](season.md) as a draft around the stored absence.
 
 ## Drafting with the coach
 

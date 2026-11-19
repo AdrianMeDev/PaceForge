@@ -1370,22 +1370,35 @@ as there. Nothing is confirmed or sent from the chat. The actions:
 | `reduce_week`     | every workout that can still be changed 5 to 50 % shorter                     |
 | `free_day`        | no training on a day                                                          |
 | `mark_sick`       | you are ill: the sick days pause and a careful return follows                 |
-| `replan_from`     | a longer absence (7 to 120 days): the season is changed around it             |
+| `replan_from`     | a longer absence (7 to 120 days): the season is changed around it (alone in the answer, no week changed) |
 
-**What can be changed.** One week: the current week, or the next one that has a plan (the newest
-draft or the confirmed version). Workouts before today are never changed, and a day has to be in
-that week. A workout that is shortened or swapped loses its steps and exercises (they were made for
-the old one) and becomes one steady session. For anything else the coach says that it cannot
-do it. If its answer cannot be used, even after being told what was wrong
-once, your message is kept with a fixed answer that says so.
+**What can be changed.** One week per message: **this week**, or one of the **next four weeks**
+(`WEEKS_AHEAD`) that already has a plan (a draft or the confirmed version). Say which week you
+mean ("only running next week", "next week I have no time on Tuesday") and the coach names that
+week, for example next Monday; the draft is made from the plan of **that** week, and the other
+weeks stay as they are. The chat never drafts a week that has no plan: make one on the [Week
+plan](#week-plan) page first, then the chat can change it. Without a week named it takes the first
+week that has a plan. Workouts before today are never changed, and a day has to be in that week. A
+workout that is shortened or swapped loses its steps and exercises (they were made for the old one)
+and becomes one steady session. For anything else the coach says that it cannot do it. If its
+answer cannot be used, even after being told what was wrong once, your message is kept with a fixed
+answer that says so.
+
+**One week per answer.** One answer makes one draft of one week, so the coach is told never to mix
+workouts or days of different weeks. If it still does, it is told what was wrong once; if the
+second answer does it again, the message is kept with the fixed reply "I can only change one week
+at a time. Please tell me which week to change first, then ask for the next one." and **no draft
+is made**. Ask week by week instead.
 
 **A longer absence (`replan_from`).** Say that you will be away for a week or more ("business trip
 for three weeks from 23 November") and the coach may propose `replan_from`: the first day (today or
-later, at most a year ahead), the number of days (7 to 120) and the kind (`vacation` or `other`). It
-stands alone in the answer, because no single week can be planned around it. No week is changed.
-The app stores the days as a period in [Not available](#training-time) and asks the coach for a
-new **draft of the season**, made from your newest season draft or confirmed season, with a request
-that the app writes itself. The answer links to that draft on the [Season](#season) page, where
+later, at most a year ahead), the number of days (7 to 120) and the kind (`vacation` or `other`).
+It stands alone in the answer, because no single week can be planned around it, and no week is
+changed. Illness is not a `replan_from`: say that you are ill and the coach uses `mark_sick`.
+The app stores the days as a period of that kind in [Not available](#training-time); it extends a
+touching or overlapping period of the same kind instead of adding a second one, and never merges it
+with an illness. Then it asks the coach for a
+new **draft of the season**, made from your newest season draft or confirmed season, with a requestthat the app writes itself. The answer links to that draft on the [Season](#season) page, where
 you read, confirm or discard it. Nothing is confirmed or sent to Intervals.icu. The answer lists
 what happened in fixed sentences: "Absence noted (2026-11-23 to 2026-12-13)" and "Season draft
 made around the absence", or "No season plan to change: make one on the Season page first" or

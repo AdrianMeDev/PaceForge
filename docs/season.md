@@ -469,9 +469,13 @@ works that out. One query reads them, scoped to the user (`season/absences.py`);
 periods are never in the answer. An **illness** can come from the chat: `mark_sick` stores it with
 `availability.absences.note_illness`, which extends an overlapping or adjacent illness instead of
 adding a second one, so the season shows one period for one illness. A longer absence can come from the chat too:
-`replan_from` stores it with `availability.absences.note_absence` and asks for a season draft
-around it (`season.generation.change`, parent the newest draft or confirmed version), which the
-athlete confirms or discards here. The note of a period is never
+`replan_from` stores it with `availability.absences.note_absence` (kind `vacation` or `other`,
+7 to 120 days, merged only with touching or overlapping periods of the same kind) and asks for a
+season draft around it (`season.generation.change`, parent the newest draft or confirmed version,
+request written by the code), which the athlete confirms or discards here. The draft is stored
+before anything is confirmed, and the chat answer that made it links to this page. If the user has
+no season version, only the absence is stored; if the season change fails, the absence stays and
+the chat answer says so. The chat never confirms a season or pushes anything. The note of a period is never
 part of the answer, and the stored skeleton of a plan stays as it was: the absences are only told,
 never kept with a version.
 
