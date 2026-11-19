@@ -18,6 +18,7 @@ import urllib.error
 import urllib.request
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import UTC, date, datetime
 from typing import Any, TypeGuard
 from urllib.parse import urlsplit
 
@@ -26,6 +27,8 @@ from django.conf import settings
 TIMEOUT_SECONDS = 10.0
 # The athlete object has about 160 fields and stays far below this.
 MAX_RESPONSE_BYTES = 1_000_000
+# A multi-week list contains the full provider summaries before we discard unused fields.
+MAX_ACTIVITIES_RESPONSE_BYTES = 8_000_000
 DEFAULT_RETRY_DELAYS: tuple[float, ...] = (1.0, 2.0, 4.0)
 MAX_RETRY_AFTER = 60.0
 
@@ -70,6 +73,52 @@ class Event:
 
     id: int
     external_id: str | None
+
+
+@dataclass(frozen=True)
+class IntervalsActivity:
+    external_id: str
+    sport: str
+    source_sport: str
+    start_time: datetime
+    elapsed_seconds: float | None
+    timer_seconds: float | None
+    distance_m: float | None
+    training_load: int | None
+    avg_heart_rate: int | None
+    max_heart_rate: int | None
+    avg_pace_s_per_km: float | None
+    avg_power_w: int | None
+    total_ascent_m: int | None
+    calories: int | None
+
+
+@dataclass(frozen=True)
+class ActivityBatch:
+    activities: tuple[IntervalsActivity, ...]
+    skipped_strava: int
+    skipped_invalid: int
+
+
+ACTIVITY_SPORTS = {
+    "Run": "running",
+    "VirtualRun": "running",
+    "TrailRun": "running",
+    "Ride": "cycling",
+    "VirtualRide": "cycling",
+    "GravelRide": "cycling",
+    "MountainBikeRide": "cycling",
+    "EBikeRide": "cycling",
+    "EMountainBikeRide": "cycling",
+    "TrackRide": "cycling",
+    "Swim": "swimming",
+    "OpenWaterSwim": "swimming",
+    "WeightTraining": "strength",
+}
+ACTIVITY_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
+ACTIVITY_TYPE = re.compile(r"[A-Za-z][A-Za-z0-9_]{0,49}")
+MAX_ACTIVITY_SECONDS = 30 * 24 * 3600
+MAX_DISTANCE_M = 10_000_000
 
 
 # Intervals.icu keeps one settings entry per group of sport types. These are the types that make
@@ -172,6 +221,28 @@ class IntervalsClient:
             if sport in merged
         ]
 
+    def get_activities(self, oldest: date, newest: date) -> ActivityBatch:
+        """Read the athlete's activities for an inclusive range of calendar dates."""
+        query = f"oldest={date.isoformat(oldest)}&newest={date.isoformat(newest)}"
+        data = self._request(
+            "GET", f"/athlete/0/activities?{query}", max_bytes=MAX_ACTIVITIES_RESPONSE_BYTES
+        )
+        if not isinstance(data, list):
+            raise UnexpectedResponseError("The answer is not a list of activities.")
+
+        activities = []
+        skipped_strava = skipped_invalid = 0
+        for entry in data:
+            if isinstance(entry, dict) and entry.get("source") == "STRAVA":
+                skipped_strava += 1
+                continue
+            activity = _parse_activity(entry)
+            if activity is None:
+                skipped_invalid += 1
+            else:
+                activities.append(activity)
+        return ActivityBatch(tuple(activities), skipped_strava, skipped_invalid)
+
     def upsert_event(self, event: Mapping[str, Any]) -> Event:
         """Create the event, or update the one with the same ``external_id`` (it is the key, so
         sending a workout twice does not give two events). ``event`` is the event as Intervals.icu
@@ -199,13 +270,20 @@ class IntervalsClient:
             pass
 
     def _request(
-        self, method: str, path: str, payload: object = None, *, allow_empty: bool = False
+        self,
+        method: str,
+        path: str,
+        payload: object = None,
+        *,
+        allow_empty: bool = False,
+        max_bytes: int | None = None,
     ) -> object:
-        """One call, whatever the method: the same limits and the same errors for all of them.
+        """Send one request with a bounded response and common error handling.
 
         ``payload`` (if any) is sent as JSON. Nothing of it, and nothing of the answer, goes into an
         error. An empty answer is only fine where ``allow_empty`` says so (it gives ``None``).
         """
+        limit = MAX_RESPONSE_BYTES if max_bytes is None else max_bytes
         headers = {
             "Authorization": self._authorization,
             "Accept": "application/json",
@@ -221,7 +299,7 @@ class IntervalsClient:
         for attempt in range(len(self._retry_delays) + 1):
             try:
                 with _opener.open(request, timeout=self._timeout) as response:
-                    body = response.read(MAX_RESPONSE_BYTES + 1)
+                    body = response.read(limit + 1)
                     # ``read(n)`` returns what arrived without complaint; bytes still owed mean
                     # the connection broke off in the middle of the answer.
                     cut_off = bool(response.length)
@@ -236,7 +314,7 @@ class IntervalsClient:
             except OSError, http.client.HTTPException:
                 # Connection refused or reset, DNS, TLS, timeouts, a cut-off answer.
                 raise IntervalsUnavailableError("Intervals.icu could not be reached.") from None
-        if len(body) > MAX_RESPONSE_BYTES:
+        if len(body) > limit:
             raise UnexpectedResponseError("The answer is larger than expected.")
         if cut_off:
             raise IntervalsUnavailableError("The answer was cut off.")
@@ -291,16 +369,64 @@ def _sport_group(types: object) -> str | None:
     return None
 
 
-def _positive(value: object, maximum: float) -> float | None:
+def _measurement(value: object, maximum: float, minimum: float = 0) -> float | None:
     # NaN and infinity fail the comparison, so they need no check of their own.
     if isinstance(value, bool) or not isinstance(value, int | float):
         return None
-    return float(value) if 0 < value <= maximum else None
+    return float(value) if minimum <= value <= maximum else None
+
+
+def _positive(value: object, maximum: float) -> float | None:
+    return _measurement(value, maximum) or None
 
 
 def _pace_per_km(speed: object) -> float | None:
-    """Seconds per kilometre from the threshold speed in metres per second."""
-    metres_per_second = _positive(speed, MAX_SPEED_MS)
-    if metres_per_second is None or metres_per_second < MIN_SPEED_MS:
+    """Seconds per kilometre from a speed in metres per second."""
+    metres_per_second = _measurement(speed, MAX_SPEED_MS, MIN_SPEED_MS)
+    return 1000.0 / metres_per_second if metres_per_second is not None else None
+
+
+def _whole_measurement(value: object, maximum: int, minimum: int = 0) -> int | None:
+    number = _measurement(value, maximum, minimum)
+    return round(number) if number is not None else None
+
+
+def _parse_activity(entry: object) -> IntervalsActivity | None:
+    if not isinstance(entry, dict):
         return None
-    return 1000.0 / metres_per_second
+    external_id = entry.get("id")
+    source_sport = entry.get("type")
+    start = entry.get("start_date")
+    if not isinstance(external_id, str) or not ACTIVITY_ID.fullmatch(external_id):
+        return None
+    if not isinstance(source_sport, str) or not ACTIVITY_TYPE.fullmatch(source_sport):
+        return None
+    if not isinstance(start, str):
+        return None
+    try:
+        start_time = datetime.fromisoformat(start)
+        if start_time.tzinfo is None:
+            return None
+        start_time = start_time.astimezone(UTC)
+    except ValueError, OverflowError:
+        return None
+
+    distance = _measurement(entry.get("icu_distance"), MAX_DISTANCE_M)
+    if distance is None:
+        distance = _measurement(entry.get("distance"), MAX_DISTANCE_M)
+    return IntervalsActivity(
+        external_id=external_id,
+        sport=ACTIVITY_SPORTS.get(source_sport, "other"),
+        source_sport=source_sport,
+        start_time=start_time,
+        elapsed_seconds=_measurement(entry.get("elapsed_time"), MAX_ACTIVITY_SECONDS),
+        timer_seconds=_measurement(entry.get("moving_time"), MAX_ACTIVITY_SECONDS),
+        distance_m=distance,
+        training_load=_whole_measurement(entry.get("icu_training_load"), 10_000),
+        avg_heart_rate=_whole_measurement(entry.get("average_heartrate"), MAX_HEART_RATE, 1),
+        max_heart_rate=_whole_measurement(entry.get("max_heartrate"), MAX_HEART_RATE, 1),
+        avg_pace_s_per_km=_pace_per_km(entry.get("average_speed")),
+        avg_power_w=_whole_measurement(entry.get("icu_average_watts"), MAX_POWER_W),
+        total_ascent_m=_whole_measurement(entry.get("total_elevation_gain"), 20_000),
+        calories=_whole_measurement(entry.get("calories"), 100_000),
+    )
