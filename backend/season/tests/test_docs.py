@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from accounts.models import User
-from season import briefing, generation, models, prompt, rules, schema, skeleton
+from season import briefing, generation, models, prompt, reassessment, rules, schema, skeleton
 from season.briefing import build_briefing
 from season.inputs import skeleton_for
 from season.skeleton import Phase
@@ -247,6 +247,23 @@ class TestTheFilledPlans:
             "confirmed_at",
         ):
             assert f"`{field}`" in text, field
+
+
+class TestReassessment:
+    def test_reasons_and_thresholds_match_the_code(self) -> None:
+        text = section("Changes from the confirmed plan")
+        assert [row[0] for row in table_after(text, "Code")] == list(reassessment.Reason)
+        documented = {row[0]: int(row[1]) for row in table_after(text, "Constant")}
+        assert documented == {
+            "TIME_CHANGE_PERCENT": reassessment.TIME_CHANGE_PERCENT,
+            "TIME_CHANGE_MINUTES": reassessment.TIME_CHANGE_MINUTES,
+        }
+
+    def test_the_api_and_readme_name_the_endpoint_and_fields(self) -> None:
+        for text in (section("The API"), (ROOT / "README.md").read_text()):
+            assert "GET /api/season/reassessment/" in text
+            for field in ("confirmed_plan_id", "reasons", "deviation_weeks"):
+                assert f"`{field}`" in text
 
 
 class TestLoad:

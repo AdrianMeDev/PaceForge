@@ -28,6 +28,7 @@ from .generation import (
 from .inputs import skeleton_for
 from .load import planned_week_load
 from .models import SeasonPlanVersion
+from .reassessment import reassess
 from .serializers import plan_detail, plan_summary
 from .storage import skeleton_data
 from .throttles import SeasonGenerateThrottle
@@ -86,6 +87,15 @@ class SeasonView(APIView):
 
     def get(self, request: Request) -> Response:
         return Response(skeleton_data(skeleton_for(_user(request))))
+
+
+class ReassessmentView(APIView):
+    """Changes from the signed-in user's confirmed season, without acknowledging them."""
+
+    http_method_names = ["get", "head", "options"]
+
+    def get(self, request: Request) -> Response:
+        return Response(reassess(_user(request)))
 
 
 class PlansView(APIView):

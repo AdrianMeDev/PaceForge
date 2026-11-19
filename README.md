@@ -913,6 +913,18 @@ sessions (a long run, a threshold session, the race …) and a reason. The model
   New coach drafts also keep the active goals, effective FTP, best times and typical weekly
   minutes from before the coach was asked. Confirmation keeps these original inputs. Restoring
   or changing a version copies them. Older versions may have no recorded inputs.
+- **Checking for changes:** `GET /api/season/reassessment/` compares your confirmed plan's
+  original inputs with your active goals, effective cycling FTP, best times and training time.
+  Its `reasons` are `goals_changed`, `ftp_changed`, `best_times_changed` and
+  `training_time_changed`. A time change needs both 20% and 60 minutes in typical weekly time
+  or a remaining calendar week's capacity, including absences and the weekly budget. From zero
+  it needs 60 minutes; unspecified typical time counts as zero. The current week is included in
+  your time zone. Identical saves, inactive-goal edits, overridden FTP changes and calendar
+  rollover do not count. An older plan without recorded inputs returns `baseline_unknown`.
+  Drafting or discarding keeps the hint. Confirming a replacement clears it only if its original
+  inputs and capacities now fit. An outdated replacement keeps the hint. This read-only endpoint
+  returns `confirmed_plan_id`, `reasons` and an empty `deviation_weeks`. Without a confirmed plan,
+  the id is `null` and both lists are empty. It calls neither the coach nor Intervals.icu.
 - **Restoring:** a version that was **replaced or discarded** can be brought back with **Make this
   the new draft**. That copies it as the next version, a draft (its reason says "Restored from
   version N"), with the skeleton and the sports it was made for; the old version is not touched

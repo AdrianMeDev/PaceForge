@@ -260,6 +260,40 @@ plan as a draft:
 | `ATTEMPTS` | 3 | Answers of the coach for one season: one try and two repairs. |
 | `REQUEST_MAX` | 500 | Characters of a change request. |
 
+## Changes from the confirmed plan
+
+`season/reassessment.py` compares current inputs with the confirmed version's original
+`input_snapshot` and the capacities in its stored skeleton. The baseline belongs to drafting,
+not confirmation. Only the signed-in user's confirmed version and inputs count.
+
+The endpoint returns a list of stable reason codes in this order, with each code at most once.
+The reasons contain no goal titles, notes, input values or other user text.
+
+| Code | Meaning |
+| ---- | ------- |
+| `baseline_unknown` | The original inputs are unknown. Legacy versions have a null snapshot. An incomplete snapshot or an unsupported snapshot version also counts as unknown. This is the only reason returned in that case. Historical inputs are never guessed. |
+| `goals_changed` | Active goals were added, removed or edited. Meaningful fields are id, kind, title, priority, target date, discipline, distance, target time, metric and target value. Achieving or dropping an active goal removes it from the comparison; activating one adds it. Notes, bookkeeping timestamps and edits to inactive goals do not count. |
+| `ftp_changed` | The effective cycling FTP number changed, including adding or removing it. The existing source priority applies. Changing an overridden source, its metadata or its source without changing the effective number does not count. |
+| `best_times_changed` | Stored best times changed by distance, seconds or race date, including additions and removals. Update timestamps and moving age windows do not count. |
+| `training_time_changed` | Typical weekly minutes or at least one remaining calendar week's capacity changed by both thresholds below. Capacity includes weekday minutes, absences and the weekly budget. |
+
+| Constant | Value | Meaning |
+| -------- | ----- | ------- |
+| `TIME_CHANGE_PERCENT` | 20 | Minimum absolute change as a percentage of the original minutes. |
+| `TIME_CHANGE_MINUTES` | 60 | Minimum absolute change in minutes. Both thresholds must be met. |
+
+The thresholds include their boundaries and apply to increases and decreases. From zero, a
+change needs at least 60 minutes. Unspecified typical minutes count as zero for this comparison.
+Capacity is compared on the same calendar dates in the stored skeleton. Remaining weeks include
+the full current Monday-to-Sunday week in the athlete's time zone. Completed weeks and dates
+outside the original season do not count. Moving into a new week alone never creates a reason.
+Saving identical values does not count. Several changed weeks still give one time reason.
+
+Reading, drafting, restoring or discarding never acknowledges a hint. Each read compares with the
+confirmed version again. Confirming a current replacement clears the reasons. Confirming an
+outdated replacement retains the differences from its original inputs and capacities. A legacy
+hint lasts until a replacement with known, current inputs is confirmed. No plan content changes.
+
 ## The week plan follows the season
 
 `season/weeks.py` gives the week plan the week it is about: `confirmed_weeks` reads the
@@ -311,6 +345,12 @@ Each sport rounds half up once. In invalid drafts, key sessions are capped to th
 minutes and sessions in absent sports add nothing. Load is read-only; checks still use minutes.
 
 ## The API
+
+`GET /api/season/reassessment/` requires authentication and returns `confirmed_plan_id` (the
+confirmed version's UUID string, or `null`), `reasons` (the codes above) and `deviation_weeks`
+(currently always `[]`). Without a confirmed plan both lists are empty, even if drafts exist.
+The endpoint has no user or plan selector. It writes nothing and makes no coach or Intervals.icu
+call. Write methods are refused. Reading it repeatedly never clears a reason.
 
 `GET /api/season/` answers the skeleton of the signed-in user and writes nothing. The filled plans are at `/api/season/plans/`: `GET` lists the versions (`id`, `version`, `status`, `reason`, `week_count`, `created_at`, `confirmed_at`), `POST generate/` drafts one (`201` with the plan, limited to 3 a minute), `GET <id>/` reads one and `POST <id>/confirm/` and `POST <id>/discard/` decide on a draft and `POST <id>/change/` with `{"request": "…"}` asks the coach to change a version as the athlete wishes (`201` with the new draft; `400` with the messages of the field `request`; `404`; `409` `not_changeable` or `not_configured`; `422` `unchanged` or `not_usable`; the codes of the provider; limited to 3 a minute together with drafting), and `POST <id>/restore/` brings back a replaced or discarded version as a new draft (`201` with the plan; `409` `not_restorable` for any other). A plan has `rationale`, `parent`, the `skeleton` it was made for, its `weeks` (the format with a `total_minutes` and `done`: for the **confirmed** version and the weeks that have begun the minutes the athlete trained by sport, `[{sport, minutes}]`, `other` for activities of no sport of the plan, `[]` for a week without any; `null` for every other week and version) and, for a draft, a `report` of `valid` and `findings`. Errors have a fixed text, a `code` and, where it helps, `problems` or `findings`. The answer has
 `rolling`, `truncated`, `main_race` (or `null`), `peak_minutes` and `weeks`. A **week** has
