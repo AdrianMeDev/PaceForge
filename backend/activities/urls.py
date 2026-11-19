@@ -10,5 +10,6 @@ urlpatterns = [
     # Before the router, so that "import" is never taken for an activity id.
     path("import/", views.ActivityImportView.as_view(), name="activity-import"),
     path("manual/", views.ManualActivityView.as_view(), name="activity-manual"),
+    path("sync/", views.ActivitySyncView.as_view(), name="activity-sync"),
     path("", include(router.urls)),
 ]

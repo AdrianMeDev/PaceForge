@@ -122,6 +122,10 @@ INVITATION_TTL_DAYS = env.int("INVITATION_TTL_DAYS", default=7)
 INTERVALS_API_BASE_URL = env.str("INTERVALS_API_BASE_URL", default="https://intervals.icu/api/v1")
 if urlsplit(INTERVALS_API_BASE_URL).scheme not in {"http", "https"}:
     raise ImproperlyConfigured("INTERVALS_API_BASE_URL must start with http:// or https://")
+# How many weeks back an activity sync from Intervals.icu reads, up to today.
+INTERVALS_SYNC_WEEKS = env.int("INTERVALS_SYNC_WEEKS", default=12)
+if not 8 <= INTERVALS_SYNC_WEEKS <= 12:
+    raise ImproperlyConfigured("INTERVALS_SYNC_WEEKS must be a whole number from 8 to 12")
 
 # The AI providers: the OpenAI-compatible addresses (OpenAI itself, Ollama, llama.cpp ...) that
 # users may choose from. Empty: none. Users cannot enter addresses of their own, so that the
