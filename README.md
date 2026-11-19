@@ -1402,7 +1402,7 @@ These are the commands the CI workflow (`.github/workflows/ci.yml`) runs.
 cd backend
 uv run ruff format --check . && uv run ruff check .
 uv run mypy .
-uv run python manage.py makemigrations --check --dry-run
+DJANGO_SETTINGS_MODULE=config.settings_test uv run python manage.py makemigrations --check --dry-run
 uv run pytest -n auto   # in parallel, one test database per core; plain `uv run pytest` is serial
 
 # frontend

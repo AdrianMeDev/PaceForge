@@ -18,7 +18,8 @@ Backend, from `backend/`:
 - Run the full suite with `uv run pytest -n auto`.
 - Check lint and formatting with `uv run ruff check .` and `uv run ruff format --check .`;
   types with `uv run mypy .`; migrations with
-  `uv run python manage.py makemigrations --check --dry-run`.
+  `DJANGO_SETTINGS_MODULE=config.settings_test uv run python manage.py makemigrations --check --dry-run`
+  (the test settings need no `.env`, which a fresh worktree does not have).
 
 Frontend, from `frontend/`:
 
