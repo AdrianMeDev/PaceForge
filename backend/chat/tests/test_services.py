@@ -6,14 +6,26 @@ import pytest
 from django.core.exceptions import ValidationError
 
 from accounts.models import User
+from availability.models import UnavailablePeriod
 from chat import services
 from chat.models import USER_TEXT_MAX, ChatMessage
-from chat.services import ATTEMPTS, HISTORY_TOLD, NOT_USABLE, REASON, clean_text, clear, send
+from chat.services import (
+    ATTEMPTS,
+    DOCTOR_HINT,
+    HISTORY_TOLD,
+    NOT_USABLE,
+    REASON,
+    clean_text,
+    clear,
+    send,
+)
 from coach import services as coach_services
 from coach.models import AIProviderConfiguration, AIUsageRecord
 from coach.providers.base import Completion, ProviderUnavailableError, RateLimitedError
 from goals import services as goal_services
+from planning import services as plan_services
 from planning.models import PlannedWorkout, WeeklyPlan
+from planning.rules import Intensity, intensity_of
 from planning.tests.scripted import Scripted
 from reviews.tests.builders import MONDAY, NOW, make_plan
 
@@ -264,6 +276,119 @@ class TestWithoutAPlan:
         sent = send(alice, "What is next?")
 
         assert sent.coach.text == "You have no plan yet."
+
+
+class TestIllness:
+    def test_a_sick_message_stores_a_draft_with_easy_return_and_an_absence(
+        self, athlete: User, provide: Callable[..., Scripted]
+    ) -> None:
+        PlannedWorkout.objects.for_user(athlete).filter(day=SUNDAY).update(
+            goal="threshold",
+            zone_system="pace",
+            zone=4,
+            segments=[
+                {
+                    "kind": "work",
+                    "seconds": 3600,
+                    "repeat": 1,
+                    "zone_system": "pace",
+                    "zone": 4,
+                }
+            ],
+        )
+        provide(
+            said(
+                "Rest today, then take it easy.",
+                [{"tool": "mark_sick", "symptoms": "above_neck", "fever": False, "days": 1}],
+            )
+        )
+
+        sent = send(athlete, "I have a sore throat today.")
+
+        (draft,) = drafts(athlete)
+        assert sent.coach.plan == draft
+        assert sent.coach.text == "Rest today, then take it easy."
+        assert DOCTOR_HINT not in sent.coach.text
+        loaded = plan_services.load(athlete, draft.pk)
+        days = {w.day.isoformat(): w for w in loaded.workouts}
+        assert SATURDAY not in days
+        sunday = days[SUNDAY]
+        assert intensity_of(sunday) is Intensity.EASY
+        assert sunday.duration_minutes == 36
+        (period,) = UnavailablePeriod.objects.for_user(athlete)
+        assert period.kind == UnavailablePeriod.Kind.ILLNESS
+        assert (period.start_date.isoformat(), period.end_date.isoformat()) == (SATURDAY, SATURDAY)
+        assert sent.coach.changes == [
+            f"Sick pause (1 day, {SATURDAY}): 1 workout removed",
+            f"Easy return (2 days, {SUNDAY} to 2026-11-16): 1 workout made easy and shorter",
+            f"Illness noted as an absence ({SATURDAY})",
+        ]
+
+    def test_stores_the_absence_and_change_even_without_a_plan(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        AIProviderConfiguration.objects.create(
+            owner=alice, provider="anthropic", model="claude-sonnet-5-5", api_key=KEY
+        )
+        provide(
+            said(
+                "Get well soon.",
+                [{"tool": "mark_sick", "symptoms": "below_neck", "fever": False, "days": 3}],
+            )
+        )
+
+        sent = send(alice, "I am sick for three days.")
+
+        assert sent.coach.plan is None
+        assert drafts(alice) == []
+        (period,) = UnavailablePeriod.objects.for_user(alice)
+        assert period.kind == UnavailablePeriod.Kind.ILLNESS
+        assert (period.start_date.isoformat(), period.end_date.isoformat()) == (
+            SATURDAY,
+            "2026-11-16",
+        )
+        assert sent.coach.changes == [f"Illness noted as an absence ({SATURDAY} to 2026-11-16)"]
+
+    def test_fever_appends_the_doctor_hint(
+        self, athlete: User, provide: Callable[..., Scripted]
+    ) -> None:
+        provide(
+            said(
+                "Please rest.",
+                [{"tool": "mark_sick", "symptoms": "below_neck", "fever": True, "days": 2}],
+            )
+        )
+
+        sent = send(athlete, "I have a fever.")
+
+        assert sent.coach.text == f"Please rest.\n\n{DOCTOR_HINT}"
+        (period,) = UnavailablePeriod.objects.for_user(athlete)
+        assert (period.start_date.isoformat(), period.end_date.isoformat()) == (SATURDAY, SUNDAY)
+
+    def test_another_user_is_not_affected(
+        self, athlete: User, bob: User, provide: Callable[..., Scripted]
+    ) -> None:
+        bob_plan = make_plan(bob, MONDAY, workouts=7)
+        bob_period = UnavailablePeriod.objects.create(
+            owner=bob,
+            kind=UnavailablePeriod.Kind.ILLNESS,
+            start_date=MONDAY,
+            end_date=MONDAY,
+        )
+        provide(
+            said(
+                "Rest up.",
+                [{"tool": "mark_sick", "symptoms": "above_neck", "fever": True, "days": 2}],
+            )
+        )
+
+        send(athlete, "Sick with fever")
+
+        assert drafts(bob) == []
+        assert PlannedWorkout.objects.for_user(bob).filter(plan=bob_plan).count() == 7
+        bob_period.refresh_from_db()
+        assert (bob_period.start_date, bob_period.end_date) == (MONDAY, MONDAY)
+        assert UnavailablePeriod.objects.for_user(bob).count() == 1
 
 
 class TestTheText:
