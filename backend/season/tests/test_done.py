@@ -8,7 +8,7 @@ from django.test.utils import CaptureQueriesContext
 from accounts.models import User
 from activities.models import Activity
 from athletes.models import AthleteProfile
-from season.done import done_minutes
+from season.done import done_minutes, done_week_totals
 
 pytestmark = pytest.mark.django_db
 
@@ -139,3 +139,87 @@ class TestTheMinutesDone:
             done_minutes(alice, weeks)
 
         assert len(queries) == 2
+
+
+class TestDoneWeekTotals:
+    def test_load_prefers_intervals_then_rpe_and_unknown_load_adds_zero(self, alice: User) -> None:
+        activity(alice, "2027-07-13T08:00", 3600, 1, training_load=80.5, rpe=10)
+        activity(alice, "2027-07-13T18:00", 1800, 2, rpe=6)
+        activity(alice, "2027-07-14T08:00", None, 3, elapsed=1800, rpe=4, sport="cycling")
+        activity(alice, "2027-07-15T08:00", 600, 4, sport="other")
+
+        assert done_week_totals(alice, [MONDAY]) == {
+            MONDAY: {
+                "minutes": [("running", 90), ("cycling", 30), ("other", 10)],
+                "load": [("running", 111), ("cycling", 20)],
+            }
+        }
+
+    def test_load_without_duration_still_counts_and_zero_intervals_load_wins(
+        self, alice: User
+    ) -> None:
+        activity(alice, "2027-07-13T08:00", None, 1, training_load=25)
+        activity(alice, "2027-07-14T08:00", 3600, 2, rpe=10, training_load=0, sport="cycling")
+
+        assert done_week_totals(alice, [MONDAY])[MONDAY] == {
+            "minutes": [("cycling", 60)],
+            "load": [("running", 25)],
+        }
+
+    def test_minutes_round_after_summing_but_load_rounds_per_activity(self, alice: User) -> None:
+        activity(alice, "2027-07-13T08:00", 29, 1, training_load=0.5)
+        activity(alice, "2027-07-13T09:00", 29, 2, training_load=0.5)
+
+        assert done_week_totals(alice, [MONDAY])[MONDAY] == {
+            "minutes": [("running", 1)],
+            "load": [("running", 2)],
+        }
+
+    def test_empty_weeks_and_duplicate_mondays(self, alice: User) -> None:
+        assert done_week_totals(alice, [MONDAY, MONDAY]) == {MONDAY: {"minutes": [], "load": []}}
+        with CaptureQueriesContext(connection) as queries:
+            assert done_week_totals(alice, []) == {}
+        assert len(queries) == 0
+
+    def test_local_week_boundaries_and_gaps_match_done_minutes(self, alice: User) -> None:
+        AthleteProfile.objects.create(owner=alice, timezone="Asia/Tokyo")
+        activity(alice, "2027-07-11T14:59", 3600, 1, training_load=10)  # before the first week
+        activity(alice, "2027-07-11T15:00", 1800, 2, training_load=20)  # local Monday
+        activity(alice, "2027-07-18T14:59", 29, 3, training_load=30)  # local Sunday
+        activity(alice, "2027-07-18T15:00", 3600, 4, training_load=40)  # unrequested week
+        activity(alice, "2027-08-01T15:00", 3600, 5, training_load=50)  # after the last week
+        weeks = [MONDAY + timedelta(weeks=2), MONDAY]
+
+        found = done_week_totals(alice, weeks)
+
+        assert {monday: totals["minutes"] for monday, totals in found.items()} == done_minutes(
+            alice, weeks
+        )
+        assert found == {
+            MONDAY: {"minutes": [("running", 30)], "load": [("running", 50)]},
+            MONDAY + timedelta(weeks=2): {"minutes": [], "load": []},
+        }
+
+    def test_other_users_minutes_load_and_timezone_do_not_count(
+        self, alice: User, bob: User
+    ) -> None:
+        AthleteProfile.objects.create(owner=bob, timezone="Asia/Tokyo")
+        activity(bob, "2027-07-13T08:00", 3600, 1, training_load=100)
+        activity(alice, "2027-07-18T16:00", 3600, 2, rpe=6)
+
+        assert done_week_totals(alice, [MONDAY])[MONDAY] == {
+            "minutes": [("running", 60)],
+            "load": [("running", 60)],
+        }
+
+    @pytest.mark.parametrize("count", [1, 52])
+    def test_two_queries_regardless_of_the_week_count(self, alice: User, count: int) -> None:
+        activity(alice, "2027-07-13T08:00", 3600, 1, rpe=6)
+        weeks = [MONDAY + timedelta(weeks=n) for n in range(count)]
+
+        with CaptureQueriesContext(connection) as queries:
+            found = done_week_totals(alice, weeks)
+
+        assert len(queries) == 2
+        assert len(found) == count
+        assert found[MONDAY]["load"] == [("running", 60)]

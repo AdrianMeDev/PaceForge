@@ -16,7 +16,7 @@ from planning.serializers import finding_data
 from planning.validation import Report
 
 from . import services
-from .done import done_minutes
+from .done import done_week_totals
 from .generation import (
     NothingToPlan,
     PlanNotChangeable,
@@ -26,6 +26,7 @@ from .generation import (
     generate,
 )
 from .inputs import skeleton_for
+from .load import planned_week_load
 from .models import SeasonPlanVersion
 from .serializers import plan_detail, plan_summary
 from .storage import skeleton_data
@@ -67,13 +68,14 @@ def _detail(user: User, plan: SeasonPlanVersion, report: Report | None = None) -
         report = services.validate(user, plan.pk)
     done = None
     if plan.status == SeasonPlanVersion.Status.CONFIRMED:
-        # the minutes done, for the weeks that have begun; the current week with what is done so far
+        # Done minutes and load for begun weeks, including the current week so far.
         today = today_of(user)
         begun = [
             week.week_start for week in loaded.context.skeleton.weeks if week.week_start <= today
         ]
-        done = done_minutes(user, begun)
-    return Response(plan_detail(plan, loaded, report, done))
+        done = done_week_totals(user, begun)
+    planned = planned_week_load(user, loaded.plan.weeks)
+    return Response(plan_detail(plan, loaded, report, planned, done))
 
 
 class SeasonView(APIView):

@@ -284,6 +284,22 @@ two queries, the time zone and the activities, however many weeks. `plan_detail`
 **confirmed** version and only for the weeks that have begun (the current one with what is done so
 far); every other week and version has `done: null`.
 
+`done_week_totals(user, mondays)` returns both minutes and load in the same two queries. The
+season API uses it; the dashboard keeps using `done_minutes`. Load adds the rounded load of
+each activity, preferring Intervals `training_load`, else duration and RPE on the unified scale.
+Unknown load adds zero. A load can count even when the activity has no duration.
+
+`season/load.py` estimates planned load with one user-scoped query for all weeks. A confirmed
+weekly plan supplies its workout estimates from `planning.load`, including zones, segments and
+strength exercise RPE. It replaces the whole season estimate for that week. An empty confirmed
+week has zero load. Draft, replaced and discarded weekly plans do not contribute.
+
+Without a confirmed weekly plan, key sessions consume the season's sport minutes at the matching
+goal rate from `planning.load`. Long sessions and remaining endurance minutes use the endurance
+rate. Race pace and race sessions use the threshold rate. Strength uses the default strength RPE.
+Each sport rounds half up once. In invalid drafts, key sessions are capped to the remaining sport
+minutes and sessions in absent sports add nothing. Load is read-only; checks still use minutes.
+
 ## The API
 
 `GET /api/season/` answers the skeleton of the signed-in user and writes nothing. The filled plans are at `/api/season/plans/`: `GET` lists the versions (`id`, `version`, `status`, `reason`, `week_count`, `created_at`, `confirmed_at`), `POST generate/` drafts one (`201` with the plan, limited to 3 a minute), `GET <id>/` reads one and `POST <id>/confirm/` and `POST <id>/discard/` decide on a draft and `POST <id>/change/` with `{"request": "…"}` asks the coach to change a version as the athlete wishes (`201` with the new draft; `400` with the messages of the field `request`; `404`; `409` `not_changeable` or `not_configured`; `422` `unchanged` or `not_usable`; the codes of the provider; limited to 3 a minute together with drafting), and `POST <id>/restore/` brings back a replaced or discarded version as a new draft (`201` with the plan; `409` `not_restorable` for any other). A plan has `rationale`, `parent`, the `skeleton` it was made for, its `weeks` (the format with a `total_minutes` and `done`: for the **confirmed** version and the weeks that have begun the minutes the athlete trained by sport, `[{sport, minutes}]`, `other` for activities of no sport of the plan, `[]` for a week without any; `null` for every other week and version) and, for a draft, a `report` of `valid` and `findings`. Errors have a fixed text, a `code` and, where it helps, `problems` or `findings`. The answer has
@@ -292,9 +308,14 @@ far); every other week and version has `done: null`.
 `target_minutes`, `capacity_minutes` and `races`. A **race** has `date`, `priority` (`main`,
 `secondary` or `preparation`), `discipline`, `distance_m` and `title` (the athlete's own text).
 
+Each filled week also has `planned_load`, a sport-to-load object like its `minutes`, and
+`total_planned_load`, the sum of that object's values. `done_load` follows the same availability
+as `done`: `[{sport, load}]` for begun weeks of the confirmed season, `null` otherwise. Only
+positive done sport totals are listed. A week without known positive load has `done_load: []`.
+
 ## Not there yet
 
 The skeleton itself knows minutes only. The coach adds the split by sport, the key sessions and the
 reasons, and the Season page shows, drafts, confirms and discards them, with a timeline and a chart.
-There is no load measure (only minutes). Whether a goal time is realistic is judged separately (see
+The chart shows minutes. Whether a goal time is realistic is judged separately (see
 [goals](goals.md)); the coach is told it with every race.

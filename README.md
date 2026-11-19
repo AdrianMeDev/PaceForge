@@ -950,8 +950,7 @@ sessions (a long run, a threshold session, the race …) and a reason. The model
   minutes come from your activities: the timer time (else the elapsed time), added up per week
   (Monday to Sunday in your time zone) and sport, activities of no sport of the plan as *Other*;
   the current week counts with what is done so far. Every bar has its numbers as text and the
-  table has all of them; the page scrolls sideways on a narrow screen. There is no load measure
-  yet, only minutes.
+  table has all of them; the page scrolls sideways on a narrow screen. The chart shows minutes.
 - **The week plan follows the confirmed plan:** a week that lies in the **confirmed** season plan
   (never a draft) is told to the coach with its phase, minutes of each sport, focus, key sessions
   and reason, and the Week plan page shows the same above the versions. See
@@ -965,6 +964,11 @@ for the skeleton and, for the filled plans, `GET /api/season/plans/` (the versio
 `POST /api/season/plans/<id>/confirm/` and `…/discard/`. Errors have a fixed text and a `code`:
 `not_configured`, `no_time`, `not_usable` (with the `problems`), `not_found`, `not_a_draft`,
 `not_confirmable` (with the `findings`), and the codes of a provider that did not answer.
+
+The season plan API also returns `planned_load` by sport and `total_planned_load` for each week.
+Confirmed weekly workouts supply the estimate when present. Otherwise it uses the season's
+sport minutes and key sessions. Begun weeks of the confirmed season also have `done_load`, from
+Intervals load or duration and RPE. Other weeks have `done_load: null`. Checks still use minutes.
 
 ## Week plan
 
