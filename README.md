@@ -258,12 +258,14 @@ Things to know before you allow one of them:
 2. Press **Check connection**. PaceForge sends one request with the fixed text `Reply with the
    single word: ok` (at most 16 tokens, no system prompt) and **nothing about you or your
    training**, and shows how it went.
-3. Optionally give a **model for the season plan**, in the field of that name (same rules as the
-   model name; leave it empty to use the normal one). The season is
-   the biggest thing the coach is asked, so a stronger model may be worth it there; left empty,
-   the normal model does it. It is the same provider and the same key, and only the season plan
-   uses it.
-4. Change anything later by saving again. Any change of provider, model, season model, address or
+3. Optionally set task-specific models (same provider and key; leave any field empty to use the
+   normal model):
+   - **Model for the season plan:** the season is the biggest thing the coach is asked, so a
+     stronger model may be worth it there.
+   - **Model for the week plan:** a lighter model can be enough for the weekly plan.
+   - **Model for the coach chat:** a lighter model can keep the chat quick and cheap.
+   The connection check and week review always use the normal model.
+4. Change anything later by saving again. Any change of provider, model, task models, address or
    key sets the status back to **Not checked yet**; saving the very same setup again changes nothing. The check
    always uses the **saved** setup (the page says when you have unsaved changes).
 5. **Remove** deletes the setup and the stored key after a question in a dialog. PaceForge cannot revoke the key
@@ -296,12 +298,21 @@ fixed text on the page; nothing the provider says is shown or stored.
   check marks the key as refused (without asking the provider) and you enter the key again.
 
 **What is stored about your calls.** One record per request that reached the provider: provider,
-the model that was used (the season model for the season plan, else the normal one), purpose, how it ended (success, key refused, rate limited, unavailable, unexpected), the
+the model that was used (the season, week or chat model for its task, else the normal one), purpose, how it ended (success, key refused, rate limited, unavailable, unexpected), the
 tokens the provider counted (if it said), how many of the input tokens came from the provider's
 prompt cache and how many were written to it, and the time. **Never** the prompt, the answer or an
 error text. The page shows the sum of the last 30 days: calls (failed ones included), input and
 output tokens and, when there are any, the cached ones. A request that was refused before it was sent (the address is no longer allowed) is not
-counted. Costs and budgets are not calculated yet. The records stay when you remove the setup.
+counted. The records stay when you remove the setup.
+
+**Monthly usage and estimated costs.** Under **AI coach costs** on the Connections page, PaceForge
+groups your calls by calendar month in your profile time zone (up to the last 12 months, newest
+first). You can optionally enter prices per million tokens in US dollars (input, output, and
+optional cached input) for up to 50 models; PaceForge ships no price list. When prices are set, the
+table shows the estimated cost for that month (or "At least …" along with any unpriced models if
+only some models have prices). Costs are estimates, not bills, and budgets are not enforced. See
+[`docs/coach.md`](docs/coach.md) for the routing rules, pricing fields, monthly calculation and
+privacy boundaries.
 
 **Prompt caching.** The system prompt of the coach (the rules and the format, the same for every
 athlete) and the first message of a conversation (the briefing about you) are marked for

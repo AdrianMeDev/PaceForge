@@ -109,7 +109,7 @@ AI key; several people can share one instance without seeing each other's data.
 - **Depends on:** M1
 - **Size:** M
 
-### M9 [~] Cost per month and model per task
+### M9 [x] Cost per month and model per task
 - **Goal:** The athlete sees what the coach costs and can use a cheaper model for week and chat.
 - **Includes:** optional price per million input/output/cached tokens per model, monthly cost on the AI page, separate model for week plan and chat (season model exists), docs.
 - **Done when:** with prices set, the AI page shows cost per month; week and chat use their own model when set; tests green.
@@ -173,6 +173,7 @@ AI key; several people can share one instance without seeing each other's data.
 - README section and `docs/` updated for every user-visible change.
 
 ## Changelog
+- 2026-11-19: M9 completed — optional per-model prices (input, output and cached input per million tokens), monthly usage and estimated cost in the athlete's time zone on the Connections page, and separate optional models for the week plan and coach chat
 - 2026-11-19: M8 completed — daily wellness (sleep, HRV, resting HR and weight) synced from Intervals.icu with activities, shown on the dashboard with 7-day vs 28-day trends and recovery warnings, and passed to week and chat briefings
 - 2026-11-19: M7 completed — background jobs run sync, the Sunday week review and the next week's draft in a scheduler container (no broker); each athlete turns each job off and reads a log of their own runs, and jobs only ever create drafts (never confirm, never push to Intervals.icu)
 - 2026-11-19: M6 completed — the chat changes a week the athlete names (this week or one of the next four that has a plan), refuses more than one week per answer with a fixed reply, and hands a longer absence (`replan_from`, 7 to 120 days) to the season: the absence is noted and a season draft around it is made and linked from the answer
