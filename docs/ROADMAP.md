@@ -88,7 +88,7 @@ AI key; several people can share one instance without seeing each other's data.
 - **Depends on:** –
 - **Size:** L
 
-### M6 [ ] Chat for other weeks and the season
+### M6 [~] Chat for other weeks and the season
 - **Goal:** The chat can change the next weeks and turn longer changes into a season change request.
 - **Includes:** actions for a named week (e.g. business trip next week), `replan_from` that hands a longer absence to the season change request, more than one week in one answer refused clearly, docs.
 - **Done when:** "only running next week" creates a draft for next week; a three-week absence creates a season draft; tests green.

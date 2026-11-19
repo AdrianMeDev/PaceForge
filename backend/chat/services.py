@@ -103,15 +103,17 @@ def send(user: User, text: str) -> Sent:
     """
     text = clean_text(text)
     today = today_of(user)
-    stored = _plan_to_change(user)
-    plan = plans.load(user, stored.pk) if stored else WeekPlan(_this_week(today), ())
+    stored_plans = _plans_to_change(user)
+    loaded = [plans.load(user, row.pk) for row in stored_plans]
+    stored = stored_plans[0] if stored_plans else None
+    plan = loaded[0] if loaded else WeekPlan(_this_week(today), ())
     told = [
         ("athlete" if message.role == ChatMessage.Role.USER else "coach", message.text)
         for message in ChatMessage.objects.for_user(user).order_by("-created_at", "-id")[
             :HISTORY_TOLD
         ]
     ][::-1]
-    messages = [first_message(build_briefing(user, plan), told, text)]
+    messages = [first_message(build_briefing(user, loaded), told, text)]
     problems: tuple[Problem, ...] = ()
     for attempt in range(1, ATTEMPTS + 1):
         completion = coach.call(
@@ -195,19 +197,18 @@ def _this_week(today: date) -> date:
     return today - timedelta(days=today.weekday())
 
 
-def _plan_to_change(user: User) -> WeeklyPlan | None:
-    """The plan the chat works on: the newest draft or confirmed version of the first week (this
-    one, then the next ones) that has one."""
-    for monday in plannable_weeks(user):
-        found = (
-            WeeklyPlan.objects.for_user(user)
-            .filter(
-                week_start=monday,
-                status__in=[WeeklyPlan.Status.DRAFT, WeeklyPlan.Status.CONFIRMED],
-            )
-            .order_by("-version")
-            .first()
+def _plans_to_change(user: User) -> list[WeeklyPlan]:
+    """The newest draft or confirmed version of every plannable week that has one, in order."""
+    mondays = plannable_weeks(user)
+    rows = (
+        WeeklyPlan.objects.for_user(user)
+        .filter(
+            week_start__in=mondays,
+            status__in=[WeeklyPlan.Status.DRAFT, WeeklyPlan.Status.CONFIRMED],
         )
-        if found is not None:
-            return found
-    return None
+        .order_by("week_start", "-version")
+    )
+    newest: dict[date, WeeklyPlan] = {}
+    for row in rows:
+        newest.setdefault(row.week_start, row)
+    return [newest[monday] for monday in mondays if monday in newest]

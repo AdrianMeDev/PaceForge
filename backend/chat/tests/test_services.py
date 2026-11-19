@@ -1,6 +1,6 @@
 import json
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -82,6 +82,12 @@ def key_of(workout: PlannedWorkout) -> str:
     return f"paceforge-{workout.lineage}"
 
 
+def briefing_sent(provider: Scripted, call: int = 0) -> dict[str, Any]:
+    """The JSON briefing sent in ``call`` of ``provider``."""
+    data: dict[str, Any] = json.loads(provider.calls[call][1][0].content.split("\n\n")[1])
+    return data
+
+
 class TestAQuestion:
     def test_gets_an_answer_and_no_draft(
         self, athlete: User, provide: Callable[..., Scripted]
@@ -141,6 +147,46 @@ class TestAQuestion:
         content = provider.calls[0][1][0].content
         assert "old-02" not in content
         assert "old-03" in content and "old-12" in content
+
+    def test_briefs_every_plannable_week_with_a_plan_in_order(
+        self, athlete: User, provide: Callable[..., Scripted]
+    ) -> None:
+        next_monday = MONDAY + timedelta(weeks=1)
+        third_monday = MONDAY + timedelta(weeks=2)
+        make_plan(athlete, next_monday, status="confirmed", workouts=2)
+        make_plan(athlete, next_monday, status="draft", workouts=3)
+        make_plan(athlete, third_monday, status="confirmed", workouts=1)
+        # Not included: discarded, past, or beyond the plannable horizon.
+        make_plan(athlete, MONDAY + timedelta(weeks=3), status="discarded", workouts=2)
+        make_plan(athlete, MONDAY - timedelta(weeks=1), status="confirmed", workouts=2)
+        make_plan(athlete, MONDAY + timedelta(weeks=5), status="confirmed", workouts=2)
+        provider = provide(said("Looks good."))
+
+        send(athlete, "What is coming up?")
+
+        briefing = briefing_sent(provider)
+        assert [week["week_start"] for week in briefing["weeks"]] == [
+            MONDAY.isoformat(),
+            next_monday.isoformat(),
+            third_monday.isoformat(),
+        ]
+        assert [len(week["workouts"]) for week in briefing["weeks"]] == [7, 3, 1]
+
+    def test_another_users_weeks_are_never_in_the_briefing(
+        self, athlete: User, bob: User, provide: Callable[..., Scripted]
+    ) -> None:
+        next_monday = MONDAY + timedelta(weeks=1)
+        bob_next = make_plan(bob, next_monday, status="confirmed", workouts=4)
+        make_plan(bob, MONDAY, status="confirmed", workouts=3)
+        provider = provide(said("Nothing planned next week."))
+
+        send(athlete, "What is next week?")
+
+        briefing = briefing_sent(provider)
+        assert [week["week_start"] for week in briefing["weeks"]] == [MONDAY.isoformat()]
+        content = provider.calls[0][1][0].content
+        for workout in PlannedWorkout.objects.for_user(bob).filter(plan=bob_next):
+            assert str(workout.lineage) not in content
 
 
 class TestAChange:
@@ -207,6 +253,27 @@ class TestAChange:
         versions = sorted(drafts(athlete), key=lambda p: p.version)
         assert [p.version for p in versions] == [2, 3]
         assert versions[1].parent_id == versions[0].pk
+
+    def test_changes_only_the_first_week_when_two_weeks_have_plans(
+        self, athlete: User, provide: Callable[..., Scripted]
+    ) -> None:
+        next_monday = MONDAY + timedelta(weeks=1)
+        next_plan = make_plan(athlete, next_monday, status="confirmed", workouts=2)
+        next_workout = PlannedWorkout.objects.for_user(athlete).filter(plan=next_plan).first()
+        assert next_workout is not None
+        provider = provide(
+            said(
+                "Skipping next week.",
+                [{"tool": "skip_workout", "id": str(next_workout.lineage)}],
+            ),
+            said("I can only change this week."),
+        )
+
+        sent = send(athlete, "Skip Monday next week")
+
+        assert sent.coach.text == "I can only change this week."
+        assert drafts(athlete) == []
+        assert len(provider.calls) == ATTEMPTS
 
 
 class TestAnAnswerThatCannotBeUsed:
@@ -291,11 +358,12 @@ class TestWithoutAPlan:
         AIProviderConfiguration.objects.create(
             owner=alice, provider="anthropic", model="claude-sonnet-5-5", api_key=KEY
         )
-        provide(said("You have no plan yet."))
+        provider = provide(said("You have no plan yet."))
 
         sent = send(alice, "What is next?")
 
         assert sent.coach.text == "You have no plan yet."
+        assert briefing_sent(provider)["weeks"] == []
 
 
 class TestIllness:
