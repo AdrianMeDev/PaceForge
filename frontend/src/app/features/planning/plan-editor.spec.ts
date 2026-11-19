@@ -25,6 +25,7 @@ function workout(changes: Partial<Workout>): Workout {
     title: 'Endurance ride',
     goal: 'endurance',
     duration_minutes: 60,
+    estimated_load: 50,
     zone_system: 'power',
     zone: 2,
     target: null,
@@ -85,6 +86,19 @@ function plan(changes: Partial<WeekPlan> = {}): WeekPlan {
         ],
       }),
     ],
+    load: {
+      sports: [
+        { sport: 'cycling', planned_minutes: 60, done_minutes: 0, planned_load: 50, done_load: 0 },
+        {
+          sport: 'running',
+          planned_minutes: 115,
+          done_minutes: 0,
+          planned_load: 105,
+          done_load: 0,
+        },
+      ],
+      total: { planned_minutes: 175, done_minutes: 0, planned_load: 155, done_load: 0 },
+    },
     report: null,
     export: { synced: 3, failed: 0, not_sent: 0, older: 0 },
     ...changes,
@@ -218,6 +232,8 @@ describe('PlanEditor', () => {
       ]);
       expect(JSON.stringify(sent)).not.toContain('target');
       expect(JSON.stringify(sent)).not.toContain('export');
+      expect(JSON.stringify(sent)).not.toContain('estimated_load');
+      expect(sent).not.toHaveProperty('load');
     });
 
     it('says that nothing is to be pointed out', async () => {

@@ -240,6 +240,9 @@ function toActivity(raw: unknown, reply: Reply): Activity {
     typeof item['start_time'] !== 'string' ||
     typeof item['manufacturer'] !== 'string' ||
     typeof item['notes'] !== 'string' ||
+    (item['load_source'] !== null &&
+      item['load_source'] !== 'intervals' &&
+      item['load_source'] !== 'rpe') ||
     typeof item['created_at'] !== 'string'
   ) {
     throw unexpected(reply);
@@ -264,6 +267,7 @@ function toActivity(raw: unknown, reply: Reply): Activity {
     rpe: numberOrNull(item['rpe'], reply),
     notes: item['notes'],
     load: numberOrNull(item['load'], reply),
+    load_source: item['load_source'],
     created_at: item['created_at'],
   };
 }

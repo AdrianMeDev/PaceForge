@@ -1,7 +1,11 @@
 import { HttpClient, HttpErrorResponse, HttpResponse } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable, firstValueFrom } from 'rxjs';
-import { ActivitySource, Sport as ActivitySport } from '../activities/activities-models';
+import {
+  ActivitySource,
+  LoadSource,
+  Sport as ActivitySport,
+} from '../activities/activities-models';
 import { API_BASE } from '../api/api-providers';
 import {
   ProviderProblem,
@@ -281,6 +285,7 @@ function toWorkout(raw: unknown, reply: Reply): ReviewWorkout {
     title: string(item['title'], reply),
     goal: oneOf(item['goal'], GOALS, reply) as WorkoutGoal,
     duration_minutes: count(item['duration_minutes'], reply),
+    estimated_load: count(item['estimated_load'], reply),
     slot: slot === null ? null : (oneOf(slot, SLOTS, reply) as WorkoutSlot),
     notes: string(item['notes'], reply),
     status: oneOf(item['status'], STATUSES, reply) as WorkoutStatus,
@@ -293,6 +298,7 @@ function toWorkout(raw: unknown, reply: Reply): ReviewWorkout {
 function toActivity(raw: unknown, reply: Reply): ReviewActivity {
   const item = object(raw, reply);
   const workoutId = item['workout_id'];
+  const loadSource = item['load_source'];
   return {
     id: text(item['id'], reply),
     source: oneOf(item['source'], SOURCES, reply) as ActivitySource,
@@ -305,6 +311,8 @@ function toActivity(raw: unknown, reply: Reply): ReviewActivity {
     rpe: numberOrNull(item['rpe'], reply),
     notes: string(item['notes'], reply),
     load: numberOrNull(item['load'], reply),
+    load_source:
+      loadSource === null ? null : (oneOf(loadSource, ['intervals', 'rpe'], reply) as LoadSource),
     workout_id: workoutId === null ? null : text(workoutId, reply),
   };
 }
@@ -333,9 +341,11 @@ function toFigures(item: Raw, reply: Reply): Figures {
   return {
     planned_count: count(item['planned_count'], reply),
     planned_minutes: count(item['planned_minutes'], reply),
+    planned_load: count(item['planned_load'], reply),
     actual_count: count(item['actual_count'], reply),
     actual_minutes: count(item['actual_minutes'], reply),
     load: count(item['load'], reply),
+    loaded_count: count(item['loaded_count'], reply),
     rated_count: count(item['rated_count'], reply),
   };
 }

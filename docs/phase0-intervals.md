@@ -115,7 +115,10 @@ Base URL `https://intervals.icu/api/v1`. All paths below start with `/athlete/{i
   `external_id`, unique per owner and source. They have no file hash. File activities still need
   a hash; manual activities have neither a hash nor an external id. Activity summaries include
   nullable `avg_pace_s_per_km` (seconds per kilometre) and `training_load`. Both must be
-  non-negative. Provider training load stays separate from the RPE-based `load`. `POST /api/activities/sync/`
+  non-negative. The unified `load` uses rounded Intervals training load when present, otherwise
+  duration in hours times RPE times 10. `load_source` is `intervals`, `rpe` or `null`. The Activities
+  list shows load points with the source (Intervals.icu or RPE estimate), including zero. It shows
+  a dash when load is unknown. `POST /api/activities/sync/`
   (and the **Sync from Intervals.icu** button on the Activities page) imports non-Strava activities
   from the last 8–12 weeks (`INTERVALS_SYNC_WEEKS`), skipping Strava stubs and duplicates.
 

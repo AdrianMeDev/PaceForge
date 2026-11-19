@@ -1,4 +1,11 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  OnInit,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { PlanningApi } from '../../core/planning/planning-api';
 import { ReviewApi } from '../../core/review/review-api';
@@ -79,6 +86,7 @@ interface ReviewDay {
   imports: [RouterLink, Icon, PageHeader, SessionRating, WeekFeedbackForm, CoachComment],
   templateUrl: './review-page.html',
   styleUrl: './review-page.css',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ReviewPage implements OnInit {
   private readonly api = inject(ReviewApi);

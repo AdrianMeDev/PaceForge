@@ -1,4 +1,6 @@
 import {
+  DoneLoad,
+  DoneMinutes,
   Focus,
   KeySession,
   RacePriority,
@@ -8,7 +10,7 @@ import {
   Sport,
 } from '../../core/season/season-models';
 import { formatGoalDistance } from '../goals/goal-format';
-import { SPORT_LABELS, minutesText, weekRange } from '../planning/plan-format';
+import { SPORT_LABELS, loadText, minutesText, weekRange } from '../planning/plan-format';
 
 export const PHASE_LABELS: Record<SeasonPhase, string> = {
   base: 'Base',
@@ -75,10 +77,16 @@ export const KIND_LABELS: Record<SessionKind, string> = {
 
 const SPORT_ORDER: Sport[] = ['running', 'cycling', 'swimming', 'strength'];
 
-/** "Running 3 h · Cycling 1 h 30 min": what a week plans of each sport, empty if nothing. */
-export function minutesBySport(minutes: Partial<Record<Sport, number>>): string {
-  return SPORT_ORDER.filter((sport) => (minutes[sport] ?? 0) > 0)
-    .map((sport) => `${SPORT_LABELS[sport]} ${minutesText(minutes[sport] as number)}`)
+/** Planned minutes by sport, with load points beside them when supplied. Empty if nothing. */
+export function minutesBySport(
+  minutes: Partial<Record<Sport, number>>,
+  load?: Partial<Record<Sport, number>>,
+): string {
+  return SPORT_ORDER.filter((sport) => (minutes[sport] ?? 0) > 0 || (load?.[sport] ?? 0) > 0)
+    .map(
+      (sport) =>
+        `${SPORT_LABELS[sport]} ${minutesText(minutes[sport] ?? 0)}${load === undefined ? '' : ` / ${loadText(load[sport] ?? 0)}`}`,
+    )
     .join(' · ');
 }
 
@@ -105,15 +113,21 @@ export function seasonFindingPlace(path: string, weekStarts: string[]): string {
   return start === undefined ? 'Season' : weekRange(start);
 }
 
-/** "Running 1 h · Other 30 min" for the minutes done in a week; "0 min" if there were none. */
-export function doneText(done: { sport: string; minutes: number }[]): string {
-  if (done.length === 0) {
-    return '0 min';
+/** Done minutes and optional known load, including sports that have only one of the two. */
+export function doneText(done: DoneMinutes[], load?: DoneLoad[] | null): string {
+  const withLoad = load != null;
+  const totalLoad = load?.reduce((sum, entry) => sum + entry.load, 0) ?? 0;
+  const amounts = new Map(done.map((entry) => [entry.sport, entry.minutes]));
+  const loads = new Map(load?.map((entry) => [entry.sport, entry.load]));
+  const sports = [...SPORT_ORDER, 'other'] as const;
+  const present = sports.filter((sport) => amounts.has(sport) || loads.has(sport));
+  if (present.length === 0) {
+    return withLoad ? `0 min / ${loadText(0)}` : '0 min';
   }
   const total = done.reduce((sum, entry) => sum + entry.minutes, 0);
-  const parts = done.map(
-    (entry) =>
-      `${entry.sport === 'other' ? 'Other' : SPORT_LABELS[entry.sport as Sport]} ${minutesText(entry.minutes)}`,
+  const parts = present.map(
+    (sport) =>
+      `${sport === 'other' ? 'Other' : SPORT_LABELS[sport]} ${minutesText(amounts.get(sport) ?? 0)}${withLoad ? ` / ${loadText(loads.get(sport) ?? 0)}` : ''}`,
   );
-  return `${parts.join(' · ')} · ${minutesText(total)} in all`;
+  return `${parts.join(' · ')} · ${minutesText(total)}${withLoad ? ` / ${loadText(totalLoad)}` : ''} in all`;
 }

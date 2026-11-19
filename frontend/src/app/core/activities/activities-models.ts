@@ -1,5 +1,6 @@
 export type Sport = 'running' | 'cycling' | 'swimming' | 'strength' | 'other';
 export type ActivitySource = 'fit_file' | 'tcx_file' | 'gpx_file' | 'manual' | 'intervals_icu';
+export type LoadSource = 'intervals' | 'rpe';
 
 /**
  * One lap of an activity. A value the file does not report is `null`; nothing is estimated.
@@ -34,15 +35,16 @@ export interface Activity {
   avg_power_w: number | null;
   total_ascent_m: number | null;
   calories: number | null;
-  /** Training load reported by the source (e.g. Intervals.icu); never mixed with `load`. */
+  /** Raw training load reported by the source (e.g. Intervals.icu). */
   training_load: number | null;
   manufacturer: string;
   /** How hard the user felt the session was, 1 to 10 (their own rating); `null`: not said. */
   rpe: number | null;
   /** The user's own note (free text: show it as text only). */
   notes: string;
-  /** Minutes times RPE in arbitrary units (not TSS); `null` without a duration or an RPE. */
+  /** Unified load points: Intervals load, otherwise hours × RPE × 10; `null` if unknown. */
   load: number | null;
+  load_source: LoadSource | null;
   created_at: string;
 }
 

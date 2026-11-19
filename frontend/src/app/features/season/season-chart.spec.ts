@@ -1,5 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Season, SeasonPlan, SeasonWeek } from '../../core/season/season-models';
+import { query } from '../../testing/dom';
 import {
   BAR_GAP,
   BAR_WIDTH,
@@ -12,6 +13,7 @@ import {
   chartLayout,
   chartWeeks,
   niceAxis,
+  niceLoadAxis,
 } from './season-chart';
 
 function week(start: string, target = 300): SeasonWeek {
@@ -49,10 +51,13 @@ function planOf(minutes: Record<string, number>[]): SeasonPlan {
       week_start: SEASON.weeks[index].week_start,
       minutes: entry,
       total_minutes: Object.values(entry).reduce((sum, value) => sum + value, 0),
+      planned_load: { running: 80, cycling: 40 },
+      total_planned_load: 120,
       focus: 'endurance',
       key_sessions: [],
       reason: '',
       done: null,
+      done_load: null,
     })),
     report: null,
   };
@@ -82,6 +87,24 @@ describe('niceAxis', () => {
   });
 });
 
+describe('niceLoadAxis', () => {
+  it.each([
+    [0, 1, 1],
+    [1, 1, 1],
+    [6, 1, 6],
+    [7, 2, 8],
+    [120, 20, 120],
+    [301, 100, 400],
+    [601, 200, 800],
+    [4000, 1000, 4000],
+    [20000, 5000, 20000],
+  ])('holds %i load points with a step of %i to %i', (highest, step, maxLoad) => {
+    expect(niceLoadAxis(highest)).toEqual({ step, maxLoad });
+    expect(maxLoad).toBeGreaterThanOrEqual(highest);
+    expect(maxLoad / step).toBeLessThanOrEqual(6);
+  });
+});
+
 describe('chartWeeks', () => {
   it('takes the aim of the skeleton when there is no plan', () => {
     expect(chartWeeks(SEASON, null).map((w) => w.planned)).toEqual([
@@ -100,6 +123,81 @@ describe('chartWeeks', () => {
       {},
     ]);
   });
+
+  it('uses server load estimates and keeps unknown and empty done load distinct', () => {
+    const plan = planOf([{ running: 100 }, { running: 60 }, {}]);
+    plan.weeks[0].done_load = [{ sport: 'other', load: 170 }];
+    plan.weeks[1].done_load = [];
+
+    expect(chartWeeks(SEASON, plan, 'load')).toEqual([
+      { week_start: '2026-11-16', planned: { running: 80, cycling: 40 }, done: { other: 170 } },
+      { week_start: '2026-11-23', planned: { running: 80, cycling: 40 }, done: {} },
+      { week_start: '2026-11-30', planned: { running: 80, cycling: 40 }, done: null },
+    ]);
+    expect(
+      chartWeeks(SEASON, null, 'load').every((week) => Object.keys(week.planned).length === 0),
+    ).toBe(true);
+  });
+});
+
+describe('load chart layout', () => {
+  const weeks = [
+    {
+      week_start: '2026-11-16',
+      planned: { strength: 20, swimming: 20, cycling: 40, running: 40 },
+      done: { other: 80, running: 120 },
+    },
+    { week_start: '2026-11-23', planned: {}, done: {} },
+    { week_start: '2026-11-30', planned: {}, done: null },
+  ];
+  const layout = chartLayout(weeks, 'load');
+
+  it('scales both stacks to a common load axis that includes the highest done total', () => {
+    expect(layout.maxValue).toBe(200);
+    expect(layout.ticks[0]).toEqual({ y: TOP + PLOT_HEIGHT, label: '0 pts' });
+    expect(layout.ticks.at(-1)).toEqual({ y: TOP, label: '200 pts' });
+    expect(layout.bars[0].segments.reduce((sum, part) => sum + part.height, 0)).toBeCloseTo(
+      (PLOT_HEIGHT * 120) / 200,
+    );
+    expect(layout.bars[0].done?.segments.reduce((sum, part) => sum + part.height, 0)).toBeCloseTo(
+      PLOT_HEIGHT,
+    );
+    expect(layout.left).toBeGreaterThan(LEFT);
+  });
+
+  it('stacks sports in the same order and aligns the narrower done bars', () => {
+    const first = layout.bars[0];
+    expect(first.segments.map((part) => part.series)).toEqual([
+      'running',
+      'cycling',
+      'swimming',
+      'strength',
+    ]);
+    expect(first.done?.segments.map((part) => part.series)).toEqual(['running', 'other']);
+    expect(first.segments[0].y + first.segments[0].height).toBeCloseTo(TOP + PLOT_HEIGHT);
+    expect(first.segments[1].y + first.segments[1].height).toBeCloseTo(first.segments[0].y);
+    expect(first.done?.x).toBe(first.x + BAR_WIDTH + DONE_GAP);
+    expect(first.done?.width).toBe(DONE_WIDTH);
+    expect(layout.bars[1].x - first.x).toBe(BAR_WIDTH + DONE_GAP + DONE_WIDTH + BAR_GAP);
+    expect(layout.series).toEqual(['running', 'cycling', 'swimming', 'strength', 'other']);
+  });
+
+  it('labels planned and done load per sport and in total without hour units', () => {
+    expect(layout.bars[0].label).toBe(
+      '16 Nov – 22 Nov · Planned: Running 40 pts · Planned: Cycling 40 pts · Planned: Swimming 20 pts · Planned: Strength 20 pts · 120 pts planned · Done: Running 120 pts · Done: Other 80 pts · 200 pts done',
+    );
+    expect(layout.bars[1].label).toContain('nothing planned · nothing done');
+    expect(layout.bars[1].done?.segments).toEqual([]);
+    expect(layout.bars[2].done).toBeNull();
+    expect(layout.bars[2].label).not.toContain('done');
+  });
+
+  it('has a finite scale and no segments for zero load', () => {
+    const empty = chartLayout([{ week_start: '2026-11-16', planned: {} }], 'load');
+    expect(empty.maxValue).toBe(1);
+    expect(empty.bars[0].segments).toEqual([]);
+    expect(empty.ticks.every((tick) => Number.isFinite(tick.y))).toBe(true);
+  });
 });
 
 describe('chartLayout', () => {
@@ -117,7 +215,7 @@ describe('chartLayout', () => {
   });
 
   it('puts the highest bar on a round axis and sizes the others in proportion', () => {
-    expect(layout.maxMinutes).toBe(240);
+    expect(layout.maxValue).toBe(240);
     expect(layout.bars[0].segments.reduce((sum, s) => sum + s.height, 0)).toBeCloseTo(PLOT_HEIGHT);
     expect(layout.bars[1].segments[0].height).toBeCloseTo(PLOT_HEIGHT / 2);
   });
@@ -173,7 +271,7 @@ describe('chartLayout', () => {
   it('has an axis of one hour for a season without minutes', () => {
     const empty = chartLayout([{ week_start: '2026-11-16', planned: {} }]);
 
-    expect(empty.maxMinutes).toBe(60);
+    expect(empty.maxValue).toBe(60);
     expect(empty.bars[0].segments).toEqual([]);
   });
 
@@ -212,7 +310,7 @@ describe('chartLayout', () => {
         { week_start: '2026-11-16', planned: { running: 60 }, done: { running: 400 } },
       ]);
 
-      expect(more.maxMinutes).toBe(480);
+      expect(more.maxValue).toBe(480);
       expect(more.bars[0].done?.segments[0].height).toBeLessThanOrEqual(PLOT_HEIGHT);
     });
 
@@ -270,6 +368,7 @@ describe('SeasonChart', () => {
 
     expect(rects().map((rect) => rect.getAttribute('data-series'))).toEqual(['aim', 'aim']);
     expect(host.querySelector('svg')?.getAttribute('aria-label')).toContain('skeleton aims for');
+    expect(host.querySelector('[data-testid="chart-load"]')).toBeNull();
   });
 
   it('draws the plan by sport with a legend for the colours that occur', async () => {
@@ -310,6 +409,58 @@ describe('SeasonChart', () => {
 
     expect(host.querySelector('[data-testid="legend-done"]')).toBeNull();
     expect(host.querySelector('rect.done')).toBeNull();
+  });
+
+  it('toggles minutes and load, including sport tooltips, axis labels and accessible selection', async () => {
+    const plan = planOf([{ running: 100 }, { running: 60 }, {}]);
+    plan.weeks[0].done = [{ sport: 'running', minutes: 60 }];
+    plan.weeks[0].done_load = [{ sport: 'other', load: 170 }];
+    await render(SEASON, plan);
+    const minutes = query<HTMLButtonElement>(host, '[data-testid="chart-minutes"]');
+    const load = query<HTMLButtonElement>(host, '[data-testid="chart-load"]');
+    expect(minutes.getAttribute('aria-pressed')).toBe('true');
+    expect(load.getAttribute('aria-pressed')).toBe('false');
+
+    load.click();
+    await fixture.whenStable();
+
+    expect(load.getAttribute('aria-pressed')).toBe('true');
+    expect(minutes.getAttribute('aria-pressed')).toBe('false');
+    expect(host.querySelector('svg')?.getAttribute('aria-label')).toContain('load points');
+    expect(host.querySelector('rect > title')?.textContent).toBe('Planned: Running 80 pts');
+    expect(host.querySelector('rect.done > title')?.textContent).toBe('Done: Other 170 pts');
+    expect(host.querySelector('[data-testid="bar-2026-11-16"] > title')?.textContent).toContain(
+      '120 pts planned · Done: Other 170 pts · 170 pts done',
+    );
+    expect(host.querySelector('.axis')?.textContent?.trim()).toBe('0 pts');
+    expect(host.querySelector('.legend')?.textContent).toContain('Other');
+
+    minutes.click();
+    await fixture.whenStable();
+
+    expect(host.querySelector('rect > title')?.textContent).toBe('Running 1 h 40 min');
+    expect(host.querySelector('rect.done > title')?.textContent).toBe('Done: Running 1 h');
+    expect(host.querySelector('.axis')?.textContent?.trim()).toBe('0 h');
+    expect(minutes.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('updates load for a different version and falls back to minutes for the skeleton', async () => {
+    await render(SEASON, planOf([{ running: 100 }, {}, {}]));
+    query<HTMLButtonElement>(host, '[data-testid="chart-load"]').click();
+    await fixture.whenStable();
+    const draft = planOf([{ running: 60 }, {}, {}]);
+    draft.status = 'draft';
+    draft.weeks[0].planned_load = { swimming: 50 };
+    draft.weeks[0].total_planned_load = 50;
+    fixture.componentRef.setInput('plan', draft);
+    await fixture.whenStable();
+    expect(host.querySelector('rect > title')?.textContent).toBe('Planned: Swimming 50 pts');
+    expect(host.querySelector('rect.done')).toBeNull();
+
+    fixture.componentRef.setInput('plan', null);
+    await fixture.whenStable();
+    expect(host.querySelector('rect > title')?.textContent).toBe('Aim of the skeleton 4 h');
+    expect(host.querySelector('[data-testid="chart-load"]')).toBeNull();
   });
 
   it('draws nothing for a season without weeks', async () => {

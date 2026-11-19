@@ -12,6 +12,7 @@ from .schema import to_json
 from .storage import skeleton_data
 
 if TYPE_CHECKING:
+    from .done import WeekTotals
     from .models import SeasonPlanVersion
     from .services import StoredSeason
 
@@ -33,13 +34,14 @@ def plan_detail(
     plan: SeasonPlanVersion,
     loaded: StoredSeason,
     report: Report | None,
-    done: dict[date, list[tuple[str, int]]] | None = None,
+    planned_load: dict[date, dict[str, int]],
+    done: dict[date, WeekTotals] | None = None,
 ) -> dict[str, Any]:
     """One version with its weeks and the skeleton it was made for. A draft comes with what the
     checks say about it (``report`` is ``None`` for a plan that was decided on: the checks are
     about what can still be done). The text of the coach (the rationale, the reasons and the
-    details) is in it as text and nothing else. ``done`` holds the minutes the athlete trained in
-    the weeks that have begun (``season.done``); a week that is not in it has ``done: null``."""
+    details) is in it as text and nothing else. ``done`` holds minutes and load for confirmed
+    weeks that have begun; other weeks have ``done: null`` and ``done_load: null``."""
     data = to_json(loaded.plan)
     done = done or {}
     return {
@@ -57,7 +59,14 @@ def plan_detail(
             {
                 **week,
                 "total_minutes": built.total,
-                "done": _done(done.get(built.week_start)),
+                "planned_load": planned_load[built.week_start],
+                "total_planned_load": sum(planned_load[built.week_start].values()),
+                "done": _done(done[built.week_start]["minutes"], "minutes")
+                if built.week_start in done
+                else None,
+                "done_load": _done(done[built.week_start]["load"], "load")
+                if built.week_start in done
+                else None,
             }
             for week, built in zip(data["weeks"], loaded.plan.weeks, strict=True)
         ],
@@ -65,10 +74,8 @@ def plan_detail(
     }
 
 
-def _done(entries: list[tuple[str, int]] | None) -> list[dict[str, Any]] | None:
-    if entries is None:
-        return None
-    return [{"sport": sport, "minutes": minutes} for sport, minutes in entries]
+def _done(entries: list[tuple[str, int]], field: str) -> list[dict[str, Any]]:
+    return [{"sport": sport, field: amount} for sport, amount in entries]
 
 
 _TIME = serializers.DateTimeField()

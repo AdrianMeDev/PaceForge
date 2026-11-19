@@ -27,6 +27,19 @@ const DRAFT = {
   parent: null,
   created_at: '2026-11-13T23:27:53.638352Z',
   confirmed_at: null,
+  load: {
+    sports: [
+      {
+        sport: 'cycling',
+        planned_minutes: 180,
+        done_minutes: 60,
+        planned_load: 150,
+        done_load: 75,
+      },
+      { sport: 'other', planned_minutes: 0, done_minutes: 30, planned_load: 0, done_load: 20 },
+    ],
+    total: { planned_minutes: 180, done_minutes: 90, planned_load: 150, done_load: 95 },
+  },
   workouts: [
     {
       lineage: '01a1d73d-aaaa-7000-8000-000000000001',
@@ -35,6 +48,7 @@ const DRAFT = {
       title: 'Endurance ride',
       goal: 'endurance',
       duration_minutes: 60,
+      estimated_load: 50,
       zone_system: 'power',
       zone: 2,
       notes: 'Keep it easy',
@@ -52,6 +66,7 @@ const DRAFT = {
       title: 'Tempo ride',
       goal: 'tempo',
       duration_minutes: 60,
+      estimated_load: 50,
       zone_system: 'power',
       zone: 3,
       notes: 'Keep it easy',
@@ -69,6 +84,7 @@ const DRAFT = {
       title: 'Intervals',
       goal: 'threshold',
       duration_minutes: 60,
+      estimated_load: 50,
       zone_system: null,
       zone: null,
       notes: 'Keep it easy',
@@ -109,6 +125,12 @@ const CONFIRMED = {
   parent: null,
   created_at: '2026-11-13T23:28:07.281568Z',
   confirmed_at: '2026-11-13T23:28:07.353166Z',
+  load: {
+    sports: [
+      { sport: 'cycling', planned_minutes: 60, done_minutes: 0, planned_load: 50, done_load: 0 },
+    ],
+    total: { planned_minutes: 60, done_minutes: 0, planned_load: 50, done_load: 0 },
+  },
   workouts: [
     {
       lineage: '01a1d73d-aaaa-7000-8000-000000000004',
@@ -117,6 +139,7 @@ const CONFIRMED = {
       title: 'Endurance ride',
       goal: 'endurance',
       duration_minutes: 60,
+      estimated_load: 50,
       zone_system: 'power',
       zone: 2,
       notes: '',
@@ -1110,6 +1133,92 @@ describe('PlanningApi', () => {
   describe('get', () => {
     const URL = `/api/planning/plans/${DRAFT_ID}/`;
 
+    it('reads workout estimates and per-sport and total load, including Other', async () => {
+      const { result } = await run(api.get(DRAFT_ID), 'GET', URL, DRAFT, 200);
+
+      expect(result).toMatchObject({
+        plan: {
+          workouts: DRAFT.workouts.map((workout) => ({ estimated_load: workout.estimated_load })),
+          load: DRAFT.load,
+        },
+      });
+    });
+
+    it('keeps zero estimates and an empty load summary', async () => {
+      const body = {
+        ...DRAFT,
+        workouts: [{ ...DRAFT.workouts[0], estimated_load: 0 }],
+        load: {
+          sports: [],
+          total: {
+            planned_minutes: 0,
+            done_minutes: 0,
+            planned_load: 0,
+            done_load: 0,
+          },
+        },
+      };
+      const { result } = await run(api.get(DRAFT_ID), 'GET', URL, body, 200);
+
+      expect(result).toMatchObject({
+        plan: { workouts: [{ estimated_load: 0 }], load: body.load },
+      });
+    });
+
+    it('takes only the known fields of load figures', async () => {
+      const body = {
+        ...DRAFT,
+        load: {
+          ...DRAFT.load,
+          secret: 'unused',
+          sports: DRAFT.load.sports.map((entry) => ({ ...entry, extra: 'unused' })),
+          total: { ...DRAFT.load.total, extra: 'unused' },
+        },
+      };
+      const { result } = await run(api.get(DRAFT_ID), 'GET', URL, body, 200);
+
+      expect(result).toEqual({ kind: 'ok', plan: DRAFT });
+    });
+
+    it.each([null, undefined, -1, 0.5, '50', Infinity, NaN])(
+      'rejects an invalid workout estimate %j',
+      async (value) => {
+        const body = altered(DRAFT, [['workouts', 0, 'estimated_load'], value]);
+        await runFailing(api.get(DRAFT_ID), 'GET', URL, body as object, 200);
+      },
+    );
+
+    it.each([
+      ['missing load', altered(DRAFT, [['load'], REMOVE])],
+      ['null load', { ...DRAFT, load: null }],
+      ['no sports list', { ...DRAFT, load: { total: DRAFT.load.total } }],
+      ['null sports', { ...DRAFT, load: { ...DRAFT.load, sports: null } }],
+      ['no total', { ...DRAFT, load: { sports: [] } }],
+      ['null total', { ...DRAFT, load: { sports: [], total: null } }],
+      ['unknown sport', altered(DRAFT, [['load', 'sports', 0, 'sport'], 'curling'])],
+      [
+        'duplicate sports',
+        { ...DRAFT, load: { ...DRAFT.load, sports: [DRAFT.load.sports[0], DRAFT.load.sports[0]] } },
+      ],
+    ])('rejects %s in the load summary', async (_name, body) => {
+      await runFailing(api.get(DRAFT_ID), 'GET', URL, body as object, 200);
+    });
+
+    it.each(['planned_minutes', 'done_minutes', 'planned_load', 'done_load'])(
+      'rejects invalid %s in sport and total figures',
+      async (field) => {
+        for (const path of [
+          ['load', 'sports', 0, field],
+          ['load', 'total', field],
+        ]) {
+          for (const value of [null, undefined, -1, 0.5, '50', Infinity, NaN]) {
+            const body = altered(DRAFT, [path, value]);
+            await runFailing(api.get(DRAFT_ID), 'GET', URL, body as object, 200);
+          }
+        }
+      },
+    );
+
     it('returns a draft with its checks', async () => {
       const { result, request } = await run(api.get(DRAFT_ID), 'GET', URL, DRAFT, 200);
 
@@ -1610,7 +1719,7 @@ describe('PlanningApi', () => {
       });
     });
 
-    it('sends only the fields of the format, never the target or the export', async () => {
+    it('sends only the fields of the format, without computed fields', async () => {
       const crowded = (DRAFT.workouts as Workout[]).map((workout) => ({
         ...workout,
         target: { low: 1, high: 2, unit: 'W' as const },
@@ -1626,7 +1735,7 @@ describe('PlanningApi', () => {
       }));
 
       const { request } = await run(
-        api.check('2026-11-16', { ...sent(), workouts: crowded }),
+        api.check('2026-11-16', { ...DRAFT, ...sent(), workouts: crowded }),
         'POST',
         URL,
         ANSWER,
@@ -1636,6 +1745,8 @@ describe('PlanningApi', () => {
       expect(request.request.body).toEqual(sent());
       expect(JSON.stringify(request.request.body)).not.toContain('target');
       expect(JSON.stringify(request.request.body)).not.toContain('export');
+      expect(JSON.stringify(request.request.body)).not.toContain('estimated_load');
+      expect(request.request.body).not.toHaveProperty('load');
     });
 
     it('sends the exercises as they are and nothing else of them', async () => {
@@ -1759,6 +1870,20 @@ describe('PlanningApi', () => {
 
       expect(request.request.body).toEqual(sent());
       expect(result).toEqual({ kind: 'ok', plan: NEW_DRAFT as WeekPlan });
+    });
+
+    it('excludes computed workout estimates and week load when revising', async () => {
+      const { request } = await run(
+        api.revise(CONFIRMED_ID, { ...DRAFT, workouts: DRAFT.workouts as Workout[] }),
+        'POST',
+        URL,
+        NEW_DRAFT,
+        201,
+      );
+
+      expect(request.request.body).toEqual(sent());
+      expect(JSON.stringify(request.request.body)).not.toContain('estimated_load');
+      expect(request.request.body).not.toHaveProperty('load');
     });
 
     it('sends nothing for an id that is no uuid', async () => {

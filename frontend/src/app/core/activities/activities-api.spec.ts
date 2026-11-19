@@ -35,6 +35,7 @@ const SUMMARY = {
   rpe: null,
   notes: '',
   load: null,
+  load_source: null,
   created_at: '2026-11-13T07:29:55.337064Z',
 };
 const ACTIVITY: Activity = { ...(SUMMARY as Activity) };
@@ -171,6 +172,8 @@ describe('ActivitiesApi', () => {
         source: 'intervals_icu',
         avg_pace_s_per_km: 300.5,
         training_load: 75,
+        load: 75,
+        load_source: 'intervals',
       };
       const { result } = await run(
         api.list(50, 0),
@@ -184,6 +187,29 @@ describe('ActivitiesApi', () => {
         kind: 'ok',
         page: { count: 1, results: [synced] },
       });
+    });
+
+    it.each(['intervals', 'rpe'] as const)('preserves zero load from %s', async (source) => {
+      const activity = { ...SUMMARY, load: 0, load_source: source };
+      const { result } = await run(
+        api.list(20, 0),
+        'GET',
+        URL,
+        { count: 1, results: [activity] },
+        200,
+      );
+
+      expect(result).toMatchObject({ page: { results: [{ load: 0, load_source: source }] } });
+    });
+
+    it.each(['unknown', 1, {}, undefined])('rejects an invalid load source %j', async (source) => {
+      await runFailing(
+        api.list(20, 0),
+        'GET',
+        URL,
+        { count: 1, results: [{ ...SUMMARY, load_source: source }] },
+        200,
+      );
     });
 
     it.each([401, 403])('says when the session is gone (%i)', async (status) => {
@@ -410,7 +436,8 @@ describe('ActivitiesApi', () => {
       distance_m: null,
       rpe: 7,
       notes: 'Legs were heavy',
-      load: 315,
+      load: 53,
+      load_source: 'rpe',
     };
 
     it('posts the form as JSON and returns the activity', async () => {
@@ -423,7 +450,8 @@ describe('ActivitiesApi', () => {
           source: 'manual',
           rpe: 7,
           notes: 'Legs were heavy',
-          load: 315,
+          load: 53,
+          load_source: 'rpe',
         }),
       });
     });
@@ -549,7 +577,7 @@ describe('ActivitiesApi', () => {
   });
 
   describe('rate', () => {
-    const RATED = { ...SUMMARY, rpe: 6, notes: 'Hilly', load: 20, laps: LAPS };
+    const RATED = { ...SUMMARY, rpe: 6, notes: 'Hilly', load: 20, load_source: 'rpe', laps: LAPS };
 
     it('patches the rating as JSON and returns the activity with its laps', async () => {
       const { result, request } = await run(

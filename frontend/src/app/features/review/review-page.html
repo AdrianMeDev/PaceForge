@@ -106,7 +106,8 @@
                     <span class="badge">{{ sport[workout.sport] }}</span>
                   </div>
                   <p class="meta m-0 mt-1" data-testid="planned">
-                    Planned: {{ minutes(workout.duration_minutes) }}
+                    Planned: {{ minutes(workout.duration_minutes) }} ·
+                    {{ workout.estimated_load }} pts (estimated)
                   </p>
                   @if (activityOf(workout); as done) {
                     <p class="done m-0 mt-1" data-testid="matched">
@@ -246,7 +247,9 @@
                     <dd class="m-0">{{ counted(entry.planned_count, entry.planned_minutes) }}</dd>
                     <dt class="text-muted">Done</dt>
                     <dd class="m-0">{{ counted(entry.actual_count, entry.actual_minutes) }}</dd>
-                    <dt class="text-muted">Load</dt>
+                    <dt class="text-muted">Planned load</dt>
+                    <dd class="m-0">{{ entry.planned_load }} pts</dd>
+                    <dt class="text-muted">Done load</dt>
                     <dd class="m-0">{{ loadOf(entry) }}</dd>
                   </dl>
                 </li>
@@ -275,7 +278,9 @@
                       )
                     }}
                   </dd>
-                  <dt class="text-muted">Load</dt>
+                  <dt class="text-muted">Planned load</dt>
+                  <dd class="m-0">{{ shown.comparison.total.planned_load }} pts</dd>
+                  <dt class="text-muted">Done load</dt>
                   <dd class="m-0">{{ loadOf(shown.comparison.total) }}</dd>
                 </dl>
               </li>
@@ -286,7 +291,8 @@
                   <th scope="col">Sport</th>
                   <th scope="col">Planned</th>
                   <th scope="col">Done</th>
-                  <th scope="col">Load</th>
+                  <th scope="col">Planned load</th>
+                  <th scope="col">Done load</th>
                 </tr>
               </thead>
               <tbody>
@@ -295,6 +301,7 @@
                     <th scope="row">{{ sport[entry.sport] }}</th>
                     <td>{{ counted(entry.planned_count, entry.planned_minutes) }}</td>
                     <td>{{ counted(entry.actual_count, entry.actual_minutes) }}</td>
+                    <td>{{ entry.planned_load }} pts</td>
                     <td>{{ loadOf(entry) }}</td>
                   </tr>
                 }
@@ -318,12 +325,15 @@
                       )
                     }}
                   </td>
+                  <td>{{ shown.comparison.total.planned_load }} pts</td>
                   <td>{{ loadOf(shown.comparison.total) }}</td>
                 </tr>
               </tfoot>
             </table>
             <p class="hint">
-              Load is minutes times how hard it felt (AU). It is not the TSS of a platform.
+              Planned load is an estimate from the workout. Done load uses Intervals.icu training
+              load when available, otherwise duration in hours × RPE × 10. Both use load points.
+              Sessions without known load are left out of done load.
             </p>
           }
           <app-coach-comment

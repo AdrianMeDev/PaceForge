@@ -27,7 +27,8 @@ const SAVED: Activity = {
   manufacturer: '',
   rpe: 7,
   notes: '',
-  load: 315,
+  load: 53,
+  load_source: 'rpe',
   created_at: '2026-11-14T07:00:00Z',
 };
 

@@ -226,6 +226,8 @@ const PLAN_WEEKS = SEASON.weeks.map((week, index) => ({
   week_start: week.week_start,
   minutes: index === 2 ? { running: 90 } : { running: 120, cycling: 60 },
   total_minutes: index === 2 ? 90 : 180,
+  planned_load: index === 2 ? { running: 123 } : { running: 110, cycling: 55 },
+  total_planned_load: index === 2 ? 123 : 165,
   focus: index === 2 ? 'race_specific' : 'endurance',
   key_sessions:
     index === 2
@@ -233,6 +235,7 @@ const PLAN_WEEKS = SEASON.weeks.map((week, index) => ({
       : [{ sport: 'running', kind: 'long', minutes: 90, detail: '3 x 10 min at tempo' }],
   reason: 'Build the base.',
   done: null,
+  done_load: null,
 }));
 const PLAN = {
   id: ID,
@@ -400,7 +403,7 @@ describe('SeasonApi season plans', () => {
       });
     });
 
-    it('reads the minutes done of a week that has begun, and an empty week', async () => {
+    it('reads minutes and load done of a begun week, an empty week and an unknown week', async () => {
       const done = altered(
         PLAN,
         [
@@ -411,6 +414,14 @@ describe('SeasonApi season plans', () => {
           ],
         ],
         [['weeks', 1, 'done'], []],
+        [
+          ['weeks', 0, 'done_load'],
+          [
+            { sport: 'running', load: 50 },
+            { sport: 'other', load: 12 },
+          ],
+        ],
+        [['weeks', 1, 'done_load'], []],
       );
       const action = api.plan(ID);
       await answer(url, done as object, 200);
@@ -423,9 +434,13 @@ describe('SeasonApi season plans', () => {
                 { sport: 'running', minutes: 60 },
                 { sport: 'other', minutes: 10 },
               ],
+              done_load: [
+                { sport: 'running', load: 50 },
+                { sport: 'other', load: 12 },
+              ],
             },
-            { done: [] },
-            { done: null },
+            { done: [], done_load: [] },
+            { done: null, done_load: null },
           ],
         },
       });
@@ -437,6 +452,30 @@ describe('SeasonApi season plans', () => {
       await answer(url, altered(PLAN, [['request'], text]) as object, 200);
 
       expect(await action).toMatchObject({ plan: { request: text } });
+    });
+
+    it('reads zero planned load and confirmed workout load in sports absent from season minutes', async () => {
+      const action = api.plan(ID);
+      await answer(
+        url,
+        altered(
+          PLAN,
+          [['weeks', 0, 'planned_load'], {}],
+          [['weeks', 0, 'total_planned_load'], 0],
+          [['weeks', 1, 'planned_load'], { swimming: 55, strength: 0 }],
+          [['weeks', 1, 'total_planned_load'], 55],
+        ) as object,
+        200,
+      );
+      expect(await action).toMatchObject({
+        plan: {
+          weeks: [
+            { planned_load: {}, total_planned_load: 0 },
+            { planned_load: { swimming: 55, strength: 0 }, total_planned_load: 55 },
+            {},
+          ],
+        },
+      });
     });
 
     it('takes a request of 500 characters, counted as the server counts them', async () => {
@@ -525,6 +564,48 @@ describe('SeasonApi season plans', () => {
       ['a total that is not the sum', altered(PLAN, [['weeks', 0, 'total_minutes'], 181])],
       ['a total above a week', altered(PLAN, [['weeks', 0, 'total_minutes'], 10081])],
       ['no done', altered(PLAN, [['weeks', 0, 'done'], REMOVE])],
+      ['no planned load', altered(PLAN, [['weeks', 0, 'planned_load'], REMOVE])],
+      ['a list as planned load', altered(PLAN, [['weeks', 0, 'planned_load'], []])],
+      ['an unknown load sport', altered(PLAN, [['weeks', 0, 'planned_load', 'other'], 5])],
+      ['negative planned load', altered(PLAN, [['weeks', 0, 'planned_load', 'running'], -1])],
+      ['fractional planned load', altered(PLAN, [['weeks', 0, 'planned_load', 'running'], 1.5])],
+      ['no load total', altered(PLAN, [['weeks', 0, 'total_planned_load'], REMOVE])],
+      ['a negative load total', altered(PLAN, [['weeks', 0, 'total_planned_load'], -1])],
+      ['a fractional load total', altered(PLAN, [['weeks', 0, 'total_planned_load'], 165.5])],
+      [
+        'a load total that is not the sum',
+        altered(PLAN, [['weeks', 0, 'total_planned_load'], 166]),
+      ],
+      ['no done load', altered(PLAN, [['weeks', 0, 'done_load'], REMOVE])],
+      ['a text as done load', altered(PLAN, [['weeks', 0, 'done_load'], 'none'])],
+      ['an object as done load', altered(PLAN, [['weeks', 0, 'done_load'], {}])],
+      ['a text as done load entry', altered(PLAN, [['weeks', 0, 'done_load'], ['running']])],
+      [
+        'an unknown done load sport',
+        altered(PLAN, [['weeks', 0, 'done_load'], [{ sport: 'rowing', load: 5 }]]),
+      ],
+      [
+        'duplicate done load sport',
+        altered(PLAN, [
+          ['weeks', 0, 'done_load'],
+          [
+            { sport: 'running', load: 5 },
+            { sport: 'running', load: 6 },
+          ],
+        ]),
+      ],
+      [
+        'fractional done load',
+        altered(PLAN, [['weeks', 0, 'done_load'], [{ sport: 'running', load: 1.5 }]]),
+      ],
+      [
+        'negative done load',
+        altered(PLAN, [['weeks', 0, 'done_load'], [{ sport: 'running', load: -1 }]]),
+      ],
+      [
+        'zero done load',
+        altered(PLAN, [['weeks', 0, 'done_load'], [{ sport: 'running', load: 0 }]]),
+      ],
       ['a text as done', altered(PLAN, [['weeks', 0, 'done'], 'none'])],
       ['an object as done', altered(PLAN, [['weeks', 0, 'done'], {}])],
       ['a text as a done entry', altered(PLAN, [['weeks', 0, 'done'], ['running']])],

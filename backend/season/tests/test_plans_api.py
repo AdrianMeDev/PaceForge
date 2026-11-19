@@ -18,7 +18,10 @@ from coach.models import AIProviderConfiguration, AIUsageRecord
 from coach.providers.base import InvalidKeyError, ProviderUnavailableError, RateLimitedError
 from goals import services as goal_services
 from goals.models import Goal
-from planning.schema import Sport
+from planning import services as planning_services
+from planning.models import WeeklyPlan
+from planning.schema import Goal as WorkoutGoal
+from planning.schema import Sport, WeekPlan, Workout
 from planning.tests.scripted import Scripted
 from season import services
 from season.inputs import skeleton_for
@@ -191,7 +194,10 @@ class TestGenerating:
             "key_sessions",
             "reason",
             "total_minutes",
+            "planned_load",
+            "total_planned_load",
             "done",
+            "done_load",
         }
         assert first["minutes"] == {"running": data["skeleton"]["weeks"][0]["target_minutes"]}
         assert first["total_minutes"] == first["minutes"]["running"]
@@ -351,7 +357,9 @@ class TestReading:
         assert signed_in(alice).call("GET", f"{PLANS}{path}/").status_code == HTTPStatus.NOT_FOUND
 
 
-def trained(user: User, start: str, seconds: float, sport: str = "running", n: int = 0) -> None:
+def trained(
+    user: User, start: str, seconds: float | None, sport: str = "running", n: int = 0, **fields: Any
+) -> None:
     Activity.objects.create(
         owner=user,
         source="fit_file",
@@ -359,7 +367,15 @@ def trained(user: User, start: str, seconds: float, sport: str = "running", n: i
         sport=sport,
         start_time=datetime.fromisoformat(start).replace(tzinfo=UTC),
         timer_seconds=seconds,
+        **fields,
     )
+
+
+def weekly(user: User, monday: date = MONDAY) -> None:
+    stored = planning_services.save_draft(
+        user, WeekPlan(monday, (Workout(monday, Sport.CYCLING, "Ride", WorkoutGoal.THRESHOLD, 60),))
+    )
+    WeeklyPlan.objects.filter(pk=stored.pk).update(status="confirmed", confirmed_at=NOW)
 
 
 class TestTheMinutesDone:
@@ -386,6 +402,7 @@ class TestTheMinutesDone:
         stored = services.confirm(alice, draft(alice).pk)
 
         assert self.weeks(alice, stored.pk)[0]["done"] == []
+        assert self.weeks(alice, stored.pk)[0]["done_load"] == []
 
     def test_a_week_before_the_season_has_no_effect(self, alice: User) -> None:
         stored = services.confirm(alice, draft(alice).pk)
@@ -409,12 +426,14 @@ class TestTheMinutesDone:
 
         assert stored.status == status
         assert [week["done"] for week in weeks] == [None] * 6
+        assert [week["done_load"] for week in weeks] == [None] * 6
 
     def test_the_activities_of_another_user_do_not_show(self, alice: User, bob: User) -> None:
         stored = services.confirm(alice, draft(alice).pk)
         trained(bob, "2026-11-17T08:00", 3600)
 
         assert self.weeks(alice, stored.pk)[0]["done"] == []
+        assert self.weeks(alice, stored.pk)[0]["done_load"] == []
 
     def test_the_answer_of_confirming_has_them_too(self, alice: User) -> None:
         trained(alice, "2026-11-17T08:00", 3600)
@@ -436,6 +455,121 @@ class TestTheMinutesDone:
             api.call("GET", url(stored.pk))
 
         assert len(after) == len(before)
+
+
+class TestLoad:
+    def test_season_estimates_and_totals_are_returned_even_for_a_draft(self, alice: User) -> None:
+        stored = draft(
+            alice,
+            SeasonPlan(
+                (
+                    PlanWeek(
+                        MONDAY,
+                        ((Sport.RUNNING, 120), (Sport.SWIMMING, 60), (Sport.STRENGTH, 30)),
+                        Focus.ENDURANCE,
+                        "Base.",
+                        (KeySession(Sport.RUNNING, SessionKind.TEMPO, 60),),
+                    ),
+                )
+            ),
+        )
+
+        response = signed_in(alice).call("GET", url(stored.pk))
+
+        assert response.status_code == HTTPStatus.OK
+        week = body(response)["weeks"][0]
+        assert week["planned_load"] == {"running": 130, "swimming": 55, "strength": 30}
+        assert week["total_planned_load"] == 215
+        assert week["done_load"] is None
+
+    def test_confirmed_weekly_workouts_override_only_their_week(self, alice: User) -> None:
+        stored = services.confirm(alice, draft(alice).pk)
+        weekly(alice)
+
+        response = signed_in(alice).call("GET", url(stored.pk))
+
+        weeks = body(response)["weeks"]
+        assert weeks[0]["planned_load"] == {"cycling": 95}
+        assert weeks[0]["total_planned_load"] == 95
+        assert set(weeks[1]["planned_load"]) == {"running"}
+        assert weeks[1]["total_planned_load"] == (weeks[1]["total_minutes"] * 55 + 30) // 60
+
+    def test_done_load_uses_intervals_and_rpe_only_for_begun_confirmed_weeks(
+        self, alice: User
+    ) -> None:
+        stored = services.confirm(alice, draft(alice).pk)
+        trained(alice, "2026-11-17T08:00", 3600, training_load=80.5, rpe=10)
+        trained(alice, "2026-11-18T08:00", 1800, "cycling", rpe=6)
+        trained(alice, "2026-11-18T09:00", 600, "swimming")  # unknown load adds zero
+        trained(alice, "2026-11-18T10:00", None, "other", training_load=10)
+        trained(alice, "2026-11-25T08:00", 3600, training_load=200)
+        trained(alice, "2026-11-10T08:00", 3600, training_load=200)
+
+        weeks = body(signed_in(alice).call("GET", url(stored.pk)))["weeks"]
+
+        assert weeks[0]["done_load"] == [
+            {"sport": "running", "load": 81},
+            {"sport": "cycling", "load": 30},
+            {"sport": "other", "load": 10},
+        ]
+        assert [week["done_load"] for week in weeks[1:]] == [None] * 5
+
+    def test_other_users_workouts_and_activities_never_contribute(
+        self, alice: User, bob: User
+    ) -> None:
+        stored = services.confirm(alice, draft(alice).pk)
+        api = signed_in(alice)
+        before = body(api.call("GET", url(stored.pk)))
+        weekly(bob)
+        trained(bob, "2026-11-17T08:00", 3600, training_load=500)
+
+        assert body(api.call("GET", url(stored.pk))) == before
+
+    def test_confirmation_returns_load_too(self, alice: User) -> None:
+        stored = draft(alice)
+        weekly(alice)
+        trained(alice, "2026-11-17T08:00", 3600, rpe=6)
+
+        response = signed_in(alice).call("POST", url(stored.pk, "confirm/"))
+
+        week = body(response)["weeks"][0]
+        assert week["planned_load"] == {"cycling": 95}
+        assert week["total_planned_load"] == 95
+        assert week["done_load"] == [{"sport": "running", "load": 60}]
+
+    @pytest.mark.parametrize("status", ["draft", "confirmed"])
+    def test_queries_are_constant_for_one_or_fifty_two_weeks(
+        self, alice: User, monkeypatch: pytest.MonkeyPatch, status: str
+    ) -> None:
+        api = signed_in(alice)
+        frame = skeleton_for(alice)
+        counts = []
+        monkeypatch.setattr(goal_services, "_utc_now", lambda: NOW + timedelta(weeks=52))
+        for count in (1, 52):
+            skeleton = replace(
+                frame,
+                weeks=tuple(
+                    replace(frame.weeks[0], week_start=MONDAY + timedelta(weeks=n), races=())
+                    for n in range(count)
+                ),
+            )
+            stored = services.save_draft(alice, following(skeleton), SeasonContext(skeleton))
+            if status == "confirmed":
+                services.confirm(alice, stored.pk)
+            if count == 52:
+                for n in range(count):
+                    monday = MONDAY + timedelta(weeks=n)
+                    weekly(alice, monday)
+                    trained(alice, f"{monday.isoformat()}T08:00", 3600, rpe=6)
+
+            with CaptureQueriesContext(connection) as queries:
+                response = api.call("GET", url(stored.pk))
+
+            assert response.status_code == HTTPStatus.OK
+            assert len(body(response)["weeks"]) == count
+            counts.append(len(queries))
+
+        assert counts[0] == counts[1]
 
 
 class TestConfirming:

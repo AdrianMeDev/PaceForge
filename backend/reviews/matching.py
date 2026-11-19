@@ -58,6 +58,7 @@ class PlannedItem:
     position: int
     sport: str
     minutes: int
+    planned_load: int = 0
 
 
 @dataclass(frozen=True)

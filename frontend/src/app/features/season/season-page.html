@@ -381,10 +381,11 @@
                   @if (plan(); as filled) {
                     @let filledWeek = filled.weeks[index];
                     <td data-label="Plan" data-testid="plan-minutes">
-                      {{ bySport(filledWeek.minutes) }}
-                      @if (filledWeek.total_minutes > 0) {
-                        <span class="total">{{ minutes(filledWeek.total_minutes) }}</span>
-                      }
+                      {{ bySport(filledWeek.minutes, filledWeek.planned_load) }}
+                      <span class="total"
+                        >{{ minutes(filledWeek.total_minutes) }} /
+                        {{ loadPoints(filledWeek.total_planned_load) }}</span
+                      >
                     </td>
                     <td data-label="Focus" data-testid="plan-focus">
                       {{ focusLabel[filledWeek.focus] }}
@@ -397,7 +398,7 @@
                     @if (hasDone()) {
                       <td data-label="Done" data-testid="plan-done">
                         @if (filledWeek.done; as made) {
-                          {{ done(made) }}
+                          {{ done(made, filledWeek.done_load) }}
                         }
                       </td>
                     }

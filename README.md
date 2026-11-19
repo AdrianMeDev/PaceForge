@@ -381,7 +381,7 @@ Strava is imported with one command: see [The whole Strava history](#the-whole-s
    `POST /api/activities/sync/` to import recent non-Strava activities from the last 8–12 weeks
    (up to today in your time zone; configured via `INTERVALS_SYNC_WEEKS`, default `12`).
    - **Mapped fields:** sport, start time, elapsed and timer duration, distance, Intervals.icu
-     `training_load` (kept separate from RPE-based `load`), average and maximum heart rate, average
+     `training_load` (used for unified `load` when present), average and maximum heart rate, average
      pace (`avg_pace_s_per_km`), average power, total ascent and calories (plus the internal
      Intervals.icu id). Estimated thresholds are refreshed once when new activities are imported.
    - **Strava activities are skipped:** Intervals.icu does not hand out Strava-sourced activities via
@@ -420,7 +420,8 @@ What you should know:
   home and workplace can be inferred. The database and its backups therefore hold location data and
   need the same care. The file is never returned by the API, and deleting an activity deletes it.
 - Activity summaries also return nullable `avg_pace_s_per_km` (seconds per kilometre) and
-  `training_load` fields. Provider training load is separate from the existing RPE-based `load`.
+  `training_load` fields. The unified `load` uses rounded provider training load when present, otherwise an RPE estimate.
+  The Activities list shows load points with their source: Intervals.icu or RPE estimate.
   The provider activity id stays internal. File imports leave these new measurements empty.
 - **Duplicates are refused:** the same file, or the same session from another source, answers
   *Already imported* (see [the same session twice](#the-same-session-twice)). Each user has their
@@ -488,12 +489,11 @@ not record, and for the sessions that only Strava has (Intervals.icu cannot hand
 - **The coach counts it** like an imported activity: its duration is part of the minutes of the last
   four weeks that the plan builds on. Nothing is estimated beyond that: no heart rate, no power, no
   best efforts, so it does not change your estimated thresholds.
-- **The load** of a session is the duration in minutes times the RPE, rounded, shown as *AU*
-  (arbitrary units; a 45 minute session at 7 is 315 AU). It is an estimate from how it felt and
-  **not the training stress score (TSS)** of a power meter or a platform: the two are on different
-  scales and are never added up. A session without a rating has no load, and neither does one
-  without a duration. (Imported files carry no rating at first; you can rate any activity afterwards
-  on the [Week review](#week-review) page.)
+- **The load** is shown in points with its source. Intervals.icu training load takes precedence,
+  even without a rating. Otherwise load is duration in hours times RPE times 10, rounded to a
+  whole point. A 45 minute session at RPE 7 is 53 points, shown as an *RPE estimate*. Without
+  Intervals load or both duration and a rating, the list shows a dash. You can rate any activity
+  afterwards on the [Week review](#week-review) page.
 
 #### The same session twice
 
@@ -943,15 +943,17 @@ sessions (a long run, a threshold session, the race …) and a reason. The model
   for every week, coloured and lettered by phase (Ba base, Bu build, Sp specific, Ta taper, Tr
   transition), an R for a recovery week, the letter of every race (A, B, C) and an outline round
   the current week; the full text of a cell (week, phase, races with their titles) is its tooltip.
-  The **chart** shows the minutes of every week as a stacked bar, one colour per sport, with hours
-  on the axis: the plan of the open version, or, without one, the aim of the skeleton in one
-  colour. For the **confirmed** plan and the weeks that have begun a narrower bar beside the plan
-  shows what you actually trained, in the same colours, and the table has a **Done** column. Done
-  minutes come from your activities: the timer time (else the elapsed time), added up per week
-  (Monday to Sunday in your time zone) and sport, activities of no sport of the plan as *Other*;
-  the current week counts with what is done so far. Every bar has its numbers as text and the
-  table has all of them; the page scrolls sideways on a narrow screen. There is no load measure
-  yet, only minutes.
+  The **chart** has a **Minutes** / **Load** toggle and shows every week as a stacked bar, one
+  colour per sport: the plan of the open version, or, without one, the aim of the skeleton in one
+  colour (in **Load** mode, planned load estimates from confirmed weekly workouts when present,
+  otherwise from the season's sport minutes and key sessions). For the **confirmed** plan and the
+  weeks that have begun a narrower bar beside the plan shows what you actually trained, in the same
+  colours, and the table has a **Done** column (with both minutes and done load). Done minutes
+  come from your activities: the timer time (else the elapsed time), added up per week (Monday to
+  Sunday in your time zone) and sport, activities of no sport of the plan as *Other*; the current
+  week counts with what is done so far. Done load uses Intervals.icu training load when present,
+  otherwise duration × RPE. Every bar has its numbers as text and the table has all of them; the
+  page scrolls sideways on a narrow screen.
 - **The week plan follows the confirmed plan:** a week that lies in the **confirmed** season plan
   (never a draft) is told to the coach with its phase, minutes of each sport, focus, key sessions
   and reason, and the Week plan page shows the same above the versions. See
@@ -965,6 +967,11 @@ for the skeleton and, for the filled plans, `GET /api/season/plans/` (the versio
 `POST /api/season/plans/<id>/confirm/` and `…/discard/`. Errors have a fixed text and a `code`:
 `not_configured`, `no_time`, `not_usable` (with the `problems`), `not_found`, `not_a_draft`,
 `not_confirmable` (with the `findings`), and the codes of a provider that did not answer.
+
+The season plan API also returns `planned_load` by sport and `total_planned_load` for each week.
+Confirmed weekly workouts supply the estimate when present. Otherwise it uses the season's
+sport minutes and key sessions. Begun weeks of the confirmed season also have `done_load`, from
+Intervals load or duration and RPE. Other weeks have `done_load: null`. Checks still use minutes.
 
 ## Week plan
 
@@ -1078,6 +1085,14 @@ are counted in the usage overview of the AI coach (calls and tokens of the last 
 purpose "weekly plan" is stored with each record). Drafting is limited to 5 a minute per user, with
 a counter of its own.
 
+The Week plan page shows estimated load points next to the duration of every workout.
+A **Planned vs done load** table compares load per sport and in total for the displayed version.
+It includes unplanned sports, including Other. Estimates use intensity zones or the session goal;
+strength uses exercise RPE, with a default when none is given. Done totals cover your activities
+in the plan's week in your time zone. Activities without known load contribute zero. The API
+returns these values as read-only `estimated_load` on workouts and `load` on the plan, with
+planned and done minutes too. All planning checks still use minutes.
+
 The full description, with the format, the rules, the exact limits and the API, is
 [Drafting with the coach](docs/weekly-plan.md#drafting-with-the-coach).
 
@@ -1169,8 +1184,8 @@ the workouts that are the same training (see [Week plan](#week-plan)).
 
 **Rate a session.** Every activity of the week, planned or not and imported or entered by hand, has
 *Rate this session*: how hard it felt (1 to 10, [RPE](#sessions-entered-by-hand)) and a note of up
-to 500 characters. You can change or clear it at any time. The load follows the rating (minutes
-times RPE, in AU; it is not TSS).
+to 500 characters. You can change or clear it at any time. Load uses Intervals.icu training load
+when present. Otherwise it uses duration in hours times RPE times 10.
 
 **How the week felt.** Tiredness, motivation and pain, each from 1 to 5, the week as a whole
 (*bad*, *fair*, *good* or *strong*) and a note of up to 500 characters. There is one feedback per
@@ -1188,10 +1203,19 @@ feedback stays saved and the note stays in the form. The note belongs to the dra
 with it; it is not part of the feedback. Nothing runs by itself: there is no automatic weekly
 run.
 
-**Planned and done.** A table per sport and for the week: the planned workouts and minutes, the
-activities done and their minutes (every activity of the week counts, planned or not), and the sum
-of the loads of the rated sessions, with "(1 of 2 rated)" where not every session is rated. There is
-no planned load, because workouts have none yet.
+**Planned and done.** Mobile tiles and a desktop table compare planned workouts, minutes and
+estimated load against activities done, minutes and done load, per sport and for the week.
+Every activity of the week counts, planned or not. Done load shows "(1 of 2 with load)" when
+some sessions have no known load, or a dash when none have load. Known zero is shown as zero points.
+Each workout shows estimated load next to its planned minutes. Matched and unplanned activities
+show load points with their source, including Intervals.icu load without an RPE rating.
+Planned load is an estimate. Done load uses Intervals.icu training load when available, otherwise
+duration in hours times RPE times 10.
+The review API also returns `estimated_load` for each workout and `load_source` for each activity
+(`intervals`, `rpe` or `null`). Its comparison includes `planned_load`, `load`, `loaded_count` and
+`rated_count` per sport and for the week. `loaded_count` counts activities with a known load,
+including zero and unrated Intervals.icu activities. `rated_count` counts RPE ratings separately.
+Planned load uses the same workout estimates as the week plan. Missing activity load adds zero.
 
 **Ask the coach.** At the bottom of the page, *What your coach says* has the button **Ask the
 coach** (**Ask again** once there is a comment). It asks your own
@@ -1206,7 +1230,8 @@ and no feedback has nothing to look back on: nothing is sent then, so it costs n
 **What the coach is told.** Numbers and fixed words only (`backend/reviews/briefing.py`): for each
 workout its day, sport, goal, planned minutes, status, the minutes done and the RPE; the sessions
 that were not planned (at most `MAX_UNPLANNED`, the rest is only counted); planned and done per
-sport and for the week; the statuses and the share done; and the three scales of the feedback.
+sport and for the week, including planned load, done load and the counts with load and RPE;
+the statuses and the share done; and the three scales of the feedback.
 **Not** your notes (of a session or of the week), the titles and notes of workouts, names, e-mail
 addresses or ids: there is no free text in it at all. The comment is the coach's own text; it is
 shown as text, and it is **never sent back** to the coach, not even when it plans the next week.

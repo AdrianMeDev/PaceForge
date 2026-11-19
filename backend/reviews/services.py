@@ -18,7 +18,9 @@ from activities.duplicates import duration_of
 from activities.load import load_of
 from activities.models import Activity
 from goals.services import time_zone_of, today_of
+from planning.load import estimate_workout_load
 from planning.models import PlannedWorkout, WeeklyPlan
+from planning.schema import parse_week_plan
 
 from .comparison import Comparison, compare
 from .matching import ActivityItem, Correction, PlannedItem, Status, WeekMatch, match_week
@@ -205,7 +207,35 @@ def _planned(workout: PlannedWorkout) -> PlannedItem:
         position=workout.position,
         sport=workout.sport,
         minutes=workout.duration_minutes,
+        planned_load=estimated_load(workout),
     )
+
+
+def estimated_load(workout: PlannedWorkout) -> int:
+    """Estimate a stored workout using the same checked format and load scale as the plan."""
+    monday = workout.day - timedelta(days=workout.day.weekday())
+    plan = parse_week_plan(
+        {
+            "week_start": monday.isoformat(),
+            "workouts": [
+                {
+                    "day": workout.day.isoformat(),
+                    "sport": workout.sport,
+                    "title": workout.title,
+                    "goal": workout.goal,
+                    "duration_minutes": workout.duration_minutes,
+                    "zone_system": workout.zone_system or None,
+                    "zone": workout.zone,
+                    "segments": workout.segments,
+                    "exercises": workout.exercises,
+                    "slot": workout.slot or None,
+                    "stretching_minutes": workout.stretching_minutes,
+                    "notes": workout.notes,
+                }
+            ],
+        }
+    )
+    return estimate_workout_load(plan.workouts[0])
 
 
 def _performed(activity: Activity, day: date) -> ActivityItem:

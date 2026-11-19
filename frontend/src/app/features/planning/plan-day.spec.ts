@@ -11,6 +11,7 @@ function workout(changes: Partial<Workout>): Workout {
     title: 'Endurance ride',
     goal: 'endurance',
     duration_minutes: 60,
+    estimated_load: 50,
     zone_system: 'power',
     zone: 2,
     target: null,
@@ -45,7 +46,41 @@ describe('PlanDayView', () => {
     expect(query(page, '.workout h4').textContent).toBe('Endurance ride');
     expect(query(page, '[data-testid=slot]').textContent).toBe('Morning');
     expect(query(page, '[data-testid=meta]').textContent).toContain('1 h');
+    expect(query(page, '[data-testid=meta]').textContent).toContain('Est. load 50 pts');
     expect(query(page, '[data-testid=workout-1]')).toBeTruthy();
+  });
+
+  it('shows the server estimate beside the duration for every sport, including zero', () => {
+    const page = show({
+      date: '2026-11-16',
+      label: 'Monday, Nov 16',
+      workouts: [
+        {
+          number: 1,
+          workout: workout({ sport: 'running', duration_minutes: 45, estimated_load: 41 }),
+        },
+        { number: 2, workout: workout({ sport: 'cycling', estimated_load: 50 }) },
+        {
+          number: 3,
+          workout: workout({ sport: 'swimming', duration_minutes: 30, estimated_load: 0 }),
+        },
+        {
+          number: 4,
+          workout: workout({ sport: 'strength', duration_minutes: 30, estimated_load: 30 }),
+        },
+      ],
+    });
+
+    expect(
+      Array.from(page.querySelectorAll('[data-testid=meta]')).map((element) =>
+        element.textContent?.replace(/\s+/g, ' ').trim(),
+      ),
+    ).toEqual([
+      '45 min · Est. load 41 pts · Power zone 2',
+      '1 h · Est. load 50 pts · Power zone 2',
+      '30 min · Est. load 0 pts · Power zone 2',
+      '30 min · Est. load 30 pts · Power zone 2',
+    ]);
   });
 
   it('marks each workout with the icon of its sport', () => {

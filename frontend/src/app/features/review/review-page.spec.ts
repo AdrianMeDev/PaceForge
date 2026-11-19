@@ -43,9 +43,11 @@ const WEEKS: ReviewableWeek[] = [
 const FIGURES = {
   planned_count: 2,
   planned_minutes: 120,
+  planned_load: 110,
   actual_count: 2,
   actual_minutes: 100,
-  load: 360,
+  load: 60,
+  loaded_count: 1,
   rated_count: 1,
 };
 
@@ -58,6 +60,7 @@ function workout(changes: Partial<ReviewWorkout> = {}): ReviewWorkout {
     title: 'Easy run',
     goal: 'endurance',
     duration_minutes: 60,
+    estimated_load: 55,
     slot: null,
     notes: '',
     status: 'done',
@@ -80,7 +83,8 @@ function activity(changes: Partial<ReviewActivity> = {}): ReviewActivity {
     distance_m: 10400,
     rpe: 6,
     notes: '',
-    load: 360,
+    load: 60,
+    load_source: 'rpe',
     workout_id: 'w1',
     ...changes,
   };
@@ -114,6 +118,7 @@ function review(changes: Partial<WeekReview> = {}): WeekReview {
         distance_m: null,
         rpe: null,
         load: null,
+        load_source: null,
         workout_id: null,
       }),
     ],
@@ -126,15 +131,18 @@ function review(changes: Partial<WeekReview> = {}): WeekReview {
           actual_count: 0,
           actual_minutes: 0,
           load: 0,
+          loaded_count: 0,
           rated_count: 0,
         },
         {
           sport: 'strength',
           planned_count: 0,
           planned_minutes: 0,
+          planned_load: 0,
           actual_count: 1,
           actual_minutes: 30,
           load: 0,
+          loaded_count: 0,
           rated_count: 0,
         },
       ],
@@ -428,9 +436,11 @@ describe('ReviewPage', () => {
         Array.from(page.querySelectorAll('.week > h2')).map((h) => h.textContent?.trim()),
       ).toEqual(['Mon 2 Nov', 'Wed 4 Nov', 'Not planned', 'Planned and done']);
       expect(inWorkout('w1', 'status')?.textContent).toBe('Done');
-      expect(inWorkout('w1', 'planned')?.textContent?.trim()).toBe('Planned: 1 h');
+      expect(inWorkout('w1', 'planned')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+        'Planned: 1 h · 55 pts (estimated)',
+      );
       expect(inWorkout('w1', 'matched')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
-        'Done: Running · 1:00:00 · 10.40 km · RPE 6 · 360 AU',
+        'Done: Running · 1:00:00 · 10.40 km · RPE 6 · 60 pts (RPE estimate)',
       );
       expect(inWorkout('w2', 'status')?.textContent).toBe('Missed');
     });
@@ -496,16 +506,30 @@ describe('ReviewPage', () => {
         Array.from(page.querySelectorAll(`[data-testid="${id}"] > *`)).map((cell) =>
           cell.textContent?.trim(),
         );
-      expect(row('figures-running')).toEqual(['Running', '2 · 2 h', '1 · 1 h', '360 AU']);
-      expect(row('figures-cycling')).toEqual(['Cycling', '2 · 2 h', '0 · 0 min', '–']);
-      expect(row('figures-strength')).toEqual(['Strength', '0 · 0 min', '1 · 30 min', '–']);
+      expect(row('figures-running')).toEqual([
+        'Running',
+        '2 · 2 h',
+        '1 · 1 h',
+        '110 pts',
+        '60 pts',
+      ]);
+      expect(row('figures-cycling')).toEqual(['Cycling', '2 · 2 h', '0 · 0 min', '110 pts', '–']);
+      expect(row('figures-strength')).toEqual([
+        'Strength',
+        '0 · 0 min',
+        '1 · 30 min',
+        '0 pts',
+        '–',
+      ]);
       expect(row('figures-total')).toEqual([
         'Together',
         '2 · 2 h',
         '2 · 1 h 40 min',
-        '360 AU (1 of 2 rated)',
+        '110 pts',
+        '60 pts (1 of 2 with load)',
       ]);
-      expect(text()).toContain('It is not the TSS of a platform.');
+      expect(text()).toContain('Planned load is an estimate from the workout.');
+      expect(text()).toContain('duration in hours × RPE × 10');
     });
 
     it('shows the same figures as tiles for a phone', async () => {
@@ -515,10 +539,97 @@ describe('ReviewPage', () => {
         Array.from(page.querySelectorAll(`[data-testid="${id}"] dd`)).map((cell) =>
           cell.textContent?.replace(/\s+/g, ' ').trim(),
         );
-      expect(tile('tile-running')).toEqual(['2 · 2 h', '1 · 1 h', '360 AU']);
-      expect(tile('tile-cycling')).toEqual(['2 · 2 h', '0 · 0 min', '–']);
-      expect(tile('tile-total')).toEqual(['2 · 2 h', '2 · 1 h 40 min', '360 AU (1 of 2 rated)']);
+      expect(tile('tile-running')).toEqual(['2 · 2 h', '1 · 1 h', '110 pts', '60 pts']);
+      expect(tile('tile-cycling')).toEqual(['2 · 2 h', '0 · 0 min', '110 pts', '–']);
+      expect(tile('tile-strength')).toEqual(['0 · 0 min', '1 · 30 min', '0 pts', '–']);
+      expect(tile('tile-total')).toEqual([
+        '2 · 2 h',
+        '2 · 1 h 40 min',
+        '110 pts',
+        '60 pts (1 of 2 with load)',
+      ]);
       expect(query(page, '[data-testid="tile-running"] p').textContent).toBe('Running');
+    });
+
+    it.each([0, 80])(
+      'shows unrated Intervals load of %i on sessions and both comparisons',
+      async (load) => {
+        const shown = review();
+        const running = {
+          ...shown.comparison.sports[0],
+          planned_count: 1,
+          planned_minutes: 60,
+          planned_load: 55,
+          load,
+          loaded_count: 1,
+          rated_count: 0,
+        };
+        const other = {
+          ...shown.comparison.sports[2],
+          sport: 'other' as const,
+          load: 20,
+          loaded_count: 1,
+        };
+        await setup({
+          shown: ok(
+            review({
+              workouts: [workout()],
+              activities: [
+                activity({ source: 'intervals_icu', rpe: null, load, load_source: 'intervals' }),
+                activity({
+                  ...shown.activities[1],
+                  sport: 'other',
+                  source: 'intervals_icu',
+                  load: 20,
+                  load_source: 'intervals',
+                }),
+              ],
+              comparison: {
+                ...shown.comparison,
+                sports: [running, other],
+                total: {
+                  ...FIGURES,
+                  planned_count: 1,
+                  planned_minutes: 60,
+                  planned_load: 55,
+                  load: load + 20,
+                  loaded_count: 2,
+                  rated_count: 0,
+                },
+              },
+            }),
+          ),
+        });
+
+        expect(inWorkout('w1', 'matched')?.textContent).toContain(
+          `Not rated · ${load} pts (Intervals.icu)`,
+        );
+        expect(byId('unplanned-a2')?.textContent).toContain('Not rated · 20 pts (Intervals.icu)');
+        expect(byId('rate-a1')?.textContent?.trim()).toBe('Rate this session');
+        for (const [id, expected] of [
+          ['running', load],
+          ['other', 20],
+          ['total', load + 20],
+        ] as const) {
+          expect(
+            query(page, `[data-testid="figures-${id}"] > :last-child`).textContent?.trim(),
+          ).toBe(`${expected} pts`);
+          expect(query(page, `[data-testid="tile-${id}"] dd:last-child`).textContent?.trim()).toBe(
+            `${expected} pts`,
+          );
+        }
+        expect(
+          query(page, '[data-testid="tile-other"] dd:nth-of-type(3)').textContent?.trim(),
+        ).toBe('0 pts');
+        expect(query(page, '[data-testid="figures"] thead').textContent).toContain('Planned load');
+        expect(query(page, '[data-testid="figures"] thead').textContent).toContain('Done load');
+      },
+    );
+
+    it('shows a zero workout estimate beside the planned minutes', async () => {
+      await setup({ shown: ok(review({ workouts: [workout({ estimated_load: 0 })] })) });
+
+      expect(inWorkout('w1', 'planned')?.textContent).toContain('0 pts (estimated)');
     });
 
     it('shows a week without a plan with what was done and a way to the plan', async () => {
@@ -801,7 +912,7 @@ describe('ReviewPage', () => {
       stubs.api.week.mockResolvedValue(
         ok(
           review({
-            activities: [activity({ rpe: 7, load: 420, notes: 'Hilly' }), review().activities[1]],
+            activities: [activity({ rpe: 7, load: 70, notes: 'Hilly' }), review().activities[1]],
           }),
         ),
       );
@@ -815,7 +926,7 @@ describe('ReviewPage', () => {
         notes: 'Hilly',
       });
       expect(stubs.api.week).toHaveBeenCalledExactlyOnceWith(FIRST);
-      expect(inWorkout('w1', 'matched')?.textContent).toContain('RPE 7 · 420 AU');
+      expect(inWorkout('w1', 'matched')?.textContent).toContain('RPE 7 · 70 pts (RPE estimate)');
       expect(inWorkout('w1', 'matched-notes')?.textContent).toBe('Hilly');
       expect(notice()).toBe('The rating was saved.');
       expect(weekSelect().value).toBe(FIRST);
@@ -827,7 +938,10 @@ describe('ReviewPage', () => {
       stubs.api.week.mockResolvedValue(
         ok(
           review({
-            activities: [activity(), { ...review().activities[1], rpe: 5, load: 150 }],
+            activities: [
+              activity(),
+              { ...review().activities[1], rpe: 5, load: 25, load_source: 'rpe' },
+            ],
           }),
         ),
       );
@@ -836,7 +950,7 @@ describe('ReviewPage', () => {
       await settle(fixture);
 
       expect(stubs.activities.rate).toHaveBeenCalledExactlyOnceWith('a2', { rpe: 5, notes: '' });
-      expect(byId('unplanned-a2')?.textContent).toContain('RPE 5 · 150 AU');
+      expect(byId('unplanned-a2')?.textContent).toContain('RPE 5 · 25 pts (RPE estimate)');
     });
 
     it('does not say that it worked when the week cannot be fetched again', async () => {

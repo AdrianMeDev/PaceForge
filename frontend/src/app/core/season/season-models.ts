@@ -85,8 +85,13 @@ export interface PlanWeek {
    * but the confirmed one and its weeks that have not begun; `[]`: a week without any training.
    */
   done: DoneMinutes[] | null;
+  /** Load points done by sport, with the same availability as `done`; `[]`: no known load. */
+  done_load: DoneLoad[] | null;
   minutes: Partial<Record<Sport, number>>;
   total_minutes: number;
+  /** Read-only estimates, using confirmed weekly workouts when available. */
+  planned_load: Partial<Record<Sport, number>>;
+  total_planned_load: number;
   focus: Focus;
   key_sessions: KeySession[];
   reason: string;
@@ -96,6 +101,12 @@ export interface PlanWeek {
 export interface DoneMinutes {
   sport: Sport | 'other';
   minutes: number;
+}
+
+/** Known load points done in one sport; activities without load contribute zero. */
+export interface DoneLoad {
+  sport: Sport | 'other';
+  load: number;
 }
 
 /** One version of the season plan in the list. Timestamps are ISO 8601. */

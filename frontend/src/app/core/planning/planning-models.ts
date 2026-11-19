@@ -99,6 +99,8 @@ export interface Workout {
   title: string;
   goal: WorkoutGoal;
   duration_minutes: number;
+  /** Read-only estimate on the unified activity load scale. */
+  estimated_load: number;
   zone_system: ZoneSystem | null;
   zone: number | null;
   /** The zone as numbers, as it is now (the thresholds may change); `null` without one. */
@@ -148,6 +150,23 @@ export interface PlannableWeek {
   plans: PlanVersion[];
 }
 
+export interface LoadFigures {
+  planned_minutes: number;
+  done_minutes: number;
+  planned_load: number;
+  done_load: number;
+}
+
+export interface SportLoadFigures extends LoadFigures {
+  sport: Sport | 'other';
+}
+
+/** Planned estimates and activities done in the user's local week. */
+export interface LoadSummary {
+  sports: SportLoadFigures[];
+  total: LoadFigures;
+}
+
 /**
  * A plan with its workouts, by day. Only a draft has a `report`; `confirmed_at` is set for a
  * confirmed plan and for one that has been replaced since. `parent` is the version it replaces.
@@ -165,6 +184,7 @@ export interface WeekPlan {
   created_at: string;
   confirmed_at: string | null;
   workouts: Workout[];
+  load: LoadSummary;
   report: Report | null;
   /** Only for a confirmed plan. */
   export: ExportSummary | null;

@@ -1,4 +1,4 @@
-import { Activity } from '../../core/activities/activities-models';
+import { Activity, LoadSource } from '../../core/activities/activities-models';
 
 /** Shown where the file does not report a value; nothing is estimated. */
 export const MISSING = '–';
@@ -41,9 +41,13 @@ export function formatRpe(rpe: number | null): string {
   return rpe === null ? MISSING : String(rpe);
 }
 
-/** `315 AU`: minutes times RPE. It is not the TSS of a platform and is never added to one. */
-export function formatLoad(load: number | null): string {
-  return load === null ? MISSING : `${load} AU`;
+/** Unified load points with the source used by the server; a dash when unknown. */
+export function formatLoad(load: number | null, source: LoadSource | null): string {
+  if (load === null) {
+    return MISSING;
+  }
+  const context = source === 'intervals' ? 'Intervals.icu' : source === 'rpe' ? 'RPE estimate' : '';
+  return `${load} pts${context ? ` (${context})` : ''}`;
 }
 
 /** `55:29` below an hour, `1:05:05` from an hour on. */

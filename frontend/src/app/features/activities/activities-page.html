@@ -227,7 +227,7 @@
                     <td data-label="Distance">{{ distance(activity.distance_m) }}</td>
                     <td data-label="Avg. heart rate">{{ heartRate(activity.avg_heart_rate) }}</td>
                     <td data-label="RPE">{{ rpeText(activity.rpe) }}</td>
-                    <td data-label="Load">{{ loadText(activity.load) }}</td>
+                    <td data-label="Load">{{ loadText(activity.load, activity.load_source) }}</td>
                     <td data-label="Source">{{ source(activity.source) }}</td>
                     <td class="row-actions">
                       <button

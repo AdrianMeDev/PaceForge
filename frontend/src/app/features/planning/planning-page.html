@@ -204,6 +204,51 @@
               }
             }
 
+            <div class="mt-4 overflow-x-auto" data-testid="load-summary">
+              <table class="w-full text-left text-sm">
+                <caption class="mb-2 text-left font-semibold">
+                  Planned vs done load
+                </caption>
+                <thead class="border-b border-border text-muted">
+                  <tr>
+                    <th class="px-2 py-2" scope="col">Sport</th>
+                    <th class="px-2 py-2" scope="col">Planned load (estimated)</th>
+                    <th class="px-2 py-2" scope="col">Done load</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-border">
+                  @for (entry of shown.load.sports; track entry.sport) {
+                    <tr [attr.data-sport]="entry.sport">
+                      <th class="px-2 py-2" scope="row">{{ loadSport[entry.sport] }}</th>
+                      <td class="px-2 py-2 tabular-nums">{{ loadPoints(entry.planned_load) }}</td>
+                      <td class="px-2 py-2 tabular-nums">{{ loadPoints(entry.done_load) }}</td>
+                    </tr>
+                  } @empty {
+                    <tr>
+                      <td class="px-2 py-2" colspan="3">
+                        No workouts planned or activities recorded.
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+                <tfoot class="border-t border-border font-semibold">
+                  <tr>
+                    <th class="px-2 py-2" scope="row">Total</th>
+                    <td class="px-2 py-2 tabular-nums">
+                      {{ loadPoints(shown.load.total.planned_load) }}
+                    </td>
+                    <td class="px-2 py-2 tabular-nums">
+                      {{ loadPoints(shown.load.total.done_load) }}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+            <p class="hint">
+              Planned load is an estimate. Done load uses your activities in this week, including
+              unplanned sessions. Activities without known load contribute zero.
+            </p>
+
             @for (day of days(); track day.date) {
               <app-plan-day [day]="day" />
             } @empty {

@@ -1,4 +1,12 @@
-import { Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  OnInit,
+  computed,
+  inject,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { CoachApi } from '../../core/coach/coach-api';
 import { PlanningApi } from '../../core/planning/planning-api';
@@ -11,10 +19,12 @@ import {
 } from '../../core/planning/planning-models';
 import {
   STATUS_LABELS,
+  SPORT_LABELS,
   dayLabel,
   exportSummaryText,
   findingPlace,
   findingsSummary,
+  loadText,
   minutesText,
   pushText,
   WEEK_NOTE_MAX,
@@ -62,6 +72,7 @@ const TOO_MANY_PUSHES = 'Too many sends in a short time. Please wait a minute an
   imports: [RouterLink, ConfirmDialog, VersionChips, PageHeader, PlanEditor, PlanDayView],
   templateUrl: './planning-page.html',
   styleUrl: './planning-page.css',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class PlanningPage implements OnInit {
   private readonly planning = inject(PlanningApi);
@@ -126,6 +137,8 @@ export class PlanningPage implements OnInit {
   );
 
   protected readonly status = STATUS_LABELS;
+  protected readonly loadSport = { ...SPORT_LABELS, other: 'Other' };
+  protected readonly loadPoints = loadText;
   protected readonly phase = PHASE_LABELS;
   protected readonly focus = FOCUS_LABELS;
   protected readonly letter = PRIORITY_LETTERS;

@@ -17,9 +17,11 @@ const ACTIVITY = '01a1dbcf-cb4a-74c1-9813-f266175f2222';
 const FIGURES = {
   planned_count: 2,
   planned_minutes: 120,
+  planned_load: 110,
   actual_count: 1,
   actual_minutes: 60,
-  load: 360,
+  load: 60,
+  loaded_count: 1,
   rated_count: 1,
 };
 const REVIEW = {
@@ -39,6 +41,7 @@ const REVIEW = {
       title: 'Easy run',
       goal: 'endurance',
       duration_minutes: 60,
+      estimated_load: 55,
       slot: 'morning',
       notes: 'Keep it easy',
       status: 'done',
@@ -54,6 +57,7 @@ const REVIEW = {
       title: 'Ride',
       goal: 'tempo',
       duration_minutes: 60,
+      estimated_load: 55,
       slot: null,
       notes: '',
       status: 'missed',
@@ -74,14 +78,23 @@ const REVIEW = {
       distance_m: null,
       rpe: 6,
       notes: 'felt good',
-      load: 360,
+      load: 60,
+      load_source: 'rpe',
       workout_id: WORKOUT,
     },
   ],
   comparison: {
     sports: [
       { sport: 'running', ...FIGURES },
-      { sport: 'cycling', ...FIGURES, actual_count: 0, actual_minutes: 0, load: 0, rated_count: 0 },
+      {
+        sport: 'cycling',
+        ...FIGURES,
+        actual_count: 0,
+        actual_minutes: 0,
+        load: 0,
+        loaded_count: 0,
+        rated_count: 0,
+      },
     ],
     total: FIGURES,
     statuses: { done: 1, partial: 0, missed: 1, replaced: 0, open: 0 },
@@ -228,6 +241,7 @@ describe('ReviewApi', () => {
         review.plan.confirmed_at = null as unknown as string;
         review.activities[0].rpe = null as unknown as number;
         review.activities[0].load = null as unknown as number;
+        Object.assign(review.activities[0], { load_source: null });
         review.feedback.fatigue = null as unknown as number;
       });
 
@@ -235,6 +249,7 @@ describe('ReviewApi', () => {
 
       expect(result.kind === 'ok' && result.review.plan?.confirmed_at).toBeNull();
       expect(result.kind === 'ok' && result.review.activities[0].load).toBeNull();
+      expect(result.kind === 'ok' && result.review.activities[0].load_source).toBeNull();
       expect(result.kind === 'ok' && result.review.feedback?.fatigue).toBeNull();
     });
 
@@ -366,6 +381,11 @@ describe('ReviewApi', () => {
         (r) => ((r.workouts[0] as { status_origin: string }).status_origin = 'bot'),
       ],
       ['an unknown source', (r) => ((r.activities[0] as { source: string }).source = 'strava')],
+      ['an unknown load source', (r) => (r.activities[0].load_source = 'provider')],
+      [
+        'a missing load source',
+        (r) => delete (r.activities[0] as { load_source?: string }).load_source,
+      ],
       ['no id', (r) => ((r.workouts[0] as { id: unknown }).id = '')],
       ['a day that is none', (r) => ((r.workouts[0] as { day: string }).day = 'Mon')],
       ['a position that is none', (r) => ((r.workouts[0] as { position: unknown }).position = '0')],
@@ -385,6 +405,40 @@ describe('ReviewApi', () => {
       ['no verdict at all', (r) => delete (r.feedback as { verdict?: unknown }).verdict],
     ])('rejects an answer of the wrong shape: %s', async (_, change) => {
       await runFailing(api.week(WEEK), 'GET', `${BASE}${WEEK}/`, changed(change), 200);
+    });
+
+    it.each(['estimated_load', 'planned_load', 'loaded_count'] as const)(
+      'requires %s to be a non-negative integer on workouts or sport and total figures',
+      async (field) => {
+        for (const value of [undefined, null, -1, 1.5, '55', Infinity]) {
+          for (const location of field === 'estimated_load' ? ['workout'] : ['sport', 'total']) {
+            const broken = changed((review) => {
+              const target =
+                location === 'workout'
+                  ? review.workouts[0]
+                  : location === 'sport'
+                    ? review.comparison.sports[0]
+                    : review.comparison.total;
+              Object.assign(target, { [field]: value });
+            });
+            await runFailing(api.week(WEEK), 'GET', `${BASE}${WEEK}/`, broken, 200);
+          }
+        }
+      },
+    );
+
+    it('accepts zero estimates and unrated Intervals load, including known zero', async () => {
+      const shown = changed((review) => {
+        review.workouts[0].estimated_load = 0;
+        Object.assign(review.activities[0], { rpe: null, load: 0, load_source: 'intervals' });
+        for (const figures of [review.comparison.sports[0], review.comparison.total]) {
+          Object.assign(figures, { planned_load: 0, load: 0, loaded_count: 1, rated_count: 0 });
+        }
+      });
+
+      const { result } = await run(api.week(WEEK), 'GET', `${BASE}${WEEK}/`, shown, 200);
+
+      expect(result).toEqual({ kind: 'ok', review: shown });
     });
 
     it('rejects a server error and a network failure', async () => {

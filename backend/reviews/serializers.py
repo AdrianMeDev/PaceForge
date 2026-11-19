@@ -10,12 +10,12 @@ from typing import Any
 
 from rest_framework import serializers
 
-from activities.load import load_of
+from activities.load import load_of, load_source_of
 from activities.serializers import TextField, WholeNumberField, checked_note
 
 from .comparison import Comparison, Figures
 from .models import NOTES_MAX, SCALE_MAX, SCALE_MIN, WeekComment, WeekFeedback, WorkoutReview
-from .services import WeekReview
+from .services import WeekReview, estimated_load
 
 _TIME = serializers.DateTimeField()
 
@@ -73,6 +73,7 @@ def review_data(review: WeekReview) -> dict[str, Any]:
                 "title": workout.title,
                 "goal": workout.goal,
                 "duration_minutes": workout.duration_minutes,
+                "estimated_load": estimated_load(workout),
                 "slot": workout.slot or None,
                 "notes": workout.notes,
                 "status": matches[workout.pk].status.value,
@@ -96,6 +97,7 @@ def review_data(review: WeekReview) -> dict[str, Any]:
                 "rpe": activity.rpe,
                 "notes": activity.notes,
                 "load": load_of(activity),
+                "load_source": load_source_of(activity),
                 # The workout it belongs to; ``None``: not planned.
                 "workout_id": _id(workout_of.get(activity.pk)),
             }
@@ -141,9 +143,11 @@ def _figures(figures: Figures) -> dict[str, int]:
     return {
         "planned_count": figures.planned_count,
         "planned_minutes": figures.planned_minutes,
+        "planned_load": figures.planned_load,
         "actual_count": figures.actual_count,
         "actual_minutes": figures.actual_minutes,
         "load": figures.load,
+        "loaded_count": figures.loaded_count,
         "rated_count": figures.rated_count,
     }
 

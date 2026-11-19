@@ -34,6 +34,7 @@ const RUN: Activity = {
   rpe: null,
   notes: '',
   load: null,
+  load_source: null,
   created_at: '2026-11-13T07:29:55Z',
 };
 const BARE: Activity = {
@@ -633,7 +634,8 @@ describe('ActivitiesPage', () => {
         timer_seconds: 2700,
         rpe: 7,
         notes: 'Legs were heavy',
-        load: 315,
+        load: 53,
+        load_source: 'rpe',
       };
       await setup(ok([lifting]));
 
@@ -643,8 +645,42 @@ describe('ActivitiesPage', () => {
         '–',
         '–',
         '7',
-        '315 AU',
+        '53 pts (RPE estimate)',
         'Entered by hand',
+      ]);
+    });
+
+    it('shows Intervals load without a rating, with its source context', async () => {
+      await setup(
+        ok([
+          {
+            ...RUN,
+            source: 'intervals_icu',
+            training_load: 75.4,
+            load: 75,
+            load_source: 'intervals',
+          },
+        ]),
+      );
+
+      expect(cells(rows()[0]).slice(5, 8)).toEqual([
+        '–',
+        '75 pts (Intervals.icu)',
+        'Intervals.icu',
+      ]);
+    });
+
+    it('shows zero load from Intervals and an RPE fallback on a synced activity', async () => {
+      await setup(
+        ok([
+          { ...RUN, source: 'intervals_icu', training_load: 0, load: 0, load_source: 'intervals' },
+          { ...BARE, source: 'intervals_icu', rpe: 6, load: 30, load_source: 'rpe' },
+        ]),
+      );
+
+      expect(rows().map((row) => cells(row)[6])).toEqual([
+        '0 pts (Intervals.icu)',
+        '30 pts (RPE estimate)',
       ]);
     });
 
@@ -924,7 +960,8 @@ describe('ActivitiesPage', () => {
       source_sport: '',
       timer_seconds: 2700,
       rpe: 7,
-      load: 315,
+      load: 53,
+      load_source: 'rpe',
     };
 
     async function fillAndSave(): Promise<void> {

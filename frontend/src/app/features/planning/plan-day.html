@@ -20,6 +20,7 @@
       </div>
       <p class="meta m-0 mt-1" data-testid="meta">
         {{ minutes(entry.workout.duration_minutes) }}
+        · Est. load {{ load(entry.workout.estimated_load) }}
         @if (target(entry.workout.zone_system, entry.workout.zone, entry.workout.target); as text) {
           · {{ text }}
         }

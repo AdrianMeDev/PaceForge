@@ -11,7 +11,7 @@ import {
   WeekVerdict,
   WorkoutStatus,
 } from '../../core/review/review-models';
-import { MISSING, formatDistance, formatDuration } from '../activities/activity-format';
+import { MISSING, formatDistance, formatDuration, formatLoad } from '../activities/activity-format';
 import { dayLabel, minutesText, weekRange } from '../planning/plan-format';
 
 export const STATUS_LABELS: Record<WorkoutStatus, string> = {
@@ -74,26 +74,24 @@ export function activityChoiceText(activity: ReviewActivity): string {
   return `${dayLabel(activity.day)} · ${SPORT_LABELS[activity.sport]} · ${activitySize(activity)}`;
 }
 
-/** "RPE 6 · 360 AU" or "Not rated": how the user felt a session. AU is not TSS. */
+/** The rating and any known load, including Intervals load without an RPE rating. */
 export function ratingText(activity: ReviewActivity): string {
-  if (activity.rpe === null) {
-    return 'Not rated';
-  }
+  const rating = activity.rpe === null ? 'Not rated' : `RPE ${activity.rpe}`;
   return activity.load === null
-    ? `RPE ${activity.rpe}`
-    : `RPE ${activity.rpe} · ${activity.load} AU`;
+    ? rating
+    : `${rating} · ${formatLoad(activity.load, activity.load_source)}`;
 }
 
-/** "360 AU", "360 AU (1 of 2 rated)" or "–": the load of a sport in the week. */
+/** Known done load, with coverage when some sessions have no load. */
 export function loadText(figures: Figures): string {
-  if (figures.rated_count === 0) {
+  if (figures.loaded_count === 0) {
     return MISSING;
   }
   const partly =
-    figures.rated_count < figures.actual_count
-      ? ` (${figures.rated_count} of ${figures.actual_count} rated)`
+    figures.loaded_count < figures.actual_count
+      ? ` (${figures.loaded_count} of ${figures.actual_count} with load)`
       : '';
-  return `${figures.load} AU${partly}`;
+  return `${figures.load} pts${partly}`;
 }
 
 /** "1 of 2 · 1 h" or "0 · 0 min": a count with its minutes. */

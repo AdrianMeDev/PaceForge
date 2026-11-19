@@ -10,10 +10,13 @@ function week(start: string, changes: Partial<PlanWeek> = {}): PlanWeek {
     week_start: start,
     minutes,
     total_minutes: Object.values(minutes).reduce((sum, value) => sum + value, 0),
+    planned_load: { running: 110, cycling: 55 },
+    total_planned_load: 165,
     focus: 'endurance',
     key_sessions: [LONG],
     reason: 'Build.',
     done: null,
+    done_load: null,
     ...changes,
   };
 }
@@ -195,6 +198,19 @@ describe('compareSeasons', () => {
 });
 
 describe('compareWeeks', () => {
+  it('ignores dynamic load estimates and activity totals when comparing plan content', () => {
+    expect(
+      compareWeeks(
+        week(W1),
+        week(W1, {
+          planned_load: { running: 150 },
+          total_planned_load: 150,
+          done: [{ sport: 'running', minutes: 60 }],
+          done_load: [{ sport: 'running', load: 70 }],
+        }),
+      ),
+    ).toBeNull();
+  });
   it('is null for the same week', () => {
     expect(compareWeeks(week(W1), week(W1))).toBeNull();
   });

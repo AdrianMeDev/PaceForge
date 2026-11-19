@@ -60,7 +60,7 @@ AI key; several people can share one instance without seeing each other's data.
 - **Depends on:** –
 - **Size:** M
 
-### M2 [ ] Load per workout
+### M2 [x] Load per workout
 - **Goal:** Every planned workout and every activity has a load value shown next to the minutes.
 - **Includes:** estimated load for endurance workouts from duration and zones, for strength from duration × RPE; load of activities from Intervals or duration × RPE; planned vs done load on the week plan, week review and season chart; docs.
 - **Done when:** the week plan and review show planned and done load per sport; checks still work on minutes; tests green.
@@ -173,5 +173,6 @@ AI key; several people can share one instance without seeing each other's data.
 - README section and `docs/` updated for every user-visible change.
 
 ## Changelog
+- 2026-11-19: M2 completed — unified activity load (Intervals or duration × RPE), workout load estimates, and planned vs done load across week plan, week review and season chart
 - 2026-11-19: M1 completed — sync non-Strava activities from Intervals.icu (last 8–12 weeks, duplicate check, last sync & error on connection, Activities page button)
 - 2026-11-19: roadmap created from `PROJECT_PLAN.md` §15 and the user stories, checked against `main` (905fee0)

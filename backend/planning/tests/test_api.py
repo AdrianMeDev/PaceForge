@@ -12,7 +12,8 @@ from django.test.utils import CaptureQueriesContext
 
 from accounts.models import User
 from accounts.tests.conftest import AuthApi
-from athletes.models import ThresholdValue
+from activities.models import Activity
+from athletes.models import AthleteProfile, ThresholdValue
 from availability.models import AvailabilitySettings, WeekdayMinutes
 from coach.models import AIProviderConfiguration, AIUsageRecord
 from coach.providers.base import (
@@ -75,6 +76,7 @@ PLAN_FIELDS = {
     "workouts",
     "report",
     "export",
+    "load",
 }
 WORKOUT_FIELDS = {
     "day",
@@ -92,6 +94,7 @@ WORKOUT_FIELDS = {
     "target",
     "export",
     "exercises",
+    "estimated_load",
 }
 
 
@@ -1062,6 +1065,177 @@ class TestRestoring:
 
         assert scripted.calls == []
         assert not AIUsageRecord.objects.exists()
+
+
+class TestPlanLoad:
+    @pytest.mark.parametrize(
+        "action", ["get", "generate", "revise", "restore", "confirm", "push", "discard"]
+    )
+    def test_every_detail_response_has_workout_estimates_and_week_totals(
+        self, alice: User, provide: Callable[..., Scripted], calendar: Calendar, action: str
+    ) -> None:
+        provide(good())
+        plan = draft(alice)
+        Activity.objects.create(
+            owner=alice,
+            source="manual",
+            sport="cycling",
+            start_time=datetime(2027, 7, 20, 12, tzinfo=UTC),
+            timer_seconds=1800,
+            rpe=5,
+        )
+        api = signed_in(alice)
+        if action == "get":
+            response = api.call("GET", plan_url(plan.pk))
+        elif action == "generate":
+            response = api.call("POST", generate_url())
+        elif action == "revise":
+            response = api.call("POST", plan_url(plan.pk, "revise/"), stored_body(plan))
+        else:
+            if action == "restore":
+                services.discard(alice, plan.pk)
+            elif action == "push":
+                services.confirm(alice, plan.pk)
+                connect_intervals(alice)
+            response = api.call("POST", plan_url(plan.pk, f"{action}/"))
+
+        assert response.status_code in (HTTPStatus.OK, HTTPStatus.CREATED)
+        data = body(response)
+        assert [w["estimated_load"] for w in data["workouts"]] == [50, 50]
+        assert all(type(w["estimated_load"]) is int for w in data["workouts"])
+        assert data["load"] == {
+            "sports": [
+                {
+                    "sport": "cycling",
+                    "planned_minutes": 120,
+                    "done_minutes": 30,
+                    "planned_load": 100,
+                    "done_load": 25,
+                }
+            ],
+            "total": {
+                "planned_minutes": 120,
+                "done_minutes": 30,
+                "planned_load": 100,
+                "done_load": 25,
+            },
+        }
+
+    def test_done_totals_use_the_users_local_week_and_never_another_users_activities(
+        self, alice: User, bob: User
+    ) -> None:
+        AthleteProfile.objects.create(owner=alice, timezone="Europe/Berlin")
+        plan = draft(alice)
+        # Berlin's week begins Sunday at 22:00 UTC in July. Both bounds matter.
+        cases: list[tuple[User, datetime, str, dict[str, Any]]] = [
+            (
+                alice,
+                datetime(2027, 7, 18, 22, tzinfo=UTC),
+                "running",
+                {"elapsed_seconds": 1800, "rpe": 7},
+            ),
+            (
+                alice,
+                datetime(2027, 7, 25, 21, 59, 59, tzinfo=UTC),
+                "other",
+                {"timer_seconds": 3600, "training_load": 80.5},
+            ),
+            (
+                alice,
+                datetime(2027, 7, 18, 21, 59, 59, tzinfo=UTC),
+                "cycling",
+                {"timer_seconds": 3600, "rpe": 10},
+            ),
+            (
+                alice,
+                datetime(2027, 7, 25, 22, tzinfo=UTC),
+                "cycling",
+                {"timer_seconds": 3600, "rpe": 10},
+            ),
+            (
+                bob,
+                datetime(2027, 7, 20, 12, tzinfo=UTC),
+                "swimming",
+                {"timer_seconds": 3600, "training_load": 9999},
+            ),
+        ]
+        for owner, start, sport, values in cases:
+            Activity.objects.create(
+                owner=owner, source="manual", sport=sport, start_time=start, **values
+            )
+
+        data = body(signed_in(alice).call("GET", plan_url(plan.pk)))
+
+        assert data["load"] == {
+            "sports": [
+                {
+                    "sport": "running",
+                    "planned_minutes": 0,
+                    "done_minutes": 30,
+                    "planned_load": 0,
+                    "done_load": 35,
+                },
+                {
+                    "sport": "cycling",
+                    "planned_minutes": 120,
+                    "done_minutes": 0,
+                    "planned_load": 100,
+                    "done_load": 0,
+                },
+                {
+                    "sport": "other",
+                    "planned_minutes": 0,
+                    "done_minutes": 60,
+                    "planned_load": 0,
+                    "done_load": 81,
+                },
+            ],
+            "total": {
+                "planned_minutes": 120,
+                "done_minutes": 90,
+                "planned_load": 100,
+                "done_load": 116,
+            },
+        }
+
+    def test_queries_do_not_grow_with_the_number_of_workouts_or_activities(
+        self, alice: User
+    ) -> None:
+        small = services.discard(alice, draft(alice, ride(0)).pk)
+        large = services.discard(alice, draft(alice, *(ride(d, 30) for d in range(7))).pk)
+        api = signed_in(alice)
+        with CaptureQueriesContext(connection) as before:
+            first = api.call("GET", plan_url(small.pk))
+        for day in range(7):
+            Activity.objects.create(
+                owner=alice,
+                source="manual",
+                sport="running",
+                start_time=datetime(2027, 7, 19 + day, 12, tzinfo=UTC),
+                timer_seconds=3600,
+                rpe=5,
+            )
+        with CaptureQueriesContext(connection) as after:
+            second = api.call("GET", plan_url(large.pk))
+
+        assert first.status_code == second.status_code == HTTPStatus.OK
+        assert body(first)["load"]["total"]["done_load"] == 0
+        assert body(second)["load"]["total"]["done_load"] == 350
+        assert len(after) == len(before)
+        assert sum('FROM "activities_activity"' in q["sql"] for q in after) == 1
+
+    @pytest.mark.parametrize("field", ["estimated_load", "load"])
+    def test_computed_fields_are_not_accepted_in_the_edit_schema(
+        self, alice: User, field: str
+    ) -> None:
+        data = edited(ride(0))
+        target = data["workouts"][0] if field == "estimated_load" else data
+        target[field] = 9999
+
+        response = signed_in(alice).call("POST", check_url(), data)
+
+        assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+        assert body(response)["code"] == "invalid_plan"
 
 
 class TestReadingAPlan:

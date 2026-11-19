@@ -3,9 +3,9 @@
 Pure arithmetic on the planned workouts, the activities of the week and their match
 (``reviews.matching``). Planned minutes are those of the workouts; actual minutes are those of
 **every** activity of the week, matched or not, so that a session nobody planned still counts as
-training done. The load is the sum of the loads (minutes times RPE, in AU, which is not TSS) of
-the activities that have one; ``rated_count`` says how many that is, so that a low load of a week
-with few ratings is not mistaken for an easy week. There is no planned load: workouts have none yet.
+training done. Planned load sums the workout estimates. Done load sums the Intervals or RPE
+loads of the activities that have one; ``loaded_count`` says how many that is, so that missing
+load is not mistaken for an easy week. ``rated_count`` counts activities with an RPE rating.
 """
 
 from collections import Counter
@@ -23,9 +23,11 @@ SPORT_ORDER = ("running", "cycling", "swimming", "strength", "other")
 class Figures:
     planned_count: int
     planned_minutes: int
+    planned_load: int
     actual_count: int
     actual_minutes: int
     load: int
+    loaded_count: int
     rated_count: int
 
 
@@ -64,9 +66,11 @@ def compare(
     total = Figures(
         planned_count=sum(entry.figures.planned_count for entry in sports),
         planned_minutes=sum(entry.figures.planned_minutes for entry in sports),
+        planned_load=sum(entry.figures.planned_load for entry in sports),
         actual_count=sum(entry.figures.actual_count for entry in sports),
         actual_minutes=sum(entry.figures.actual_minutes for entry in sports),
         load=sum(entry.figures.load for entry in sports),
+        loaded_count=sum(entry.figures.loaded_count for entry in sports),
         rated_count=sum(entry.figures.rated_count for entry in sports),
     )
     counted = Counter(result.status for result in match.workouts)
@@ -89,9 +93,11 @@ def _figures(planned: list[PlannedItem], done: list[ActivityItem]) -> Figures:
     return Figures(
         planned_count=len(planned),
         planned_minutes=sum(item.minutes for item in planned),
+        planned_load=sum(item.planned_load for item in planned),
         actual_count=len(done),
         # Whole minutes, half up; the total adds up the rounded minutes of the sports.
         actual_minutes=floor(minutes + 0.5),
         load=sum(item.load or 0 for item in done),
+        loaded_count=sum(1 for item in done if item.load is not None),
         rated_count=sum(1 for item in done if item.rpe is not None),
     )

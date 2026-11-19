@@ -168,6 +168,38 @@ duration: a segment is easy if its zone is 2 or less; without a zone a warm-up, 
 cool-down is easy and any other segment is as easy as the workout itself (its goal and its own
 zone). A share is told rounded down, and a week exactly at the limit passes.
 
+## Estimating workout load
+
+Every planned workout has a read-only `estimated_load` in whole load points (`planning/load.py`),
+on the same scale as unified activity load (`activities/load.py`: Intervals.icu `training_load`
+when present, else duration in hours × RPE × `RPE_LOAD_PER_HOUR`). Estimates are for comparison
+only; all planning checks remain minute-based.
+
+- **Endurance workouts** (`running`, `cycling`, `swimming`): if the workout has segments, each
+  segment gets an hourly rate from its own zone (`POWER_LOAD_PER_HOUR` for `power`,
+  `FIVE_ZONE_LOAD_PER_HOUR` for `heart_rate` and `pace`) or falls back to the workout's rate when
+  the segment has no zone; the session rate is the time-weighted average across segments
+  (`seconds` × `repeat`), scaled to `duration_minutes`. Without segments, the workout uses its own
+  zone, or `GOAL_LOAD_PER_HOUR` for its `goal` (`other` as fallback).
+- **Strength workouts** (`strength`): the session uses the mean of specified exercise `rpe` values,
+  or `DEFAULT_STRENGTH_RPE` when no exercise gives one, multiplied by `RPE_LOAD_PER_HOUR` per hour
+  and scaled to `duration_minutes`.
+- **Stretching and rounding:** `stretching_minutes` adds no load. Each workout's load is rounded
+  half up once (`max(0, floor(duration_minutes * rate / 60 + 0.5))`).
+
+| Zone / Goal / Constant | Rate or Value | Meaning |
+| ---------------------- | ------------- | ------- |
+| `FIVE_ZONE_LOAD_PER_HOUR` | 35, 55, 75, 100, 120 | Load per hour for `heart_rate` and `pace` zones 1 to 5. |
+| `POWER_LOAD_PER_HOUR` | 30, 50, 70, 95, 115, 130, 145 | Load per hour for `power` zones 1 to 7. |
+| `GOAL_LOAD_PER_HOUR` (`recovery`) | 35 | Load per hour for a `recovery` workout without a zone. |
+| `GOAL_LOAD_PER_HOUR` (`endurance`) | 55 | Load per hour for an `endurance` workout without a zone. |
+| `GOAL_LOAD_PER_HOUR` (`tempo`) | 75 | Load per hour for a `tempo` workout without a zone. |
+| `GOAL_LOAD_PER_HOUR` (`threshold`) | 95 | Load per hour for a `threshold` workout without a zone. |
+| `GOAL_LOAD_PER_HOUR` (`vo2max`) | 115 | Load per hour for a `vo2max` workout without a zone. |
+| `GOAL_LOAD_PER_HOUR` (`other`) | 55 | Load per hour for `other` (and the fallback goal). |
+| `DEFAULT_STRENGTH_RPE` | 6 | Default RPE for a strength workout when no exercise has an `rpe`. |
+| `RPE_LOAD_PER_HOUR` | 10 | Load points per hour per RPE point (`activities/load.py`). |
+
 ## What the checks know
 
 Each plan is checked against the facts of its user for that week, collected when the check runs:
@@ -523,6 +555,43 @@ workouts are `synced`, `failed` or `not_sent`, and how many events of an `older`
 in the calendar) and every workout an `export` of its own (`status`, `error_code`, `pushed_at`);
 for any other plan these are `null`. An answer of the two sending endpoints has a `push` with what
 the sending did (see [Sending to Intervals.icu](#sending-to-intervalsicu)).
+
+On the Week plan page, every workout shows estimated load points next to its duration.
+The **Planned vs done load** table shows the displayed version's estimates and the load of
+activities in that week, per sport and in total. It includes unplanned sports such as Other.
+Zero is shown as zero points. Activities without known load contribute zero. Estimates and
+week totals are not editable and are never sent with an editor check or revision.
+
+Every plan detail answer also has `load`: `sports` lists each sport that was planned or done,
+and `total` adds them. Each entry has `planned_minutes`, `done_minutes`, `planned_load` and
+`done_load`; a sport entry also has `sport`. Done totals include only your activities in the
+plan's local week, Monday through Sunday. Missing duration or load contributes zero. Timer
+duration takes precedence over elapsed duration. Done minutes are rounded half up after adding
+seconds per sport; total minutes add the rounded sport minutes. Done load uses Intervals load
+when present, then duration times RPE on the unified load scale.
+
+Each workout has a non-negative integer `estimated_load`, computed by `planning/load.py` from
+its zones or goal. Segments give a time-weighted rate scaled to `duration_minutes`; an unzoned
+segment uses the workout zone, then its goal. Strength uses the mean of specified exercise RPEs
+or a default RPE of 6. Stretching adds no load. Estimates round half up once per workout. These
+fields are read-only response fields, outside the coach and editor JSON format. All planning
+checks still use minutes.
+
+The [week review](../README.md#week-review) API uses these same estimates. Each review workout
+has `estimated_load`. Each activity has `load` and `load_source` (`intervals`, `rpe` or `null`).
+Comparison figures per sport and for the week include `planned_load`, `load`, `loaded_count`
+and `rated_count`. Every activity in the user's local week counts, including unplanned sessions.
+`loaded_count` counts known loads, including zero and Intervals load without an RPE rating.
+`rated_count` counts RPE ratings, even without enough duration data to estimate load.
+Missing activity load adds zero. Planned estimates count all workouts of the confirmed plan.
+The review coach briefing includes both loads and both counts within its 8,000-byte limit.
+
+The Week review page shows each workout's estimated load next to its planned minutes.
+Matched and unplanned activities show load points and their source, even without an RPE rating.
+Mobile tiles and the desktop table compare planned and done load per sport and in total.
+Done load coverage uses the count of sessions with known load, independently of RPE ratings.
+It shows a dash when no activity has known load, and zero points for known zero load.
+The hint explains planned estimates and the Intervals.icu or RPE source of done load.
 
 Errors have a fixed text and a `code`; nothing the provider or the coach said is in one. A 429
 without a code is the limit of PaceForge itself.

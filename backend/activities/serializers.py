@@ -9,7 +9,7 @@ from accounts.models import User
 from athletes.serializers import NumberField
 from goals.services import time_zone_of
 
-from .load import load_of
+from .load import LoadSource, load_of, load_source_of
 from .models import NOTES_MAX, RPE_MAX, Activity
 
 SUMMARY_FIELDS = [
@@ -32,19 +32,25 @@ SUMMARY_FIELDS = [
     "rpe",
     "notes",
     "load",
+    "load_source",
     "created_at",
 ]
 
 
 class ActivitySerializer(serializers.ModelSerializer[Activity]):
     """The summary of an activity. The owner, external id, file hash and file are internal:
-    the file holds the whole GPS track and is never returned. ``load`` is the estimate from the
-    duration and the RPE (see ``activities.load``), ``None`` without either."""
+    the file holds the whole GPS track and is never returned. ``load`` is the unified load from
+    Intervals.icu or duration × RPE (see ``activities.load``), ``None`` without either;
+    ``load_source`` names which one was used."""
 
     load = serializers.SerializerMethodField()
+    load_source = serializers.SerializerMethodField()
 
     def get_load(self, activity: Activity) -> int | None:
         return load_of(activity)
+
+    def get_load_source(self, activity: Activity) -> LoadSource | None:
+        return load_source_of(activity)
 
     class Meta:
         model = Activity

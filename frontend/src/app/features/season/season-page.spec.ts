@@ -98,6 +98,8 @@ function plan(changes: Partial<SeasonPlan> = {}): SeasonPlan {
       week_start: skeleton.week_start,
       minutes: index === 3 ? { running: 90 } : { running: 120, cycling: 90 },
       total_minutes: index === 3 ? 90 : 210,
+      planned_load: index === 3 ? { running: 123 } : { running: 110, cycling: 83 },
+      total_planned_load: index === 3 ? 123 : 193,
       focus: index === 3 ? 'race_specific' : 'endurance',
       key_sessions:
         index === 3
@@ -105,6 +107,7 @@ function plan(changes: Partial<SeasonPlan> = {}): SeasonPlan {
           : [{ sport: 'running', kind: 'long', minutes: 90, detail: '3 x 10 min at tempo' }],
       reason: `Reason of week ${index + 1}.`,
       done: null,
+      done_load: null,
     })),
     report: null,
     ...changes,
@@ -449,12 +452,12 @@ describe('SeasonPage', () => {
         'Key sessions',
       ]);
       expect(cells(0).slice(5)).toEqual([
-        'Running 2 h · Cycling 1 h 30 min 3 h 30 min',
+        'Running 2 h / 110 pts · Cycling 1 h 30 min / 83 pts 3 h 30 min / 193 pts',
         'Endurance',
         'Running · Long · 1 h 30 min · 3 x 10 min at tempo',
       ]);
       expect(cells(3).slice(5)).toEqual([
-        'Running 1 h 30 min 1 h 30 min',
+        'Running 1 h 30 min / 123 pts 1 h 30 min / 123 pts',
         'Race specific',
         'Running · Race · 1 h',
       ]);
@@ -476,16 +479,59 @@ describe('SeasonPage', () => {
           { sport: 'running', minutes: 60 },
           { sport: 'other', minutes: 30 },
         ],
+        done_load: [
+          { sport: 'running', load: 60 },
+          { sport: 'other', load: 25 },
+        ],
       };
-      shown.weeks[1] = { ...shown.weeks[1], done: [] };
+      shown.weeks[1] = { ...shown.weeks[1], done: [], done_load: [] };
       await load([CONFIRMED], shown);
 
       expect(Array.from(page.querySelectorAll('thead th')).pop()?.textContent?.trim()).toBe('Done');
       const done = Array.from(page.querySelectorAll('[data-testid="plan-done"]')).map((cell) =>
         cell.textContent?.replace(/\s+/g, ' ').trim(),
       );
-      expect(done).toEqual(['Running 1 h · Other 30 min · 1 h 30 min in all', '0 min', '', '']);
+      expect(done).toEqual([
+        'Running 1 h / 60 pts · Other 30 min / 25 pts · 1 h 30 min / 85 pts in all',
+        '0 min / 0 pts',
+        '',
+        '',
+      ]);
       expect(page.querySelectorAll('svg rect.done')).toHaveLength(2);
+
+      query<HTMLButtonElement>(page, '[data-testid="chart-load"]').click();
+      await settle(fixture);
+      expect(page.querySelector('rect.done > title')?.textContent).toBe('Done: Running 60 pts');
+      expect(query(page, '[data-testid="bar-2026-11-16"] > title').textContent).toContain(
+        '193 pts planned',
+      );
+    });
+
+    it('shows load when its sport has no minutes and zero load when only minutes are known', async () => {
+      const shown = plan({ id: CONFIRMED.id, version: 2 });
+      shown.weeks[0] = {
+        ...shown.weeks[0],
+        planned_load: { swimming: 50 },
+        total_planned_load: 50,
+        done: [{ sport: 'running', minutes: 60 }],
+        done_load: [{ sport: 'other', load: 35 }],
+      };
+      shown.weeks[1] = {
+        ...shown.weeks[1],
+        minutes: {},
+        total_minutes: 0,
+        planned_load: {},
+        total_planned_load: 0,
+      };
+      await load([CONFIRMED], shown);
+
+      expect(cells(0)[5]).toBe(
+        'Running 2 h / 0 pts · Cycling 1 h 30 min / 0 pts · Swimming 0 min / 50 pts 3 h 30 min / 50 pts',
+      );
+      expect(cells(0).at(-1)).toBe(
+        'Running 1 h / 0 pts · Other 0 min / 35 pts · 1 h / 35 pts in all',
+      );
+      expect(cells(1)[5]).toBe('0 min / 0 pts');
     });
 
     it('has no Done column when no week has minutes done', async () => {
@@ -542,12 +588,19 @@ describe('SeasonPage', () => {
       expect(page.querySelector('[data-testid="differs"]')).toBeNull();
     });
 
-    it('shows a week without minutes as empty', async () => {
+    it('shows zero minutes and load for an empty planned week', async () => {
       const shown = plan();
-      shown.weeks[0] = { ...shown.weeks[0], minutes: {}, total_minutes: 0, key_sessions: [] };
+      shown.weeks[0] = {
+        ...shown.weeks[0],
+        minutes: {},
+        total_minutes: 0,
+        planned_load: {},
+        total_planned_load: 0,
+        key_sessions: [],
+      };
       await load([CONFIRMED], shown);
 
-      expect(cells(0).slice(5)).toEqual(['', 'Endurance', '']);
+      expect(cells(0).slice(5)).toEqual(['0 min / 0 pts', 'Endurance', '']);
     });
 
     it('opens another version when it is chosen', async () => {
