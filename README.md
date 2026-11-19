@@ -33,12 +33,17 @@ has to be backed up apart from the database.
 
 ## Layout
 
-| Path               | What it is                                                              |
-| ------------------ | ----------------------------------------------------------------------- |
-| `backend/`         | Django 6, Django REST framework, django-allauth (headless), PostgreSQL  |
-| `frontend/`        | Angular single-page app (standalone components, signals, zoneless)      |
-| `compose.dev.yaml` | Development services only: PostgreSQL and Mailpit (a catch-all mailbox) |
-| `.env.example`     | Template for the configuration shared by Django and Docker Compose      |
+| Path                  | What it is                                                                   |
+| --------------------- | ---------------------------------------------------------------------------- |
+| `backend/`            | Django 6, Django REST framework, django-allauth (headless), PostgreSQL       |
+| `backend/Dockerfile`  | Production backend image (Gunicorn, deploy checks, optional auto-migration)  |
+| `frontend/`           | Angular single-page app (standalone components, signals, zoneless)           |
+| `frontend/Dockerfile` | Production frontend image (Angular build served by Caddy)                    |
+| `compose.dev.yaml`    | Development services only: PostgreSQL and Mailpit (a catch-all mailbox)      |
+| `compose.prod.yaml`   | Production stack: Caddy (HTTPS), frontend, backend, scheduler, PostgreSQL    |
+| `deploy/Caddyfile`    | Reverse proxy config with automatic HTTPS, security headers and upload limit |
+| `.env.example`        | Template for the development configuration shared by Django and Compose      |
+| `.env.prod.example`   | Template for the production configuration used by `compose.prod.yaml`        |
 
 The browser only ever talks to one origin: during development `ng serve` proxies `/api` to Django
 (`frontend/proxy.conf.json`), so there is no CORS setup and the session cookie stays `HttpOnly`.
@@ -99,6 +104,13 @@ Open <http://localhost:4200> and sign in with the administrator. Administrators 
 two-factor authentication before they can use anything else, so the first sign-in lands on the
 security page: scan the QR code with an authenticator app, enter the code, confirm your password and
 save the recovery codes (see [Two-factor authentication](#two-factor-authentication)).
+
+## Production deployment
+
+To run PaceForge on a VPS with automatic HTTPS, follow [docs/deployment.md](docs/deployment.md). It
+covers prerequisites, `.env` and key generation, starting `compose.prod.yaml`, creating the first
+administrator without database edits, switching `REGISTRATION_MODE` between `invite_only` and
+`closed`, and the backup, update and migration workflow.
 
 ## Navigation
 
@@ -1545,8 +1557,9 @@ has a comment or a plan is not asked about again, and a week that keeps failing 
 newest runs with a fixed sentence for each reason; it never holds a word from the coach or from
 Intervals.icu (the counts are numbers only).
 
-The jobs run in the `scheduler` service of `compose.dev.yaml` (under the `scheduler` profile), or
-you can run each one by hand with `uv run python manage.py run_scheduler --once` and the commands
+The jobs run in the `scheduler` service of `compose.prod.yaml` (always on in production, waiting
+for `backend` to be healthy) or `compose.dev.yaml` (under the `scheduler` profile), or you can run
+each one by hand with `uv run python manage.py run_scheduler --once` and the commands
 `sync_activities`, `review_weeks` and `draft_next_week`. The order, the timings and all the codes
 are in [docs/background-jobs.md](docs/background-jobs.md).
 
@@ -1635,9 +1648,10 @@ Set in `.env` or in the environment. Values without a default are required.
 | ------------------------------ | ----------------------------------- | --------------------------------------------------------------------------------- |
 | `DJANGO_SECRET_KEY`            | –                                   | Signing key. Required, there is deliberately no default.                          |
 | `DATABASE_URL`                 | –                                   | e.g. `postgres://paceforge:paceforge-dev@localhost:5432/paceforge`. Required.     |
+| `APP_DOMAIN`                   | empty                               | Public host name without scheme, port or path. Used by Caddy for HTTPS and as the default for `DJANGO_ALLOWED_HOSTS` and `DJANGO_CSRF_TRUSTED_ORIGINS` (`https://<APP_DOMAIN>`). |
 | `DJANGO_DEBUG`                 | `false`                             | `true` for development. With `false`, cookies are sent only over HTTPS.           |
-| `DJANGO_ALLOWED_HOSTS`         | empty                               | Comma-separated host names; must be set when `DJANGO_DEBUG` is `false`.           |
-| `DJANGO_CSRF_TRUSTED_ORIGINS`  | empty                               | Comma-separated origins allowed to send state-changing requests.                  |
+| `DJANGO_ALLOWED_HOSTS`         | empty (or `APP_DOMAIN`)             | Comma-separated host names; must be set (directly or via `APP_DOMAIN`) when `DJANGO_DEBUG` is `false`. |
+| `DJANGO_CSRF_TRUSTED_ORIGINS`  | empty (or `https://<APP_DOMAIN>`)   | Comma-separated origins allowed to send state-changing requests.                  |
 | `ENCRYPTION_KEY`               | –                                   | Instance key for secrets stored in the database; several keys separated by commas. Required. |
 | `REGISTRATION_MODE`            | `invite_only`                       | `closed`, `invite_only` or `open`. Anything else stops Django at startup.         |
 | `INVITATION_TTL_DAYS`          | `7`                                 | How long an invitation stays valid.                                               |
@@ -1652,7 +1666,10 @@ Set in `.env` or in the environment. Values without a default are required.
 | `SMTP_HOST`                    | empty                               | Empty: emails are printed to the Django console. Set: they are sent via SMTP.     |
 | `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_USE_TLS` | `587`, empty, empty, `true` | SMTP settings, used when `SMTP_HOST` is set. |
 | `DEFAULT_FROM_EMAIL`           | `PaceForge <noreply@localhost>`     | Sender of all emails.                                                             |
-| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | `paceforge`, `paceforge-dev`, `paceforge` | Only read by `compose.dev.yaml`; keep them in line with `DATABASE_URL`. |
+| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | `paceforge`, `paceforge-dev`, `paceforge` | Read by `compose.dev.yaml` and `compose.prod.yaml`; in production set `POSTGRES_PASSWORD` (letters and digits only). |
+| `GUNICORN_WORKERS`, `GUNICORN_TIMEOUT` | `2`, `240`                  | Production Gunicorn worker count and request timeout in seconds (`backend/entrypoint.sh`). |
+| `AUTO_MIGRATE`                 | `true`                              | Run `manage.py migrate --noinput` automatically when the production `backend` container starts. Set to `false` to migrate manually. |
+| `BACKEND_IMAGE`, `FRONTEND_IMAGE` | `paceforge-backend:local`, `paceforge-frontend:local` | Optional image names for `compose.prod.yaml`. |
 
 ## Troubleshooting
 

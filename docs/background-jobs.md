@@ -110,3 +110,15 @@ The scheduler runs in a separate Compose service under the `scheduler` profile, 
 `docker compose -f compose.dev.yaml up -d db mailpit` is unchanged. The service mounts the
 repository, points `DATABASE_URL` at the `db` service and runs `uv run python manage.py
 run_scheduler`. It shares the database with the Django server you run locally.
+
+## Production
+
+In `compose.prod.yaml`, the `scheduler` service is enabled by default (no profile needed). It uses
+the same image as `backend`, runs `python manage.py run_scheduler`, and depends on `backend` being
+healthy so that deploy checks and migrations finish before the scheduler starts.
+
+```bash
+docker compose -f compose.prod.yaml stop scheduler    # pause background jobs
+docker compose -f compose.prod.yaml start scheduler   # resume background jobs
+docker compose -f compose.prod.yaml exec backend python manage.py run_scheduler --once
+```
