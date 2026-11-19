@@ -10,6 +10,7 @@ a plan makes the job rightly do nothing, so the athlete's own work is never repl
 is paid twice.
 """
 
+from collections.abc import Callable
 from dataclasses import asdict
 from datetime import date, timedelta
 
@@ -126,3 +127,41 @@ def run_draft(user: User, monday: date) -> JobRun | None:
         week_start=next_monday,
         counts={"errors": len(generated.report.errors)},
     )
+
+
+def for_each_user(
+    job: Job,
+    job_fn: Callable[[User], JobRun | None],
+    *,
+    email: str | None = None,
+) -> tuple[int, int, int]:
+    """Run ``job_fn`` once for each active user, ordered by ``pk``, one user at a time.
+
+    ``job_fn`` logs the outcomes it understands. When it raises instead, the user gets a
+    ``failed/unexpected`` row and the loop goes on, so one broken account never stops the others.
+    A user who turned ``job`` off is still visited: ``job_fn`` returns ``None`` and nothing is
+    logged. ``email`` limits the round to that one account.
+
+    Returns the counts ``(done, skipped, failed)`` of the runs that were logged.
+    """
+    users = User.objects.filter(is_active=True).order_by("pk")
+    if email:
+        users = users.filter(email=email)
+    done = skipped = failed = 0
+    for user in users:
+        try:
+            run = job_fn(user)
+        except Exception:
+            # An error the job did not expect; its text never reaches the log.
+            record(user, job, Outcome.FAILED, Code.UNEXPECTED)
+            failed += 1
+            continue
+        if run is None:
+            continue
+        if run.outcome == Outcome.DONE:
+            done += 1
+        elif run.outcome == Outcome.SKIPPED:
+            skipped += 1
+        else:
+            failed += 1
+    return done, skipped, failed
