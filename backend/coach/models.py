@@ -1,8 +1,9 @@
 import re
+from decimal import Decimal
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.core.validators import RegexValidator
+from django.core.validators import MaxValueValidator, MinValueValidator, RegexValidator
 from django.db import models
 from django.db.models import Q
 
@@ -17,6 +18,11 @@ MODEL_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._:/-]*\Z"
 # A key travels in an HTTP header: visible ASCII only, no spaces, no line breaks.
 KEY_MAX = 500
 KEY_PATTERN = re.compile(r"[\x21-\x7e]+")
+# The largest price per million tokens (max_digits=10, decimal_places=4) and the number of prices
+# one user may keep.
+PRICE_MAX = Decimal("999999.9999")
+MAX_MODEL_PRICES = 50
+PRICE_VALIDATORS = [MinValueValidator(Decimal(0)), MaxValueValidator(PRICE_MAX)]
 
 
 class AIProviderConfiguration(OwnedModel):
@@ -161,3 +167,43 @@ class AIUsageRecord(OwnedModel):
 
     def __str__(self) -> str:
         return f"{self.purpose} call of user {self.owner_id} ({self.outcome})"
+
+
+class AIModelPrice(OwnedModel):
+    """What a user pays their provider for one model, in USD per million tokens.
+
+    Optional and entered by the user: prices change and differ per contract, so the app ships
+    none. ``cached_per_million`` is the price of input read from the prompt cache; ``None``
+    means the normal input price applies.
+    """
+
+    model = models.CharField(
+        max_length=MODEL_MAX, validators=[RegexValidator(MODEL_PATTERN, "Enter a model name.")]
+    )
+    input_per_million = models.DecimalField(
+        max_digits=10, decimal_places=4, validators=PRICE_VALIDATORS
+    )
+    output_per_million = models.DecimalField(
+        max_digits=10, decimal_places=4, validators=PRICE_VALIDATORS
+    )
+    cached_per_million = models.DecimalField(
+        max_digits=10, decimal_places=4, null=True, blank=True, validators=PRICE_VALIDATORS
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["owner", "model"], name="coach_one_price_per_model"),
+            models.CheckConstraint(
+                condition=Q(input_per_million__gte=0), name="coach_price_input_not_negative"
+            ),
+            models.CheckConstraint(
+                condition=Q(output_per_million__gte=0), name="coach_price_output_not_negative"
+            ),
+            models.CheckConstraint(
+                condition=Q(cached_per_million__isnull=True) | Q(cached_per_million__gte=0),
+                name="coach_price_cached_not_negative",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"Price of a model of user {self.owner_id}"
