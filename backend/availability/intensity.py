@@ -8,6 +8,8 @@ The progression limits are percent of the reference week of ``planning.rules`` (
 the recent weeks or the typical week). The stories ask for 5, 8 and 10 % more per week; a steady
 increase of that size ends at about 113, 121 and 126 % of the four weeks before, which the warning
 limits round. "intensive" keeps the limits that applied to everyone before there were levels.
+The running warning limit is 10 percentage points below the effective general warning limit,
+but never below 100 %.
 
 Pure data and functions: nothing here touches the database.
 """
@@ -35,6 +37,13 @@ class Limits:
     # The share of easy minutes in the endurance minutes of the week, at least (a warning below).
     easy_share_percent: int
 
+    @property
+    def run_progression_warning_percent(self) -> int:
+        """The stricter warning limit for running, derived from the general limit."""
+        return max(
+            PROGRESSION_WARNING_MIN, self.progression_warning_percent - RUN_WARNING_MARGIN_POINTS
+        )
+
 
 DEFAULT_LEVEL = IntensityLevel.NORMAL
 
@@ -49,6 +58,7 @@ HARD_DAYS_MIN = 0
 HARD_DAYS_MAX = 4
 PROGRESSION_WARNING_MIN = 100
 PROGRESSION_WARNING_MAX = 200
+RUN_WARNING_MARGIN_POINTS = 10
 PROGRESSION_ERROR_MIN = 100
 PROGRESSION_ERROR_MAX = 300
 EASY_SHARE_MIN = 50
