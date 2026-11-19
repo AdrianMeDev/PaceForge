@@ -1,0 +1,234 @@
+<div class="card">
+  <h2 class="m-0 mb-2 text-lg font-semibold">AI coach costs</h2>
+  <p class="hint">
+    The coach's calls, tokens and estimated cost in US dollars per month. Prices are optional: add
+    the price per million tokens of a model, as your provider lists it, to see a cost. The cost is
+    an estimate and not a bill.
+  </p>
+
+  @switch (view()) {
+    @case ('loading') {
+      <div class="grid gap-3" role="status" aria-label="Loading">
+        <div class="skeleton h-12"></div>
+        <div class="skeleton h-28"></div>
+      </div>
+    }
+    @case ('unreachable') {
+      <p class="alert" role="alert">Your AI costs could not be loaded.</p>
+      <p>
+        <button type="button" class="btn btn-primary btn-sm" (click)="load()">Try again</button>
+      </p>
+    }
+    @case ('ready') {
+      @for (message of errors(); track $index) {
+        <p class="alert" role="alert">{{ message }}</p>
+      }
+      @if (notice(); as text) {
+        <p class="notice" role="status">{{ text }}</p>
+      }
+
+      @if (costs(); as current) {
+        <h3 class="m-0 mt-4 text-base font-semibold">Usage per month</h3>
+        @if (current.months.length === 0) {
+          <p class="hint" data-testid="no-months">No AI calls yet.</p>
+        } @else {
+          <table class="months" data-testid="months">
+            <thead>
+              <tr>
+                <th scope="col">Month</th>
+                <th scope="col">Calls</th>
+                <th scope="col">Input tokens</th>
+                <th scope="col">Output tokens</th>
+                <th scope="col">Estimated cost</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (month of current.months; track month.month) {
+                <tr [attr.data-testid]="'month-' + month.month">
+                  <td data-label="Month">{{ monthLabel(month.month) }}</td>
+                  <td data-label="Calls">{{ month.calls | number: '1.0-0' }}</td>
+                  <td data-label="Input tokens">{{ month.input_tokens | number: '1.0-0' }}</td>
+                  <td data-label="Output tokens">{{ month.output_tokens | number: '1.0-0' }}</td>
+                  <td data-label="Estimated cost" data-testid="cost">
+                    @switch (costKind(month)) {
+                      @case ('none') {
+                        No price set
+                        @if (month.unpriced_models.length > 0) {
+                          <span class="note" data-testid="unpriced">
+                            Without a price: {{ month.unpriced_models.join(', ') }}
+                          </span>
+                        }
+                      }
+                      @case ('partial') {
+                        At least {{ month.cost | currency: 'USD' : 'symbol' : '1.2-4' }}
+                        <span class="note" data-testid="unpriced">
+                          Without a price: {{ month.unpriced_models.join(', ') }}
+                        </span>
+                      }
+                      @default {
+                        {{ month.cost | currency: 'USD' : 'symbol' : '1.2-4' }}
+                      }
+                    }
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        }
+
+        <h3 class="m-0 mt-4 text-base font-semibold">Model prices</h3>
+        @if (current.prices.length === 0) {
+          <p class="hint" data-testid="no-prices">
+            No prices yet. They are optional: without them you see calls and tokens, but no cost.
+          </p>
+        } @else {
+          <ul class="prices" data-testid="prices">
+            @for (price of current.prices; track price.id) {
+              <li [attr.data-testid]="'price-' + price.id">
+                <span>
+                  <span class="name" data-testid="price-model">{{ price.model }}</span>
+                  <span class="figures" data-testid="price-figures">
+                    Input ${{ price.input_per_million }}, output ${{ price.output_per_million
+                    }}{{
+                      price.cached_per_million !== null
+                        ? ', cached input $' + price.cached_per_million
+                        : ''
+                    }}
+                    per million tokens
+                  </span>
+                </span>
+                <span class="actions">
+                  <button
+                    type="button"
+                    class="btn btn-secondary btn-sm"
+                    [disabled]="busy()"
+                    [attr.aria-label]="'Edit the price of ' + price.model"
+                    (click)="startEdit(price)"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-secondary btn-sm"
+                    [disabled]="busy()"
+                    [attr.aria-label]="'Remove the price of ' + price.model"
+                    (click)="askRemoval(price)"
+                  >
+                    Remove
+                  </button>
+                </span>
+              </li>
+            }
+          </ul>
+        }
+        <app-confirm-dialog
+          title="Remove the price?"
+          [message]="
+            'The price of ' +
+            (pendingRemoval()?.model ?? 'this model') +
+            ' is deleted. Calls of this model are then shown without a cost.'
+          "
+          confirmLabel="Remove price"
+          [danger]="true"
+          (confirmed)="remove()"
+        />
+
+        <form novalidate (submit)="save($event)">
+          <h3 class="m-0 mb-3 text-base font-semibold" data-testid="form-title">
+            {{ editing() ? 'Edit the price of ' + editing()?.model : 'Add a model price' }}
+          </h3>
+          <div class="field">
+            <label for="price-model-name">Model</label>
+            <input
+              id="price-model-name"
+              type="text"
+              autocomplete="off"
+              autocapitalize="off"
+              spellcheck="false"
+              [value]="model()"
+              [readOnly]="editing() !== null"
+              [attr.aria-invalid]="fieldErrors()['model'] ? true : null"
+              (input)="model.set(read($event))"
+            />
+            @if (fieldErrors()['model']; as message) {
+              <p class="field-error" role="alert">{{ message }}</p>
+            }
+            <p class="hint">
+              The exact name of the model, as in the setup above. A price set for a name that has
+              one already replaces it.
+            </p>
+          </div>
+
+          <div class="field">
+            <label for="price-input">Input, USD per million tokens</label>
+            <input
+              id="price-input"
+              type="text"
+              inputmode="decimal"
+              autocomplete="off"
+              [value]="inputPrice()"
+              [attr.aria-invalid]="fieldErrors()['input_per_million'] ? true : null"
+              (input)="inputPrice.set(read($event))"
+            />
+            @if (fieldErrors()['input_per_million']; as message) {
+              <p class="field-error" role="alert">{{ message }}</p>
+            }
+          </div>
+
+          <div class="field">
+            <label for="price-output">Output, USD per million tokens</label>
+            <input
+              id="price-output"
+              type="text"
+              inputmode="decimal"
+              autocomplete="off"
+              [value]="outputPrice()"
+              [attr.aria-invalid]="fieldErrors()['output_per_million'] ? true : null"
+              (input)="outputPrice.set(read($event))"
+            />
+            @if (fieldErrors()['output_per_million']; as message) {
+              <p class="field-error" role="alert">{{ message }}</p>
+            }
+          </div>
+
+          <div class="field">
+            <label for="price-cached">Cached input, USD per million tokens (optional)</label>
+            <input
+              id="price-cached"
+              type="text"
+              inputmode="decimal"
+              autocomplete="off"
+              aria-describedby="price-cached-hint"
+              [value]="cachedPrice()"
+              [attr.aria-invalid]="fieldErrors()['cached_per_million'] ? true : null"
+              (input)="cachedPrice.set(read($event))"
+            />
+            @if (fieldErrors()['cached_per_million']; as message) {
+              <p class="field-error" role="alert">{{ message }}</p>
+            }
+            <p class="hint" id="price-cached-hint">
+              The price of input that is read from the provider's cache. Leave it empty if there is
+              none; cached input is then counted at the input price.
+            </p>
+          </div>
+
+          <div class="actions">
+            <button type="submit" class="btn btn-primary" [disabled]="busy()">
+              {{ busy() ? 'Working…' : editing() ? 'Save price' : 'Add price' }}
+            </button>
+            @if (editing()) {
+              <button
+                type="button"
+                class="btn btn-secondary"
+                [disabled]="busy()"
+                (click)="cancelEdit()"
+              >
+                Cancel
+              </button>
+            }
+          </div>
+        </form>
+      }
+    }
+  }
+</div>
