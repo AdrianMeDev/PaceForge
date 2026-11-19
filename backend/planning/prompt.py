@@ -144,6 +144,9 @@ percent of "typical_weekly_minutes", which is what the athlete calls a normal we
 null). That second number is where a return to training is headed, not where it starts: after a \
 break climb towards it over several weeks, and prefer a few sessions of a useful length to many \
 very short ones. Without either there is no such limit; then plan carefully.
+- The running minutes of the week stay within "run_progression_warning_percent" percent of the \
+average of "recent_run_weeks_minutes". (warning) If there are no recent running minutes, there \
+is no running reference and no such limit.
 - At least "easy_share_percent" percent of the minutes of running, cycling and swimming are easy \
 (warning): a workout without segments counts as a whole, one with segments segment by segment (up \
 to zone {EASY_UP_TO_ZONE} is easy; without a zone a warm-up, recovery or cool-down is easy and \

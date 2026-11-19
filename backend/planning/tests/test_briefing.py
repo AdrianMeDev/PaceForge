@@ -83,6 +83,7 @@ ALLOWED_KEYS = {
     "target_value",
     "goals_not_shown",
     "recent_weeks_minutes",
+    "recent_run_weeks_minutes",
     "typical_weekly_minutes",
     "sports",
     "stretching",
@@ -118,6 +119,7 @@ ALLOWED_KEYS = {
     "limitations_text",
     "max_hard_days",
     "progression_warning_percent",
+    "run_progression_warning_percent",
     "progression_error_percent",
     "easy_share_percent",
     # season_week: what the confirmed season plan says about the week
@@ -283,6 +285,7 @@ class TestTheBriefingOfAUserWithNothing:
             "goals": [],
             "goals_not_shown": 0,
             "recent_weeks_minutes": [],
+            "recent_run_weeks_minutes": [],
             "typical_weekly_minutes": None,
             "sports": ["running", "cycling", "swimming", "strength"],
             "stretching": False,
@@ -306,6 +309,7 @@ class TestTheBriefingOfAUserWithNothing:
             "limits": {
                 "max_hard_days": 2,
                 "progression_warning_percent": 120,
+                "run_progression_warning_percent": 110,
                 "progression_error_percent": 140,
                 "easy_share_percent": 80,
             },
@@ -705,6 +709,7 @@ class TestTheGoals:
             "goals",
             "goals_not_shown",
             "recent_weeks_minutes",
+            "recent_run_weeks_minutes",
             "typical_weekly_minutes",
             "sports",
             "stretching",
@@ -829,6 +834,7 @@ class TestTheLimits:
         assert build_briefing(alice, MONDAY)["limits"] == {
             "max_hard_days": normal.max_hard_days,
             "progression_warning_percent": normal.progression_warning_percent,
+            "run_progression_warning_percent": normal.run_progression_warning_percent,
             "progression_error_percent": normal.progression_error_percent,
             "easy_share_percent": normal.easy_share_percent,
         }
@@ -849,6 +855,7 @@ class TestTheLimits:
         assert briefing["limits"] == {
             "max_hard_days": 4,
             "progression_warning_percent": 105,
+            "run_progression_warning_percent": 100,
             "progression_error_percent": 110,
             "easy_share_percent": 60,
         }
@@ -1324,6 +1331,30 @@ class TestTheRecentWeeks:
             )
 
         assert build_briefing(alice, MONDAY)["recent_weeks_minutes"] == [60, 30]
+
+    def test_running_minutes_exclude_other_sports_and_keep_zero_weeks(
+        self, alice: User, bob: User
+    ) -> None:
+        for owner, day, sport, seconds in (
+            (alice, 12, "running", 3600),
+            (alice, 13, "cycling", 7200),
+            (alice, 5, "cycling", 1800),
+            (bob, 6, "running", 9000),
+        ):
+            Activity.objects.create(
+                owner=owner,
+                source="fit_file",
+                source_hash=f"{owner.pk}-{day}".ljust(64, "0")[:64],
+                sport=sport,
+                start_time=datetime(2027, 7, day, 8, 0, tzinfo=UTC),
+                timer_seconds=seconds,
+            )
+
+        briefing = build_briefing(alice, MONDAY)
+
+        assert briefing["recent_weeks_minutes"] == [180, 30]
+        assert briefing["recent_run_weeks_minutes"] == [60, 0]
+        assert briefing["limits"]["run_progression_warning_percent"] == 110
 
 
 class TestThePreviousWeek:

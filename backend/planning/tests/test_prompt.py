@@ -340,6 +340,15 @@ class TestTheSystemPrompt:
         assert '"recent_weeks_minutes"' in SYSTEM_PROMPT
         assert f'{TYPICAL_VOLUME_PERCENT} percent of "typical_weekly_minutes"' in SYSTEM_PROMPT
 
+    def test_it_explains_the_running_progression_warning(self) -> None:
+        flat = " ".join(SYSTEM_PROMPT.split())
+
+        assert (
+            'The running minutes of the week stay within "run_progression_warning_percent" '
+            'percent of the average of "recent_run_weeks_minutes". (warning)' in flat
+        )
+        assert "there is no running reference and no such limit" in flat
+
     def test_it_says_that_the_typical_week_is_where_a_return_is_headed(self) -> None:
         assert "where a return to training is headed, not where it starts" in SYSTEM_PROMPT
         assert "climb towards it" in SYSTEM_PROMPT
@@ -374,7 +383,8 @@ class TestTheSystemPrompt:
 
     def test_every_key_it_names_is_a_key_of_the_briefing(self) -> None:
         named = set(re.findall(r'"([a-z_]+)"', SYSTEM_PROMPT))
-        keys = {"recent_weeks_minutes", "typical_weekly_minutes", "weekly_minutes_available",
+        keys = {"recent_weeks_minutes", "recent_run_weeks_minutes", "typical_weekly_minutes",
+                "weekly_minutes_available", "run_progression_warning_percent",
                 "previous_week_plan", "previous_week_review", "zone_systems", "today", "sports",
                 "stretching", "limits", "max_hard_days", "progression_warning_percent",
                 "progression_error_percent", "easy_share_percent"}  # fmt: skip
@@ -393,7 +403,11 @@ class TestTheSystemPrompt:
         assert 'No more days of the week than "max_hard_days" have a hard workout.' in SYSTEM_PROMPT
         # no number of any level is written into the prompt, so it is the same for everyone
         for limits in LEVEL_LIMITS.values():
-            for number in (limits.progression_warning_percent, limits.progression_error_percent):
+            for number in (
+                limits.progression_warning_percent,
+                limits.progression_error_percent,
+                limits.run_progression_warning_percent,
+            ):
                 assert f"{number} percent" not in SYSTEM_PROMPT
             assert f"At most {limits.max_hard_days} days" not in SYSTEM_PROMPT
             assert f"At least {limits.easy_share_percent} percent" not in SYSTEM_PROMPT
