@@ -1935,7 +1935,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** -
 - **Size:** M, ~5 commits
 
-### M8 [ ] Audit: Planning requests and model-written diagnostics
+### M8 [~] Audit: Planning requests and model-written diagnostics
 
 - **Goal:** Apply the same push limit to equivalent confirmations and return safe, predictable errors for malformed plan data.
 - **Includes:** F378 (push throttle), F379 (nested request bodies), F380 (unknown keys in errors), F381 (bidirectional marks), F420 (invisible test characters), F197, F214 (chat repair paths and fixtures).

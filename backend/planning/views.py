@@ -321,8 +321,11 @@ class ConfirmView(APIView):
     http_method_names = ["post", "options"]
 
     def get_throttles(self) -> list[BaseThrottle]:
+        if self.request.method != "POST":
+            return []
         # Only confirming *and sending* makes the server call Intervals.icu.
-        wants_push = isinstance(self.request.data, dict) and self.request.data.get("push") is True
+        body = ConfirmBody(data=self.request.data)
+        wants_push = body.is_valid() and bool(body.validated_data["push"])
         return super().get_throttles() if wants_push else []
 
     def post(self, request: Request, plan_id: UUID) -> Response:
