@@ -184,3 +184,93 @@ def test_export_migration_reversal_removes_both_guards(legacy_export_apps: Any) 
 
 def test_empty_database_accepts_export_migration(legacy_export_apps: Any) -> None:
     MigrationExecutor(connection).migrate(EXPORT_AFTER)
+
+
+REVISION_AFTER = [("planning", "0009_revision_ancestry")]
+
+
+@pytest.fixture
+def legacy_revision_apps(transactional_db: None) -> Iterator[Any]:
+    executor = MigrationExecutor(connection)
+    leaves = executor.loader.graph.leaf_nodes()
+    executor.migrate(EXPORT_AFTER)
+    apps = executor.loader.project_state(EXPORT_AFTER).apps
+    try:
+        yield apps
+    finally:
+        apps.get_model("planning", "WeeklyPlan").objects.all().delete()
+        MigrationExecutor(connection).migrate(leaves)
+
+
+@pytest.mark.parametrize("kind", ["owner", "week", "order", "cycle2", "cycle3"])
+def test_revision_preflight_refuses_invalid_legacy_edges_atomically(
+    legacy_revision_apps: Any, kind: str
+) -> None:
+    apps = legacy_revision_apps
+    owner = apps.get_model("accounts", "User").objects.create(email="alice@example.com")
+    other = apps.get_model("accounts", "User").objects.create(email="bob@example.com")
+    plans = apps.get_model("planning", "WeeklyPlan").objects
+    root = plans.create(owner=owner, week_start=MONDAY, version=3)
+    child = plans.create(
+        owner=other if kind == "owner" else owner,
+        week_start=MONDAY + timedelta(weeks=1) if kind == "week" else MONDAY,
+        version=1 if kind == "order" else 5,
+        parent=root,
+    )
+    if kind.startswith("cycle"):
+        last = child
+        if kind == "cycle3":
+            last = plans.create(owner=owner, week_start=MONDAY, version=7, parent=child)
+        plans.filter(pk=root.pk).update(parent=last)
+    original = list(plans.order_by("id").values())
+    with pytest.raises(IntegrityError, match="invalid existing parent edges"):
+        MigrationExecutor(connection).migrate(REVISION_AFTER)
+    assert list(plans.order_by("id").values()) == original
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT count(*) FROM pg_trigger WHERE tgname = 'planning_revision_ancestry'"
+        )
+        assert cursor.fetchone()[0] == 0
+        cursor.execute(
+            "SELECT count(*) FROM pg_proc WHERE proname = 'planning_check_revision_ancestry'"
+        )
+        assert cursor.fetchone()[0] == 0
+    assert ("planning", "0009_revision_ancestry") not in MigrationExecutor(
+        connection
+    ).loader.applied_migrations
+    # Correct the fixtures explicitly; the migration must never silently repair them.
+    plans.filter(pk=root.pk).update(parent=None)
+    plans.filter(pk=child.pk).update(owner=owner, week_start=MONDAY, version=5)
+    MigrationExecutor(connection).migrate(REVISION_AFTER)
+
+
+def test_revision_preflight_preserves_branched_history_and_reverses(
+    legacy_revision_apps: Any,
+) -> None:
+    apps = legacy_revision_apps
+    owner = apps.get_model("accounts", "User").objects.create(email="alice@example.com")
+    plans = apps.get_model("planning", "WeeklyPlan").objects
+    root = plans.create(owner=owner, week_start=MONDAY, version=1)
+    first = plans.create(owner=owner, week_start=MONDAY, version=4, parent=root)
+    second = plans.create(owner=owner, week_start=MONDAY, version=8, parent=root)
+    plans.create(owner=owner, week_start=MONDAY, version=12, parent=first)
+    original = list(plans.order_by("id").values())
+    MigrationExecutor(connection).migrate(REVISION_AFTER)
+    assert list(plans.order_by("id").values()) == original
+    with pytest.raises(IntegrityError, match="planning_revision_ancestry"):
+        plans.filter(pk=root.pk).update(parent=second)
+    MigrationExecutor(connection).migrate(EXPORT_AFTER)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT count(*) FROM pg_trigger WHERE tgname = 'planning_revision_ancestry'"
+        )
+        assert cursor.fetchone()[0] == 0
+        cursor.execute(
+            "SELECT count(*) FROM pg_proc WHERE proname = 'planning_check_revision_ancestry'"
+        )
+        assert cursor.fetchone()[0] == 0
+    plans.filter(pk=root.pk).update(parent=second)
+
+
+def test_empty_database_accepts_revision_migration(legacy_revision_apps: Any) -> None:
+    MigrationExecutor(connection).migrate(REVISION_AFTER)
