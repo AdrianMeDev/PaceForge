@@ -169,7 +169,8 @@ pending, used, revoked or expired; only pending ones can be revoked.
 
 Every user can turn on two-factor authentication on the **Security** page (`/settings/security`):
 an authenticator app (TOTP) plus ten single-use recovery codes. Signing in then asks for a code after
-the password; a recovery code works in the same field.
+the password; a recovery code works in the same field. The same page holds the **Your data** and
+**Delete account** cards, see [Data export and account deletion](#data-export-and-account-deletion).
 
 - **Administrators have to have it.** Until it is on, an administrator is sent to the security page
   and the administration API answers `403` with `"code": "mfa_required"`. Administrators cannot turn
@@ -194,6 +195,16 @@ the password; a recovery code works in the same field.
 
   The command leaves the password and all data alone and does not end existing sessions. If a
   device was stolen, also change the password.
+
+## Data export and account deletion
+
+Every user can download everything PaceForge stores about them as one JSON file, and can delete
+their account with all its data. Both are on the **Security** page (`/settings/security`), in the
+**Your data** and **Delete account** cards. Deleting asks for the email address, the password and,
+when two-factor authentication is on, a code; it never removes the data at Intervals.icu, and the
+last active administrator cannot be deleted. The export holds only your own data and no keys,
+passwords or activity files. Backups made before a deletion keep the data until they are removed.
+The details, the file format and the API are in [docs/account-data.md](docs/account-data.md).
 
 ## Connections
 
