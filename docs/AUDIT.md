@@ -1951,7 +1951,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** M6
 - **Size:** L, ~7 commits
 
-### M10 [~] Audit: Season history and ownership of linked reviews and messages
+### M10 [x] Audit: Season history and ownership of linked reviews and messages
 
 - **Goal:** Protect confirmed season versions and ensure linked reviews and chat messages belong to the same athlete as their referenced records.
 - **Includes:** F463 (season version mutation), F442 (review foreign keys), F431 (misclassified integrity failures), F204, F205 (weekly and season chat links).
@@ -2247,6 +2247,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 
 ## Changelog
 
+- 2026-11-20: M10 done: PostgreSQL protects confirmed and superseded season version metadata and ancestry (F463); review workout and activity links (F442) and weekly and season chat plan links (F204, F205) enforce same-owner references in the database; review correction distinguishes already-linked activities, deleted activities and other database errors (F431), with supersession and account deletion regression tests.
 - 2026-11-20: M9 done: PostgreSQL enforces workout and export ownership, workout week boundaries and ordered revision ancestry (F369, F386, F407). Historical workouts and plan contents stay frozen through direct writes and supersession (F367, F368). Regression tests cover confirmation, atomic replacement, restore-as-draft and account deletion.
 - 2026-11-20: M8 done: equivalent push confirmations share the push limit before external calls (F378); deeply nested generate and confirm bodies return handled client errors (F379); planning and chat diagnostics report unknown fields only at trusted parent paths (F380, F197); plan text rejects all bidirectional control marks (F381); planning and chat tests use escaped Unicode fixtures and guard against literal invisible marks (F420, F214), with parser, API and provider repair regression tests.
 - 2026-11-20: M6 done: account, dashboard, integration, job and review views require authentication explicitly (F17, F287, F310, F330, F436); ownership is assigned server-side on create and update, including `OwnedModelViewSet` (F284); integration exports use an explicit metadata allowlist (F27), with authentication, two-user ownership and export disclosure regression tests.
