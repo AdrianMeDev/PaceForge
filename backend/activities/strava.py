@@ -192,6 +192,8 @@ class _Columns:
         if any(len(fields[i]) > _MAX_FIELD for i in (self.id, self.date, self.type)):
             return None
         filename = self._field(fields, self.filename)
+        if len(filename) > _MAX_FIELD:
+            return None
         return StravaRow(
             activity_id=activity_id,
             start=start,
@@ -201,7 +203,7 @@ class _Columns:
             distance_m=values.metres(
                 _scaled(_number(self._field(fields, self.distance)), self.distance_factor)
             ),
-            filename=filename if filename and len(filename) <= _MAX_FIELD else None,
+            filename=filename or None,
         )
 
 

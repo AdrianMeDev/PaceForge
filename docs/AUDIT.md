@@ -1959,7 +1959,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** M9
 - **Size:** L, ~6 commits
 
-### M11 [ ] Audit: Strava archive work limits and import errors
+### M11 [~] Audit: Strava archive work limits and import errors
 
 - **Goal:** Bound the total work of a bulk import and give each failed recording an accurate, safe outcome.
 - **Includes:** F47 (repeated archive processing), F46 (overlong recording names), F50 (parser text in API errors), F97 (missing archive diagnosis).

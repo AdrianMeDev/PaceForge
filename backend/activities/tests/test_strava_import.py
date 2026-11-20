@@ -10,7 +10,7 @@ from django.core.management import CommandError, call_command
 from accounts.models import User
 from activities.models import Activity, ActivityFile
 from activities.services import import_activity
-from activities.strava import ExportError, ImportCounts, import_export
+from activities.strava import _MAX_FIELD, ExportError, ImportCounts, import_export
 
 from .fit_builder import activity_file
 from .gpx_builder import gpx_document
@@ -247,6 +247,15 @@ class TestWhatCannotBeImported:
         counts = import_export(alice, source)
 
         assert (counts.imported, counts.lines_unreadable) == (1, 1)
+
+    def test_an_overlong_filename_is_unreadable_and_not_entered(self, alice: User) -> None:
+        overlong = "a" * (_MAX_FIELD + 1)
+        source = archive({}, [row(0, overlong, kind="Run", elapsed="600", metres="1800")])
+
+        counts = import_export(alice, source)
+
+        assert (counts.lines_unreadable, counts.entered) == (1, 0)
+        assert Activity.objects.count() == 0
 
     def test_a_member_of_the_archive_that_the_list_does_not_name_is_ignored(
         self, alice: User

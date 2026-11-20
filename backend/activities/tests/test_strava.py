@@ -7,6 +7,7 @@ import pytest
 
 from activities.management.commands import import_strava
 from activities.strava import (
+    _MAX_FIELD,
     MAX_ROWS,
     SPORTS,
     StravaListError,
@@ -317,6 +318,22 @@ class TestWhatMakesALineUnreadable:
 
         assert [row.activity_id for row in result.rows] == ["1"]
         assert result.unreadable == 1
+
+    def test_a_filename_at_the_limit_is_accepted(self) -> None:
+        name = "a" * _MAX_FIELD
+
+        result = read_activity_list(export(line(filename=name)))
+
+        assert result.unreadable == 0
+        (row,) = result.rows
+        assert row.filename == name
+
+    def test_an_overlong_filename_is_unreadable(self) -> None:
+        name = "a" * (_MAX_FIELD + 1)
+
+        result = read_activity_list(export(line(filename=name)))
+
+        assert (len(result.rows), result.unreadable) == (0, 1)
 
     def test_the_count_is_exact(self) -> None:
         result = read_activity_list(
