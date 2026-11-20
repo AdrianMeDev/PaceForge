@@ -546,10 +546,13 @@ def tempo(user: User) -> str:
     return json.dumps(to_json(SeasonPlan(weeks, plan.rationale)))
 
 
-def confirmed(user: User) -> SeasonPlanVersion:
+def confirmed(user: User, *, known_baseline: bool = True) -> SeasonPlanVersion:
     skeleton = skeleton_for(user)
     stored = services.save_draft(
-        user, following(skeleton), SeasonContext(skeleton), input_snapshot=collect_inputs(user)
+        user,
+        following(skeleton),
+        SeasonContext(skeleton),
+        input_snapshot=collect_inputs(user) if known_baseline else None,
     )
     return services.confirm(user, stored.pk)
 
@@ -792,15 +795,13 @@ class TestChangingASeason:
         self, alice: User, provide: Callable[..., Scripted], change_kind: str
     ) -> None:
         AvailabilitySettings.objects.create(owner=alice, typical_weekly_minutes=210)
-        base = confirmed(alice)
+        base = confirmed(alice, known_baseline=change_kind != "unknown_baseline")
         if change_kind == "capacity":
             WeekdayMinutes.objects.for_user(alice).update(minutes=90)
         elif change_kind == "sports":
             AvailabilitySettings.objects.for_user(alice).update(sports=["running"])
         elif change_kind == "inputs":
             Goal.objects.for_user(alice).update(target_time_seconds=2400)
-        else:
-            SeasonPlanVersion.objects.filter(pk=base.pk).update(input_snapshot=None)
         old_plan = services.read(base).plan
         provide(json.dumps(to_json(old_plan)))
 

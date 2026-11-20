@@ -1951,7 +1951,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** M6
 - **Size:** L, ~7 commits
 
-### M10 [ ] Audit: Season history and ownership of linked reviews and messages
+### M10 [~] Audit: Season history and ownership of linked reviews and messages
 
 - **Goal:** Protect confirmed season versions and ensure linked reviews and chat messages belong to the same athlete as their referenced records.
 - **Includes:** F463 (season version mutation), F442 (review foreign keys), F431 (misclassified integrity failures), F204, F205 (weekly and season chat links).

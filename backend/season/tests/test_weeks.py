@@ -4,6 +4,7 @@ from typing import Any
 import pytest
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
+from django.utils import timezone
 
 from accounts.models import User
 from planning.schema import Sport
@@ -149,14 +150,21 @@ class TestTheConfirmedWeek:
     def test_a_plan_that_cannot_be_read_has_none_and_does_not_raise(
         self, alice: User, damage: dict[str, Any]
     ) -> None:
-        stored = confirmed(alice)
-        SeasonPlanVersion.objects.filter(pk=stored.pk).update(**damage)
+        skel = skeleton()
+        stored = services.save_draft(alice, plan_for(skel), SeasonContext(skel))
+        # Model legacy malformed history without rewriting an already frozen version.
+        SeasonPlanVersion.objects.filter(pk=stored.pk).update(
+            **damage, status="confirmed", confirmed_at=timezone.now()
+        )
 
         assert confirmed_week(alice, MONDAY) is None
 
     def test_a_week_missing_from_the_plan_has_none(self, alice: User) -> None:
-        stored = confirmed(alice)
-        SeasonPlanVersion.objects.filter(pk=stored.pk).update(weeks=stored.weeks[1:])
+        skel = skeleton()
+        stored = services.save_draft(alice, plan_for(skel), SeasonContext(skel))
+        SeasonPlanVersion.objects.filter(pk=stored.pk).update(
+            weeks=stored.weeks[1:], status="confirmed", confirmed_at=timezone.now()
+        )
 
         assert confirmed_week(alice, MONDAY) is None
 

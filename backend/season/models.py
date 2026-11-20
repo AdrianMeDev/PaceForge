@@ -101,14 +101,19 @@ class SeasonPlanVersion(OwnedModel):
             raise ValidationError(errors)
 
     def save(self, *args: Any, **kwargs: Any) -> None:
-        # A plan that is no draft any more is a record of what was agreed: only its status and its
-        # time of confirming move (a change is a new version).
+        # Historical plans retain their content and metadata. Only confirmed -> superseded
+        # and parent removal on deletion are allowed; the database checks deletion at commit.
         if not self._state.adding:
             stored = (
                 type(self)
                 .objects.filter(pk=self.pk)
                 .values_list(
                     "status",
+                    "parent_id",
+                    "owner_id",
+                    "version",
+                    "created_at",
+                    "confirmed_at",
                     "reason",
                     "request",
                     "rationale",
@@ -120,6 +125,10 @@ class SeasonPlanVersion(OwnedModel):
                 .first()
             )
             now = (
+                self.owner_id,
+                self.version,
+                self.created_at,
+                self.confirmed_at,
                 self.reason,
                 self.request,
                 self.rationale,
@@ -128,7 +137,21 @@ class SeasonPlanVersion(OwnedModel):
                 self.sports,
                 self.input_snapshot,
             )
-            if stored is not None and stored[0] != self.Status.DRAFT and stored[1:] != now:
+            if (
+                stored is not None
+                and stored[0] != self.Status.DRAFT
+                and (
+                    stored[2:] != now
+                    or not (
+                        self.status == stored[0]
+                        or (
+                            stored[0] == self.Status.CONFIRMED
+                            and self.status == self.Status.SUPERSEDED
+                        )
+                    )
+                    or (self.parent_id != stored[1] and self.parent_id is not None)
+                )
+            ):
                 raise ValidationError(
                     "The content of a plan that is not a draft cannot be changed."
                 )

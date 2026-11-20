@@ -23,9 +23,11 @@ WEEKS = tuple(MONDAY + timedelta(weeks=n) for n in (1, 2, 3))
 CHECK_NOW = NOW + timedelta(weeks=4)
 
 
-def make_season(user: User, monkeypatch: pytest.MonkeyPatch) -> SeasonPlanVersion:
+def make_season(
+    user: User, monkeypatch: pytest.MonkeyPatch, confirmed_at: datetime = NOW
+) -> SeasonPlanVersion:
     monkeypatch.setattr(goal_services, "_utc_now", lambda: NOW)
-    monkeypatch.setattr(services, "_now", lambda: NOW)
+    monkeypatch.setattr(services, "_now", lambda: confirmed_at)
     plan = confirmed(user)
     monkeypatch.setattr(goal_services, "_utc_now", lambda: CHECK_NOW)
     monkeypatch.setattr(services, "_now", lambda: CHECK_NOW)
@@ -187,24 +189,21 @@ def test_only_the_latest_three_completed_weeks_are_examined(
 
 @pytest.mark.parametrize("offset", [-1, 0, 1])
 def test_the_first_week_must_start_at_or_after_the_confirmation_instant(
-    alice: User, season: SeasonPlanVersion, offset: int
+    alice: User, monkeypatch: pytest.MonkeyPatch, offset: int
 ) -> None:
     training(alice)
-    season.confirmed_at = datetime.combine(WEEKS[0], time.min, tzinfo=UTC) + timedelta(
-        microseconds=offset
-    )
-    season.save(update_fields=["confirmed_at"])
+    confirmed_at = datetime.combine(WEEKS[0], time.min, tzinfo=UTC) + timedelta(microseconds=offset)
+    season = make_season(alice, monkeypatch, confirmed_at)
 
     assert deviation_weeks(alice, season) == (WEEKS if offset <= 0 else ())
 
 
 def test_week_dates_before_the_season_do_not_count(
-    alice: User, season: SeasonPlanVersion, monkeypatch: pytest.MonkeyPatch
+    alice: User, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     weeks = (MONDAY - timedelta(weeks=1), MONDAY, WEEKS[0])
     training(alice, weeks=weeks)
-    season.confirmed_at = NOW - timedelta(weeks=3)
-    season.save(update_fields=["confirmed_at"])
+    season = make_season(alice, monkeypatch, NOW - timedelta(weeks=3))
     monkeypatch.setattr(goal_services, "_utc_now", lambda: NOW + timedelta(weeks=2))
 
     assert deviation_weeks(alice, season) == ()
@@ -257,18 +256,16 @@ def test_the_current_local_week_is_not_complete_until_monday(
     assert deviation_weeks(alice, season) == WEEKS
 
 
+@pytest.mark.parametrize(("minute", "expected"), [(59, WEEKS), (61, ())])
 def test_confirmation_uses_the_local_midnight_instant(
-    alice: User, season: SeasonPlanVersion
+    alice: User, monkeypatch: pytest.MonkeyPatch, minute: int, expected: tuple[date, ...]
 ) -> None:
     AthleteProfile.objects.create(owner=alice, timezone="America/Los_Angeles")
     training(alice)
     # Confirmation on Monday UTC is still before the local week begins.
-    season.confirmed_at = datetime.combine(WEEKS[0], time(7, 59), tzinfo=UTC)
-    season.save(update_fields=["confirmed_at"])
-    assert deviation_weeks(alice, season) == WEEKS
-    season.confirmed_at += timedelta(minutes=2)
-    season.save(update_fields=["confirmed_at"])
-    assert deviation_weeks(alice, season) == ()
+    confirmed_at = datetime.combine(WEEKS[0], time(7), tzinfo=UTC) + timedelta(minutes=minute)
+    season = make_season(alice, monkeypatch, confirmed_at)
+    assert deviation_weeks(alice, season) == expected
 
 
 def test_another_athletes_plans_and_activities_never_contribute(
