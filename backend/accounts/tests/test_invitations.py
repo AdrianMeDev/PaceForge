@@ -22,7 +22,10 @@ from accounts.services.invitations import (
 
 pytestmark = pytest.mark.django_db
 
-BASE_URL = "https://pace.example.com/"
+
+@pytest.fixture(autouse=True)
+def public_origin(settings):
+    settings.APP_ORIGIN = "https://pace.example.com"
 
 
 @pytest.fixture
@@ -141,7 +144,7 @@ def test_default_lifetime_comes_from_settings(admin: User, settings) -> None:
 
 
 def test_signup_link_carries_token_and_email() -> None:
-    url = build_invitation_url(base_url=BASE_URL, token="tok", email="a@example.com")
+    url = build_invitation_url(token="tok", email="a@example.com")
 
     parts = urlparse(url)
     assert (
@@ -150,22 +153,21 @@ def test_signup_link_carries_token_and_email() -> None:
     assert parse_qs(parts.query) == {"invitation": ["tok"], "email": ["a@example.com"]}
 
 
-def test_signup_link_does_not_depend_on_a_trailing_slash() -> None:
-    with_slash = build_invitation_url(base_url=BASE_URL, token="tok", email="a@example.com")
-    without = build_invitation_url(
-        base_url="https://pace.example.com", token="tok", email="a@example.com"
-    )
+def test_signup_link_uses_the_configured_origin(settings) -> None:
+    settings.APP_ORIGIN = "http://localhost:4200"
 
-    assert with_slash == without
+    url = build_invitation_url(token="tok", email="a@example.com")
+
+    assert url.startswith("http://localhost:4200/account/signup?")
 
 
 def test_invitation_email_is_one_mail_with_an_unescaped_link(admin: User, settings) -> None:
     created = create_invitation(invited_by=admin, email="invitee@example.com")
 
-    assert send_invitation_email(created, base_url=BASE_URL) is True
+    assert send_invitation_email(created) is True
 
     [message] = mail.outbox
-    link = build_invitation_url(base_url=BASE_URL, token=created.token, email="invitee@example.com")
+    link = build_invitation_url(token=created.token, email="invitee@example.com")
     assert message.to == ["invitee@example.com"]
     assert message.from_email == settings.DEFAULT_FROM_EMAIL
     assert message.subject == "You are invited to PaceForge"
@@ -178,7 +180,7 @@ def test_invitation_email_is_one_mail_with_an_unescaped_link(admin: User, settin
 def test_invitation_email_says_when_the_link_expires(admin: User) -> None:
     created = create_invitation(invited_by=admin, email="invitee@example.com")
 
-    send_invitation_email(created, base_url=BASE_URL)
+    send_invitation_email(created)
 
     [message] = mail.outbox
     assert "works until" in message.body
@@ -189,7 +191,7 @@ def test_successful_send_sets_sent_at(admin: User) -> None:
     created = create_invitation(invited_by=admin, email="invitee@example.com")
     assert created.invitation.sent_at is None
 
-    send_invitation_email(created, base_url=BASE_URL)
+    send_invitation_email(created)
 
     created.invitation.refresh_from_db()
     assert created.invitation.sent_at is not None
@@ -206,7 +208,7 @@ def test_failed_send_returns_false_and_leaves_sent_at_empty(
 
     monkeypatch.setattr("accounts.services.invitations.send_mail", failing_send)
 
-    assert send_invitation_email(created, base_url=BASE_URL) is False
+    assert send_invitation_email(created) is False
 
     created.invitation.refresh_from_db()
     assert created.invitation.sent_at is None
@@ -223,7 +225,7 @@ def test_failed_send_logs_without_the_token_or_the_address(
 
     monkeypatch.setattr("accounts.services.invitations.send_mail", failing_send)
 
-    send_invitation_email(created, base_url=BASE_URL)
+    send_invitation_email(created)
 
     assert "Could not send invitation" in caplog.text
     assert "SMTPRecipientsRefused" in caplog.text

@@ -116,9 +116,10 @@ is not limited.
   them and fills in the address, which is read-only.
 - Whoever has the link can register with that address until the invitation is used, revoked or
   expired. Send it only to the person it is for.
-- The link is built from the address that the administrator's request came in on. Open
-  **Invitations** on the public address of the instance (`APP_DOMAIN`), or the links point to the
-  wrong host.
+- The link uses `APP_ORIGIN`. It defaults to `https://<APP_DOMAIN>`, or `http://localhost:4200`
+  in debug mode without a domain. The administrator's request host cannot change the link.
+  Production requires a non-empty HTTPS origin. If you set only `DJANGO_ALLOWED_HOSTS`, add
+  `APP_DOMAIN` or `APP_ORIGIN`.
 
 ## Admin API
 

@@ -103,23 +103,21 @@ def resend_invitation(
     return CreatedInvitation(invitation=invitation, token=token)
 
 
-def build_invitation_url(*, base_url: str, token: str, email: str) -> str:
-    """Signup link for ``token``. ``base_url`` is the instance's address, e.g. ``https://host/``."""
+def build_invitation_url(*, token: str, email: str) -> str:
+    """Signup link for ``token`` on the configured public origin."""
     query = urlencode({"invitation": token, "email": email})
     signup_path = settings.HEADLESS_FRONTEND_URLS["account_signup"]
-    return f"{base_url.rstrip('/')}{signup_path}?{query}"
+    return f"{settings.APP_ORIGIN}{signup_path}?{query}"
 
 
-def send_invitation_email(created: CreatedInvitation, *, base_url: str) -> bool:
+def send_invitation_email(created: CreatedInvitation) -> bool:
     """Mail the signup link to the invitee. Returns False if the mail could not be delivered.
 
     The mail carries the plaintext token, so nothing here logs the link, the token or the address.
     """
     invitation = created.invitation
     context = {
-        "signup_url": build_invitation_url(
-            base_url=base_url, token=created.token, email=invitation.email
-        ),
+        "signup_url": build_invitation_url(token=created.token, email=invitation.email),
         "expires_at": invitation.expires_at,
     }
     subject = render_to_string("accounts/email/invitation_subject.txt", context).strip()

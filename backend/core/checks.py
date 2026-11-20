@@ -59,6 +59,14 @@ def check_deployment(app_configs: Any, **kwargs: Any) -> list[CheckMessage]:
     if settings.DEBUG:
         return []
     errors: list[CheckMessage] = []
+    if not settings.APP_ORIGIN or urlsplit(settings.APP_ORIGIN).scheme != "https":
+        errors.append(
+            Error(
+                "APP_ORIGIN must be a non-empty https:// origin when DJANGO_DEBUG is off. "
+                "Set APP_DOMAIN or APP_ORIGIN.",
+                id="core.E009",
+            )
+        )
     if not settings.ALLOWED_HOSTS:
         errors.append(
             Error(

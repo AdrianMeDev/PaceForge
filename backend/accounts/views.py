@@ -45,17 +45,14 @@ from accounts.throttles import (
 )
 
 
-def _delivery_data(request: Request, created: CreatedInvitation) -> dict[str, Any]:
+def _delivery_data(created: CreatedInvitation) -> dict[str, Any]:
     """Mail the signup link and describe the result for the admin.
 
     The link is returned too: it is the only time the plaintext token leaves the server, and the
     admin can hand it on by other means when the mail did not go out.
     """
-    base_url = request.build_absolute_uri("/")
-    email_sent = send_invitation_email(created, base_url=base_url)
-    invite_url = build_invitation_url(
-        base_url=base_url, token=created.token, email=created.invitation.email
-    )
+    email_sent = send_invitation_email(created)
+    invite_url = build_invitation_url(token=created.token, email=created.invitation.email)
     return {
         **InvitationSerializer(created.invitation).data,
         "invite_url": invite_url,
@@ -85,7 +82,7 @@ class InvitationListCreateView(APIView):
         created = create_invitation(
             invited_by=request.user, email=serializer.validated_data["email"]
         )
-        return Response(_delivery_data(request, created), status=status.HTTP_201_CREATED)
+        return Response(_delivery_data(created), status=status.HTTP_201_CREATED)
 
 
 class InvitationResendView(APIView):
@@ -107,7 +104,7 @@ class InvitationResendView(APIView):
                 {"detail": "A used or revoked invitation cannot be sent again."},
                 status=status.HTTP_409_CONFLICT,
             )
-        return Response(_delivery_data(request, created))
+        return Response(_delivery_data(created))
 
 
 class InvitationRevokeView(APIView):

@@ -44,6 +44,10 @@ Never commit `.env`. Edit `.env` and fill in every empty value:
 1. **Domain:** set `APP_DOMAIN` to your public host name without scheme, port or path (for example
    `APP_DOMAIN=pace.example.com`). Caddy uses this for the TLS certificate, and Django uses it for
    `ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS` (`https://<APP_DOMAIN>`).
+   Invitation links use `APP_ORIGIN`, which defaults to `https://<APP_DOMAIN>`. To override it,
+   set an HTTPS origin with a host and optional port, without credentials, a path, query or
+   fragment. A trailing slash is removed. Deploy checks reject an empty or HTTP origin.
+   Installations that set only `DJANGO_ALLOWED_HOSTS` must add `APP_DOMAIN` or `APP_ORIGIN`.
 2. **Django secret key (`DJANGO_SECRET_KEY`):** generate a random signing key:
 
    ```sh

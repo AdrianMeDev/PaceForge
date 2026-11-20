@@ -2,6 +2,7 @@ import smtplib
 import uuid
 from datetime import timedelta
 from http import HTTPStatus
+from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -78,6 +79,32 @@ def test_link_from_the_api_works_for_signup(staff_api: AuthApi) -> None:
 
     assert response.status_code == HTTPStatus.UNAUTHORIZED  # email verification pending
     assert User.objects.filter(email="invitee@example.com").exists()
+
+
+@pytest.mark.parametrize("resend", [False, True])
+def test_foreign_host_cannot_change_returned_or_emailed_link(
+    staff_api: AuthApi, verified_staff: User, settings: Any, resend: bool
+) -> None:
+    settings.APP_ORIGIN = "https://pace.example.com:8443"
+    settings.ALLOWED_HOSTS = ["*"]
+    url = URL
+    data = {"email": "invitee@example.com"}
+    expected_status = HTTPStatus.CREATED
+    if resend:
+        created = create_invitation(invited_by=verified_staff, email=data["email"])
+        url = f"{URL}{created.invitation.pk}/resend/"
+        expected_status = HTTPStatus.OK
+    staff_api.client.defaults["HTTP_HOST"] = "foreign.example.com"
+
+    response = staff_api.call("POST", url, data)
+
+    assert response.status_code == expected_status
+    body = response.json()
+    assert body["invite_url"].startswith("https://pace.example.com:8443/account/signup?")
+    assert body["email_sent"] is True
+    [message] = mail.outbox
+    assert body["invite_url"] in message.body
+    assert "foreign.example.com" not in message.body
 
 
 def test_link_keeps_special_characters_of_the_email_intact(staff_api: AuthApi) -> None:

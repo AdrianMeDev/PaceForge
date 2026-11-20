@@ -27,6 +27,7 @@ def read_settings(monkeypatch: pytest.MonkeyPatch) -> Any:
     """Read ``config/settings.py`` afresh from a clean environment plus the given variables."""
     for name in (
         "APP_DOMAIN",
+        "APP_ORIGIN",
         "DJANGO_DEBUG",
         "DJANGO_ALLOWED_HOSTS",
         "DJANGO_CSRF_TRUSTED_ORIGINS",
@@ -88,6 +89,68 @@ class TestAppDomain:
     def test_anything_but_a_host_name_is_refused(self, read_settings: Any, bad: str) -> None:
         with pytest.raises(ImproperlyConfigured, match="APP_DOMAIN"):
             read_settings(APP_DOMAIN=bad)
+
+
+class TestAppOrigin:
+    @pytest.mark.parametrize("debug", ["true", "false"])
+    def test_domain_is_the_default(self, read_settings: Any, debug: str) -> None:
+        read = read_settings(APP_DOMAIN="Pace.Example.com", DJANGO_DEBUG=debug)
+
+        assert read["APP_ORIGIN"] == "https://pace.example.com"
+
+    def test_debug_without_domain_defaults_to_the_frontend(self, read_settings: Any) -> None:
+        assert read_settings(DJANGO_DEBUG="true")["APP_ORIGIN"] == "http://localhost:4200"
+
+    def test_production_without_domain_has_no_origin(self, read_settings: Any) -> None:
+        assert read_settings(DJANGO_ALLOWED_HOSTS="pace.example.com")["APP_ORIGIN"] == ""
+
+    @pytest.mark.parametrize(
+        ("origin", "normalized"),
+        [
+            (" HTTPS://Other.Example.com:8443/ ", "https://other.example.com:8443"),
+            ("http://localhost:4200/", "http://localhost:4200"),
+            ("https://127.0.0.1", "https://127.0.0.1"),
+            ("https://[::1]:8443/", "https://[::1]:8443"),
+            ("", ""),
+        ],
+    )
+    def test_override_is_normalized(self, read_settings: Any, origin: str, normalized: str) -> None:
+        read = read_settings(APP_DOMAIN="pace.example.com", APP_ORIGIN=origin)
+
+        assert read["APP_ORIGIN"] == normalized
+
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            "ftp://pace.example.com",
+            "pace.example.com",
+            "//pace.example.com",
+            "https://",
+            "https:///pace.example.com",
+            "https://a b.com",
+            "https://-bad.com",
+            "https://user@pace.example.com",
+            "https://user:pass@pace.example.com",
+            "https://pace.example.com/path",
+            "https://pace.example.com//",
+            "https://pace.example.com?",
+            "https://pace.example.com?x=1",
+            "https://pace.example.com#",
+            "https://pace.example.com#fragment",
+            "https://pace.example.com:",
+            "https://pace.example.com:invalid",
+            "https://pace.example.com:65536",
+            "https://pace.example.com:0",
+            "https://[::1",
+            "https://[::1]other",
+            "https://pace.example.com\\evil",
+            "https://pace.exam\tple.com",
+            "https://pace.exam\nple.com",
+        ],
+    )
+    def test_invalid_origins_are_refused(self, read_settings: Any, bad: str) -> None:
+        with pytest.raises(ImproperlyConfigured, match="APP_ORIGIN"):
+            read_settings(APP_ORIGIN=bad)
 
 
 class TestProductionDefaults:
@@ -158,16 +221,6 @@ class TestForwardedProto:
 
         assert request.build_absolute_uri("/x").startswith("http://")
 
-    def test_invitation_links_use_https(self, settings: Any) -> None:
-        settings.SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-        settings.ALLOWED_HOSTS = ["pace.example.com"]
-        request = RequestFactory().get(
-            "/", HTTP_HOST="pace.example.com", HTTP_X_FORWARDED_PROTO="https"
-        )
-
-        link = request.build_absolute_uri("/account/signup?invitation=t&email=a%40b.c")
-        assert link.startswith("https://pace.example.com/account/signup?")
-
 
 class TestDirectRequests:
     """Django reached without a trusted proxy must not take the scheme from the client."""
@@ -218,6 +271,7 @@ class TestProductionCompose:
 def production(settings: Any) -> Any:
     settings.DEBUG = False
     settings.ALLOWED_HOSTS = ["pace.example.com"]
+    settings.APP_ORIGIN = "https://pace.example.com"
     settings.SECRET_KEY = STRONG_KEY
     settings.CSRF_TRUSTED_ORIGINS = ["https://pace.example.com"]
     return settings
@@ -229,7 +283,15 @@ def deploy_ids() -> set[str]:
 
 class TestDeployChecks:
     def test_a_valid_production_setup_passes(self, production: Any) -> None:
-        assert not deploy_ids() & {"core.E003", "core.E004", "core.E005"}
+        assert not deploy_ids() & {"core.E003", "core.E004", "core.E005", "core.E009"}
+
+    @pytest.mark.parametrize("origin", ["", "http://pace.example.com"])
+    def test_missing_or_insecure_origin(self, production: Any, origin: str) -> None:
+        production.APP_ORIGIN = origin
+
+        assert "core.E009" in deploy_ids()
+        with pytest.raises(SystemCheckError, match="core.E009"):
+            call_command("check", "--deploy", "--fail-level", "ERROR")
 
     def test_empty_allowed_hosts(self, production: Any) -> None:
         production.ALLOWED_HOSTS = []
@@ -255,10 +317,11 @@ class TestDeployChecks:
 
     def test_debug_mode_skips_the_checks(self, production: Any) -> None:
         production.DEBUG = True
+        production.APP_ORIGIN = ""
         production.ALLOWED_HOSTS = []
         production.SECRET_KEY = "x"
 
-        assert not deploy_ids() & {"core.E003", "core.E004", "core.E005"}
+        assert not deploy_ids() & {"core.E003", "core.E004", "core.E005", "core.E009"}
 
     def test_the_command_fails_on_a_bad_setup(self, production: Any) -> None:
         production.ALLOWED_HOSTS = []
@@ -267,6 +330,7 @@ class TestDeployChecks:
             call_command("check", "--deploy", "--fail-level", "ERROR")
 
     def test_plain_check_ignores_the_deploy_checks(self, production: Any) -> None:
+        production.APP_ORIGIN = ""
         production.ALLOWED_HOSTS = []
         production.SECRET_KEY = "x"
 

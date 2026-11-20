@@ -90,6 +90,7 @@ class TestTheGeneratedKeys:
     ) -> None:
         settings.DEBUG = False
         settings.ALLOWED_HOSTS = ["paceforge.example"]
+        settings.APP_ORIGIN = "https://paceforge.example"
         settings.CSRF_TRUSTED_ORIGINS = []
         monkeypatch.setitem(settings.DATABASES["default"], "PASSWORD", "ci-test-password")
         settings.SECRET_KEY = generated_value("token_urlsafe")
