@@ -22,7 +22,7 @@ from integrations.views import failure_response
 from . import services
 from .models import Activity
 from .pagination import ActivityPagination
-from .parsing import ActivityFileError
+from .parsing import ActivityFileError, InvalidFileError, UnsupportedFileError
 from .serializers import (
     ActivityDetailSerializer,
     ActivityRatingSerializer,
@@ -37,6 +37,21 @@ EMPTY_FILE = "The file is empty."
 TOO_LARGE = "The file is too large."
 DUPLICATE = "This activity has already been imported."
 UNKNOWN_SPORT = "Unknown sport."
+UNSUPPORTED_FILE = "This file format is not supported."
+INVALID_FILE = "The activity file is invalid or incomplete."
+
+_IMPORT_ERROR_MESSAGES: tuple[tuple[type[ActivityFileError], str], ...] = (
+    (UnsupportedFileError, UNSUPPORTED_FILE),
+    (InvalidFileError, INVALID_FILE),
+)
+
+
+def _import_error_message(error: ActivityFileError) -> str:
+    """Return a fixed view message for any parser error without reading ``str(error)``."""
+    for exc_type, message in _IMPORT_ERROR_MESSAGES:
+        if isinstance(error, exc_type):
+            return message
+    return INVALID_FILE
 
 
 def _user(request: Request) -> User:
@@ -113,7 +128,7 @@ class ActivityImportView(APIView):
         except services.DuplicateActivityError as duplicate:
             return _refused(DUPLICATE, HTTPStatus.CONFLICT, existing_id=str(duplicate.existing_id))
         except ActivityFileError as error:
-            return _refused(str(error), HTTPStatus.BAD_REQUEST)
+            return _refused(_import_error_message(error), HTTPStatus.BAD_REQUEST)
         refresh_estimates_safely(_user(request))
         return Response(ActivitySerializer(activity).data, status=HTTPStatus.CREATED)
 
