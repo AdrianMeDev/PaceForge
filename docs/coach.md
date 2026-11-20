@@ -97,3 +97,11 @@ All endpoints require an authenticated session and operate exclusively on `reque
   nothing is shared across users on the instance.
 - **Endpoint allowlist:** OpenAI-compatible `base_url` values must match `AI_ALLOWED_BASE_URLS`,
   re-checked on every call, with HTTP redirects disabled.
+
+## Chat plan ownership
+
+A chat message can only link weekly and season plans owned by the same athlete.
+Model validation checks both links. Database triggers enforce this for all writes, including
+bulk writes, and refuse plan owner changes that would break an existing link. The migration
+refuses existing mismatched links before installing the guards. Deleting a draft clears its
+message link. Resetting the conversation keeps the plans. Account deletion removes both.

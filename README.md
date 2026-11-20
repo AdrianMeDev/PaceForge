@@ -1568,6 +1568,10 @@ What the app does with it, always by code and never by the coach's words:
 The illness is noted even when there is no plan to change: then the answer has no draft, but the
 absence is stored and named. Nothing about it is confirmed or sent from the chat.
 
+Chat messages can only link weekly and season plans owned by the same athlete. The database
+checks both links and refuses plan owner changes that would break them. Deleting a draft clears
+its message link and keeps the message.
+
 **What is stored and what goes to the provider.** The messages are stored (only you see them) and
 **Delete the conversation** removes them all, after a question; the drafts stay. With each message
 the coach is told: today, the plan of the week with the id of each workout, your time per weekday,
