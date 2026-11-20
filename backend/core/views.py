@@ -3,11 +3,22 @@ from typing import Any
 from django.core.exceptions import ImproperlyConfigured
 from django.db.models import QuerySet
 from rest_framework import viewsets
+from rest_framework.exceptions import NotAuthenticated
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.request import Request
 from rest_framework.serializers import BaseSerializer
 
+from accounts.models import User
 from core.models import OwnedQuerySet
 from core.permissions import IsOwner
+
+
+def authenticated_user(request: Request) -> User:
+    """Return the authenticated ``User`` for ``request`` or raise ``NotAuthenticated``."""
+    user = request.user
+    if not isinstance(user, User) or not user.is_authenticated:
+        raise NotAuthenticated()
+    return user
 
 
 class OwnedModelViewSet(viewsets.ModelViewSet[Any]):

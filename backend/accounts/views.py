@@ -7,6 +7,7 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.exceptions import Throttled, ValidationError
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -44,6 +45,7 @@ from accounts.throttles import (
     AccountDeleteThrottle,
     AccountExportThrottle,
 )
+from core.views import authenticated_user
 
 
 def _delivery_data(created: CreatedInvitation) -> dict[str, Any]:
@@ -126,19 +128,21 @@ class InvitationRevokeView(APIView):
 class MeView(APIView):
     """The authenticated user's own account data; nothing else is ever returned here."""
 
+    permission_classes = [IsAuthenticated]
+
     def get(self, request: Request) -> Response:
-        assert isinstance(request.user, User)  # IsAuthenticated is the default permission
-        return Response(MeSerializer(request.user).data)
+        return Response(MeSerializer(authenticated_user(request)).data)
 
 
 class AccountExportView(APIView):
     """Everything stored about the signed-in user, as a JSON file to download."""
 
+    permission_classes = [IsAuthenticated]
     throttle_classes = [AccountExportThrottle]
 
     def get(self, request: Request) -> HttpResponse:
-        assert isinstance(request.user, User)  # IsAuthenticated is the default permission
-        data = build_user_export(request.user)
+        user = authenticated_user(request)
+        data = build_user_export(user)
         filename = f"paceforge-export-{timezone.localdate().isoformat()}.json"
         response = HttpResponse(
             json.dumps(data, indent=2, ensure_ascii=False),
@@ -161,15 +165,16 @@ DELETE_ERRORS: dict[type[AccountDeletionError], tuple[str, str]] = {
 class AccountDeleteView(APIView):
     """Deletes the signed-in account and all its data, and ends the session."""
 
+    permission_classes = [IsAuthenticated]
     throttle_classes = [AccountDeleteThrottle]
 
     def post(self, request: Request) -> Response:
-        assert isinstance(request.user, User)  # IsAuthenticated is the default permission
+        user = authenticated_user(request)
         serializer = AccountDeleteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
             delete_account(
-                request.user,
+                user,
                 password=serializer.validated_data["password"],
                 confirmation=serializer.validated_data["confirmation"],
                 mfa_code=serializer.validated_data.get("mfa_code", ""),

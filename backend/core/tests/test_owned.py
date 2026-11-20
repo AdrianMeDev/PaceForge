@@ -1,9 +1,12 @@
 from http import HTTPStatus
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ImproperlyConfigured
+from rest_framework.exceptions import NotAuthenticated
+from rest_framework.permissions import AllowAny
 from rest_framework.request import Request
 from rest_framework.test import APIClient, APIRequestFactory
 from rest_framework.views import APIView
@@ -12,6 +15,7 @@ from accounts.models import User
 from core.permissions import IsOwner
 from core.testing import assert_cannot_access, assert_not_listed
 from core.tests.sample.models import Note
+from core.views import authenticated_user
 
 pytestmark = pytest.mark.django_db
 
@@ -83,24 +87,75 @@ def test_owner_can_read_update_and_delete(alice: User, alices_note: Note) -> Non
     assert not Note.objects.filter(pk=alices_note.pk).exists()
 
 
-def test_owner_is_taken_from_the_session_on_create(alice: User, bob: User) -> None:
-    response = client_for(bob).post("/notes/", {"title": "mine", "owner": alice.pk}, format="json")
+@pytest.mark.parametrize("base_url", ["/notes", "/writable-owner-notes"])
+def test_owner_is_taken_from_the_session_on_create(base_url: str, alice: User, bob: User) -> None:
+    response = client_for(bob).post(
+        f"{base_url}/", {"title": "mine", "owner": alice.pk}, format="json"
+    )
 
     assert response.status_code == HTTPStatus.CREATED
     assert Note.objects.get(pk=response.json()["id"]).owner == bob
 
 
-def test_owner_cannot_be_changed_by_update(alice: User, bob: User, alices_note: Note) -> None:
-    response = client_for(alice).patch(
-        f"/notes/{alices_note.pk}/", {"owner": bob.pk}, format="json"
-    )
+@pytest.mark.parametrize("base_url", ["/notes", "/writable-owner-notes"])
+def test_owner_cannot_be_changed_by_update(
+    base_url: str, alice: User, bob: User, alices_note: Note
+) -> None:
+    client = client_for(alice)
 
-    assert response.status_code == HTTPStatus.OK
+    patch_response = client.patch(f"{base_url}/{alices_note.pk}/", {"owner": bob.pk}, format="json")
+    assert patch_response.status_code == HTTPStatus.OK
     alices_note.refresh_from_db()
+    assert alices_note.owner == alice
+
+    put_response = client.put(
+        f"{base_url}/{alices_note.pk}/", {"title": "updated", "owner": bob.pk}, format="json"
+    )
+    assert put_response.status_code == HTTPStatus.OK
+    alices_note.refresh_from_db()
+    assert alices_note.title == "updated"
+    assert alices_note.owner == alice
+
+
+def test_read_only_owner_ignores_nonexistent_user_ids(alice: User, alices_note: Note) -> None:
+    client = client_for(alice)
+    nonexistent_user_id = 999999
+
+    create_response = client.post(
+        "/notes/", {"title": "mine", "owner": nonexistent_user_id}, format="json"
+    )
+    assert create_response.status_code == HTTPStatus.CREATED
+    assert Note.objects.get(pk=create_response.json()["id"]).owner == alice
+
+    patch_response = client.patch(
+        f"/notes/{alices_note.pk}/", {"owner": nonexistent_user_id}, format="json"
+    )
+    assert patch_response.status_code == HTTPStatus.OK
+    alices_note.refresh_from_db()
+    assert alices_note.owner == alice
+
+    put_response = client.put(
+        f"/notes/{alices_note.pk}/",
+        {"title": "updated", "owner": nonexistent_user_id},
+        format="json",
+    )
+    assert put_response.status_code == HTTPStatus.OK
+    alices_note.refresh_from_db()
+    assert alices_note.title == "updated"
     assert alices_note.owner == alice
 
 
 def test_anonymous_requests_are_refused(alices_note: Note) -> None:
+    client = APIClient()
+
+    assert client.get("/notes/").status_code == HTTPStatus.FORBIDDEN
+    assert client.get(f"/notes/{alices_note.pk}/").status_code == HTTPStatus.FORBIDDEN
+
+
+def test_anonymous_requests_are_refused_when_apiview_defaults_allow_any(
+    monkeypatch: pytest.MonkeyPatch, alices_note: Note
+) -> None:
+    monkeypatch.setattr(APIView, "permission_classes", [AllowAny])
     client = APIClient()
 
     assert client.get("/notes/").status_code == HTTPStatus.FORBIDDEN
@@ -135,3 +190,27 @@ def test_deleting_a_user_deletes_their_objects(alice: User, bob: User, alices_no
     alice.delete()
 
     assert list(Note.objects.all()) == [bobs_note]
+
+
+def test_authenticated_user_returns_authenticated_user(alice: User) -> None:
+    request = Request(APIRequestFactory().get("/"))
+    request.user = alice
+
+    assert authenticated_user(request) == alice
+
+
+def test_authenticated_user_rejects_anonymous_user() -> None:
+    request = Request(APIRequestFactory().get("/"))
+    request.user = AnonymousUser()
+
+    with pytest.raises(NotAuthenticated):
+        authenticated_user(request)
+
+
+def test_authenticated_user_rejects_non_user_principal() -> None:
+    request = Request(APIRequestFactory().get("/"))
+    non_user: Any = SimpleNamespace(is_authenticated=True)
+    request.user = non_user
+
+    with pytest.raises(NotAuthenticated):
+        authenticated_user(request)

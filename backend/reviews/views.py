@@ -4,6 +4,7 @@ from uuid import UUID
 
 from django.db.models import Count
 from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -12,6 +13,7 @@ from accounts.models import User
 from coach.providers.base import ProviderError
 from coach.services import NotConfiguredError
 from coach.views import provider_problem
+from core.views import authenticated_user
 from planning.models import WeeklyPlan
 
 from .commenting import CommentNotUsable, NothingToReview, comment_on
@@ -44,8 +46,7 @@ _WEEK = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
 def _user(request: Request) -> User:
-    assert isinstance(request.user, User)  # IsAuthenticated is the default permission
-    return request.user
+    return authenticated_user(request)
 
 
 def _error(http_status: int, code: str, detail: str) -> Response:
@@ -65,6 +66,7 @@ def parse_week(text: str) -> date | None:
 class WeeksView(APIView):
     """The weeks that can be reviewed, with whether each has a confirmed plan and feedback."""
 
+    permission_classes = [IsAuthenticated]
     http_method_names = ["get", "head", "options"]
 
     def get(self, request: Request) -> Response:
@@ -88,6 +90,7 @@ class WeekView(APIView):
     """One week: the confirmed plan with the match of the activities, the comparison and the
     feedback."""
 
+    permission_classes = [IsAuthenticated]
     http_method_names = ["get", "head", "options"]
 
     def get(self, request: Request, week: str) -> Response:
@@ -106,6 +109,7 @@ class CorrectionView(APIView):
     how it went. Replaces an earlier decision; empty goes back to the automatic match. The answer
     is the whole week."""
 
+    permission_classes = [IsAuthenticated]
     http_method_names = ["put", "options"]
 
     def put(self, request: Request, week: str, workout_id: UUID) -> Response:
@@ -145,6 +149,7 @@ class FeedbackView(APIView):
     """Sets the feedback on a week (replacing an earlier one; nothing in it removes it). The
     answer is the whole week."""
 
+    permission_classes = [IsAuthenticated]
     http_method_names = ["put", "options"]
 
     def put(self, request: Request, week: str) -> Response:
@@ -165,6 +170,7 @@ class CommentView(APIView):
     minute or two. The answer is the whole week, with the comment in it."""
 
     throttle_classes = [ReviewCommentThrottle]
+    permission_classes = [IsAuthenticated]
     http_method_names = ["post", "options"]
 
     def post(self, request: Request, week: str) -> Response:

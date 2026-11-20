@@ -1,10 +1,13 @@
 import json
 from http import HTTPStatus
+from unittest.mock import patch
 
 import pytest
 from allauth.account.models import EmailAddress
 from django.test import Client
 from django.utils import timezone
+from rest_framework.permissions import AllowAny
+from rest_framework.views import APIView
 
 from accounts.models import User
 from athletes.models import AthleteProfile
@@ -31,6 +34,31 @@ def test_anonymous_users_are_refused(api: AuthApi, verified_user: User) -> None:
     assert api.call("GET", EXPORT).status_code == HTTPStatus.FORBIDDEN
     assert api.call("POST", DELETE, delete_body(verified_user)).status_code == HTTPStatus.FORBIDDEN
     assert User.objects.filter(pk=verified_user.pk).exists()
+
+
+@pytest.mark.parametrize(
+    ("method", "url"),
+    [("GET", EXPORT), ("HEAD", EXPORT), ("OPTIONS", EXPORT), ("POST", DELETE), ("OPTIONS", DELETE)],
+)
+def test_anonymous_users_are_refused_when_defaults_allow_any(
+    api: AuthApi, verified_user: User, monkeypatch: pytest.MonkeyPatch, method: str, url: str
+) -> None:
+    monkeypatch.setattr(APIView, "permission_classes", [AllowAny])
+    AthleteProfile.objects.create(owner=verified_user)
+    users_before = list(User.objects.values())
+    profiles_before = list(AthleteProfile.objects.values())
+
+    with (
+        patch("accounts.views.build_user_export") as export,
+        patch("accounts.views.delete_account") as delete,
+    ):
+        response = api.call(method, url, delete_body(verified_user))
+
+    assert response.status_code == HTTPStatus.FORBIDDEN
+    export.assert_not_called()
+    delete.assert_not_called()
+    assert list(User.objects.values()) == users_before
+    assert list(AthleteProfile.objects.values()) == profiles_before
 
 
 def test_delete_requires_a_csrf_token(api: AuthApi, verified_user: User) -> None:

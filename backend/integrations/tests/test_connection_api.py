@@ -9,6 +9,8 @@ import pytest
 from cryptography.fernet import Fernet
 from django.db import IntegrityError, connection
 from django.utils import timezone
+from rest_framework.permissions import AllowAny
+from rest_framework.views import APIView
 
 from accounts.models import User
 from accounts.tests.conftest import AuthApi
@@ -52,6 +54,37 @@ def rows() -> int:
 
 
 class TestWhoMayCome:
+    @pytest.mark.parametrize(
+        ("method", "url"),
+        [
+            ("GET", URL),
+            ("PUT", URL),
+            ("DELETE", URL),
+            ("HEAD", URL),
+            ("OPTIONS", URL),
+            ("POST", CHECK),
+            ("OPTIONS", CHECK),
+        ],
+    )
+    def test_anonymous_visitors_are_refused_when_defaults_allow_any(
+        self,
+        fake: FakeIntervals,
+        alice: User,
+        monkeypatch: pytest.MonkeyPatch,
+        method: str,
+        url: str,
+    ) -> None:
+        signed_in(alice).call("PUT", URL, {"api_key": KEY})
+        before = list(ProviderConnection.objects.values())
+        fake.requests.clear()
+        monkeypatch.setattr(APIView, "permission_classes", [AllowAny])
+
+        response = AuthApi().call(method, url, {"api_key": OTHER_KEY})
+
+        assert response.status_code == HTTPStatus.FORBIDDEN
+        assert list(ProviderConnection.objects.values()) == before
+        assert fake.requests == []
+
     @pytest.mark.parametrize(
         ("method", "url"),
         [("GET", URL), ("PUT", URL), ("DELETE", URL), ("POST", CHECK)],

@@ -5,6 +5,8 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
+from rest_framework.permissions import AllowAny
+from rest_framework.views import APIView
 
 from accounts.models import User
 from accounts.tests.conftest import AuthApi
@@ -408,6 +410,16 @@ class TestAccess:
 
         assert response.status_code == HTTPStatus.FORBIDDEN
         assert WorkoutReview.objects.count() == 0
+
+    def test_anonymous_visitors_are_refused_when_apiview_defaults_allow_any(
+        self, monkeypatch: pytest.MonkeyPatch, week: tuple[PlannedWorkout, PlannedWorkout]
+    ) -> None:
+        monkeypatch.setattr(APIView, "permission_classes", [AllowAny])
+
+        response = AuthApi().call("PUT", url(week[0]), {"no_activity": True})
+
+        assert response.status_code == HTTPStatus.FORBIDDEN
+        assert not WorkoutReview.objects.exists()
 
     def test_a_put_without_the_csrf_token_is_refused(
         self, alice: User, week: tuple[PlannedWorkout, PlannedWorkout]

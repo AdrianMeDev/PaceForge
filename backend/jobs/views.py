@@ -1,8 +1,10 @@
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts.models import User
+from core.views import authenticated_user
 
 from . import services
 from .models import JobRun
@@ -12,13 +14,13 @@ RUN_LOG_LIMIT = 50
 
 
 def _user(request: Request) -> User:
-    assert isinstance(request.user, User)  # IsAuthenticated is the default permission
-    return request.user
+    return authenticated_user(request)
 
 
 class JobSettingsView(APIView):
     """The signed-in user's own job toggles; the row is created on the first PATCH."""
 
+    permission_classes = [IsAuthenticated]
     http_method_names = ["get", "patch", "head", "options"]
 
     def get(self, request: Request) -> Response:
@@ -43,6 +45,7 @@ class JobSettingsView(APIView):
 class JobRunsView(APIView):
     """The signed-in user's newest 50 job runs."""
 
+    permission_classes = [IsAuthenticated]
     http_method_names = ["get", "head", "options"]
 
     def get(self, request: Request) -> Response:

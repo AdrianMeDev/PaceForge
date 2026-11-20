@@ -5,6 +5,8 @@ from http import HTTPStatus
 from typing import Any
 
 import pytest
+from rest_framework.permissions import AllowAny
+from rest_framework.views import APIView
 
 from accounts.models import User
 from accounts.tests.conftest import AuthApi
@@ -303,6 +305,19 @@ class TestAccess:
 
         assert response.status_code == HTTPStatus.FORBIDDEN
         assert scripted.calls == []
+
+    def test_anonymous_visitors_are_refused_when_apiview_defaults_allow_any(
+        self, monkeypatch: pytest.MonkeyPatch, provide: Callable[..., Scripted]
+    ) -> None:
+        monkeypatch.setattr(APIView, "permission_classes", [AllowAny])
+        scripted = provide(good())
+
+        response = AuthApi().call("POST", COMMENT)
+
+        assert response.status_code == HTTPStatus.FORBIDDEN
+        assert scripted.calls == []
+        assert not WeekComment.objects.exists()
+        assert not AIUsageRecord.objects.exists()
 
     def test_a_post_without_the_csrf_token_is_refused(
         self, alice: User, provide: Callable[..., Scripted]

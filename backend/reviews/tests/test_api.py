@@ -6,6 +6,8 @@ from typing import Any
 import pytest
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
+from rest_framework.permissions import AllowAny
+from rest_framework.views import APIView
 
 from accounts.models import User
 from accounts.tests.conftest import AuthApi
@@ -442,6 +444,14 @@ class TestRefusals:
 
     @pytest.mark.parametrize("url", [WEEKS, week_url()])
     def test_anonymous_visitors_are_refused(self, url: str) -> None:
+        assert AuthApi().call("GET", url).status_code == HTTPStatus.FORBIDDEN
+
+    @pytest.mark.parametrize("url", [WEEKS, week_url()])
+    def test_anonymous_visitors_are_refused_when_apiview_defaults_allow_any(
+        self, monkeypatch: pytest.MonkeyPatch, url: str
+    ) -> None:
+        monkeypatch.setattr(APIView, "permission_classes", [AllowAny])
+
         assert AuthApi().call("GET", url).status_code == HTTPStatus.FORBIDDEN
 
     @pytest.mark.parametrize("url", [WEEKS, week_url()])
