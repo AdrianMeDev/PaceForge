@@ -102,11 +102,21 @@ python3 -c "import secrets; print(secrets.token_urlsafe(50))"   # put the output
 
 The second key is the instance key for secrets in the database, see [Instance key](#instance-key).
 
+Also set `POSTGRES_PASSWORD` in `.env`. There is no default. Generate one, for example with
+`python3 -c "import secrets; print(secrets.token_urlsafe(32))"`. Any characters are allowed; put the
+value in single quotes if it contains `#` or `$`.
+
 **2. Database and mailbox.**
 
 ```sh
 docker compose -f compose.dev.yaml up -d db mailpit
 ```
+
+The first start of `db` sets the password. If you already have an existing `pgdata` volume from an earlier
+start, PostgreSQL keeps the old password and ignores the new `POSTGRES_PASSWORD`. Either put the old
+password back into `.env`, change it in the database
+(`docker compose -f compose.dev.yaml exec db psql -U paceforge -c "\password paceforge"`), or delete
+the development volume (`docker compose -f compose.dev.yaml down -v`, which erases its data).
 
 PostgreSQL listens on `127.0.0.1:5432`, Mailpit on `127.0.0.1:1025` (SMTP) and
 `http://localhost:8025` (web interface).
@@ -1703,6 +1713,14 @@ npx ng test --no-watch
 npx ng build
 ```
 
+The backend tests do not need a `.env` file. `config/settings_test.py` connects to
+`localhost:5432` as `paceforge`. Give it the password of your local `db` service in the shell, or
+give a full `DATABASE_URL` (with a URL-encoded password):
+
+```sh
+POSTGRES_PASSWORD='<your local password>' uv run pytest -n auto
+```
+
 The backend tests create and drop their own `test_*` database next to the development one (with
 `-n auto` one per worker, `test_*_gw0`, `test_*_gw1`, …). They hash passwords quickly, not with
 Argon2; the tests that check the production hashers set them themselves.
@@ -1714,7 +1732,7 @@ Set in `.env` or in the environment. Values without a default are required.
 | Variable                       | Default                             | Meaning                                                                           |
 | ------------------------------ | ----------------------------------- | --------------------------------------------------------------------------------- |
 | `DJANGO_SECRET_KEY`            | –                                   | Signing key. Required, there is deliberately no default.                          |
-| `DATABASE_URL`                 | –                                   | e.g. `postgres://paceforge:paceforge-dev@localhost:5432/paceforge`. Required.     |
+| `DATABASE_URL`                 | empty                               | Optional full URL, e.g. `postgres://paceforge:<url-encoded-password>@localhost:5432/paceforge`. If empty, the `POSTGRES_*` settings are used. |
 | `APP_DOMAIN`                   | empty                               | Public host name without scheme, port or path. Used by Caddy for HTTPS and as the default for `DJANGO_ALLOWED_HOSTS` and `DJANGO_CSRF_TRUSTED_ORIGINS` (`https://<APP_DOMAIN>`). |
 | `DJANGO_DEBUG`                 | `false`                             | `true` for development. With `false`, cookies are sent only over HTTPS.           |
 | `DJANGO_ALLOWED_HOSTS`         | empty (or `APP_DOMAIN`)             | Comma-separated host names; must be set (directly or via `APP_DOMAIN`) when `DJANGO_DEBUG` is `false`. |
@@ -1738,13 +1756,17 @@ Set in `.env` or in the environment. Values without a default are required.
 | `SMTP_HOST`                    | empty                               | Empty: emails are printed to the Django console. Set: they are sent via SMTP.     |
 | `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_USE_TLS` | `587`, empty, empty, `true` | SMTP settings, used when `SMTP_HOST` is set. |
 | `DEFAULT_FROM_EMAIL`           | `PaceForge <noreply@localhost>`     | Sender of all emails.                                                             |
-| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | `paceforge`, `paceforge-dev`, `paceforge` | Read by `compose.dev.yaml` and `compose.prod.yaml`; in production set `POSTGRES_PASSWORD` (letters and digits only). |
+| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | `paceforge`, –, `paceforge` | Read by the backend and by `compose.dev.yaml` and `compose.prod.yaml`. `POSTGRES_PASSWORD` is required and has no default; any characters are allowed. |
 | `GUNICORN_WORKERS`, `GUNICORN_TIMEOUT` | `2`, `240`                  | Production Gunicorn worker count and request timeout in seconds (`backend/entrypoint.sh`). |
 | `AUTO_MIGRATE`                 | `true`                              | Run `manage.py migrate --noinput` automatically when the production `backend` container starts. Set to `false` to migrate manually. |
 | `BACKEND_IMAGE`, `FRONTEND_IMAGE` | `paceforge-backend:local`, `paceforge-frontend:local` | Optional image names for `compose.prod.yaml`. |
 
 ## Troubleshooting
 
+- **`password authentication failed for user "paceforge"`.** The `pgdata` volume was created with
+  another password, and PostgreSQL ignores a new `POSTGRES_PASSWORD` for an existing volume. Use
+  the old password, or change it in the database (see First run and
+  [docs/deployment.md](docs/deployment.md)).
 - **Signing up answers with an error and the invitation is used up.** `.env.example` points SMTP at
   Mailpit (`localhost:1025`). If Mailpit is not running, sending the confirmation mail fails after
   the account was created. Start it (`docker compose -f compose.dev.yaml up -d mailpit`), or leave
@@ -1768,7 +1790,7 @@ Set in `.env` or in the environment. Values without a default are required.
 - **"Update from Intervals.icu" says the stored key was not accepted.** Enter the key again on the
   Connections page (the connection shows **Needs attention** there). "Cannot be reached" and "Too
   many attempts" go away by themselves; nothing was changed.
-- **Django refuses to start with `DJANGO_SECRET_KEY`, `DATABASE_URL` or `ENCRYPTION_KEY` missing.** All three are required
+- **Django refuses to start with `DJANGO_SECRET_KEY`, `POSTGRES_PASSWORD` (or `DATABASE_URL`) or `ENCRYPTION_KEY` missing.** All are required
   and have no default; check that `.env` is in the repository root, not in `backend/`.
 - **The Connections page says "Intervals.icu cannot be reached right now".** The server could not
   get an answer from `intervals.icu` (network, timeout, a busy service). Try again later; nothing

@@ -77,20 +77,30 @@ def run(*args: str) -> str:
 
 
 def test_restore_into_empty_database_streams_decrypted_dump(
-    stub: Path, emptiness: Emptiness, backup_file: Path, key: str, tmp_path: Path
+    stub: Path,
+    emptiness: Emptiness,
+    backup_file: Path,
+    key: str,
+    tmp_path: Path,
+    settings: Any,
 ) -> None:
+    password = "p@ss:w/rd?a#b%c&d+e=f"
+    settings.DATABASES = {
+        **settings.DATABASES,
+        "default": {**settings.DATABASES["default"], "PASSWORD": password},
+    }
     run(str(backup_file), "--key-file", _key_file(tmp_path, key))
 
     lines = stub.read_text().splitlines()
     options = lines[1].split()
     assert (tmp_path / "received.bin").read_bytes() == DUMP
-    assert lines[0] == backup.settings.DATABASES["default"]["PASSWORD"]
+    assert lines[0] == password
     assert "--single-transaction" in options
     assert "--exit-on-error" in options
     assert "--no-owner" in options
     assert "--no-privileges" in options
     assert "--clean" not in options
-    assert backup.settings.DATABASES["default"]["PASSWORD"] not in lines[1]
+    assert password not in lines[1]
 
 
 def _key_file(tmp_path: Path, key: str) -> str:

@@ -1879,7 +1879,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 
 ## Milestones
 
-### M1 [ ] Audit: PostgreSQL credentials across development, CI and production
+### M1 [x] Audit: PostgreSQL credentials across development, CI and production
 
 - **Goal:** Give every service a reliable database connection without embedding a reusable password in the repository.
 - **Includes:** F1 (development password fallback), F2 (production URL interpolation), F4 (repeated connection construction), F257 (test password fallback), F528 (backup examples), F537 (deployment password restrictions).
@@ -2248,3 +2248,4 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 ## Changelog
 
 - 2026-11-20: audit planned
+- 2026-11-20: M1 done: discrete `POSTGRES_*` settings, no hardcoded database passwords, docs for existing and new volumes

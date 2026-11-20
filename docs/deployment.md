@@ -75,9 +75,33 @@ Never commit `.env`. Edit `.env` and fill in every empty value:
    command as in step 3. It must differ from `ENCRYPTION_KEY`. Store it apart from the backup files
    and from `ENCRYPTION_KEY`. Without it no backup can be made. See
    [Backup and restore](backup-and-restore.md#two-keys-stored-apart).
-5. **Database password (`POSTGRES_PASSWORD`):** choose a strong password using **letters and digits
-   only**. It is embedded directly into `DATABASE_URL` inside `compose.prod.yaml`, and PostgreSQL
-   refuses to start if it is empty.
+5. **Database password (`POSTGRES_PASSWORD`):** generate a long random password, for example:
+
+   ```sh
+   python3 -c "import secrets, string; print(''.join(secrets.choice(string.ascii_letters + string.digits + '!#\$%&()*+,-./:;<=>?@[]^_~') for _ in range(40)))"
+   ```
+
+   Any character is allowed, including `@`, `:`, `/`, `?`, `#` and `%`. The backend, the scheduler
+   and the backup service read the discrete `POSTGRES_*` settings and build the connection
+   themselves, so nothing needs URL encoding. In `.env`, put the value in single quotes if it
+   contains `#` or `$`, for example `POSTGRES_PASSWORD='ab#c$d'`. Without quotes, `#` starts a
+   comment and `$` starts a variable. PostgreSQL refuses to start if the password is empty.
+
+   **A new installation** reads the password the first time `db` starts. Set it before step 2.
+
+   **An existing installation** already has an existing `pgdata` volume. PostgreSQL ignores
+   `POSTGRES_PASSWORD` for an existing volume, so changing `.env` alone makes the backend fail to
+   sign in. Change the password inside the database first, then in `.env`:
+
+   ```sh
+   docker compose -f compose.prod.yaml exec db sh -c \
+     'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "\password $POSTGRES_USER"'
+   # type the new password twice, then put the same value into .env
+   docker compose -f compose.prod.yaml up -d
+   ```
+
+   Alternatively, run `ALTER USER paceforge WITH PASSWORD '<new password>';` in `psql` (double any
+   single quote in the password). Only delete the `pgdata` volume if you accept losing all data.
 6. **Email (`SMTP_*` and `DEFAULT_FROM_EMAIL`):** set `DEFAULT_FROM_EMAIL` and your SMTP server
    details, or leave `SMTP_HOST` empty to log emails to the `backend` container output.
 7. **AI endpoints (`AI_ALLOWED_BASE_URLS`):** optionally list comma-separated base URLs for

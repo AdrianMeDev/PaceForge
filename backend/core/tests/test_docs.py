@@ -59,3 +59,33 @@ class TestTheLinks:
         assert "(deployment.md" in DOC
         assert (ROOT / "docs" / "deployment.md").is_file()
         assert (ROOT / "README.md").is_file()
+
+
+class TestTheDatabaseCredentials:
+    def test_no_file_contains_the_old_development_password(self) -> None:
+        files = [
+            *ROOT.glob("compose*.yaml"),
+            *ROOT.glob(".env*example"),
+            ROOT / "backend" / "config" / "settings_test.py",
+            ROOT / "README.md",
+            ROOT / "docs" / "deployment.md",
+            ROOT / "docs" / "backup-and-restore.md",
+        ]
+        assert len(files) >= 7
+        for path in files:
+            # The Compose project name `paceforge-dev` is not a password.
+            text = path.read_text().replace("name: paceforge-dev", "")
+            assert "paceforge-dev" not in text, path.name
+
+    def test_the_deployment_guide_does_not_restrict_the_password(self) -> None:
+        text = " ".join((ROOT / "docs" / "deployment.md").read_text().lower().split())
+        assert "letters and digits only" not in text
+        assert "letters and digits" not in text
+
+    def test_the_readme_does_not_restrict_the_password(self) -> None:
+        assert "letters and digits only" not in " ".join(README.lower().split())
+
+    def test_existing_volumes_are_documented(self) -> None:
+        deployment = (ROOT / "docs" / "deployment.md").read_text()
+        for text in (README, deployment):
+            assert "existing `pgdata` volume" in " ".join(text.split())

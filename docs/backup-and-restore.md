@@ -275,13 +275,18 @@ development data stays as it is.
    docker compose -f compose.dev.yaml exec db createdb -U paceforge paceforge_restore
    ```
 
-3. Restore. Use your `POSTGRES_PASSWORD` in the URL if you changed it:
+3. Restore. Use the discrete settings, with the scratch database as `POSTGRES_DB`. The password
+   comes from your `.env` or the shell, so it does not appear in the command:
 
    ```sh
    cd backend
-   uv run python manage.py restore_db ../backups/paceforge-20261120-031500Z.pgdump.enc \
-     --database-url postgres://paceforge:paceforge-dev@localhost:5432/paceforge_restore
+   DATABASE_URL= POSTGRES_DB=paceforge_restore uv run python manage.py restore_db \
+     ../backups/paceforge-20261120-031500Z.pgdump.enc
    ```
+
+   If you prefer `--database-url`, URL-encode the password first (`@` is `%40`, `:` is `%3A`,
+   `/` is `%2F`, `#` is `%23`):
+   `postgres://paceforge:<url-encoded-password>@localhost:5432/paceforge_restore`.
 
    The command prints `Restored <name>.`. Run it again and it refuses, because the database now has
    tables.
@@ -290,8 +295,7 @@ development data stays as it is.
    win over `.env`. `migrate` should report no migrations to apply:
 
    ```sh
-   DATABASE_URL=postgres://paceforge:paceforge-dev@localhost:5432/paceforge_restore \
-     uv run python manage.py migrate
+   DATABASE_URL= POSTGRES_DB=paceforge_restore uv run python manage.py migrate
    ```
 
 5. Drop the scratch database when you are done:
