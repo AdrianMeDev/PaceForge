@@ -13,7 +13,8 @@
 		-Server
 	}
 
-	handle /api/* {
+	@api path /api /api/*
+	handle @api {
 		# Activity uploads are limited to 25 MB by the backend; leave room for the form overhead.
 		request_body {
 			max_size 32MB

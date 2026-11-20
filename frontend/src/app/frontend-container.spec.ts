@@ -47,3 +47,26 @@ describe('the frontend container image', () => {
     expect(commands).toContain('find /srv -type f -exec chmod 0644 {} +');
   });
 });
+
+const staticCaddyfile = readFileSync('Caddyfile', 'utf-8');
+const proxyCaddyfile = readFileSync('../deploy/Caddyfile', 'utf-8');
+
+/**
+ * The static server answers API calls with 404. Caddy runs the handlers in file order, so this
+ * handler must come before the SPA fallback (`try_files`), which would return index.html.
+ */
+describe('the Caddy routing', () => {
+  it('answers /api and /api/* with 404 on the static server before the SPA fallback', () => {
+    expect(staticCaddyfile).toContain('@api path /api /api/*');
+    expect(staticCaddyfile).toMatch(/handle @api \{\s*respond "Not Found" 404\s*\}/);
+    expect(staticCaddyfile.indexOf('handle @api')).toBeLessThan(
+      staticCaddyfile.indexOf('try_files'),
+    );
+  });
+
+  it('routes /api and /api/* on the public proxy to the backend', () => {
+    expect(proxyCaddyfile).toContain('@api path /api /api/*');
+    expect(proxyCaddyfile).not.toContain('handle /api/*');
+    expect(proxyCaddyfile).toMatch(/handle @api \{[\s\S]*?reverse_proxy backend:8000 \{/);
+  });
+});

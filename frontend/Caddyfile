@@ -11,6 +11,12 @@
 		respond "ok" 200
 	}
 
+	# The backend is not on this server. Answer API calls with 404 instead of the SPA index.html.
+	@api path /api /api/*
+	handle @api {
+		respond "Not Found" 404
+	}
+
 	handle {
 		route {
 			try_files {path} /index.html
