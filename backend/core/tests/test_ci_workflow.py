@@ -194,3 +194,25 @@ class TestThePostgresKeyIsVerifiedBeforeItIsTrusted:
         result, sudo_calls = run_key_step(tmp_path, "")
         assert result.returncode != 0
         assert sudo_calls == ""
+
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+M2_TEST_FILES = [
+    ".github/workflows/ci.yml",
+    "backend/planning/tests/test_generation.py",
+    "backend/season/tests/test_generation.py",
+    "backend/chat/tests/test_api.py",
+    "backend/chat/tests/test_services.py",
+    "backend/coach/tests/test_services.py",
+    "backend/jobs/tests/test_commands.py",
+    "backend/reviews/tests/test_comment_api.py",
+    "backend/season/tests/test_plans_api.py",
+    "backend/season/tests/test_reassessment_acceptance.py",
+    "frontend/src/app/core/coach/coach-api.spec.ts",
+]
+
+
+class TestNoLiveShapedProviderKeysInM2Files:
+    @pytest.mark.parametrize("path", M2_TEST_FILES)
+    def test_no_sk_ant_literal_remains(self, path: str) -> None:
+        assert "sk-ant-" not in (REPO_ROOT / path).read_text()
