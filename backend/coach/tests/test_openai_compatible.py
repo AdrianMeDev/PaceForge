@@ -151,6 +151,33 @@ class TestJsonOutput:
         assert fake.requests[0]["json"]["response_format"] == {"type": "json_object"}
 
 
+class TestAllowedAddress:
+    def test_allowlist_is_checked_again_before_the_call(
+        self, settings: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        address = "https://example.org/v1"
+        settings.AI_ALLOWED_BASE_URLS = (address,)
+        chosen = provider(address)
+        settings.AI_ALLOWED_BASE_URLS = ()
+
+        def unexpected_call(*args: object, **kwargs: object) -> object:
+            pytest.fail("A removed endpoint must not receive a request.")
+
+        monkeypatch.setattr(openai_compatible, "post_json", unexpected_call)
+        with pytest.raises(
+            EndpointNotAllowedError, match="This address is not allowed on this server."
+        ):
+            chosen.complete("", HELLO, 10)
+
+    @pytest.mark.parametrize(
+        "address", ["ftp://example.org", "https://example.org/", "https://example.org/a\nb"]
+    )
+    def test_invalid_allowlist_override_is_refused(self, settings: Any, address: str) -> None:
+        settings.AI_ALLOWED_BASE_URLS = (address,)
+        with pytest.raises(EndpointNotAllowedError):
+            provider(address)
+
+
 class TestTheRequest:
     def test_it_goes_to_chat_completions_with_a_bearer_key(
         self, fake: FakeProvider, base: str
@@ -254,17 +281,48 @@ class TestTheAllowList:
         with pytest.raises(EndpointNotAllowedError):
             OpenAICompatibleProvider(fake.url + "/v1", MODEL)
 
+        assert fake.requests == []
+
     @pytest.mark.parametrize("variant", ["/", "?x=1", "/chat", "#f", " "])
-    def test_only_the_listed_text_counts(self, base: str, variant: str) -> None:
+    def test_only_the_listed_text_counts(self, fake: FakeProvider, base: str, variant: str) -> None:
         with pytest.raises(EndpointNotAllowedError):
             OpenAICompatibleProvider(base + variant, MODEL)
 
-    def test_the_address_of_the_fake_is_taken_from_the_list_not_from_the_request(
-        self, fake: FakeProvider, base: str
-    ) -> None:
-        complete(fake, base)
+        assert fake.requests == []
 
-        assert fake.requests[0]["raw_path"].startswith("/v1/")
+    def test_only_an_approved_self_hosted_endpoint_receives_requests(self, settings: Any) -> None:
+        with running() as approved, running() as unlisted:
+            approved_url = approved.url + "/v1"
+            unlisted_url = unlisted.url + "/v1"
+            settings.AI_ALLOWED_BASE_URLS = (approved_url,)
+            approved.reply(ANSWER)
+
+            result = provider(approved_url, KEY).complete("", HELLO, 100)
+
+            assert result == Completion("Hi there", 12, 5, False)
+            assert len(approved.requests) == 1
+            assert approved.requests[0]["raw_path"] == "/v1/chat/completions"
+            assert unlisted.requests == []
+
+            with pytest.raises(EndpointNotAllowedError):
+                provider(unlisted_url, KEY)
+
+            assert len(approved.requests) == 1
+            assert unlisted.requests == []
+
+    def test_removing_an_endpoint_before_complete_makes_zero_requests(
+        self, fake: FakeProvider, base: str, settings: Any
+    ) -> None:
+        fake.reply(ANSWER)
+        chosen = provider(base, KEY)
+        settings.AI_ALLOWED_BASE_URLS = ()
+
+        with pytest.raises(
+            EndpointNotAllowedError, match="This address is not allowed on this server."
+        ):
+            chosen.complete("", HELLO, 100)
+
+        assert fake.requests == []
 
     def test_the_refusal_says_nothing_about_the_address_or_the_key(self, settings: Any) -> None:
         settings.AI_ALLOWED_BASE_URLS = ()
@@ -407,6 +465,26 @@ class TestTheAnswer:
         with pytest.raises(UnexpectedResponseError):
             provider(base).complete("", HELLO, 10)
 
+    @pytest.mark.parametrize(
+        "raw_body",
+        [
+            b'{"choices": [{"message": {"content": "Hi"}}], "usage": {"prompt_tokens": NaN}}',
+            b'{"choices": [{"message": {"content": "Hi"}}], "usage": {"prompt_tokens": Infinity}}',
+            b'{"choices": [{"message": {"content": "Hi"}}], "usage": {"prompt_tokens": -Infinity}}',
+            b'{"choices": [{"message": {"content": "Hi"}}], "usage": {"nested": [1e400]}}',
+        ],
+        ids=["nan", "infinity", "neg-infinity", "nested-overflow"],
+    )
+    def test_an_answer_with_non_finite_numbers_is_rejected(
+        self, fake: FakeProvider, base: str, raw_body: bytes
+    ) -> None:
+        fake.body = raw_body
+
+        with pytest.raises(UnexpectedResponseError) as raised:
+            provider(base).complete("", HELLO, 10)
+
+        assert str(raised.value) == "The answer is not JSON."
+
     def test_an_answer_that_is_too_large_is_rejected(
         self, fake: FakeProvider, base: str, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -524,6 +602,149 @@ class TestSecrecy:
             OpenAICompatibleProvider(address, MODEL, KEY).complete("", HELLO, 10)
 
         everything = "".join(traceback.format_exception(raised.value)) + caplog.text
+        assert KEY not in everything
+        assert raised.value.__cause__ is None
+        assert raised.value.__suppress_context__
+
+    @pytest.mark.parametrize(
+        "bad_key",
+        [
+            "sk-bad\nX-Injected: 1",
+            "sk-bad\rX-Injected: 1",
+            "sk-bad\x00key",
+            "sk-bad-🔑",
+            "sk-bad-ä",
+        ],
+        ids=["newline", "carriage-return", "nul", "emoji", "non-ascii"],
+    )
+    def test_invalid_api_key_characters_are_rejected_without_leaking_or_sending(
+        self,
+        fake: FakeProvider,
+        base: str,
+        caplog: pytest.LogCaptureFixture,
+        bad_key: str,
+    ) -> None:
+        caplog.set_level(logging.DEBUG)
+        fake.reply(ANSWER)
+
+        with pytest.raises(ProviderError) as raised:
+            provider(base, bad_key).complete("", HELLO, 10)
+
+        assert type(raised.value) is ProviderError
+        assert fake.requests == []
+        everything = "".join(traceback.format_exception(raised.value)) + str(raised.value)
+        everything += repr(raised.value) + caplog.text
+        assert bad_key not in everything
+        assert "sk-bad" not in everything
+        assert "bearer" not in everything.lower()
+        assert raised.value.__cause__ is None
+        assert raised.value.__context__ is None or raised.value.__suppress_context__
+
+    @pytest.mark.parametrize(
+        ("headers", "secret"),
+        [
+            ({"": "secret-val"}, "secret-val"),
+            ({"Bad Name": "secret-val"}, "Bad Name"),
+            ({"Bad:Name": "secret-val"}, "Bad:Name"),
+            ({"Bad\nName": "secret-val"}, "Bad\nName"),
+            ({"Bad-ä": "secret-val"}, "Bad-ä"),
+            ({"X-Api-Key": "secret\nval"}, "secret\nval"),
+            ({"X-Api-Key": "secret\rval"}, "secret\rval"),
+            ({"X-Api-Key": "secret\x00val"}, "secret\x00val"),
+            ({"X-Api-Key": "secret\x7fval"}, "secret\x7fval"),
+            ({"X-Api-Key": "secret-ä"}, "secret-ä"),
+        ],
+        ids=[
+            "empty-name",
+            "space-in-name",
+            "colon-in-name",
+            "newline-in-name",
+            "non-ascii-name",
+            "newline-in-value",
+            "cr-in-value",
+            "nul-in-value",
+            "del-in-value",
+            "non-ascii-value",
+        ],
+    )
+    def test_post_json_rejects_invalid_headers_without_leaking_or_sending(
+        self,
+        fake: FakeProvider,
+        caplog: pytest.LogCaptureFixture,
+        headers: dict[str, str],
+        secret: str,
+    ) -> None:
+        caplog.set_level(logging.DEBUG)
+        fake.reply(ANSWER)
+
+        with pytest.raises(ProviderError) as raised:
+            transport.post_json(fake.url + "/v1/chat/completions", headers, {"ok": True})
+
+        assert type(raised.value) is ProviderError
+        assert fake.requests == []
+        everything = "".join(traceback.format_exception(raised.value)) + str(raised.value)
+        everything += repr(raised.value) + caplog.text
+        assert secret not in everything
+        assert "x-api-key" not in everything.lower()
+        assert raised.value.__cause__ is None
+        assert raised.value.__context__ is None or raised.value.__suppress_context__
+
+    @pytest.mark.parametrize(
+        "headers",
+        [
+            {"X-Api-Key\nInjected": "secret-val"},
+            {"X-Api-Key": "secret\nval"},
+            {"X-Api-Key": "secret-ä"},
+        ],
+        ids=["bad-name", "bad-value", "non-ascii-value"],
+    )
+    def test_a_rejected_header_does_not_chain_a_pending_error_into_the_traceback(
+        self,
+        fake: FakeProvider,
+        caplog: pytest.LogCaptureFixture,
+        headers: dict[str, str],
+    ) -> None:
+        caplog.set_level(logging.DEBUG)
+        fake.reply(ANSWER)
+
+        # The caller is already handling an error that names the key; the fixed message must
+        # not drag that error (and the key in it) into the traceback.
+        try:
+            raise ValueError(f"bad header value {KEY}")
+        except ValueError:
+            with pytest.raises(ProviderError) as raised:
+                transport.post_json(fake.url + "/v1/chat/completions", headers, {"ok": True})
+
+        assert type(raised.value) is ProviderError
+        assert fake.requests == []
+        assert raised.value.__cause__ is None
+        assert raised.value.__suppress_context__
+        everything = "".join(traceback.format_exception(raised.value)) + str(raised.value)
+        everything += repr(raised.value) + caplog.text
+        assert KEY not in everything
+        assert "secret" not in everything
+        assert "bad header value" not in everything
+
+    def test_post_json_wraps_value_error_from_request_or_open_without_leaking(
+        self,
+        fake: FakeProvider,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        caplog.set_level(logging.DEBUG)
+
+        def fail_open(*args: object, **kwargs: object) -> object:
+            raise ValueError(f"bad header value {KEY}")
+
+        monkeypatch.setattr(transport._opener, "open", fail_open)
+
+        with pytest.raises(ProviderError) as raised:
+            transport.post_json(fake.url, {"Authorization": f"Bearer {KEY}"}, {"ok": True})
+
+        assert type(raised.value) is ProviderError
+        assert fake.requests == []
+        everything = "".join(traceback.format_exception(raised.value)) + str(raised.value)
+        everything += repr(raised.value) + caplog.text
         assert KEY not in everything
         assert raised.value.__cause__ is None
         assert raised.value.__suppress_context__

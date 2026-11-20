@@ -9,6 +9,8 @@ from urllib.parse import urlsplit
 
 from django.conf import settings
 
+from coach.endpoints import resolve_allowed_base_url
+
 from .base import Completion, EndpointNotAllowedError, Message, UnexpectedResponseError
 from .transport import TIMEOUT_SECONDS, post_json
 
@@ -32,9 +34,10 @@ class OpenAICompatibleProvider:
             raise ValueError("The model is empty.")
         # The same text as in the allow list, checked here again: the operator may have taken
         # the address off the list since it was chosen.
-        if base_url not in settings.AI_ALLOWED_BASE_URLS:
+        address = resolve_allowed_base_url(base_url, settings.AI_ALLOWED_BASE_URLS)
+        if address is None:
             raise EndpointNotAllowedError("This address is not allowed on this server.")
-        self._base_url = base_url
+        self._base_url = address
         self._model = model
         self._api_key = api_key
         self._timeout = timeout
@@ -64,9 +67,10 @@ class OpenAICompatibleProvider:
         }
         if json_output and urlsplit(self._base_url).hostname in JSON_MODE_HOSTS:
             payload["response_format"] = {"type": "json_object"}
-        data = post_json(
-            f"{self._base_url}/chat/completions", headers, payload, timeout=self._timeout
-        )
+        address = resolve_allowed_base_url(self._base_url, settings.AI_ALLOWED_BASE_URLS)
+        if address is None:
+            raise EndpointNotAllowedError("This address is not allowed on this server.")
+        data = post_json(f"{address}/chat/completions", headers, payload, timeout=self._timeout)
         return _completion(data)
 
 

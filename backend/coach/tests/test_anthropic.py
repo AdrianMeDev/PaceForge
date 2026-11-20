@@ -483,6 +483,39 @@ class TestSecrecy:
         assert raised.value.__cause__ is None
         assert raised.value.__suppress_context__
 
+    @pytest.mark.parametrize(
+        "bad_key",
+        [
+            "sk-ant-bad\nX-Injected: 1",
+            "sk-ant-bad\rX-Injected: 1",
+            "sk-ant-bad\x00key",
+            "sk-ant-bad-🔑",
+            "sk-ant-bad-ä",
+        ],
+        ids=["newline", "carriage-return", "nul", "emoji", "non-ascii"],
+    )
+    def test_invalid_api_key_characters_are_rejected_without_leaking_or_sending(
+        self,
+        fake: FakeProvider,
+        caplog: pytest.LogCaptureFixture,
+        bad_key: str,
+    ) -> None:
+        caplog.set_level(logging.DEBUG)
+        fake.reply(ANSWER)
+
+        with pytest.raises(ProviderError) as raised:
+            AnthropicProvider(bad_key, MODEL, base_url=fake.url).complete("", HELLO, 10)
+
+        assert type(raised.value) is ProviderError
+        assert fake.requests == []
+        everything = "".join(traceback.format_exception(raised.value)) + str(raised.value)
+        everything += repr(raised.value) + caplog.text
+        assert bad_key not in everything
+        assert "sk-ant-bad" not in everything
+        assert "x-api-key" not in everything.lower()
+        assert raised.value.__cause__ is None
+        assert raised.value.__context__ is None or raised.value.__suppress_context__
+
 
 class TestThePromptCache:
     """What is marked for the cache: the system prompt and the first message, five minutes."""

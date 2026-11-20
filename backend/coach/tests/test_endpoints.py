@@ -6,7 +6,7 @@ import pytest
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 
-from coach.endpoints import parse_base_urls
+from coach.endpoints import normalize_base_url, parse_base_urls, resolve_allowed_base_url
 from config import settings as config_settings
 
 
@@ -127,3 +127,54 @@ class TestTheSettings:
     def test_the_test_run_itself_is_independent_of_the_env_file(self) -> None:
         assert settings.AI_ALLOWED_BASE_URLS == ()
         assert settings.ANTHROPIC_API_BASE_URL == "https://api.anthropic.com"
+
+
+@pytest.mark.parametrize(
+    "character", [" ", "\t", "\n", "\r", "\x00", "\x1f", "\x7f", "\x85", "\xa0", "\u2003"]
+)
+@pytest.mark.parametrize(
+    "template",
+    [
+        "{}https://example.org/v1",
+        "https://exam{}ple.org/v1",
+        "https://example.org/a{}b",
+        "https://example.org/v1{}",
+    ],
+)
+def test_normalization_refuses_whitespace_and_controls(character: str, template: str) -> None:
+    assert normalize_base_url(template.format(character)) is None
+
+
+@pytest.mark.parametrize(
+    "character", [" ", "\t", "\n", "\r", "\x00", "\x1f", "\x7f", "\x85", "\xa0"]
+)
+def test_startup_refuses_embedded_whitespace_and_controls(character: str) -> None:
+    with pytest.raises(ImproperlyConfigured):
+        parse(f"https://example.org/a{character}b")
+
+
+class TestAllowedAddresses:
+    def test_returns_the_matching_canonical_entry(self) -> None:
+        address = "http://localhost:11434/v1"
+        allowed = ("https://other.example", address)
+        assert resolve_allowed_base_url(address, allowed) is allowed[1]
+
+    @pytest.mark.parametrize(
+        "address",
+        [
+            "https://example.org/",
+            "HTTPS://example.org",
+            "https://EXAMPLE.org",
+            "https://example.org?",
+            "https://user@example.org",
+            "ftp://example.org",
+            "https://example.org/a\nb",
+            "https://example.org/a b",
+            "",
+        ],
+    )
+    def test_even_a_matching_entry_must_be_canonical_and_valid(self, address: str) -> None:
+        assert resolve_allowed_base_url(address, (address,)) is None
+
+    def test_unlisted_address_is_refused(self) -> None:
+        assert resolve_allowed_base_url("https://example.org", ()) is None

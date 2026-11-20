@@ -226,6 +226,68 @@ class TestDatabase:
 
         assert "coach_compatible_has_base_url" in message
 
+    @pytest.mark.parametrize(
+        "address",
+        [
+            "ftp://example.org",
+            "file:///etc/passwd",
+            "example.org",
+            "https://",
+            "https:///v1",
+            "https://user@example.org",
+            "https://user:secret@example.org",
+            "https://example.org?",
+            "https://example.org?q=x",
+            "https://example.org#",
+            "https://example.org#fragment",
+            "https://example.org/",
+            "https://example.org/v1/",
+            "HTTPS://example.org",
+            "https://EXAMPLE.org",
+            "https://example.org:bad",
+            "https://example.org:65536",
+            "https://example.org:080",
+            "https://example.org:",
+            " https://example.org",
+            "https://example.org ",
+            "https://exam ple.org",
+            "https://example.org/a b",
+            "https://example.org/a\tb",
+            "https://example.org/a\nb",
+            "https://example.org/v1\n",
+            "https://example.org/a\rb",
+            "https://example.org/a\x1fb",
+            "https://example.org/a\x7fb",
+            "https://example.org/a\x85b",
+            "https://example.org/a\xa0b",
+        ],
+    )
+    def test_malformed_address_is_rejected_without_model_validation(
+        self, alice: User, address: str
+    ) -> None:
+        message = rejected_by_database(owner=alice, **compatible(base_url=address))
+        assert "coach_base_url_http_origin" in message
+
+    @pytest.mark.parametrize(
+        "address",
+        [
+            "http://localhost",
+            LOCAL,
+            "https://api.openai.com/v1",
+            "https://example.org/a/b",
+            "http://127.0.0.1:8080",
+            "http://[::1]:8080/v1",
+            "https://[2001:db8::1]",
+            "http://example.org:0",
+            "https://example.org:65535",
+            "https://example.org/a%20b",
+        ],
+    )
+    def test_normalized_http_address_can_be_stored(self, alice: User, address: str) -> None:
+        config = AIProviderConfiguration.objects.create(owner=alice, **compatible(base_url=address))
+        config.refresh_from_db()
+        assert config.base_url == address
+
 
 class TestTheKey:
     def test_it_is_stored_encrypted_and_read_back(self, alice: User) -> None:
