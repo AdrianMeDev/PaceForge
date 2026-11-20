@@ -30,6 +30,7 @@ export function createAuthStoreStub(initial: { status?: AuthStatus; user?: Me | 
     isStaff: computed(() => user()?.is_staff ?? false),
     login: vi.fn<(email: string, password: string) => Promise<LoginOutcome>>(),
     logout: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    clearSession: vi.fn<() => void>(),
     verifyEmail: vi.fn<(key: string) => Promise<VerifyEmailResult>>(),
     authenticateMfa: vi.fn<(code: string) => Promise<MfaAuthenticateResult>>(),
     reloadUser: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),

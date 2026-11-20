@@ -4,9 +4,11 @@ import {
   provideHttpClientTesting,
 } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
-import { AUTH_BASE, provideApiClient } from '../api/api-providers';
+import { API_BASE, AUTH_BASE, provideApiClient } from '../api/api-providers';
+import { AccountExportResult } from './auth-models';
 import { AuthApi } from './auth-api';
 
+const EXPORT = `${API_BASE}/me/export/`;
 const SIGNUP = `${AUTH_BASE}/auth/signup`;
 const EMAIL_VERIFY = `${AUTH_BASE}/auth/email/verify`;
 const PASSWORD_REQUEST = `${AUTH_BASE}/auth/password/request`;
@@ -695,6 +697,188 @@ describe('AuthApi account calls', () => {
     it('rejects on unexpected server errors', async () => {
       await expect(
         run(api.regenerateRecoveryCodes(), 'POST', RECOVERY_CODES, 'boom', 500),
+      ).rejects.toBeDefined();
+    });
+  });
+
+  describe('exportAccountData', () => {
+    const DISPOSITION = 'attachment; filename="paceforge-export-2026-11-20.json"';
+
+    /** The export is a file, so the answer is flushed as a blob with the given headers. */
+    async function exportWith(
+      status: number,
+      headers: Record<string, string> = {},
+    ): Promise<AccountExportResult> {
+      const action = api.exportAccountData();
+      const request = await vi.waitFor(() =>
+        backend.expectOne((req) => req.method === 'GET' && req.url === EXPORT),
+      );
+      expect(request.request.responseType).toBe('blob');
+      request.flush(new Blob(['{}'], { type: 'application/json' }), {
+        status,
+        statusText: `HTTP ${status}`,
+        headers,
+      });
+      return action;
+    }
+
+    it('returns the file with the name the server suggests', async () => {
+      const result = await exportWith(200, { 'Content-Disposition': DISPOSITION });
+
+      expect(result).toEqual({
+        kind: 'exported',
+        file: expect.any(Blob),
+        filename: 'paceforge-export-2026-11-20.json',
+      });
+    });
+
+    it.each([
+      ['no Content-Disposition header', {}],
+      ['a header without a file name', { 'Content-Disposition': 'attachment' }],
+      ['a file name with a path', { 'Content-Disposition': 'attachment; filename="../x.json"' }],
+      ['a hidden file name', { 'Content-Disposition': 'attachment; filename=".env"' }],
+      ['a file name with spaces', { 'Content-Disposition': 'attachment; filename="a b.json"' }],
+    ])('falls back to a fixed file name for %s', async (_case, headers) => {
+      const result = await exportWith(200, headers);
+
+      expect(result).toMatchObject({ kind: 'exported', filename: 'paceforge-export.json' });
+    });
+
+    it('reports a request without a signed-in user', async () => {
+      expect(await exportWith(403)).toEqual({ kind: 'forbidden' });
+    });
+
+    it('reports the rate limit', async () => {
+      expect(await exportWith(429)).toEqual({ kind: 'rate_limited' });
+    });
+
+    it('rejects on unexpected server errors', async () => {
+      await expect(exportWith(500)).rejects.toBeDefined();
+    });
+  });
+
+  describe('deleteAccount', () => {
+    const DELETE_ACCOUNT = `${API_BASE}/me/delete/`;
+
+    it('sends the confirmation, the password and the code; reports the deletion', async () => {
+      const { result, request } = await run(
+        api.deleteAccount({
+          confirmation: 'ada@example.com',
+          password: 'correct-horse',
+          mfaCode: '123456',
+        }),
+        'POST',
+        DELETE_ACCOUNT,
+        '',
+        204,
+      );
+
+      expect(request.request.body).toEqual({
+        confirmation: 'ada@example.com',
+        password: 'correct-horse',
+        mfa_code: '123456',
+      });
+      expect(result).toEqual({ kind: 'deleted' });
+    });
+
+    it('sends an empty code when the account has no authenticator app', async () => {
+      const { request } = await run(
+        api.deleteAccount({ confirmation: 'ada@example.com', password: 'correct-horse' }),
+        'POST',
+        DELETE_ACCOUNT,
+        '',
+        204,
+      );
+
+      expect(request.request.body).toEqual({
+        confirmation: 'ada@example.com',
+        password: 'correct-horse',
+        mfa_code: '',
+      });
+    });
+
+    it('keeps the field errors, one per field', async () => {
+      const { result } = await run(
+        api.deleteAccount({ confirmation: 'ada@example.com', password: 'wrong' }),
+        'POST',
+        DELETE_ACCOUNT,
+        {
+          password: ['The password is wrong.'],
+          mfa_code: ['A code from your authenticator app is required.'],
+        },
+        400,
+      );
+
+      expect(result).toEqual({
+        kind: 'invalid',
+        errors: [
+          { code: 'invalid', message: 'The password is wrong.', param: 'password' },
+          {
+            code: 'invalid',
+            message: 'A code from your authenticator app is required.',
+            param: 'mfa_code',
+          },
+        ],
+      });
+    });
+
+    it('reports a request without a signed-in user', async () => {
+      const { result } = await run(
+        api.deleteAccount({ confirmation: 'ada@example.com', password: 'correct-horse' }),
+        'POST',
+        DELETE_ACCOUNT,
+        {},
+        403,
+      );
+
+      expect(result).toEqual({ kind: 'forbidden' });
+    });
+
+    it('reports that the last administrator cannot be deleted', async () => {
+      const { result } = await run(
+        api.deleteAccount({ confirmation: 'ada@example.com', password: 'correct-horse' }),
+        'POST',
+        DELETE_ACCOUNT,
+        { detail: 'The last administrator cannot be deleted.', code: 'last_admin' },
+        409,
+      );
+
+      expect(result).toEqual({ kind: 'last_admin' });
+    });
+
+    it('rejects a conflict that is not about the last administrator', async () => {
+      await expect(
+        run(
+          api.deleteAccount({ confirmation: 'ada@example.com', password: 'correct-horse' }),
+          'POST',
+          DELETE_ACCOUNT,
+          { detail: 'Something else.' },
+          409,
+        ),
+      ).rejects.toBeDefined();
+    });
+
+    it('reports the rate limit', async () => {
+      const { result } = await run(
+        api.deleteAccount({ confirmation: 'ada@example.com', password: 'correct-horse' }),
+        'POST',
+        DELETE_ACCOUNT,
+        {},
+        429,
+      );
+
+      expect(result).toEqual({ kind: 'rate_limited' });
+    });
+
+    it('rejects on unexpected server errors', async () => {
+      await expect(
+        run(
+          api.deleteAccount({ confirmation: 'ada@example.com', password: 'correct-horse' }),
+          'POST',
+          DELETE_ACCOUNT,
+          'boom',
+          500,
+        ),
       ).rejects.toBeDefined();
     });
   });

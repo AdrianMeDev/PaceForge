@@ -15,6 +15,7 @@ const FALLBACK_MESSAGE = 'Something went wrong. Please try again.';
 const NOTICES: Record<string, string> = {
   'password-reset': 'Your password has been reset. You can sign in with the new password now.',
   'sign-in-expired': 'Your sign-in took too long. Please sign in again.',
+  'account-deleted': 'Your account and its data have been deleted.',
 };
 
 export function noticeFor(key: string | null): string | null {

@@ -114,6 +114,14 @@ describe('LoginPage', () => {
     expect(query(page, '[role="status"]').textContent).toContain('password has been reset');
   });
 
+  it('confirms the account deletion after the visitor was sent here', async () => {
+    await setup({ notice: 'account-deleted' });
+
+    expect(query(page, '[role="status"]').textContent).toContain(
+      'account and its data have been deleted',
+    );
+  });
+
   it('shows no notice for unknown values in the address', async () => {
     await setup({ notice: '<img src=x onerror=alert(1)>' });
 

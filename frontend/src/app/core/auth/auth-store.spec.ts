@@ -276,4 +276,20 @@ describe('AuthStore', () => {
       expect(store.pendingFlows()).toEqual([]);
     });
   });
+
+  describe('clearSession', () => {
+    it('makes the visitor anonymous without calling the server', async () => {
+      const login = store.login('ada@example.com', 'secret');
+      await respond('POST', LOGIN, {});
+      await respond('GET', ME, ADA);
+      await login;
+
+      store.clearSession();
+
+      expect(store.status()).toBe('anonymous');
+      expect(store.user()).toBeNull();
+      expect(store.isAuthenticated()).toBe(false);
+      backend.expectNone((req) => req.method === 'DELETE' && req.url === SESSION);
+    });
+  });
 });
