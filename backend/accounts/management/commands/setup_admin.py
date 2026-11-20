@@ -7,13 +7,14 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 from django.core.validators import validate_email
-from django.db import transaction
+from django.db import connection, transaction
 
 from accounts.managers import clean_email
 from accounts.models import User
 
 PASSWORD_ENV = "SETUP_ADMIN_PASSWORD"
 EMAIL_ENV = "SETUP_ADMIN_EMAIL"
+ADVISORY_LOCK_KEY = 7_315_204_118  # fixed key that serializes administrator bootstrap
 
 
 class Command(BaseCommand):
@@ -46,7 +47,11 @@ class Command(BaseCommand):
             raise CommandError("\n".join(error.messages)) from None
 
         with transaction.atomic():
-            self._ensure_setup_is_possible(email)  # re-check inside the transaction
+            # The transaction-level advisory lock makes concurrent runs take turns: the second
+            # one waits until the first has committed, so its re-check sees the new administrator.
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT pg_advisory_xact_lock(%s)", [ADVISORY_LOCK_KEY])
+            self._ensure_setup_is_possible(email)
             admin = User.objects.create_superuser(
                 email, password, display_name=options["display_name"]
             )

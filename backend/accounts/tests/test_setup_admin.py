@@ -1,3 +1,5 @@
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from http import HTTPStatus
 from io import StringIO
 from typing import Any
@@ -6,6 +8,7 @@ import pytest
 from allauth.account.models import EmailAddress
 from django.core.management import call_command
 from django.core.management.base import CommandError
+from django.db import connection
 
 from accounts.models import User
 from config import settings as production_settings
@@ -124,3 +127,31 @@ def test_requires_a_valid_email(monkeypatch: pytest.MonkeyPatch) -> None:
         run(email="not-an-email")
 
     assert not User.objects.exists()
+
+
+@pytest.mark.django_db(transaction=True)
+def test_two_simultaneous_runs_create_one_administrator(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SETUP_ADMIN_PASSWORD", PASSWORD)
+    # Both runs pass the fail-fast check, then meet here, so they enter the transaction together.
+    both_checked = threading.Barrier(2)
+    monkeypatch.setattr(
+        "accounts.management.commands.setup_admin.validate_password",
+        lambda *_args, **_kwargs: both_checked.wait(timeout=10),
+    )
+
+    def attempt(email: str) -> str:
+        try:
+            run(email=email)
+            return "created"
+        except CommandError as error:
+            return str(error)
+        except Exception as error:  # reported to the test, which then fails on it
+            return repr(error)
+        finally:
+            connection.close()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(attempt, ["first@example.com", "second@example.com"]))
+
+    assert sorted(results) == ["An administrator already exists; nothing to do.", "created"]
+    assert User.objects.filter(is_staff=True).count() == 1

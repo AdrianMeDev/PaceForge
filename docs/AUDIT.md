@@ -1911,7 +1911,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** M1
 - **Size:** L, ~7 commits
 
-### M5 [ ] Audit: Administrator bootstrap and invitation delivery
+### M5 [~] Audit: Administrator bootstrap and invitation delivery
 
 - **Goal:** Make administrator creation race-safe and invitation delivery bounded, private and accurately reported.
 - **Includes:** F22 (bootstrap race), F13 (recipient throttling), F534 (cross-worker admin throttling), F533 (token and email in URLs), F535 (request-derived host), F536 (console delivery status).
