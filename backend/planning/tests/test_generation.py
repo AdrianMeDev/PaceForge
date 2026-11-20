@@ -44,7 +44,7 @@ pytestmark = pytest.mark.django_db
 NOW = datetime(2027, 7, 14, 12, 0, tzinfo=UTC)
 THIS_WEEK = date(2027, 7, 12)
 MONDAY = date(2027, 7, 19)
-KEY = "sk-ant-test-0123456789-abcdefghij"
+KEY = "test-provider-marker-0123456789"
 Status = WeeklyPlan.Status
 
 
@@ -207,6 +207,17 @@ class TestADraftFromTheFirstAnswer:
         content = scripted.calls[0][1][0].content
         assert "Bobs secret goal" not in content
         assert "777" not in content
+
+    def test_the_provider_key_is_never_sent_to_the_coach(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        scripted = provide(good())
+
+        generate(alice, MONDAY)
+
+        for system, messages, _ in scripted.calls:
+            assert KEY not in system
+            assert all(KEY not in message.content for message in messages)
 
     def test_one_call_is_recorded_with_its_purpose(
         self, alice: User, provide: Callable[..., Scripted]

@@ -29,7 +29,7 @@ pytestmark = pytest.mark.django_db
 
 NOW = datetime(2026, 11, 19, 12, 0, tzinfo=UTC)
 MONDAY = date(2026, 11, 16)
-KEY = "sk-ant-test-0123456789-abcdefghij"
+KEY = "test-provider-marker-0123456789"
 
 GOALS_URL = "/api/goals/"
 PLANS_URL = "/api/season/plans/"
