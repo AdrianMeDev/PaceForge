@@ -66,17 +66,17 @@ database are encrypted, and the key has to be backed up apart from the database.
 
 ## Layout
 
-| Path                  | What it is                                                                   |
-| --------------------- | ---------------------------------------------------------------------------- |
-| `backend/`            | Django 6, Django REST framework, django-allauth (headless), PostgreSQL       |
-| `backend/Dockerfile`  | Production backend image (Gunicorn, deploy checks, optional auto-migration)  |
-| `frontend/`           | Angular single-page app (standalone components, signals, zoneless)           |
-| `frontend/Dockerfile` | Production frontend image (Angular build served by Caddy)                    |
-| `compose.dev.yaml`    | Development services only: PostgreSQL and Mailpit (a catch-all mailbox)      |
-| `compose.prod.yaml`   | Production stack: Caddy (HTTPS), frontend, backend, scheduler, PostgreSQL    |
-| `deploy/Caddyfile`    | Reverse proxy config with automatic HTTPS, security headers and upload limit |
-| `.env.example`        | Template for the development configuration shared by Django and Compose      |
-| `.env.prod.example`   | Template for the production configuration used by `compose.prod.yaml`        |
+| Path                  | What it is                                                                                 |
+| --------------------- | ------------------------------------------------------------------------------------------ |
+| `backend/`            | Django 6, Django REST framework, django-allauth (headless), PostgreSQL                     |
+| `backend/Dockerfile`  | Production backend image (Gunicorn, deploy checks, optional auto-migration)                |
+| `frontend/`           | Angular single-page app (standalone components, signals, zoneless)                         |
+| `frontend/Dockerfile` | Production frontend image (Angular build served by Caddy)                                  |
+| `compose.dev.yaml`    | Development services only: PostgreSQL and Mailpit (a catch-all mailbox)                    |
+| `compose.prod.yaml`   | Production stack: Caddy (HTTPS), frontend, backend, scheduler, PostgreSQL, optional backup |
+| `deploy/Caddyfile`    | Reverse proxy config with automatic HTTPS, security headers and upload limit               |
+| `.env.example`        | Template for the development configuration shared by Django and Compose                    |
+| `.env.prod.example`   | Template for the production configuration used by `compose.prod.yaml`                      |
 
 The browser only ever talks to one origin: during development `ng serve` proxies `/api` to Django
 (`frontend/proxy.conf.json`), so there is no CORS setup and the session cookie stays `HttpOnly`.
@@ -161,7 +161,7 @@ off-site copies and the restore drills, is in [docs/backup-and-restore.md](docs/
 ## Navigation
 
 The pages are in groups: **Training** (Dashboard, Week plan, Week review, Activities), **Planning**
-(Season, Goals, Training time, Coach), **Settings** (Profile, Connections, Security, Automation) and,
+(Season, Goals, Training time, Coach), **Settings** (Profile, Connections, Automation, Security) and,
 for administrators, **Admin** (Invitations). Wherever a page says "in the navigation", this is where
 it is:
 
@@ -284,8 +284,11 @@ and invite a few others. The findings behind this are in
 The coach that plans your training will use an AI model. PaceForge does not ship one: every user
 connects **their own** AI account on the **Connections** page (`/settings/connections`, section
 **AI coach**) and pays their provider directly. At the moment you can set the provider up, check
-that it works and see what you have used. The only thing that calls it besides the check is the
-[Week plan](#week-plan) page.
+that it works and see what you have used. Five features call it, each with your own key and
+provider: the [Week plan](#week-plan) (drafts a week), the [Season](#season) (drafts a season plan),
+the [Week review](#week-review) (comments on a week and drafts the next one), the
+[Coach chat](#coach-chat) and the [Background jobs](#background-jobs) (the Sunday review and draft
+without you). The check on the Connections page calls it too.
 
 **Two kinds of provider.**
 
@@ -781,7 +784,8 @@ If the status cannot be read, goal editing stays usable.
 **Limits.** At most 30 goals per user (finished ones included), so delete old ones when it is full.
 Titles and notes are shown as plain text, never as markup.
 
-Not there yet: training phases.
+Training phases are not on this page. Every week of the season has its phase (base, build,
+specific or taper) on the [Season](#season) page.
 
 ## Training time
 
@@ -955,7 +959,8 @@ level; `null` removes a number) and
 `/api/availability/fixed-sessions/` (`weekday` 0 for Monday to 6, `sport`, `minutes`, `slot` or
 `null`), each with list, create, read, change and delete.
 
-Not there yet: time windows within a day, and different time per sport.
+Not there yet: exact clock-hour ranges within a day (the parts of the day above are the only time
+windows), and a different time budget per sport.
 
 ## Season
 
@@ -1364,8 +1369,8 @@ verdict and your note; when the draft is there the page takes you to it on the
 minute or two and **is billed to your AI provider** like any draft. If the coach cannot draft (no
 provider, no training time that week, an answer that cannot be used), the page says why, the
 feedback stays saved and the note stays in the form. The note belongs to the draft and is shown
-with it; it is not part of the feedback. Nothing runs by itself: there is no automatic weekly
-run.
+with it; it is not part of the feedback. The same review can also run by itself on Sunday evening
+when the Week review job is on; see [Background jobs](#background-jobs).
 
 **Season adjustment proposal.** When you have a confirmed [season plan](#season) and actual
 minutes in each of the latest three completed local weeks fall below 70% or above 130% of
@@ -1491,7 +1496,7 @@ changed. Illness is not a `replan_from`: say that you are ill and the coach uses
 The app stores the days as a period of that kind in [Not available](#training-time); it extends a
 touching or overlapping period of the same kind instead of adding a second one, and never merges it
 with an illness. Then it asks the coach for a
-new **draft of the season**, made from your newest season draft or confirmed season, with a requestthat the app writes itself. The answer links to that draft on the [Season](#season) page, where
+new **draft of the season**, made from your newest season draft or confirmed season, with a request that the app writes itself. The answer links to that draft on the [Season](#season) page, where
 you read, confirm or discard it. Nothing is confirmed or sent to Intervals.icu. The answer lists
 what happened in fixed sentences: "Absence noted (2026-11-23 to 2026-12-13)" and "Season draft
 made around the absence", or "No season plan to change: make one on the Season page first" or
@@ -1586,8 +1591,8 @@ has nothing to show says what to do next, with a button.
   numbers as text, and the legend names the colours. Below it the latest 3 activities
   (`RECENT_ACTIVITIES` in the same file).
 - **Coach:** how many calls the coach made in the last 30 days and how many tokens they used (the
-  numbers of the [AI coach](#ai-coach-bring-your-own-key) section; there are no costs, because
-  there is no price list).
+  numbers of the [AI coach](#ai-coach-bring-your-own-key) section). The dashboard shows no costs;
+  the optional monthly cost estimates are on the **Connections** page, under **AI coach costs**.
 - **Wellness:** your synced sleep, HRV, resting heart rate and weight over the last 7 days against
   your 28-day baseline, with trend arrows and a recovery warning banner when sleep, HRV or resting
   heart rate is clearly worse than usual (see [`docs/wellness.md`](docs/wellness.md)).
@@ -1763,7 +1768,7 @@ Set in `.env` or in the environment. Values without a default are required.
 - **"Update from Intervals.icu" says the stored key was not accepted.** Enter the key again on the
   Connections page (the connection shows **Needs attention** there). "Cannot be reached" and "Too
   many attempts" go away by themselves; nothing was changed.
-- **Django refuses to start with `DJANGO_SECRET_KEY`, `DATABASE_URL` or `ENCRYPTION_KEY` missing.** Both are required
+- **Django refuses to start with `DJANGO_SECRET_KEY`, `DATABASE_URL` or `ENCRYPTION_KEY` missing.** All three are required
   and have no default; check that `.env` is in the repository root, not in `backend/`.
 - **The Connections page says "Intervals.icu cannot be reached right now".** The server could not
   get an answer from `intervals.icu` (network, timeout, a busy service). Try again later; nothing
