@@ -12,6 +12,11 @@ __pycache__/
 !.env.example
 !.env.prod.example
 
+# Database backups
+backups/
+*.pgdump.enc
+*.dump
+
 # Editor / OS
 .idea/
 .vscode/
