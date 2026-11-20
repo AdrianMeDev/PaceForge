@@ -1967,7 +1967,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** -
 - **Size:** M, ~5 commits
 
-### M12 [ ] Audit: Activity summary and series parsers
+### M12 [-] Audit: Activity summary and series parsers
 
 - **Goal:** Apply consistent timestamp, sample and session checks when reading activity summaries and time series.
 - **Includes:** F60 (GPX UTC overflow), F61 (TCX timestamp arithmetic), F62 (invalid samples), F63 (merged sessions), F64 (broad FIT exception handling), F65 (duplicated FIT reader).
@@ -1975,7 +1975,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** -
 - **Size:** L, ~6 commits
 
-### M13 [ ] Audit: Atomic absence merging and per-athlete limits
+### M13 [-] Audit: Atomic absence merging and per-athlete limits
 
 - **Goal:** Keep absence ranges and per-athlete creation limits correct when multiple requests arrive together.
 - **Includes:** F151 (reversed ranges), F152 (concurrent absence writes), F153 (bridging periods), F161 (availability collection limits), F293 (goal limit).
@@ -1983,7 +1983,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** -
 - **Size:** M, ~5 commits
 
-### M14 [ ] Audit: Availability settings transactions and intensity limits
+### M14 [-] Audit: Availability settings transactions and intensity limits
 
 - **Goal:** Validate each availability update against the state it will actually change and enforce the same intensity ordering in storage.
 - **Includes:** F159 (stale settings), F160 (non-field validation errors), F162 (oversized PATCH handler), F163 (field persistence drift), F168 (progression constraint), F172 (misleading boundary test).
@@ -1991,7 +1991,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** M13
 - **Size:** L, ~6 commits
 
-### M15 [ ] Audit: Athlete profile writes and threshold integrity
+### M15 [-] Audit: Athlete profile writes and threshold integrity
 
 - **Goal:** Make first profile updates and threshold validation consistent across the API, model and database.
 - **Includes:** F123 (non-finite and excessive stored thresholds), F116 (first PATCH race), F114 (positive finite checks), F121 (concurrent heart-rate changes), F305 (time zone validation and fallback).
@@ -1999,7 +1999,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** -
 - **Size:** L, ~6 commits
 
-### M16 [ ] Audit: Wellness import ranges and idempotency
+### M16 [-] Audit: Wellness import ranges and idempotency
 
 - **Goal:** Make Intervals.icu wellness parsing and daily storage agree on exactly which measurements can be saved.
 - **Includes:** F540 (HRV bounds), F541 (resting heart rate bounds), F542 (weight bounds), F515 (empty days), F516 (duplicate dates), F517 (partial batch writes).
@@ -2007,7 +2007,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** -
 - **Size:** M, ~5 commits
 
-### M17 [ ] Audit: Athlete and goal client input contracts
+### M17 [-] Audit: Athlete and goal client input contracts
 
 - **Goal:** Validate threshold routes, nullable response fields and real calendar dates before using them in athlete and goal screens.
 - **Includes:** F576 (threshold path segments), F578 (missing effective value), F579 (runtime and TypeScript vocabularies), F582 (metric compatibility test), F624 (goal dates), F625 (goal model documentation), F679 (best-time input dates).
@@ -2015,7 +2015,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** -
 - **Size:** M, ~5 commits
 
-### M18 [ ] Audit: Dashboard response validation
+### M18 [-] Audit: Dashboard response validation
 
 - **Goal:** Detect incomplete dashboard responses before they can appear as missing athlete measurements.
 - **Includes:** F617 (missing numeric fields), F618 (duplicated HTTP status handling), F619 (duplicated vocabularies), F622 (weak rejection assertions), F616 (calendar dates).
@@ -2023,7 +2023,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** M17
 - **Size:** M, ~4 commits
 
-### M19 [ ] Audit: Job history response validation
+### M19 [-] Audit: Job history response validation
 
 - **Goal:** Ensure the automation screen accepts only job identifiers, times, outcomes and counts that the backend can legitimately emit.
 - **Includes:** F633 (IDs and timestamps), F634 (count keys and values), F635 (week dates), F636 (job vocabulary), F638 (rejection assertions), F639 (count boundary tests).
@@ -2031,7 +2031,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** M17
 - **Size:** M, ~4 commits
 
-### M20 [ ] Audit: Account deletion and historical MFA compatibility
+### M20 [-] Audit: Account deletion and historical MFA compatibility
 
 - **Goal:** Keep account deletion predictable and preserve the encryption contract used to replay the historical MFA migration.
 - **Includes:** F14 (deletion error dispatch), F24 (historical encryption imports), F34 (owned-model discovery), F35 (account test setup), F41 (runtime annotation), F42 (hidden invitation creation).
@@ -2039,7 +2039,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** M4, M6, M10
 - **Size:** M, ~5 commits
 
-### M21 [ ] Audit: Backup failure handling and retention
+### M21 [-] Audit: Backup failure handling and retention
 
 - **Goal:** Give backup callers consistent errors and preserve the selected backup through pruning.
 - **Includes:** F263 (crypto error translation), F264 (protected path identity), F272 (encryption check exception), F278 (restore recorder fixture), F279 (positional command assertions).
@@ -2047,7 +2047,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** M4
 - **Size:** M, ~4 commits
 
-### M22 [ ] Audit: Activity creation, duplicate detection and estimate refresh
+### M22 [-] Audit: Activity creation, duplicate detection and estimate refresh
 
 - **Goal:** Keep estimates current after supported activity writes and make duplicate handling demonstrably owner-scoped.
 - **Includes:** F53 (manual estimate refresh), F57 (backfill file queries), F82 (unexercised insert race), F83 (duplicate identity), F91 (foreign duplicate disclosure).
@@ -2055,7 +2055,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** M11, M12, M15
 - **Size:** M, ~5 commits
 
-### M23 [ ] Audit: Deterministic activity parser and command tests
+### M23 [-] Audit: Deterministic activity parser and command tests
 
 - **Goal:** Make import safeguards testable independently of CI speed, allocator behavior and unrelated startup failures.
 - **Includes:** F71, F72 (compressed-import settings), F95 (startup failure reason), F96 (Strava settings), F103 (TCX exception syntax), F104 (timing assertion), F105 (memory assertions).
@@ -2063,7 +2063,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** M11, M12
 - **Size:** M, ~4 commits
 
-### M24 [ ] Audit: Athlete facts and threshold reconciliation
+### M24 [-] Audit: Athlete facts and threshold reconciliation
 
 - **Goal:** Give profile facts and threshold updates one implementation per rule while preserving source priority and user isolation.
 - **Includes:** F111 (best-time priority documentation), F112 (duplicated body and training mapping), F113 (duplicated reconciliation), F127 (ID substring assertions), F128 (threshold substring assertions).
@@ -2071,7 +2071,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** M15, M22
 - **Size:** M, ~4 commits
 
-### M25 [ ] Audit: Threshold and sync regression tests
+### M25 [-] Audit: Threshold and sync regression tests
 
 - **Goal:** Make every threshold refusal, source ordering and timestamp assertion identify the specific behavior under test.
 - **Includes:** F137 (broad sync exception), F139 (implicit sport cases), F143 (wall-clock ordering), F144 (heart-rate ordering cases), F145 (inconsistent user fixtures), F146 (duplicated maximum-heart-rate setup).
@@ -2079,7 +2079,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** M24
 - **Size:** M, ~4 commits
 
-### M26 [ ] Audit: Availability form, period refresh and API contracts
+### M26 [-] Audit: Availability form, period refresh and API contracts
 
 - **Goal:** Keep availability edits, list refreshes and field validation consistent from the Angular form to persisted records.
 - **Includes:** F597 (response decoder), F603 (fixed-session duration), F685 (form construction), F688 (stale period refresh), F177 (constraint identity), F183 (read-back ID), F186 (preference ordering), F188 (sports-list ordering).
@@ -2087,7 +2087,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** M13, M14
 - **Size:** L, ~6 commits
 
-### M27 [ ] Audit: Provider configuration and pricing races
+### M27 [-] Audit: Provider configuration and pricing races
 
 - **Goal:** Prevent stale provider calls and concurrent price edits from corrupting the athlete’s current configuration.
 - **Includes:** F224 (price count and creation races), F225 (stale completion status), F244 (fixed error text), F245 (corrupt-key setup), F249 (test recorder annotation).
@@ -2095,7 +2095,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** M7
 - **Size:** M, ~5 commits
 
-### M28 [ ] Audit: Intervals connection checks and recovery
+### M28 [-] Audit: Intervals connection checks and recovery
 
 - **Goal:** Keep connection checks responsive and ensure users see the outcome for their current Intervals.icu credentials.
 - **Includes:** F308 (stale invalidation), F309 (synchronous retry waits), F319, F320 (secret-error assertions), F630 (disconnecting an absent connection), F631 (malformed replies), F675 (silent status failure).
@@ -2103,7 +2103,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** -
 - **Size:** L, ~6 commits
 
-### M29 [ ] Audit: Scheduler retry accounting and failure isolation
+### M29 [-] Audit: Scheduler retry accounting and failure isolation
 
 - **Goal:** Record real attempt times and keep one athlete’s scheduling failure from blocking others or bypassing retry limits.
 - **Includes:** F325 (missing retry week), F326 (per-user failure boundary), F327 (unexpected error diagnostics), F328 (attempt times), F329 (first settings PATCH), F338 (frozen loop clock), F342 (weekly run constraint).
@@ -2111,7 +2111,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** M19, M28
 - **Size:** L, ~7 commits
 
-### M30 [ ] Audit: Job runner fixtures and side-effect guarantees
+### M30 [-] Audit: Job runner fixtures and side-effect guarantees
 
 - **Goal:** Prove what scheduled syncs and reviews store and which external actions they can take.
 - **Includes:** F346 (unused helpers), F347 (duplicated runner fixtures), F349 (job log contents), F351 (review confirmation and push coverage).
@@ -2119,7 +2119,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** M29
 - **Size:** S, ~3 commits
 
-### M31 [ ] Audit: Atomic chat actions and illness across weeks
+### M31 [-] Audit: Atomic chat actions and illness across weeks
 
 - **Goal:** Keep replies, drafts and absences consistent when illness or its return period extends beyond the selected week.
 - **Includes:** F192 (cross-week illness), F193 (minimum-duration behavior), F194 (partial chat writes), F195 (conflicting sick-day actions), F196 (action parser structure).
@@ -2127,7 +2127,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** M8, M9, M10, M13
 - **Size:** L, ~7 commits
 
-### M32 [ ] Audit: Chat briefing and response tests
+### M32 [-] Audit: Chat briefing and response tests
 
 - **Goal:** Give chat tests stable briefing data and distinguish authentication failures from malformed coach responses.
 - **Includes:** F208, F209 (shared clock), F210 (wellness seeding), F573 (reply object checks), F605 (generic rejection), F606 (untested 401 handling).
@@ -2135,7 +2135,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** M16, M31
 - **Size:** M, ~4 commits
 
-### M33 [ ] Audit: Weekly generation, rule and export contracts
+### M33 [-] Audit: Weekly generation, rule and export contracts
 
 - **Goal:** Make week-planning tests verify what the coach receives, what the rules report and what confirmation exports.
 - **Includes:** F361 (weekly note disclosure), F402 (one-minute request), F408 (briefing keys), F413 (replacement push behavior), F416 (rule purity), F422 (sport ordering), F642 (zone range documentation).
@@ -2143,7 +2143,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** M8, M9, M24
 - **Size:** M, ~5 commits
 
-### M34 [ ] Audit: Review, dashboard and season totals
+### M34 [-] Audit: Review, dashboard and season totals
 
 - **Goal:** Make review figures, completed minutes and next-workout selection consistent across athlete-facing summaries.
 - **Includes:** F288 (next-workout ordering), F291 (eight-week chart boundary), F430 (duplicated figures mapping), F445 (comment response redaction), F464 (duration aggregation).
@@ -2151,7 +2151,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** M6, M10
 - **Size:** M, ~5 commits
 
-### M35 [ ] Audit: Season race coverage and stored-plan recovery
+### M35 [-] Audit: Season race coverage and stored-plan recovery
 
 - **Goal:** Preserve races at the season boundary and make malformed historical season data diagnosable.
 - **Includes:** F469 (silent corrupt-plan fallback), F470 (B race after the main race), F471 (missing skeleton keys), F480 (absence query test), F481 (empty-skeleton briefing), F483 (season fixtures), F512 (race-week phase).
@@ -2159,7 +2159,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** M10, M34
 - **Size:** L, ~6 commits
 
-### M36 [ ] Audit: Season prompt, rules and schema tests
+### M36 [-] Audit: Season prompt, rules and schema tests
 
 - **Goal:** Make season contract tests fail when a prompt, race rule, documented check or parsed plan is wrong.
 - **Includes:** F495 (prompt self-comparison), F501 (vacuous race assertion), F507 (unchecked successful parse), F482 (hard-coded rule counts).
@@ -2167,7 +2167,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** M35
 - **Size:** M, ~4 commits
 
-### M37 [ ] Audit: Sign-in, pending flows and account deletion outcomes
+### M37 [-] Audit: Sign-in, pending flows and account deletion outcomes
 
 - **Goal:** Make authentication state and page messages reflect what actually happened to the session or account.
 - **Includes:** F584 (login throttling), F585 (auth API coverage), F590 (hidden initialization defects), F591 (loading after refusal), F592 (generic rejection), F681, F682 (pending MFA and verification), F706 (navigation after deletion).
@@ -2175,7 +2175,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** M5, M20
 - **Size:** L, ~6 commits
 
-### M38 [ ] Audit: Profile, provider and goal form feedback
+### M38 [-] Audit: Profile, provider and goal form feedback
 
 - **Goal:** Preserve athlete edits during saves and show every actionable validation error.
 - **Includes:** F678 (device time zone failure), F680 (edits during body-data save), F692 (provider-wide errors), F694 (hidden goal field errors).
@@ -2183,7 +2183,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** M15, M17, M27
 - **Size:** M, ~4 commits
 
-### M39 [ ] Audit: Season client conflicts and reassessment decoding
+### M39 [-] Audit: Season client conflicts and reassessment decoding
 
 - **Goal:** Give season generation and change requests accurate conflict messages and validate reassessment data consistently.
 - **Includes:** F658, F659 (unknown 409 responses), F660 (reassessment decoder), F652 (confirmed-load coverage), F653 (duplicated HTTP test setup).
@@ -2191,7 +2191,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** M17, M35
 - **Size:** M, ~5 commits
 
-### M40 [ ] Audit: Weekly plan editor state
+### M40 [-] Audit: Weekly plan editor state
 
 - **Goal:** Keep validation findings, field errors and busy state attached to the plan or workout currently displayed.
 - **Includes:** F697 (stale plan checks), F698 (busy state during refresh), F699 (stale workout errors).
@@ -2199,7 +2199,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** M33
 - **Size:** S, ~3 commits
 
-### M41 [ ] Audit: Season page refresh, notices and chart scale
+### M41 [-] Audit: Season page refresh, notices and chart scale
 
 - **Goal:** Keep season actions exclusive through refresh and make charts and failure notices accurate.
 - **Includes:** F704 (busy state cleared early), F705 (hidden reload failure), F713 (suppressed notice defects), F702 (fourth-week label coverage), F703 (unbounded axis steps).
@@ -2207,7 +2207,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** M39
 - **Size:** M, ~5 commits
 
-### M42 [ ] Audit: Theme lifecycle and accessible dialogs
+### M42 [-] Audit: Theme lifecycle and accessible dialogs
 
 - **Goal:** Keep theme changes and modal navigation predictable across repeated initialization and viewport changes.
 - **Includes:** F547 (duplicated dark tokens), F666 (theme listener lifecycle), F709 (hidden open More dialog), F712 (padding treated as backdrop).
@@ -2215,7 +2215,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** -
 - **Size:** M, ~4 commits
 
-### M43 [ ] Audit: Frontend test isolation and rendering
+### M43 [-] Audit: Frontend test isolation and rendering
 
 - **Goal:** Make component tests independent of suite order and ensure their shared rendering helper updates the DOM.
 - **Includes:** F690, F691 (connection dialog mocks), F707 (global URL mocks), F708, F711 (security and shared dialog mocks), F714 (settling and change detection).
@@ -2223,7 +2223,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** M37, M42
 - **Size:** S, ~3 commits
 
-### M44 [ ] Audit: Roadmap status and documentation checks
+### M44 [-] Audit: Roadmap status and documentation checks
 
 - **Goal:** Make project status, integration evidence and operator instructions agree with the behavior delivered by the repository.
 - **Includes:** F529 (completed features listed as open), F530 (manual checks versus delivery status), F539 (Intervals evidence), F531 (sync-before-draft wording), F353 (job log promises), F354 (job ordering assertions), F392 (skipped documentation rows).
