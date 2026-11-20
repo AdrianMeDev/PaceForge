@@ -516,7 +516,7 @@ What you should know:
   does not. A gzip-compressed file (`.fit.gz`, `.tcx.gz`, `.gpx.gz`) is unpacked first, in memory,
   and what is stored (and compared for duplicates) is the unpacked file, so the same activity as
   `.fit` and as `.fit.gz` is one. It may not unpack to more than the limit below. Zip archives are
-  refused with "The file is neither a FIT, a TCX nor a GPX file".
+  refused with "This file format is not supported.".
 - **A GPX file has less in it.** It is a list of points with a time and, where the app wrote it, a
   heart rate. The start, the elapsed time (first to last point), the distance (added up from the
   points) and the average and maximum heart rate are stored; there is no moving time, no power, no
@@ -575,7 +575,13 @@ uv run python manage.py import_strava ~/Downloads/export_12345.zip --user you@ex
   skipped because you have them already, recordings that cannot be read or are not in the export,
   and lines of the list that could not be read. Estimated thresholds are refreshed once at the end.
 - **No limit of the page applies** (30 a minute); each recording is still limited to
-  `ACTIVITY_UPLOAD_MAX_BYTES` after unpacking, and nothing is ever extracted to disk.
+  `ACTIVITY_UPLOAD_MAX_BYTES` after unpacking, and nothing is ever extracted to disk. Each run
+  has a shared 2 GiB unpacking budget (the CSV, ZIP members and gzip output) and at most 10,000
+  recording parse attempts. Failed reads reserve their full output allowance. Repeated filenames
+  are processed once and reuse the first outcome. Nested gzip is unreadable. Exhausting either
+  budget stops the command with an error. A missing archive, an unreadable file and a non-ZIP file
+  each stop with a distinct error. Activities already saved remain, and their estimated thresholds
+  are refreshed.
 - **English and German exports are read.** `activities.csv` comes in the language of the archive
   and is read by the names of its columns (*Activity ID*, *Activity Date*, *Activity Type*,
   *Elapsed Time*, *Distance*, *Filename*, in German *Aktivitäts-ID*, *Aktivitätsdatum*,
@@ -583,8 +589,9 @@ uv run python manage.py import_strava ~/Downloads/export_12345.zip --user you@ex
   AM` or `14.11.2026, 17:14:38`, both UTC) and its decimal commas. The German names of the types
   are those of a real export (Lauf, Radfahrt, Virtuelle Radfahrt, Wandern, Spaziergang, Training)
   plus the likely ones (Trail-Lauf, Schwimmen, Krafttraining, …); a type it does not know is
-  *other*. Another language is refused with a message that says so. A line whose date or number
-  cannot be read is skipped and counted.
+  *other*. Another language is refused with a message that says so. A line whose date, number or
+  filename cannot be read (including a filename over 1,000 characters) is skipped as unreadable
+  and never creates a manual activity.
 - **Check it.** After the first run open **Activities**: the count there is the sum of what was
   imported.
 
@@ -1819,7 +1826,7 @@ Set in `.env` or in the environment. Values without a default are required.
 - **`Port 4200 is already in use` / `That port is already in use`.** Another dev server is running.
   Stop it, or start this one elsewhere: `uv run python manage.py runserver 8010` together with
   `npx ng serve --port 4210 --proxy-config <file>` that points `/api` to that port.
-- **An import says "The file is neither a FIT, a TCX nor a GPX file".** The file is a zip
+- **An import says "This file format is not supported.".** The file is a zip
   archive, a format of another kind or something else. Unpack it (a `.gz` file is read as it is), or
   export FIT, TCX or GPX instead.
 - **Importing a big file fails with "413" or an error page before PaceForge answers.** A reverse

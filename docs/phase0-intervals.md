@@ -122,6 +122,16 @@ Base URL `https://intervals.icu/api/v1`. All paths below start with `/athlete/{i
   (and the **Sync from Intervals.icu** button on the Activities page) imports non-Strava activities
   from the last 8–12 weeks (`INTERVALS_SYNC_WEEKS`), skipping Strava stubs and duplicates.
 
+### Strava bulk import work limits
+
+The bulk importer counts the CSV, ZIP member output and one gzip layer against a shared 2 GiB
+budget per run. Failed reads reserve their full output allowance. One extra byte may be produced
+to detect exhaustion. It attempts at most 10,000 recording parses and processes each filename
+once. A nested gzip recording is counted as unreadable. Individual oversized recordings are
+skipped while the shared budget permits. Exhausting either budget stops the command with a fixed
+error. Previously saved activities remain. Estimated thresholds are refreshed even when the
+import stops early after saving activities.
+
 ### Real activity files (checked 2026-11-13, no personal values recorded)
 
 | | FIT (COROS, run) | TCX (COROS, run) |

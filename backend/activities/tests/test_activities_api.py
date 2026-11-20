@@ -14,6 +14,8 @@ from accounts.models import User
 from accounts.tests.conftest import AuthApi
 from activities import services
 from activities.models import Activity, ActivityFile
+from activities.parsing import ActivityFileError, InvalidFileError, UnsupportedFileError
+from activities.views import EMPTY_FILE, INVALID_FILE, UNSUPPORTED_FILE
 from athletes.models import ThresholdValue
 
 from .conftest import make_user, signed_in
@@ -242,33 +244,53 @@ class TestRefusals:
     @pytest.mark.parametrize(
         ("name", "content", "status", "message"),
         [
-            ("empty.fit", b"", HTTPStatus.BAD_REQUEST, "The file is empty."),
-            (
-                "a.fit",
-                b"hello, this is text",
-                HTTPStatus.BAD_REQUEST,
-                "neither a FIT, a TCX nor a GPX",
-            ),
-            ("a.fit", activity_file()[:-30], HTTPStatus.BAD_REQUEST, None),
-            ("a.fit", activity_file(sessions=2), HTTPStatus.BAD_REQUEST, None),
+            ("empty.fit", b"", HTTPStatus.BAD_REQUEST, EMPTY_FILE),
+            ("a.fit", b"hello, this is text", HTTPStatus.BAD_REQUEST, UNSUPPORTED_FILE),
+            ("a.fit", activity_file()[:-30], HTTPStatus.BAD_REQUEST, INVALID_FILE),
+            ("a.fit", activity_file(sessions=2), HTTPStatus.BAD_REQUEST, UNSUPPORTED_FILE),
             (
                 "a.tcx",
                 tcx_document(prolog='<?xml version="1.0"?><!DOCTYPE x>'),
                 HTTPStatus.BAD_REQUEST,
-                "document type",
+                INVALID_FILE,
             ),
-            ("a.tcx", tcx_document()[:-40], HTTPStatus.BAD_REQUEST, None),
+            ("a.tcx", tcx_document()[:-40], HTTPStatus.BAD_REQUEST, INVALID_FILE),
         ],
     )
     def test_a_file_that_cannot_be_imported_stores_nothing(
-        self, alice: User, name: str, content: bytes, status: HTTPStatus, message: str | None
+        self, alice: User, name: str, content: bytes, status: HTTPStatus, message: str
     ) -> None:
         response = upload(signed_in(alice), content, name=name)
 
         assert response.status_code == status
-        assert set(body(response)) == {"detail"}
-        if message:
-            assert message in body(response)["detail"]
+        assert body(response) == {"detail": message}
+        assert counts() == (0, 0)
+
+    @pytest.mark.parametrize(
+        ("exc_type", "expected_message"),
+        [
+            (ActivityFileError, INVALID_FILE),
+            (UnsupportedFileError, UNSUPPORTED_FILE),
+            (InvalidFileError, INVALID_FILE),
+        ],
+    )
+    def test_parser_error_text_never_reaches_the_response(
+        self,
+        alice: User,
+        monkeypatch: pytest.MonkeyPatch,
+        exc_type: type[ActivityFileError],
+        expected_message: str,
+    ) -> None:
+        def raise_error(*args: Any, **kwargs: Any) -> Any:
+            raise exc_type("CANARY-0451-internal-parser-detail")
+
+        monkeypatch.setattr(services, "import_activity", raise_error)
+
+        response = upload(signed_in(alice), activity_file())
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert body(response) == {"detail": expected_message}
+        assert b"CANARY" not in response.content
         assert counts() == (0, 0)
 
     def test_a_request_without_a_file_field_is_refused(self, alice: User) -> None:

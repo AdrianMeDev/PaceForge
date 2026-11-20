@@ -1959,7 +1959,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** M9
 - **Size:** L, ~6 commits
 
-### M11 [ ] Audit: Strava archive work limits and import errors
+### M11 [x] Audit: Strava archive work limits and import errors
 
 - **Goal:** Bound the total work of a bulk import and give each failed recording an accurate, safe outcome.
 - **Includes:** F47 (repeated archive processing), F46 (overlong recording names), F50 (parser text in API errors), F97 (missing archive diagnosis).
@@ -2247,6 +2247,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 
 ## Changelog
 
+- 2026-11-20: M11 done: Strava bulk imports cap total unpacked bytes (2 GiB) and parsed recordings (10,000) and reuse the first outcome for repeated member filenames (F47); overlong recording filenames are counted as unreadable lines instead of creating manual activities (F46); activity upload errors return fixed messages without parser details (F50); missing, unreadable and malformed Strava archives produce distinct command errors (F97), with instrumented and regression tests.
 - 2026-11-20: M10 done: PostgreSQL protects confirmed and superseded season version metadata and ancestry (F463); review workout and activity links (F442) and weekly and season chat plan links (F204, F205) enforce same-owner references in the database; review correction distinguishes already-linked activities, deleted activities and other database errors (F431), with supersession and account deletion regression tests.
 - 2026-11-20: M9 done: PostgreSQL enforces workout and export ownership, workout week boundaries and ordered revision ancestry (F369, F386, F407). Historical workouts and plan contents stay frozen through direct writes and supersession (F367, F368). Regression tests cover confirmation, atomic replacement, restore-as-draft and account deletion.
 - 2026-11-20: M8 done: equivalent push confirmations share the push limit before external calls (F378); deeply nested generate and confirm bodies return handled client errors (F379); planning and chat diagnostics report unknown fields only at trusted parent paths (F380, F197); plan text rejects all bidirectional control marks (F381); planning and chat tests use escaped Unicode fixtures and guard against literal invisible marks (F420, F214), with parser, API and provider repair regression tests.
