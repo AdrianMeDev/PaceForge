@@ -586,6 +586,149 @@ class TestSecrecy:
         assert raised.value.__cause__ is None
         assert raised.value.__suppress_context__
 
+    @pytest.mark.parametrize(
+        "bad_key",
+        [
+            "sk-bad\nX-Injected: 1",
+            "sk-bad\rX-Injected: 1",
+            "sk-bad\x00key",
+            "sk-bad-🔑",
+            "sk-bad-ä",
+        ],
+        ids=["newline", "carriage-return", "nul", "emoji", "non-ascii"],
+    )
+    def test_invalid_api_key_characters_are_rejected_without_leaking_or_sending(
+        self,
+        fake: FakeProvider,
+        base: str,
+        caplog: pytest.LogCaptureFixture,
+        bad_key: str,
+    ) -> None:
+        caplog.set_level(logging.DEBUG)
+        fake.reply(ANSWER)
+
+        with pytest.raises(ProviderError) as raised:
+            provider(base, bad_key).complete("", HELLO, 10)
+
+        assert type(raised.value) is ProviderError
+        assert fake.requests == []
+        everything = "".join(traceback.format_exception(raised.value)) + str(raised.value)
+        everything += repr(raised.value) + caplog.text
+        assert bad_key not in everything
+        assert "sk-bad" not in everything
+        assert "bearer" not in everything.lower()
+        assert raised.value.__cause__ is None
+        assert raised.value.__context__ is None or raised.value.__suppress_context__
+
+    @pytest.mark.parametrize(
+        ("headers", "secret"),
+        [
+            ({"": "secret-val"}, "secret-val"),
+            ({"Bad Name": "secret-val"}, "Bad Name"),
+            ({"Bad:Name": "secret-val"}, "Bad:Name"),
+            ({"Bad\nName": "secret-val"}, "Bad\nName"),
+            ({"Bad-ä": "secret-val"}, "Bad-ä"),
+            ({"X-Api-Key": "secret\nval"}, "secret\nval"),
+            ({"X-Api-Key": "secret\rval"}, "secret\rval"),
+            ({"X-Api-Key": "secret\x00val"}, "secret\x00val"),
+            ({"X-Api-Key": "secret\x7fval"}, "secret\x7fval"),
+            ({"X-Api-Key": "secret-ä"}, "secret-ä"),
+        ],
+        ids=[
+            "empty-name",
+            "space-in-name",
+            "colon-in-name",
+            "newline-in-name",
+            "non-ascii-name",
+            "newline-in-value",
+            "cr-in-value",
+            "nul-in-value",
+            "del-in-value",
+            "non-ascii-value",
+        ],
+    )
+    def test_post_json_rejects_invalid_headers_without_leaking_or_sending(
+        self,
+        fake: FakeProvider,
+        caplog: pytest.LogCaptureFixture,
+        headers: dict[str, str],
+        secret: str,
+    ) -> None:
+        caplog.set_level(logging.DEBUG)
+        fake.reply(ANSWER)
+
+        with pytest.raises(ProviderError) as raised:
+            transport.post_json(fake.url + "/v1/chat/completions", headers, {"ok": True})
+
+        assert type(raised.value) is ProviderError
+        assert fake.requests == []
+        everything = "".join(traceback.format_exception(raised.value)) + str(raised.value)
+        everything += repr(raised.value) + caplog.text
+        assert secret not in everything
+        assert "x-api-key" not in everything.lower()
+        assert raised.value.__cause__ is None
+        assert raised.value.__context__ is None or raised.value.__suppress_context__
+
+    @pytest.mark.parametrize(
+        "headers",
+        [
+            {"X-Api-Key\nInjected": "secret-val"},
+            {"X-Api-Key": "secret\nval"},
+            {"X-Api-Key": "secret-ä"},
+        ],
+        ids=["bad-name", "bad-value", "non-ascii-value"],
+    )
+    def test_a_rejected_header_does_not_chain_a_pending_error_into_the_traceback(
+        self,
+        fake: FakeProvider,
+        caplog: pytest.LogCaptureFixture,
+        headers: dict[str, str],
+    ) -> None:
+        caplog.set_level(logging.DEBUG)
+        fake.reply(ANSWER)
+
+        # The caller is already handling an error that names the key; the fixed message must
+        # not drag that error (and the key in it) into the traceback.
+        try:
+            raise ValueError(f"bad header value {KEY}")
+        except ValueError:
+            with pytest.raises(ProviderError) as raised:
+                transport.post_json(fake.url + "/v1/chat/completions", headers, {"ok": True})
+
+        assert type(raised.value) is ProviderError
+        assert fake.requests == []
+        assert raised.value.__cause__ is None
+        assert raised.value.__suppress_context__
+        everything = "".join(traceback.format_exception(raised.value)) + str(raised.value)
+        everything += repr(raised.value) + caplog.text
+        assert KEY not in everything
+        assert "secret" not in everything
+        assert "bad header value" not in everything
+
+    def test_post_json_wraps_value_error_from_request_or_open_without_leaking(
+        self,
+        fake: FakeProvider,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        caplog.set_level(logging.DEBUG)
+
+        def fail_open(*args: object, **kwargs: object) -> object:
+            raise ValueError(f"bad header value {KEY}")
+
+        monkeypatch.setattr(transport._opener, "open", fail_open)
+
+        with pytest.raises(ProviderError) as raised:
+            transport.post_json(fake.url, {"Authorization": f"Bearer {KEY}"}, {"ok": True})
+
+        assert type(raised.value) is ProviderError
+        assert fake.requests == []
+        everything = "".join(traceback.format_exception(raised.value)) + str(raised.value)
+        everything += repr(raised.value) + caplog.text
+        assert KEY not in everything
+        assert raised.value.__cause__ is None
+        assert raised.value.__suppress_context__
+
 
 @pytest.mark.django_db
 class TestChoosingTheAdapter:
