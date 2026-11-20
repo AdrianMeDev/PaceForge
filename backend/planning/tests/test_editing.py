@@ -753,6 +753,28 @@ class TestRefusingAChange:
 
 
 class TestRestoring:
+    @pytest.mark.parametrize("status", ["superseded", "discarded"])
+    def test_restore_preserves_complete_history_and_creates_distinct_draft(
+        self, alice: User, status: str
+    ) -> None:
+        if status == "superseded":
+            old, _ = self.two_versions(alice)
+        else:
+            old = services.save_draft(alice, good_week(THIS_WEEK), note="Original note")
+            services.discard(alice, old.pk)
+        before = list(WeeklyPlan.objects.order_by("version").values())
+        rows = list(PlannedWorkout.objects.order_by("id").values())
+
+        again = restore(alice, old.pk)
+
+        assert again.pk != old.pk
+        assert (again.status, again.parent_id, again.confirmed_at) == ("draft", old.pk, None)
+        assert again.version == max(row["version"] for row in before) + 1
+        assert services.load(alice, again.pk) == services.load(alice, old.pk)
+        assert {w.pk for w in workouts_of(again)}.isdisjoint(w.pk for w in workouts_of(old))
+        assert list(WeeklyPlan.objects.exclude(pk=again.pk).order_by("version").values()) == before
+        assert list(PlannedWorkout.objects.exclude(plan=again).order_by("id").values()) == rows
+
     def two_versions(self, user: User) -> tuple[WeeklyPlan, WeeklyPlan]:
         old = confirmed(user)
         newer = services.save_draft(user, good_week(THIS_WEEK, "Second"), parent=old.pk)

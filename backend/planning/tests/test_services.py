@@ -825,16 +825,48 @@ class TestConfirming:
         assert "day_in_absence" in [f.code for f in raised.value.report.errors]
         assert WeeklyPlan.objects.get(pk=plan.pk).status == Status.DRAFT
 
-    def test_the_next_version_replaces_the_confirmed_one(self, alice: User) -> None:
+    def test_the_next_version_replaces_the_confirmed_one(
+        self, alice: User, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         first = confirm(alice, draft(alice).pk)
+        contents = load(alice, first.pk)
+        history = WeeklyPlan.objects.filter(pk=first.pk).values().get()
+        workouts = list(first.workouts.values())
         second = draft(alice, parent=first.pk, reason="Changed")
+        later = NOW + timedelta(hours=1)
+        monkeypatch.setattr(services, "_now", lambda: later)
 
         confirm(alice, second.pk)
 
         old, new = WeeklyPlan.objects.get(pk=first.pk), WeeklyPlan.objects.get(pk=second.pk)
         assert (old.status, new.status) == (Status.SUPERSEDED, Status.CONFIRMED)
         assert old.confirmed_at == NOW  # the time of its own confirmation stays
+        assert new.confirmed_at == later
         assert WeeklyPlan.objects.filter(status=Status.CONFIRMED).count() == 1
+        assert load(alice, first.pk) == contents
+        assert list(old.workouts.values()) == workouts
+        assert WeeklyPlan.objects.filter(pk=first.pk).values().get() == {
+            **history,
+            "status": Status.SUPERSEDED,
+        }
+
+    def test_failure_after_supersession_rolls_back_both_versions(
+        self, alice: User, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        first = confirm(alice, draft(alice).pk)
+        second = draft(alice, parent=first.pk)
+        before = list(WeeklyPlan.objects.order_by("version").values())
+
+        def fail(*args: object) -> None:
+            # carry_over runs after the previous version has been superseded.
+            assert WeeklyPlan.objects.get(pk=first.pk).status == Status.SUPERSEDED
+            raise RuntimeError("Simulated carry-over failure")
+
+        monkeypatch.setattr(services, "carry_over", fail)
+        with pytest.raises(RuntimeError, match="Simulated carry-over failure"):
+            confirm(alice, second.pk)
+
+        assert list(WeeklyPlan.objects.order_by("version").values()) == before
 
     def test_a_refused_new_version_leaves_the_confirmed_one_in_force(self, alice: User) -> None:
         first = confirm(alice, draft(alice).pk)

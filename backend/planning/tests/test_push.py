@@ -449,9 +449,10 @@ class TestEventsThatWereSentBeforeTheLineageExisted:
     def test_a_key_made_from_the_id_of_a_workout_is_still_the_key_when_it_is_its_own_lineage(
         self, alice: User, calendar: Calendar
     ) -> None:
-        plan = confirmed(alice)
+        plan = services.save_draft(alice, good_week())
         # What the migration did to every workout that existed: its lineage is its own id.
         PlannedWorkout.objects.filter(plan=plan).update(lineage=F("pk"))
+        plan = services.confirm(alice, plan.pk)
         for row in PlannedWorkout.objects.filter(plan=plan):
             assert external_id(row.lineage) == f"paceforge-{row.pk}"
 

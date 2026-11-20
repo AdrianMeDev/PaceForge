@@ -2,7 +2,7 @@ from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
-from django.db import connection
+from django.db import IntegrityError, connection, transaction
 from django.test.utils import CaptureQueriesContext
 
 from accounts.models import User
@@ -172,14 +172,18 @@ class TestConfirmedWeekLoad:
 
         assert planned_week_load(alice, [season_week()]) == {MONDAY: {"running": 110}}
 
-    def test_a_workout_owned_by_another_user_is_excluded(self, alice: User) -> None:
+    def test_a_confirmed_workout_cannot_be_given_to_another_user(self, alice: User) -> None:
         bob = User.objects.create_user("bob@example.com")
         stored = confirmed(
             alice, WeekPlan(MONDAY, (Workout(MONDAY, Sport.RUNNING, "Run", Goal.THRESHOLD, 60),))
         )
-        PlannedWorkout.objects.filter(plan=stored).update(owner=bob)
+        before = planned_week_load(alice, [season_week()])
+        with pytest.raises(IntegrityError, match="planning_workout_history"), transaction.atomic():
+            PlannedWorkout.objects.filter(plan=stored).update(owner=bob)
 
-        assert planned_week_load(alice, [season_week()]) == {MONDAY: {}}
+        assert PlannedWorkout.objects.get(plan=stored).owner_id == alice.pk
+        assert planned_week_load(alice, [season_week()]) == before
+        assert planned_week_load(bob, [season_week()]) == {MONDAY: {"running": 110}}
 
     @pytest.mark.parametrize("count", [1, 52])
     def test_one_query_for_many_weeks_and_workouts(self, alice: User, count: int) -> None:
