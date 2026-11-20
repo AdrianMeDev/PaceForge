@@ -31,7 +31,7 @@ pytestmark = pytest.mark.django_db
 # The clock of the jobs tests is a Thursday; its week starts on Monday the 16th.
 THIS_MONDAY = date(2026, 11, 16)
 NEXT_MONDAY = THIS_MONDAY + timedelta(weeks=1)
-KEY = "sk-ant-test-0123456789-abcdefghij"
+KEY = "synthetic-test-token-abcdefghij"
 PATH = "/api/v1/athlete/0/activities"
 WELLNESS_PATH = "/api/v1/athlete/0/wellness"
 Status = WeeklyPlan.Status

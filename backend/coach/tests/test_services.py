@@ -24,7 +24,7 @@ from .fake_providers import FakeProvider, running
 
 pytestmark = pytest.mark.django_db
 
-KEY = "sk-ant-test-0123456789-abcdefghij"
+KEY = "synthetic-test-token-abcdefghij"
 NOW = datetime(2026, 11, 13, 12, 0, tzinfo=UTC)
 PROMPT = "A secret prompt about my knee"
 ANSWER_TEXT = "A secret answer about training"
@@ -170,6 +170,17 @@ class TestASuccessfulCall:
         ask(alice)
 
         assert stored_key(config.pk) == before
+
+    def test_the_key_is_encrypted_at_rest_and_never_recorded(
+        self, fake: FakeProvider, alice: User
+    ) -> None:
+        config = configure(alice)
+        fake.reply(ANSWER)
+
+        ask(alice)
+
+        assert KEY not in stored_key(config.pk)
+        assert all(KEY not in str(vars(record)) for record in records(alice))
 
     def test_neither_prompt_nor_answer_is_kept_anywhere(
         self, fake: FakeProvider, alice: User

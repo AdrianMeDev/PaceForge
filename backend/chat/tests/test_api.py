@@ -23,7 +23,7 @@ from season.models import SeasonPlanVersion
 pytestmark = pytest.mark.django_db
 
 URL = "/api/chat/messages/"
-KEY = "sk-ant-test-0123456789-abcdefghij"
+KEY = "synthetic-test-token-abcdefghij"
 MARKER = "SECRETMARKER"
 
 
