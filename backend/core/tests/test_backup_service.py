@@ -44,6 +44,21 @@ def recorded_password(record: Path) -> str:
     return (record.parent / "password.txt").read_text().removesuffix("\n")
 
 
+SECRET_MARKERS = (
+    "ENCRYPTION_KEY",
+    "BACKUP_ENCRYPTION_KEY",
+    "DJANGO_SECRET_KEY",
+    "DATABASE_URL",
+    "POSTGRES_PASSWORD",
+    "UNRELATED_SETTING",
+)
+
+
+def recorded_environment(record: Path) -> dict[str, str]:
+    lines = (record.parent / "env.txt").read_text().splitlines()
+    return dict(line.split("=", 1) for line in lines if "=" in line)
+
+
 @pytest.fixture
 def key() -> str:
     return new_key()
@@ -76,6 +91,7 @@ def stub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         tmp_path / "pg_dump_stub",
         f'printf "%s\\n" "$PGPASSWORD" > "{password}"\n'
         f'printf "%s\\n" "$@" > "{record}"\n'
+        f'env > "{tmp_path / "env.txt"}"\n'
         f'cat "{dump}"',
     )
     monkeypatch.setattr(backup, "PG_DUMP", str(script))
@@ -132,6 +148,28 @@ def test_create_backup_passes_password_by_environment_only(
     ]
     assert recorded_password(stub) == PASSWORD
     assert all(PASSWORD not in arg for arg in args)
+
+
+def test_create_backup_gives_pg_dump_only_the_libpq_environment(
+    stub: Path, out: Path, key: str, monkeypatch: pytest.MonkeyPatch, settings: Any
+) -> None:
+    settings.DATABASES = {
+        **settings.DATABASES,
+        "default": {**settings.DATABASES["default"], "PASSWORD": ""},
+    }
+    for name in SECRET_MARKERS:
+        monkeypatch.setenv(name, f"marker-{name}")
+    monkeypatch.setenv("PGPASSWORD", "inherited-password")
+    monkeypatch.setenv("PGSSLMODE", "require")
+
+    create_backup(out, [key])
+
+    child = recorded_environment(stub)
+    assert not any(name in child for name in SECRET_MARKERS)
+    assert not any("marker-" in value for value in child.values())
+    assert "PGPASSWORD" not in child
+    assert child["PATH"] == os.environ["PATH"]
+    assert child["PGSSLMODE"] == "require"
 
 
 def test_create_backup_cleans_up_when_pg_dump_fails(

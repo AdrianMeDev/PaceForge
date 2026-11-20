@@ -8,6 +8,7 @@ The test needs ``pg_dump`` and ``pg_restore`` of PostgreSQL 17. It uses the ones
 import base64
 import os
 import re
+import shlex
 import shutil
 import stat
 import subprocess
@@ -58,6 +59,9 @@ def _native_tool(name: str) -> str | None:
     return None
 
 
+_DOCKER_VARIABLES = ("DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG", "XDG_RUNTIME_DIR")
+
+
 def _compose_wrapper(directory: Path, name: str) -> str | None:
     """A script that runs ``name`` in the ``db`` container, with stdin and PGPASSWORD passed on."""
     docker = shutil.which("docker")
@@ -65,7 +69,13 @@ def _compose_wrapper(directory: Path, name: str) -> str | None:
         return None
     script = directory / name
     command = f'exec "{docker}" compose -f "{COMPOSE_FILE}" exec -T -e PGPASSWORD db {name} "$@"'
-    script.write_text(f"#!/bin/sh\n{command}\n")
+    # The tools get a minimal environment, so hand docker the variables it needs to find the daemon.
+    exports = "".join(
+        f"export {variable}={shlex.quote(os.environ[variable])}\n"
+        for variable in _DOCKER_VARIABLES
+        if variable in os.environ
+    )
+    script.write_text(f"#!/bin/sh\n{exports}{command}\n")
     script.chmod(0o700)
     return str(script)
 

@@ -52,6 +52,21 @@ def recorded_password(record: Path) -> str:
     return (record.parent / "password.txt").read_text().removesuffix("\n")
 
 
+SECRET_MARKERS = (
+    "ENCRYPTION_KEY",
+    "BACKUP_ENCRYPTION_KEY",
+    "DJANGO_SECRET_KEY",
+    "DATABASE_URL",
+    "POSTGRES_PASSWORD",
+    "UNRELATED_SETTING",
+)
+
+
+def recorded_environment(record: Path) -> dict[str, str]:
+    lines = (record.parent / "env.txt").read_text().splitlines()
+    return dict(line.split("=", 1) for line in lines if "=" in line)
+
+
 @pytest.fixture
 def database(settings: Any) -> dict[str, str]:
     target = {
@@ -78,6 +93,7 @@ def stub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         tmp_path / "pg_restore_stub",
         f'printf "%s\\n" "$PGPASSWORD" > "{password}"\n'
         f'printf "%s\\n" "$@" > "{record}"\n'
+        f'env > "{tmp_path / "env.txt"}"\n'
         f'cat > "{received}"',
     )
     monkeypatch.setattr(backup, "PG_RESTORE", str(script))
@@ -124,6 +140,34 @@ def test_restore_into_empty_database_streams_decrypted_dump(
     assert recorded_password(stub) == PASSWORD
     assert args == [*RESTORE_OPTIONS, *CONNECTION]
     assert all(PASSWORD not in arg for arg in args)
+
+
+def test_restore_gives_pg_restore_only_the_libpq_environment(
+    stub: Path,
+    emptiness: Emptiness,
+    backup_file: Path,
+    key: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    settings: Any,
+) -> None:
+    settings.DATABASES = {
+        **settings.DATABASES,
+        "default": {**settings.DATABASES["default"], "PASSWORD": ""},
+    }
+    for name in SECRET_MARKERS:
+        monkeypatch.setenv(name, f"marker-{name}")
+    monkeypatch.setenv("PGPASSWORD", "inherited-password")
+    monkeypatch.setenv("PGSSLMODE", "require")
+
+    run(str(backup_file), "--key-file", _key_file(tmp_path, key))
+
+    child = recorded_environment(stub)
+    assert not any(name in child for name in SECRET_MARKERS)
+    assert not any("marker-" in value for value in child.values())
+    assert "PGPASSWORD" not in child
+    assert child["PATH"] == os.environ["PATH"]
+    assert child["PGSSLMODE"] == "require"
 
 
 def _key_file(tmp_path: Path, key: str) -> str:

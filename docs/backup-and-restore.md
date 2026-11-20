@@ -25,6 +25,7 @@ The file is named after the UTC time it was made, for example
 plain dump never touches the disk. The output is AES-256-GCM in chunks, with `BACKUP_ENCRYPTION_KEY`.
 Each chunk is checked on restore, and any change, a missing end or a reordered chunk is refused.
 The file is written with mode `0600`, and it appears under its final name only when it is complete.
+The PostgreSQL tools get only their own variables, never the keys.
 
 ## Two keys, stored apart
 
