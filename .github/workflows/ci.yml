@@ -32,9 +32,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
-      # Throw-away values for the CI database and test runs only.
-      DJANGO_SECRET_KEY: ci-only-secret-key-not-for-production
-      ENCRYPTION_KEY: 3VhtVIgjC8S15ZApZIqUaGw52HQvk1KVgF2w1PkHWWk=
+      # Throw-away database for the CI test runs only.
       DATABASE_URL: postgres://paceforge:paceforge-ci@localhost:5432/paceforge
     defaults:
       run:
@@ -57,6 +55,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends postgresql-client-17
       - run: uv sync --frozen
+      # Fresh keys for every run: none is committed, and the masked values never reach the log.
+      - name: Generate Django and encryption keys
+        run: |
+          encryption_key="$(uv run python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
+          secret_key="$(uv run python -c 'import secrets; print(secrets.token_urlsafe(48))')"
+          echo "::add-mask::$encryption_key"
+          echo "::add-mask::$secret_key"
+          echo "ENCRYPTION_KEY=$encryption_key" >> "$GITHUB_ENV"
+          echo "DJANGO_SECRET_KEY=$secret_key" >> "$GITHUB_ENV"
       - run: uv run ruff format --check .
       - run: uv run ruff check .
       - run: uv run mypy .

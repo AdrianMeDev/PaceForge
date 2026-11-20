@@ -1887,7 +1887,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** -
 - **Size:** M, ~5 commits
 
-### M2 [ ] Audit: CI trust and test credentials
+### M2 [~] Audit: CI trust and test credentials
 
 - **Goal:** Make CI verify its package source and keep reusable or live-looking keys out of workflows and test fixtures.
 - **Includes:** F5 (CI encryption key), F6 (CI Django key), F8 (PostgreSQL signing key), F401 (weekly generation fixture), F488 (season generation fixture), F207, F215, F252, F345, F446, F494, F499, F609 (related provider fixtures).
