@@ -262,7 +262,8 @@ their account with all its data. Both are on the **Security** page (`/settings/s
 **Your data** and **Delete account** cards. Deleting asks for the email address, the password and,
 when two-factor authentication is on, a code; it never removes the data at Intervals.icu, and the
 last active administrator cannot be deleted. The export holds only your own data and no keys,
-passwords or activity files. Backups made before a deletion keep the data until they are removed.
+passwords or activity files. Connection exports include only explicitly listed metadata fields.
+Backups made before a deletion keep the data until they are removed.
 The details, the file format and the API are in [docs/account-data.md](docs/account-data.md).
 
 ## Connections

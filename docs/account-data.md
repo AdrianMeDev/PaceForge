@@ -121,7 +121,9 @@ if it should stay deleted.
 ## For developers
 
 - `backend/accounts/services/export.py`: `build_user_export` builds the file. Every model is read
-  through `for_user()`. A new field is exported by default; a new secret must be an encrypted field
+  through `for_user()`. `integrations` uses the explicit metadata allowlist
+  `INTEGRATION_EXPORT_FIELDS`. New connection fields are omitted unless added to that list.
+  In other sections, a new field is exported by default; a new secret must be an encrypted field
   or be listed as excluded.
 - `backend/accounts/services/deletion.py`: `delete_account` checks the request and deletes the user.
   The rest is removed by the cascade of the user row.

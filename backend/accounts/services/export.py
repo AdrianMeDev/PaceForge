@@ -4,8 +4,9 @@
 user can get in. What never goes in: the password hash, the second factor (secret and recovery
 codes), API keys and anything else that is a credential, the uploaded activity files (they hold
 the whole track) and the fields that only serve the import (``source_hash``, ``external_id``,
-``best_efforts``). A new field is exported by default; a new secret must be added to the
-``exclude`` of its section or be an ``EncryptedTextField``, which is always left out.
+``best_efforts``). Integrations use an explicit metadata allowlist. In other sections a new
+field is exported by default; a new secret must be added to the ``exclude`` of its section or
+be an ``EncryptedTextField``, which is always left out.
 """
 
 import json
@@ -41,7 +42,22 @@ from wellness.models import DailyWellness
 # Bump when a section changes in a way that a reader of the file has to know about.
 EXPORT_VERSION = 1
 
+INTEGRATION_EXPORT_FIELDS = (
+    "provider",
+    "athlete_id",
+    "status",
+    "connected_at",
+    "last_checked_at",
+    "last_sync_at",
+    "last_sync_error",
+)
+
 Row = dict[str, Any]
+
+
+def _integration_row(connection: ProviderConnection) -> Row:
+    """Copy only approved connection metadata, even when new plain fields are added."""
+    return {name: getattr(connection, name) for name in INTEGRATION_EXPORT_FIELDS}
 
 
 def _row(instance: models.Model, exclude: Iterable[str] = ()) -> Row:
@@ -124,7 +140,10 @@ def build_user_export(user: User) -> dict[str, Any]:
             "usage": _rows(AIUsageRecord.objects.for_user(user)),
             "prices": _rows(AIModelPrice.objects.for_user(user)),
         },
-        "integrations": _rows(ProviderConnection.objects.for_user(user)),
+        "integrations": [
+            _integration_row(connection)
+            for connection in ProviderConnection.objects.for_user(user).order_by("pk")
+        ],
         "automation": {
             "settings": _one(JobSettings.objects.for_user(user).first()),
             "runs": _rows(JobRun.objects.for_user(user)),

@@ -1919,7 +1919,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** M3
 - **Size:** L, ~7 commits
 
-### M6 [~] Audit: Authenticated views, owner assignment and account exports
+### M6 [x] Audit: Authenticated views, owner assignment and account exports
 
 - **Goal:** Make authentication, ownership and export disclosure explicit at the affected API boundaries.
 - **Includes:** F27 (integration export fields), F284 (sample serializer owner), F287 (dashboard authentication), F436 (review authentication), F17, F310, F330 (account, integration and job permissions).
@@ -2247,6 +2247,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 
 ## Changelog
 
+- 2026-11-20: M6 done: account, dashboard, integration, job and review views require authentication explicitly (F17, F287, F310, F330, F436); ownership is assigned server-side on create and update, including `OwnedModelViewSet` (F284); integration exports use an explicit metadata allowlist (F27), with authentication, two-user ownership and export disclosure regression tests.
 - 2026-11-20: audit planned
 - 2026-11-20: M1 done: discrete `POSTGRES_*` settings, no hardcoded database passwords, docs for existing and new volumes
 - 2026-11-20: M2 done: CI generates fresh Django and Fernet keys per run and verifies the PGDG APT key fingerprint before trusting it; M2 test suites use synthetic provider markers, guarded by a regression test against `sk-ant-` literals

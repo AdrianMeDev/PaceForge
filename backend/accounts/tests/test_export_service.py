@@ -6,9 +6,15 @@ import pytest
 from allauth.mfa.models import Authenticator
 from allauth.mfa.recovery_codes.internal.auth import RecoveryCodes
 from allauth.mfa.totp.internal.auth import generate_totp_secret
+from django.db import connection, models
 
 from accounts.models import User
-from accounts.services.export import EXPORT_VERSION, build_user_export
+from accounts.services.export import (
+    EXPORT_VERSION,
+    INTEGRATION_EXPORT_FIELDS,
+    _integration_row,
+    build_user_export,
+)
 from activities.models import Activity, ActivityFile
 from athletes.models import AthleteProfile, BestTime, ThresholdValue
 from availability.models import (
@@ -21,6 +27,7 @@ from availability.models import (
 )
 from chat.models import ChatMessage
 from coach.models import AIModelPrice, AIProviderConfiguration, AIUsageRecord
+from core.fields import EncryptedTextField
 from goals.models import Goal
 from integrations.models import ProviderConnection
 from jobs.models import JobRun, JobSettings
@@ -216,6 +223,78 @@ def test_secrets_and_binary_files_are_not_exported() -> None:
     assert "api_key" not in data["integrations"][0]
     assert "hash-alpha" not in text
     assert "external-alpha" not in text
+
+
+@pytest.mark.parametrize("synced", [False, True])
+def test_integration_export_contains_exact_metadata(synced: bool) -> None:
+    user = make_user("integration@example.com")
+    ProviderConnection.objects.create(
+        owner=user,
+        provider="intervals_icu",
+        api_key=INTERVALS_KEY,
+        athlete_id="i-export",
+        status="invalid",
+        connected_at=datetime(2026, 3, 1, 8, tzinfo=UTC),
+        last_checked_at=datetime(2026, 3, 2, 9, tzinfo=UTC),
+        last_sync_at=datetime(2026, 3, 2, 8, tzinfo=UTC) if synced else None,
+        last_sync_error="invalid_key" if synced else "",
+    )
+
+    data = build_user_export(user)
+
+    assert data["integrations"] == [
+        {
+            "provider": "intervals_icu",
+            "athlete_id": "i-export",
+            "status": "invalid",
+            "connected_at": "2026-03-01T08:00:00Z",
+            "last_checked_at": "2026-03-02T09:00:00Z",
+            "last_sync_at": "2026-03-02T08:00:00Z" if synced else None,
+            "last_sync_error": "invalid_key" if synced else "",
+        }
+    ]
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT api_key FROM integrations_providerconnection WHERE owner_id = %s", [user.pk]
+        )
+        (ciphertext,) = cursor.fetchone()
+    assert ciphertext.startswith("enc:v1:")
+    text = json.dumps(data)
+    assert INTERVALS_KEY not in text
+    assert ciphertext not in text
+
+
+def test_integration_allowlist_excludes_credentials_and_internal_fields() -> None:
+    assert set(INTEGRATION_EXPORT_FIELDS) == {
+        "provider",
+        "athlete_id",
+        "status",
+        "connected_at",
+        "last_checked_at",
+        "last_sync_at",
+        "last_sync_error",
+    }
+    assert not {"owner", "id"}.intersection(INTEGRATION_EXPORT_FIELDS)
+    for name in INTEGRATION_EXPORT_FIELDS:
+        assert not isinstance(ProviderConnection._meta.get_field(name), EncryptedTextField)
+
+
+def test_integration_export_omits_future_plain_fields(monkeypatch: pytest.MonkeyPatch) -> None:
+    instance = ProviderConnection(provider="intervals_icu", athlete_id="i-export")
+    plain_field = models.TextField()
+    plain_field.set_attributes_from_name("future_token")
+    monkeypatch.setattr(
+        ProviderConnection._meta,
+        "concrete_fields",
+        (*ProviderConnection._meta.concrete_fields, plain_field),
+    )
+    monkeypatch.setattr(instance, "future_token", "future-credential-marker", raising=False)
+
+    row = _integration_row(instance)
+
+    assert set(row) == set(INTEGRATION_EXPORT_FIELDS)
+    assert "future_token" not in row
+    assert "future-credential-marker" not in row.values()
 
 
 def test_the_export_of_one_user_has_nothing_of_another() -> None:
