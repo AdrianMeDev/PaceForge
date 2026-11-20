@@ -357,8 +357,9 @@ Things to know before you allow one of them:
    `. _ : / -`, up to 100 characters) and the key (visible characters without spaces, up to 500;
    the field is a password field and never prefilled). Press **Save**.
 2. Press **Check connection**. PaceForge sends one request with the fixed text `Reply with the
-   single word: ok` (at most 16 tokens, no system prompt) and **nothing about you or your
-   training**, and shows how it went.
+   single word: ok` (an answer of at most 16 tokens, no system prompt, no effort) and **nothing
+   about you or your training**, and shows how it went. For Anthropic, every request also allows
+   16,000 tokens of thinking on top of the answer (see [docs/coach.md](docs/coach.md#effort-per-task)).
 3. Optionally set task-specific models (same provider and key; leave any field empty to use the
    normal model):
    - **Model for the season plan:** the season is the biggest thing the coach is asked, so a
@@ -366,6 +367,13 @@ Things to know before you allow one of them:
    - **Model for the week plan:** a lighter model can be enough for the weekly plan.
    - **Model for the coach chat:** a lighter model can keep the chat quick and cheap.
    The connection check and week review always use the normal model.
+   For **Anthropic** you can also choose how long the model may think (**Effort**: the model's
+   default, Low, Medium, High, Extra high or Max), once for all tasks and, if you like, for the
+   season plan, the week plan and the chat. A lower effort answers sooner and costs less. A slow
+   model (for example Claude Fable) may need a lower effort for the season plan to finish before
+   the deadline of the request. Not every model takes every level, and older ones take none: if
+   the provider refuses, choose another level or the model's default. Changing the effort keeps
+   the status. The check never sends an effort.
 4. Change anything later by saving again. Any change of provider, model, task models, address or
    key sets the status back to **Not checked yet**; saving the very same setup again changes nothing. The check
    always uses the **saved** setup (the page says when you have unsaved changes).
@@ -379,7 +387,7 @@ Things to know before you allow one of them:
 | Not checked yet                                    | Nothing was tried since the setup was saved or changed.          |
 | Connected                                          | The last call worked.                                            |
 | The provider did not accept the key                | The provider answered 401 or 403, or the stored key cannot be decrypted. |
-| The provider could not be reached                  | Network error, timeout (60 seconds per step), 408 or a 5xx answer. |
+| The provider could not be reached                  | Network error, timeout (60 seconds to connect or, without a deadline, per step), 408 or a 5xx answer. An answer that misses the deadline of its request (`AI_REQUEST_DEADLINE_SECONDS`) is no outage: it is counted as unavailable, but the status stays. |
 
 Two outcomes leave the status as it was and only move the time of the last check: **rate limited**
 (the page adds how long the provider asked to wait, up to an hour) and an **unexpected answer**
@@ -1311,9 +1319,9 @@ planned and done minutes too. All planning checks still use minutes.
 The full description, with the format, the rules, the exact limits and the API, is
 [Drafting with the coach](docs/weekly-plan.md#drafting-with-the-coach).
 
-**For operators.** Drafting waits for the provider inside the request. A reverse proxy and the
-application server need a timeout of at least **150 seconds** for it (see the troubleshooting
-entry below).
+**For operators.** Drafting waits for the provider inside the request. All calls of one request
+share a deadline, `AI_REQUEST_DEADLINE_SECONDS` (210 seconds), which must be below the timeouts of
+the application server and a reverse proxy (see the troubleshooting entry below).
 
 **Not verified yet.** The drafting is tested with a provider that answers from a script, and the
 page (changing and restoring included) with test doubles for the API; none of it has been tried
@@ -1805,6 +1813,7 @@ Set in `.env` or in the environment. Values without a default are required.
 | `JOBS_INTERVAL_MINUTES`        | `15`                                | Minutes the scheduler sleeps between two rounds (whole number from 1 to 60). |
 | `AI_ALLOWED_BASE_URLS`         | empty                               | Comma-separated base URLs of OpenAI-compatible AI endpoints that users may choose, e.g. `https://api.openai.com/v1` or `https://api.deepseek.com`. Empty: none. A bad entry stops Django at startup, see [AI coach](#ai-coach-bring-your-own-key). |
 | `ANTHROPIC_API_BASE_URL`       | `https://api.anthropic.com`         | Only for tests or a fake server: where the Anthropic API is. `http://` or `https://`. |
+| `AI_REQUEST_DEADLINE_SECONDS`  | `210`                               | How long all AI calls of one request (a plan, a change, a chat answer, a review comment) may take together. Whole number above 0 and below `GUNICORN_TIMEOUT`, else Django does not start. |
 | `ACTIVITY_UPLOAD_MAX_BYTES`    | `26214400` (25 MB)                  | Largest FIT, TCX or GPX file accepted for import, in bytes, and the most a compressed file may unpack to. Must be a positive integer. |
 | `SMTP_HOST`                    | empty                               | Empty: emails are printed to the Django console. Set: they are sent via SMTP.     |
 | `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_USE_TLS` | `587`, empty, empty, `true` | SMTP settings, used when `SMTP_HOST` is set. |
@@ -1849,9 +1858,23 @@ Set in `.env` or in the environment. Values without a default are required.
   get an answer from `intervals.icu` (network, timeout, a busy service). Try again later; nothing
   was saved or changed. "Too many attempts" means more than 10 saves or checks within a minute.
 - **Drafting a plan ends with a gateway error (502, 504) after a minute or so.** A reverse proxy or
-  the application server gave up waiting for the provider. Drafting can take two minutes (60
-  seconds per call, and one repair); raise `proxy_read_timeout` (nginx) and the worker timeout to
-  150 seconds or more. A draft may have been stored anyway: look at the versions of the week.
+  the application server gave up waiting for the provider. All calls of one request (the answer and
+  its repairs) must finish within `AI_REQUEST_DEADLINE_SECONDS` (default 210); set
+  `proxy_read_timeout` (nginx) and `GUNICORN_TIMEOUT` above it (the default 240 is). A draft may
+  have been stored anyway: look at the versions of the week.
+- **"The coach did not finish in time."** The answer, streamed or not, did not arrive within
+  `AI_REQUEST_DEADLINE_SECONDS`. No repair round is started once less than a minute is left, so at
+  most the call that ran out of time was paid for. Choose a lower effort or a faster model for that
+  task on the Connections page, or try again.
+- **Drafting, changing or asking the coach fails with a message that names an HTTP status, or
+  says that the server did not answer.** The page shows the status it got and writes the error to
+  the browser console. `HTTP 0` / "did not answer" means the connection broke off before an answer
+  arrived (a proxy, the network, the browser); 502 and 504 mean a proxy or Gunicorn gave up
+  waiting; 500 is an error in PaceForge. In production the reason is in the server log:
+  `docker compose -f compose.prod.yaml logs --since 1h backend`. A draft may have been stored
+  anyway, so reload the page before you try again (every try costs money at your provider). API
+  requests always bypass the service worker of the installed app (`ngsw-bypass`), so it never
+  stands between the page and such an answer.
 - **An administrator cannot reach the admin pages and keeps landing on the security page.** That is
   the rule that administrators need two-factor authentication; set it up there.
 - **Sign-in is refused with "too many failed attempts".** That is the brute-force protection: five

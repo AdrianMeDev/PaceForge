@@ -9,6 +9,7 @@ from django.core.exceptions import ValidationError
 
 from accounts.models import User
 from availability.models import AvailabilitySettings, UnavailablePeriod, WeekdayMinutes
+from coach import services as coach_services
 from coach.models import AIProviderConfiguration, AIUsageRecord
 from coach.providers.base import Completion, ProviderUnavailableError, RateLimitedError
 from coach.services import NotConfiguredError
@@ -923,3 +924,30 @@ class TestChangingASeason:
             change(alice, base.pk, WISH)
 
         assert [v.version for v in versions(alice)] == [1]
+
+
+class TestTheDeadline:
+    """All the calls of one request share a deadline, and no repair is started without time for
+    it."""
+
+    def test_the_answer_and_its_repairs_share_one_deadline(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        scripted = provide("Sure! Here is a season.", good(alice))
+
+        generate(alice)
+
+        first, second = scripted.deadlines
+        assert first is not None
+        assert first is second
+
+    def test_no_repair_is_started_without_time_for_it(
+        self, alice: User, provide: Callable[..., Scripted], settings: Any
+    ) -> None:
+        settings.AI_REQUEST_DEADLINE_SECONDS = coach_services.MIN_ATTEMPT_SECONDS - 1
+        scripted = provide("Sure! Here is a season.", good(alice))
+
+        with pytest.raises(PlanNotUsable):
+            generate(alice)
+
+        assert len(scripted.calls) == 1

@@ -1,7 +1,7 @@
 from collections.abc import Callable
 from typing import Any
 
-from coach.providers.base import Completion, Message
+from coach.providers.base import Completion, Deadline, Message
 
 
 class Scripted:
@@ -11,13 +11,20 @@ class Scripted:
         self.replies = list(replies)
         self.calls: list[tuple[str, list[Message], int]] = []
         self.json_outputs: list[bool] = []
+        self.deadlines: list[Deadline | None] = []
         self.before_answer: Callable[[], None] | None = None
 
     def complete(
-        self, system: str, messages: Any, max_tokens: int, json_output: bool = False
+        self,
+        system: str,
+        messages: Any,
+        max_tokens: int,
+        json_output: bool = False,
+        deadline: Deadline | None = None,
     ) -> Completion:
         self.calls.append((system, list(messages), max_tokens))
         self.json_outputs.append(json_output)
+        self.deadlines.append(deadline)
         if self.before_answer:
             self.before_answer()
             self.before_answer = None

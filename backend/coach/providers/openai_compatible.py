@@ -11,7 +11,13 @@ from django.conf import settings
 
 from coach.endpoints import resolve_allowed_base_url
 
-from .base import Completion, EndpointNotAllowedError, Message, UnexpectedResponseError
+from .base import (
+    Completion,
+    Deadline,
+    EndpointNotAllowedError,
+    Message,
+    UnexpectedResponseError,
+)
 from .transport import TIMEOUT_SECONDS, post_json
 
 # The hosts known to take ``response_format: {"type": "json_object"}``. Deliberately a short list
@@ -51,6 +57,7 @@ class OpenAICompatibleProvider:
         messages: Sequence[Message],
         max_tokens: int,
         json_output: bool = False,
+        deadline: Deadline | None = None,
     ) -> Completion:
         if not messages:
             raise ValueError("There is nothing to send.")
@@ -70,7 +77,13 @@ class OpenAICompatibleProvider:
         address = resolve_allowed_base_url(self._base_url, settings.AI_ALLOWED_BASE_URLS)
         if address is None:
             raise EndpointNotAllowedError("This address is not allowed on this server.")
-        data = post_json(f"{address}/chat/completions", headers, payload, timeout=self._timeout)
+        data = post_json(
+            f"{address}/chat/completions",
+            headers,
+            payload,
+            timeout=self._timeout,
+            deadline=deadline,
+        )
         return _completion(data)
 
 

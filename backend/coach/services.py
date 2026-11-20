@@ -5,10 +5,11 @@ key is decrypted only where a call needs it. The network call never runs inside 
 transaction. What is recorded about a call is in ``AIUsageRecord``: facts, never text.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import Count, QuerySet, Sum
@@ -17,10 +18,12 @@ from django.utils import timezone
 from accounts.models import User
 from core.encryption import DecryptionError
 
-from .models import AIProviderConfiguration, AIUsageRecord
+from .models import EFFORT_FIELDS, AIProviderConfiguration, AIUsageRecord
 from .providers import provider_for
 from .providers.base import (
     Completion,
+    Deadline,
+    DeadlineExceededError,
     InvalidKeyError,
     Message,
     ProviderUnavailableError,
@@ -32,6 +35,9 @@ from .providers.base import (
 CHECK_PROMPT = "Reply with the single word: ok"
 CHECK_MAX_TOKENS = 16
 USAGE_DAYS = 30
+# A repair round is only started with at least this much time left before the deadline: an
+# answer that cannot arrive in time is paid for and thrown away.
+MIN_ATTEMPT_SECONDS = 60
 
 Status = AIProviderConfiguration.Status
 Outcome = AIUsageRecord.Outcome
@@ -56,6 +62,17 @@ def _now() -> datetime:
     return timezone.now()
 
 
+def request_deadline() -> Deadline:
+    """The deadline for the calls of one request of the athlete (a plan, a change, a chat answer,
+    a review comment), ``AI_REQUEST_DEADLINE_SECONDS`` from now."""
+    return Deadline.after(settings.AI_REQUEST_DEADLINE_SECONDS)
+
+
+def time_for_another_attempt(deadline: Deadline) -> bool:
+    """Whether a repair round can still be started before ``deadline``."""
+    return deadline.remaining() >= MIN_ATTEMPT_SECONDS
+
+
 def _own(user: User) -> QuerySet[AIProviderConfiguration]:
     # The key stays encrypted (not even loaded) unless a caller asks for it.
     return AIProviderConfiguration.objects.for_user(user).defer("api_key")
@@ -75,6 +92,7 @@ def save_configuration(
     season_model: str = "",
     week_model: str = "",
     chat_model: str = "",
+    efforts: Mapping[str, str] | None = None,
 ) -> AIProviderConfiguration:
     """Create or change the user's configuration.
 
@@ -82,6 +100,8 @@ def save_configuration(
     key is only kept while provider and address stay the same: it must never be sent to a
     place the user did not give it for. Anything that changes what is called (provider, model,
     address, key) sets the status back to ``untested`` and forgets the times of the last check.
+    ``efforts`` holds the four effort fields (``EFFORT_FIELDS``; a missing one is empty); they
+    change how long a model may think, not what is called, so the status stays.
 
     Raises Django's ``ValidationError`` (by field) and saves nothing if the result is not valid.
     """
@@ -89,7 +109,15 @@ def save_configuration(
         try:
             with transaction.atomic():
                 return _save(
-                    user, provider, model, base_url, api_key, season_model, week_model, chat_model
+                    user,
+                    provider,
+                    model,
+                    base_url,
+                    api_key,
+                    season_model,
+                    week_model,
+                    chat_model,
+                    efforts or {},
                 )
         except IntegrityError:
             # A second request created the row first; the next round changes that one.
@@ -107,6 +135,7 @@ def _save(
     season_model: str = "",
     week_model: str = "",
     chat_model: str = "",
+    efforts: Mapping[str, str] | None = None,
 ) -> AIProviderConfiguration:
     existing = _own(user).select_for_update().first()
     configuration = existing or AIProviderConfiguration(owner=user)
@@ -138,6 +167,8 @@ def _save(
     configuration.season_model = season_model
     configuration.week_model = week_model
     configuration.chat_model = chat_model
+    for name in EFFORT_FIELDS:
+        setattr(configuration, name, (efforts or {}).get(name, ""))
     configuration.base_url = base_url
     # Not ``full_clean``: its constraint check would repeat every message of ``clean``.
     errors = _problems(configuration)
@@ -151,7 +182,15 @@ def _save(
     if existing is None:
         configuration.save()
     else:
-        fields = ["provider", "model", "season_model", "week_model", "chat_model", "base_url"]
+        fields = [
+            "provider",
+            "model",
+            "season_model",
+            "week_model",
+            "chat_model",
+            *EFFORT_FIELDS,
+            "base_url",
+        ]
         if key_written:
             fields.append("api_key")
         if changed:
@@ -187,11 +226,15 @@ def call(
     messages: Sequence[Message],
     max_tokens: int,
     json_output: bool = False,
+    deadline: Deadline | None = None,
 ) -> Completion:
     """Ask the user's own provider, and record the call.
 
     ``json_output`` asks for a JSON object where the provider has a mode for it (the answer is
     read strictly either way); the connection check does not ask, its answer is the word "ok".
+    ``deadline`` is when the answer must be there; once it has passed nothing is sent and
+    ``DeadlineExceededError`` is raised, and a provider that is still answering then gives up
+    with the same error (recorded as ``unavailable``).
 
     Raises ``NotConfiguredError`` if there is no configuration, ``EndpointNotAllowedError`` if the
     operator has taken the address off the list (nothing is sent, nothing is recorded), and the
@@ -207,20 +250,28 @@ def call(
     configuration = _own(user).first()
     if configuration is None:
         raise NotConfiguredError
+    if deadline is not None and deadline.passed():
+        raise DeadlineExceededError("There was no time left for the answer.")
     try:
         model = configuration.model_for(purpose)
-        provider = provider_for(configuration, model)
+        provider = provider_for(configuration, model, configuration.effort_for(purpose))
     except DecryptionError:
         _finish(user, configuration, purpose, Outcome.INVALID_KEY, None, Status.INVALID)
         raise InvalidKeyError("The stored key is not usable.") from None
     # EndpointNotAllowedError passes through: no call was made, so there is nothing to record.
     try:
-        completion = provider.complete(system, messages, max_tokens, json_output=json_output)
+        completion = provider.complete(
+            system, messages, max_tokens, json_output=json_output, deadline=deadline
+        )
     except InvalidKeyError:
         _finish(user, configuration, purpose, Outcome.INVALID_KEY, None, Status.INVALID)
         raise
     except RateLimitedError:
         _finish(user, configuration, purpose, Outcome.RATE_LIMITED, None, None)
+        raise
+    except DeadlineExceededError:
+        # A slow answer is no outage: the provider was there, it only took too long.
+        _finish(user, configuration, purpose, Outcome.UNAVAILABLE, None, None)
         raise
     except ProviderUnavailableError:
         _finish(user, configuration, purpose, Outcome.UNAVAILABLE, None, Status.UNAVAILABLE)

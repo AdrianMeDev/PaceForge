@@ -17,7 +17,7 @@ export type PlanStatus = 'draft' | 'confirmed' | 'superseded' | 'discarded';
 export type Severity = 'error' | 'warning';
 /** What went wrong at the provider when a plan was drafted (the server's fixed texts come along). */
 export type ProviderProblem =
-  'invalid_key' | 'rate_limited' | 'unavailable' | 'unexpected' | 'not_allowed';
+  'invalid_key' | 'rate_limited' | 'unavailable' | 'too_slow' | 'unexpected' | 'not_allowed';
 
 /** What a zone means in numbers: a closed range in watts, beats per minute or seconds per km. */
 export type TargetUnit = 'W' | 'bpm' | 's/km';

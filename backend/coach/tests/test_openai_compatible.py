@@ -84,7 +84,7 @@ class TestJsonOutput:
 
     def ask(self, settings: Any, address: str, json_output: bool | None) -> None:
         settings.AI_ALLOWED_BASE_URLS = (address,)
-        kwargs = {} if json_output is None else {"json_output": json_output}
+        kwargs: dict[str, Any] = {} if json_output is None else {"json_output": json_output}
         OpenAICompatibleProvider(address, MODEL, KEY).complete("", HELLO, 10, **kwargs)
 
     def test_the_known_host_is_deepseek_and_only_deepseek(self) -> None:

@@ -9,8 +9,10 @@ from django.db.models import QuerySet
 from accounts.models import User
 from coach import services
 from coach.models import AIProviderConfiguration, AIUsageRecord
+from coach.providers.anthropic import THINKING_ALLOWANCE
 from coach.providers.base import (
     Completion,
+    Deadline,
     EndpointNotAllowedError,
     InvalidKeyError,
     Message,
@@ -411,14 +413,21 @@ class TestJsonOutput:
             self.asked: list[bool] = []
 
         def complete(
-            self, system: str, messages: Any, max_tokens: int, json_output: bool = False
+            self,
+            system: str,
+            messages: Any,
+            max_tokens: int,
+            json_output: bool = False,
+            deadline: Deadline | None = None,
         ) -> Completion:
             self.asked.append(json_output)
             return Completion("ok", 1, 1)
 
     def use(self, monkeypatch: pytest.MonkeyPatch) -> TestJsonOutput.Recorder:
         recorder = self.Recorder()
-        monkeypatch.setattr(services, "provider_for", lambda configuration, model=None: recorder)
+        monkeypatch.setattr(
+            services, "provider_for", lambda configuration, model=None, effort="": recorder
+        )
         return recorder
 
     def test_a_call_does_not_ask_for_json_unless_told_to(
@@ -818,7 +827,8 @@ class TestTheCheck:
 
         body = fake.requests[0]["json"]
         assert body["messages"] == [{"role": "user", "content": CHECK_PROMPT}]
-        assert body["max_tokens"] == 16
+        assert body["max_tokens"] == 16 + THINKING_ALLOWANCE
+        assert "output_config" not in body
         assert "system" not in body
         assert "alice" not in str(body)
 
@@ -1030,3 +1040,35 @@ class TestSavingTheConfiguration:
 
         with pytest.raises(IntegrityError):
             self.save(alice)
+
+
+class TestTheEffort:
+    """The effort of the task goes to Anthropic with the call; the check never sends one."""
+
+    def sent(self, fake: FakeProvider, user: User, purpose: AIUsageRecord.Purpose) -> Any:
+        fake.reply(ANSWER)
+        services.call(user, purpose, "system", [Message("user", PROMPT)], 50)
+        return fake.requests[-1]["json"]
+
+    def test_the_effort_of_the_task_is_sent(self, fake: FakeProvider, alice: User) -> None:
+        configure(alice, effort="high", season_effort="low")
+
+        assert self.sent(fake, alice, AIUsageRecord.Purpose.SEASON_PLAN)["output_config"] == {
+            "effort": "low"
+        }
+        assert self.sent(fake, alice, AIUsageRecord.Purpose.WEEK_REVIEW)["output_config"] == {
+            "effort": "high"
+        }
+
+    def test_without_an_effort_none_is_sent(self, fake: FakeProvider, alice: User) -> None:
+        configure(alice)
+
+        assert "output_config" not in self.sent(fake, alice, AIUsageRecord.Purpose.WEEKLY_PLAN)
+
+    def test_the_check_sends_none(self, fake: FakeProvider, alice: User) -> None:
+        configure(alice, effort="max")
+        fake.reply(ANSWER)
+
+        services.check(alice)
+
+        assert "output_config" not in fake.requests[0]["json"]

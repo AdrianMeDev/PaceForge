@@ -197,9 +197,12 @@ docker compose -f compose.prod.yaml up -d backend scheduler
 - **Upload limits:** `ACTIVITY_UPLOAD_MAX_BYTES` defaults to `26214400` (25 MB) in Django.
   `deploy/Caddyfile` sets `max_size 32MB` on `/api/*` to leave room for multipart form overhead. If
   you raise `ACTIVITY_UPLOAD_MAX_BYTES`, update `max_size` in `deploy/Caddyfile` and reload Caddy.
-- **Timeouts:** AI plan generation can take up to two minutes (60 seconds per provider call plus one
-  repair round). `GUNICORN_TIMEOUT` defaults to `240` seconds in `.env.prod.example`, and
-  `deploy/Caddyfile` sets `response_header_timeout 240s` on the `backend` proxy to match.
+- **Timeouts:** all AI calls of one request (a plan, a change, a chat answer, with their repair
+  rounds) share a deadline, `AI_REQUEST_DEADLINE_SECONDS` (default `210`). `GUNICORN_TIMEOUT`
+  defaults to `240` seconds in `.env.prod.example`, and `deploy/Caddyfile` sets
+  `response_header_timeout 240s` on the `backend` proxy to match. Django does not start unless the
+  deadline is below `GUNICORN_TIMEOUT`. If you raise both, raise the Caddy timeout as well, and
+  keep them under 300 seconds: Firefox gives up on an answer after that.
   `GUNICORN_WORKERS` defaults to `2`.
 
 ## Public proxy and static frontend

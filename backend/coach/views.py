@@ -9,8 +9,9 @@ from rest_framework.views import APIView
 from accounts.models import User
 
 from . import pricing, services
-from .models import AIModelPrice
+from .models import EFFORT_FIELDS, AIModelPrice
 from .providers.base import (
+    DeadlineExceededError,
     EndpointNotAllowedError,
     InvalidKeyError,
     ProviderError,
@@ -25,6 +26,8 @@ PROBLEMS = {
     "invalid_key": "The provider did not accept the key. Check that you copied all of it.",
     "rate_limited": "The provider is asking to slow down. Please try again in a moment.",
     "unavailable": "The provider cannot be reached right now. Please try again later.",
+    "too_slow": "The coach did not finish in time. Choose a lower effort or a faster model for "
+    "this task, or try again.",
     "unexpected": "The provider answered in an unexpected way. Check the model name and try again.",
     "not_allowed": "This address is no longer allowed on this server. Choose another one.",
 }
@@ -56,6 +59,7 @@ class ProviderView(APIView):
                 season_model=data.get("season_model", ""),
                 week_model=data.get("week_model", ""),
                 chat_model=data.get("chat_model", ""),
+                efforts={name: data.get(name, "") for name in EFFORT_FIELDS},
                 base_url=data.get("base_url", ""),
                 api_key=data.get("api_key"),
             )
@@ -163,6 +167,8 @@ def provider_problem(error: ProviderError) -> Response:
         if error.retry_after is not None:
             response["Retry-After"] = str(error.retry_after)
         return response
+    if isinstance(error, DeadlineExceededError):
+        return _problem(status.HTTP_503_SERVICE_UNAVAILABLE, "too_slow")
     if isinstance(error, ProviderUnavailableError):
         return _problem(status.HTTP_503_SERVICE_UNAVAILABLE, "unavailable")
     if isinstance(error, EndpointNotAllowedError):

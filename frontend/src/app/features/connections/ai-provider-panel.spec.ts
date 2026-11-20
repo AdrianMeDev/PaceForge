@@ -28,6 +28,10 @@ const NOT_SET_UP: AiProviderState = {
   season_model: '',
   week_model: '',
   chat_model: '',
+  effort: '',
+  season_effort: '',
+  week_effort: '',
+  chat_effort: '',
   base_url: null,
   has_key: false,
   status: null,
@@ -285,6 +289,10 @@ describe('AiProviderPanel', () => {
         season_model: '',
         week_model: '',
         chat_model: '',
+        effort: '',
+        season_effort: '',
+        week_effort: '',
+        chat_effort: '',
         api_key: KEY,
       });
       expect(value('#ai-key')).toBe(''); // gone while the request is still running
@@ -437,6 +445,8 @@ describe('AiProviderPanel', () => {
       ['api_key', '#ai-key'],
       ['week_model', '#ai-week-model'],
       ['chat_model', '#ai-chat-model'],
+      ['effort', '#ai-effort'],
+      ['season_effort', '#ai-season_effort'],
     ])('places a message for "%s" at its field', async (field, selector) => {
       api.save.mockResolvedValue({
         kind: 'invalid',
@@ -709,6 +719,10 @@ describe('AiProviderPanel', () => {
         season_model: '',
         week_model: '',
         chat_model: '',
+        effort: '',
+        season_effort: '',
+        week_effort: '',
+        chat_effort: '',
       });
       expect(Object.keys(api.save.mock.calls[0][0])).not.toContain('api_key');
     });
@@ -725,6 +739,10 @@ describe('AiProviderPanel', () => {
         season_model: '',
         week_model: '',
         chat_model: '',
+        effort: '',
+        season_effort: '',
+        week_effort: '',
+        chat_effort: '',
         api_key: OTHER_KEY,
       });
     });
@@ -735,6 +753,86 @@ describe('AiProviderPanel', () => {
       await submit();
 
       expect(testId('status')).toBe('Connected');
+    });
+  });
+
+  describe('the effort', () => {
+    beforeEach(() => setup(ok(CONNECTED)));
+
+    it('offers the default and every level for each task', () => {
+      expect(optionTexts('#ai-effort')).toEqual([
+        "The model's default",
+        'Low',
+        'Medium',
+        'High',
+        'Extra high',
+        'Max',
+      ]);
+      for (const id of ['#ai-season_effort', '#ai-week_effort', '#ai-chat_effort']) {
+        expect(optionTexts(id)[0]).toBe('The effort above');
+        expect(optionTexts(id)).toHaveLength(6);
+      }
+    });
+
+    it('shows the saved efforts in the list and in the form', async () => {
+      expect(testId('efforts')).toBe("The model's default");
+      await setup(ok({ ...CONNECTED, effort: 'high', season_effort: 'low' }));
+
+      expect(testId('efforts')).toBe(
+        'High (season plan: Low, week plan: the same, chat: the same)',
+      );
+      expect(value('#ai-effort')).toBe('high');
+      expect(value('#ai-season_effort')).toBe('low');
+      expect(value('#ai-week_effort')).toBe('');
+    });
+
+    it('sends the chosen efforts with an Anthropic setup', async () => {
+      api.save.mockResolvedValue(saved(CONNECTED));
+      await choose('#ai-effort', 'medium');
+      await choose('#ai-season_effort', 'low');
+      await choose('#ai-chat_effort', 'xhigh');
+
+      await submit();
+
+      const [input] = api.save.mock.calls[0];
+      expect([input.effort, input.season_effort, input.week_effort, input.chat_effort]).toEqual([
+        'medium',
+        'low',
+        '',
+        'xhigh',
+      ]);
+    });
+
+    it('treats a changed effort as unsaved', async () => {
+      expect(has('[data-testid="unsaved"]')).toBe(false);
+
+      await choose('#ai-week_effort', 'max');
+
+      expect(has('[data-testid="unsaved"]')).toBe(true);
+    });
+
+    it('is not offered, shown or sent for an OpenAI-compatible endpoint', async () => {
+      await setup(ok(COMPATIBLE));
+      api.save.mockResolvedValue(saved(COMPATIBLE));
+
+      expect(has('#ai-effort')).toBe(false);
+      expect(has('[data-testid="efforts"]')).toBe(false);
+      await submit();
+
+      expect(Object.keys(api.save.mock.calls[0][0])).not.toContain('effort');
+    });
+
+    it('takes no value that is not a level', async () => {
+      const select = query<HTMLSelectElement>(panel, '#ai-effort');
+      const option = document.createElement('option');
+      option.value = 'extreme';
+      select.append(option);
+      api.save.mockResolvedValue(saved(CONNECTED));
+
+      await choose('#ai-effort', 'extreme');
+      await submit();
+
+      expect(api.save.mock.calls[0][0].effort).toBe('');
     });
   });
 
@@ -1151,7 +1249,18 @@ describe('AiProviderPanel', () => {
       await submit();
 
       expect(Object.keys(api.save.mock.calls[0][0]).sort()).toEqual(
-        ['api_key', 'chat_model', 'model', 'provider', 'season_model', 'week_model'].sort(),
+        [
+          'api_key',
+          'chat_model',
+          'model',
+          'provider',
+          'season_model',
+          'week_model',
+          'effort',
+          'season_effort',
+          'week_effort',
+          'chat_effort',
+        ].sort(),
       );
     });
 
@@ -1311,6 +1420,10 @@ describe('AiProviderPanel', () => {
         season_model: '',
         week_model: '',
         chat_model: '',
+        effort: '',
+        season_effort: '',
+        week_effort: '',
+        chat_effort: '',
         api_key: KEY,
       });
     });

@@ -2,6 +2,7 @@ import { HttpClient, HttpErrorResponse, HttpResponse } from '@angular/common/htt
 import { Injectable, inject } from '@angular/core';
 import { Observable, firstValueFrom } from 'rxjs';
 import { API_BASE } from '../api/api-providers';
+import { UnexpectedReplyError } from '../api/failures';
 import { ProviderProblem } from '../planning/planning-models';
 import {
   ChatMessage,
@@ -21,6 +22,7 @@ const PROVIDER_PROBLEMS: readonly string[] = [
   'invalid_key',
   'rate_limited',
   'unavailable',
+  'too_slow',
   'unexpected',
   'not_allowed',
 ];
@@ -250,5 +252,5 @@ function oneOf(value: unknown, allowed: readonly string[], reply: Reply): string
 }
 
 function unexpected(reply: Reply): Error {
-  return new Error(`Unexpected response with status ${reply.status}`);
+  return new UnexpectedReplyError(reply.status);
 }

@@ -25,3 +25,14 @@ form {
   margin: 0;
   font-weight: normal;
 }
+
+fieldset.efforts {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+fieldset.efforts legend {
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+}

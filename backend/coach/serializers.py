@@ -16,7 +16,14 @@ from core.encryption import DecryptionError
 from goals.serializers import TextField
 
 from . import pricing, services
-from .models import BASE_URL_MAX, KEY_MAX, MODEL_MAX, PRICE_MAX, AIProviderConfiguration
+from .models import (
+    BASE_URL_MAX,
+    EFFORT_FIELDS,
+    KEY_MAX,
+    MODEL_MAX,
+    PRICE_MAX,
+    AIProviderConfiguration,
+)
 
 PRICE_PLACES = 4
 
@@ -31,6 +38,20 @@ class ProviderInput(serializers.Serializer[Any]):
     # Likewise for the weekly plan and for the coach chat.
     week_model = TextField(max_length=MODEL_MAX, allow_blank=True, required=False)
     chat_model = TextField(max_length=MODEL_MAX, allow_blank=True, required=False)
+    # How long the model may think, normally and per task; absent or empty: none is sent (for the
+    # tasks: the normal effort). Anthropic only.
+    effort = serializers.ChoiceField(
+        choices=AIProviderConfiguration.Effort.choices, allow_blank=True, required=False
+    )
+    season_effort = serializers.ChoiceField(
+        choices=AIProviderConfiguration.Effort.choices, allow_blank=True, required=False
+    )
+    week_effort = serializers.ChoiceField(
+        choices=AIProviderConfiguration.Effort.choices, allow_blank=True, required=False
+    )
+    chat_effort = serializers.ChoiceField(
+        choices=AIProviderConfiguration.Effort.choices, allow_blank=True, required=False
+    )
     base_url = TextField(max_length=BASE_URL_MAX, allow_blank=True, required=False)
     # Absent: keep the stored key (while provider and address stay). Empty: no key.
     api_key = TextField(max_length=KEY_MAX, allow_blank=True, required=False)
@@ -82,6 +103,7 @@ def provider_state(user: User) -> dict[str, Any]:
         "season_model": "",
         "week_model": "",
         "chat_model": "",
+        **dict.fromkeys(EFFORT_FIELDS, ""),
         "base_url": None,
         "has_key": False,
         "status": None,
@@ -105,6 +127,7 @@ def provider_state(user: User) -> dict[str, Any]:
             season_model=configuration.season_model,
             week_model=configuration.week_model,
             chat_model=configuration.chat_model,
+            **{name: getattr(configuration, name) for name in EFFORT_FIELDS},
             base_url=configuration.base_url or None,
             has_key=_has_key(configuration),
             status=configuration.status,

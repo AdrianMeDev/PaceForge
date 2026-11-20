@@ -752,3 +752,27 @@ class TestAWeekWithoutTime:
             generate(alice, THIS_WEEK - timedelta(weeks=1))
 
         assert scripted.calls == []
+
+
+class TestTheDeadline:
+    def test_the_answer_and_its_repair_share_one_deadline(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        scripted = provide("Sure! Here is a plan.", good())
+
+        generate(alice, MONDAY)
+
+        first, second = scripted.deadlines
+        assert first is not None
+        assert first is second
+
+    def test_no_repair_is_started_without_time_for_it(
+        self, alice: User, provide: Callable[..., Scripted], settings: Any
+    ) -> None:
+        settings.AI_REQUEST_DEADLINE_SECONDS = coach_services.MIN_ATTEMPT_SECONDS - 1
+        scripted = provide("Sure! Here is a plan.", good())
+
+        with pytest.raises(PlanNotUsable):
+            generate(alice, MONDAY)
+
+        assert len(scripted.calls) == 1

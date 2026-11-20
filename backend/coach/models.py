@@ -27,6 +27,9 @@ MAX_MODEL_PRICES = 50
 PRICE_VALIDATORS = [MinValueValidator(Decimal(0)), MaxValueValidator(PRICE_MAX)]
 
 
+EFFORT_FIELDS = ("effort", "season_effort", "week_effort", "chat_effort")
+
+
 class AIProviderConfiguration(OwnedModel):
     """The AI provider a user has chosen, with their own key and model. One per user.
 
@@ -72,6 +75,23 @@ class AIProviderConfiguration(OwnedModel):
         blank=True,
         validators=[RegexValidator(MODEL_PATTERN, "Enter a model name.")],
     )
+
+    class Effort(models.TextChoices):
+        """How much a model may think before it answers (Anthropic's ``effort``). Not every model
+        takes every level; a model that does not take the one chosen refuses the request."""
+
+        LOW = "low", "Low"
+        MEDIUM = "medium", "Medium"
+        HIGH = "high", "High"
+        XHIGH = "xhigh", "Extra high"
+        MAX = "max", "Max"
+
+    # The effort of the normal model; empty: none is sent and the model uses its own default.
+    effort = models.CharField(max_length=10, choices=Effort.choices, blank=True)
+    # The effort for the season plan, the weekly plan and the coach chat. Empty: the normal effort.
+    season_effort = models.CharField(max_length=10, choices=Effort.choices, blank=True)
+    week_effort = models.CharField(max_length=10, choices=Effort.choices, blank=True)
+    chat_effort = models.CharField(max_length=10, choices=Effort.choices, blank=True)
     api_key = EncryptedTextField(editable=False)
     base_url = models.CharField(max_length=BASE_URL_MAX, blank=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.UNTESTED)
@@ -94,6 +114,11 @@ class AIProviderConfiguration(OwnedModel):
                 condition=~Q(provider="openai_compatible") | ~Q(base_url=""),
                 name="coach_compatible_has_base_url",
             ),
+            models.CheckConstraint(
+                condition=Q(provider="anthropic")
+                | Q(effort="", season_effort="", week_effort="", chat_effort=""),
+                name="coach_effort_only_anthropic",
+            ),
         ]
 
     def __str__(self) -> str:
@@ -108,6 +133,19 @@ class AIProviderConfiguration(OwnedModel):
             AIUsageRecord.Purpose.CHAT: self.chat_model,
         }
         return special.get(purpose) or self.model
+
+    def effort_for(self, purpose: str) -> str:
+        """The effort for ``purpose``, like ``model_for``: the season, week or chat effort for its
+        task if one is set, the normal effort for everything else, and none for the connection
+        check (its answer is one word). Empty: send none."""
+        if purpose == AIUsageRecord.Purpose.CHECK:
+            return ""
+        special: dict[str, str] = {
+            AIUsageRecord.Purpose.SEASON_PLAN: self.season_effort,
+            AIUsageRecord.Purpose.WEEKLY_PLAN: self.week_effort,
+            AIUsageRecord.Purpose.CHAT: self.chat_effort,
+        }
+        return special.get(purpose) or self.effort
 
     def clean(self) -> None:
         super().clean()
@@ -126,6 +164,10 @@ class AIProviderConfiguration(OwnedModel):
                     errors["base_url"] = "This address is not allowed on this server."
                 else:
                     self.base_url = address
+        if self.provider != self.Provider.ANTHROPIC:
+            for name in EFFORT_FIELDS:
+                if getattr(self, name):
+                    errors[name] = "Only Anthropic takes an effort."
         if self.api_key and (
             len(self.api_key) > KEY_MAX or not KEY_PATTERN.fullmatch(self.api_key)
         ):

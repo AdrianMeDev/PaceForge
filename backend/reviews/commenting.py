@@ -65,6 +65,7 @@ def comment_on(user: User, monday: date) -> WeekComment:
         raise NothingToReview
     messages = [first_message(build_briefing(review))]
     problems: tuple[Problem, ...] = ()
+    deadline = coach.request_deadline()
     for attempt in range(1, ATTEMPTS + 1):
         completion = coach.call(
             user,
@@ -73,6 +74,7 @@ def comment_on(user: User, monday: date) -> WeekComment:
             messages,
             COMMENT_MAX_TOKENS,
             json_output=True,
+            deadline=deadline,
         )
         if completion.truncated:
             problems = (
@@ -94,9 +96,10 @@ def comment_on(user: User, monday: date) -> WeekComment:
                     },
                 )
                 return stored
-        if attempt < ATTEMPTS:
-            answer = completion.text if completion.text.strip() else "(no answer)"
-            messages = [messages[0], Message("assistant", answer), repair_message(problems)]
+        if attempt == ATTEMPTS or not coach.time_for_another_attempt(deadline):
+            break
+        answer = completion.text if completion.text.strip() else "(no answer)"
+        messages = [messages[0], Message("assistant", answer), repair_message(problems)]
     raise CommentNotUsable(problems)
 
 

@@ -1,4 +1,5 @@
-"""One safe POST with a JSON body, shared by the provider adapters.
+"""One safe POST with a JSON body, shared by the provider adapters: answered with JSON, or with a
+stream of server-sent events.
 
 Built on the standard library, like the Intervals.icu client. The rules it keeps:
 
@@ -13,11 +14,15 @@ import http.client
 import json
 import math
 import re
+import socket
 import urllib.error
 import urllib.request
+from collections.abc import Iterator
 from typing import Any
 
 from .base import (
+    Deadline,
+    DeadlineExceededError,
     InvalidKeyError,
     ProviderError,
     ProviderUnavailableError,
@@ -29,6 +34,11 @@ from .base import (
 # for the whole call.
 TIMEOUT_SECONDS = 60.0
 MAX_RESPONSE_BYTES = 2_000_000
+# A stream says the same in more bytes: every piece of text comes in an event of its own.
+MAX_STREAM_BYTES = 8_000_000
+MAX_LINE_BYTES = 1_000_000
+# A timeout this close to the deadline is the deadline (the waits are set to the time left).
+DEADLINE_SLACK_SECONDS = 1.0
 # What a provider asks us to wait is only passed on up to this many seconds.
 MAX_RETRY_AFTER = 3600
 
@@ -58,24 +68,19 @@ def _validate_headers(headers: dict[str, str]) -> None:
 
 
 def post_json(
-    url: str, headers: dict[str, str], payload: dict[str, Any], *, timeout: float = TIMEOUT_SECONDS
+    url: str,
+    headers: dict[str, str],
+    payload: dict[str, Any],
+    *,
+    timeout: float = TIMEOUT_SECONDS,
+    deadline: Deadline | None = None,
 ) -> object:
-    """The decoded JSON of the answer to ``payload``, or a ``ProviderError``."""
-    _validate_headers(headers)
-    body_bytes = json.dumps(payload).encode("utf-8")
+    """The decoded JSON of the answer to ``payload``, or a ``ProviderError``. With a
+    ``deadline`` no step waits longer than the time left; nothing is sent once it has passed."""
     try:
-        request = urllib.request.Request(
-            url,
-            data=body_bytes,
-            method="POST",
-            headers={
-                **headers,
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-                "User-Agent": "PaceForge",
-            },
-        )
-        with _opener.open(request, timeout=timeout) as response:
+        request = _request(url, headers, payload, "application/json")
+        wait = _first_wait(timeout, deadline)
+        with _opener.open(request, timeout=wait) as response:
             status = response.status
             body = response.read(MAX_RESPONSE_BYTES + 1)
             # ``read(n)`` returns what arrived without complaint; bytes still owed mean the
@@ -87,7 +92,7 @@ def post_json(
         raise ProviderError("The request could not be prepared.") from None
     except OSError, http.client.HTTPException:
         # Connection refused or reset, DNS, TLS, timeouts, a cut-off answer.
-        raise ProviderUnavailableError("The provider could not be reached.") from None
+        raise _unreachable(deadline) from None
     if status != 200:
         raise UnexpectedResponseError(f"Unexpected answer from the provider (HTTP {status}).")
     if len(body) > MAX_RESPONSE_BYTES:
@@ -95,9 +100,129 @@ def post_json(
     if cut_off:
         raise ProviderUnavailableError("The answer was cut off.")
     try:
-        return json.loads(body, parse_constant=_no_constants, parse_float=_finite_float)
+        return _decode(body)
     except ValueError:
         raise UnexpectedResponseError("The answer is not JSON.") from None
+
+
+def post_sse(
+    url: str,
+    headers: dict[str, str],
+    payload: dict[str, Any],
+    *,
+    timeout: float = TIMEOUT_SECONDS,
+    deadline: Deadline | None = None,
+) -> Iterator[object]:
+    """The decoded ``data`` of each server-sent event of the answer to ``payload``, as it arrives,
+    or a ``ProviderError``.
+
+    Without a ``deadline``, ``timeout`` is the wait for each step (connect, each read), so an
+    answer that takes minutes but keeps coming is not cut short. With one, the connection waits
+    at most ``timeout`` and each read waits for the time left: a model may think quietly for a
+    while, but the whole answer must be there by the deadline, or ``DeadlineExceededError``.
+    A stream that ends before its last byte is a ``ProviderUnavailableError``; whether it ended
+    where the API says it should is up to the caller, who knows the events."""
+    try:
+        request = _request(url, headers, payload, "text/event-stream")
+        wait = _first_wait(timeout, deadline)
+        with _opener.open(request, timeout=wait) as response:
+            if response.status != 200:
+                raise UnexpectedResponseError(
+                    f"Unexpected answer from the provider (HTTP {response.status})."
+                )
+            kind = (response.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+            if kind != "text/event-stream":
+                raise UnexpectedResponseError("The answer is not a stream of events.")
+            yield from _events(response, deadline)
+    except urllib.error.HTTPError as error:
+        raise error_for_status(error.code, error.headers.get("Retry-After")) from None
+    except ValueError:
+        raise ProviderError("The request could not be prepared.") from None
+    except OSError, http.client.HTTPException:
+        # Connection refused or reset, DNS, TLS, timeouts, a stream that broke off.
+        raise _unreachable(deadline) from None
+
+
+def _first_wait(timeout: float, deadline: Deadline | None) -> float:
+    """The wait for connecting; with a deadline that has passed, nothing is sent at all."""
+    if deadline is None:
+        return timeout
+    if deadline.passed():
+        raise DeadlineExceededError("There was no time left for the answer.")
+    return min(timeout, deadline.remaining())
+
+
+def _unreachable(deadline: Deadline | None) -> ProviderUnavailableError:
+    if deadline is not None and deadline.remaining() < DEADLINE_SLACK_SECONDS:
+        return DeadlineExceededError("The answer did not arrive in time.")
+    return ProviderUnavailableError("The provider could not be reached.")
+
+
+def _socket_of(response: object) -> socket.socket | None:
+    """The socket under ``response``, so that each read of a stream can wait for the time that
+    is left. ``http.client`` keeps it in a private attribute of its file object; should that ever
+    change, the reads keep the wait the connection was opened with, and the deadline is still
+    checked between them."""
+    raw = getattr(getattr(response, "fp", None), "raw", None)
+    sock = getattr(raw, "_sock", None)
+    return sock if isinstance(sock, socket.socket) else None
+
+
+def _request(
+    url: str, headers: dict[str, str], payload: dict[str, Any], accept: str
+) -> urllib.request.Request:
+    _validate_headers(headers)
+    return urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        method="POST",
+        headers={
+            **headers,
+            "Content-Type": "application/json",
+            "Accept": accept,
+            "User-Agent": "PaceForge",
+        },
+    )
+
+
+def _events(response: http.client.HTTPResponse, deadline: Deadline | None) -> Iterator[object]:
+    """The ``data`` of each event, read line by line with the size limits. Only ``data`` lines
+    count: the providers put the type of an event into its data as well, and ``event``, ``id``,
+    ``retry`` and comments are not needed. An event that the stream does not finish with an empty
+    line is dropped, as the format says."""
+    total = 0
+    lines: list[bytes] = []
+    while True:
+        if deadline is not None:
+            if deadline.passed():
+                raise DeadlineExceededError("The answer did not arrive in time.")
+            sock = _socket_of(response)
+            if sock is not None:
+                # Never 0: that would make the socket non-blocking instead of patient.
+                sock.settimeout(max(deadline.remaining(), 0.001))
+        line = response.readline(MAX_LINE_BYTES + 1)
+        if not line:
+            break
+        total += len(line)
+        if total > MAX_STREAM_BYTES or len(line) > MAX_LINE_BYTES:
+            raise UnexpectedResponseError("The answer is larger than expected.")
+        line = line.rstrip(b"\r\n")
+        if not line:
+            if lines:
+                try:
+                    yield _decode(b"\n".join(lines))
+                except ValueError:
+                    raise UnexpectedResponseError("An event of the answer is not JSON.") from None
+                lines = []
+        elif line.startswith(b"data:"):
+            value = line[len(b"data:") :]
+            lines.append(value[1:] if value.startswith(b" ") else value)
+    if response.length:
+        raise ProviderUnavailableError("The answer was cut off.")
+
+
+def _decode(raw: bytes) -> object:
+    return json.loads(raw, parse_constant=_no_constants, parse_float=_finite_float)
 
 
 def _no_constants(_: str) -> Any:

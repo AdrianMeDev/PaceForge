@@ -963,6 +963,7 @@ describe('SeasonApi acting on season plans', () => {
       [502, 'unexpected'],
       [502, 'not_allowed'],
       [503, 'unavailable'],
+      [503, 'too_slow'],
     ])('returns the problem %i %s with the text of the server', async (status, code) => {
       const { result } = await post(
         api.generate(),
