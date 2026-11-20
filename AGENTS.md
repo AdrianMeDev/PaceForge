@@ -8,7 +8,8 @@ behaves is described in `README.md` and `docs/`.
 
 The backend tests need the PostgreSQL service from `compose.dev.yaml` on `localhost:5432`
 (`docker compose -f compose.dev.yaml up -d db mailpit`). They do not need a `.env` file:
-`config/settings_test.py` sets test values. If `frontend/node_modules` is missing (for example in
+`config/settings_test.py` sets test values, except the password: in a fresh worktree without
+`.env`, pass `POSTGRES_PASSWORD=<local db password>` (or a full `DATABASE_URL`) in the shell. If `frontend/node_modules` is missing (for example in
 a fresh worktree), run `npm ci` in `frontend/` first.
 
 Backend, from `backend/`:
