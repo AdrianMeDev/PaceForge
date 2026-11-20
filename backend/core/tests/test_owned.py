@@ -1,9 +1,11 @@
 from http import HTTPStatus
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ImproperlyConfigured
+from rest_framework.exceptions import NotAuthenticated
 from rest_framework.request import Request
 from rest_framework.test import APIClient, APIRequestFactory
 from rest_framework.views import APIView
@@ -12,6 +14,7 @@ from accounts.models import User
 from core.permissions import IsOwner
 from core.testing import assert_cannot_access, assert_not_listed
 from core.tests.sample.models import Note
+from core.views import authenticated_user
 
 pytestmark = pytest.mark.django_db
 
@@ -135,3 +138,27 @@ def test_deleting_a_user_deletes_their_objects(alice: User, bob: User, alices_no
     alice.delete()
 
     assert list(Note.objects.all()) == [bobs_note]
+
+
+def test_authenticated_user_returns_authenticated_user(alice: User) -> None:
+    request = Request(APIRequestFactory().get("/"))
+    request.user = alice
+
+    assert authenticated_user(request) == alice
+
+
+def test_authenticated_user_rejects_anonymous_user() -> None:
+    request = Request(APIRequestFactory().get("/"))
+    request.user = AnonymousUser()
+
+    with pytest.raises(NotAuthenticated):
+        authenticated_user(request)
+
+
+def test_authenticated_user_rejects_non_user_principal() -> None:
+    request = Request(APIRequestFactory().get("/"))
+    non_user: Any = SimpleNamespace(is_authenticated=True)
+    request.user = non_user
+
+    with pytest.raises(NotAuthenticated):
+        authenticated_user(request)

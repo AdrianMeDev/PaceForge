@@ -1919,7 +1919,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** M3
 - **Size:** L, ~7 commits
 
-### M6 [ ] Audit: Authenticated views, owner assignment and account exports
+### M6 [~] Audit: Authenticated views, owner assignment and account exports
 
 - **Goal:** Make authentication, ownership and export disclosure explicit at the affected API boundaries.
 - **Includes:** F27 (integration export fields), F284 (sample serializer owner), F287 (dashboard authentication), F436 (review authentication), F17, F310, F330 (account, integration and job permissions).
