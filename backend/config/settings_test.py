@@ -1,12 +1,25 @@
 """Settings used by the test suite only."""
 
 import os
+from pathlib import Path
+
+import environ
 
 os.environ.setdefault("DJANGO_SECRET_KEY", "test-only-secret-key-not-for-production")
 # A throw-away instance key; it protects nothing.
 os.environ.setdefault("ENCRYPTION_KEY", "srPGFiK_-1uuYQrhJix9QxALddGxwSw-I5bllic4QsY=")
-# Matches the defaults of the `db` service in compose.dev.yaml.
-os.environ.setdefault("DATABASE_URL", "postgres://paceforge:paceforge-dev@localhost:5432/paceforge")
+# Read `.env` if there is one (shell variables win), so the defaults below only fill what it
+# leaves out. No password is set here: POSTGRES_PASSWORD comes from the environment, `.env` or
+# ~/.pgpass.
+_env_file = Path(__file__).resolve().parent.parent.parent / ".env"
+if _env_file.is_file():
+    environ.Env.read_env(_env_file, overwrite=False)
+if not os.environ.get("DATABASE_URL", "").strip():
+    # Match the defaults of the `db` service in compose.dev.yaml.
+    os.environ.setdefault("POSTGRES_HOST", "localhost")
+    os.environ.setdefault("POSTGRES_PORT", "5432")
+    os.environ.setdefault("POSTGRES_USER", "paceforge")
+    os.environ.setdefault("POSTGRES_DB", "paceforge")
 
 from .settings import *  # noqa: E402, F403
 

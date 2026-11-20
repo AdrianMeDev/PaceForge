@@ -82,9 +82,15 @@ def test_create_backup_writes_encrypted_0600_file(stub: Path, out: Path, key: st
     assert [p.name for p in out.iterdir()] == [path.name]
 
 
-def test_create_backup_passes_password_by_environment_only(stub: Path, out: Path, key: str) -> None:
+def test_create_backup_passes_password_by_environment_only(
+    stub: Path, out: Path, key: str, settings: Any
+) -> None:
+    password = "p@ss:w/rd?a#b%c&d+e=f"
+    settings.DATABASES = {
+        **settings.DATABASES,
+        "default": {**settings.DATABASES["default"], "PASSWORD": password},
+    }
     create_backup(out, [key])
-    password = backup.settings.DATABASES["default"]["PASSWORD"]
     lines = stub.read_text().splitlines()
 
     assert lines[0] == password

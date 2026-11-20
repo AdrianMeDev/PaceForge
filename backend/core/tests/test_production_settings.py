@@ -1,4 +1,9 @@
+import importlib.util
+import re
 import runpy
+import sys
+from io import StringIO
+from pathlib import Path
 from typing import Any
 
 import environ
@@ -10,6 +15,8 @@ from django.core.management.base import SystemCheckError
 from django.test import RequestFactory
 
 from config import settings as config_settings
+
+config_settings_test_path = Path(config_settings.__file__).with_name("settings_test.py")
 
 STRONG_KEY = "k7Qz-Vh2mXp9LdR4tYw8NcB6sUe3JfGa1oIyHb5KxZv0MqTnAr"
 
@@ -211,3 +218,93 @@ class TestDeployChecks:
         production.SECRET_KEY = "x"
 
         call_command("check")
+
+
+class TestTestSettings:
+    """``config/settings_test.py`` must work from a fresh checkout and embed no password."""
+
+    @pytest.fixture
+    def read_test_settings(self, monkeypatch: pytest.MonkeyPatch) -> Any:
+        for name in (
+            "DATABASE_URL",
+            "POSTGRES_HOST",
+            "POSTGRES_PORT",
+            "POSTGRES_USER",
+            "POSTGRES_DB",
+            "POSTGRES_PASSWORD",
+        ):
+            monkeypatch.delenv(name, raising=False)
+        original_read_env = environ.Env.read_env
+        original_is_file = Path.is_file
+        env_path = config_settings_test_path.parents[2] / ".env"
+
+        def read(env_file: str | None = None, **env: str) -> dict[str, Any]:
+            for name, value in env.items():
+                monkeypatch.setenv(name, value)
+
+            def read_env(cls: type[environ.Env], *args: Any, **kwargs: Any) -> None:
+                # Exercise the real parser without reading or writing the operator's .env.
+                assert env_file is not None
+                original_read_env(StringIO(env_file), **kwargs)
+
+            monkeypatch.setattr(environ.Env, "read_env", classmethod(read_env))
+            monkeypatch.setattr(
+                Path,
+                "is_file",
+                lambda path: env_file is not None if path == env_path else original_is_file(path),
+            )
+            # `settings_test` star-imports `config.settings`; it must be read afresh.
+            monkeypatch.delitem(sys.modules, "config.settings", raising=False)
+            spec = importlib.util.spec_from_file_location(
+                "config.settings_test", config_settings_test_path
+            )
+            assert spec is not None and spec.loader is not None
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            databases: dict[str, Any] = module.DATABASES
+            return databases["default"]
+
+        return read
+
+    def test_imports_without_env_file_or_password(self, read_test_settings: Any) -> None:
+        database = read_test_settings()
+
+        assert database["HOST"] == "localhost"
+        assert database["PORT"] == "5432"
+        assert database["USER"] == "paceforge"
+        assert database["NAME"] == "paceforge"
+        assert database["PASSWORD"] == ""
+
+    def test_picks_up_the_password_from_the_environment(self, read_test_settings: Any) -> None:
+        database = read_test_settings(POSTGRES_PASSWORD="p@ss:w/rd?a#b%c&d+e=f")
+
+        assert database["PASSWORD"] == "p@ss:w/rd?a#b%c&d+e=f"
+
+    def test_reads_env_file_before_filling_defaults(self, read_test_settings: Any) -> None:
+        database = read_test_settings(
+            env_file="POSTGRES_USER=file-user\nPOSTGRES_DB=file-db\nPOSTGRES_PASSWORD=file-password\n"
+        )
+
+        assert database["USER"] == "file-user"
+        assert database["NAME"] == "file-db"
+        assert database["PASSWORD"] == "file-password"
+
+    def test_shell_password_wins_over_env_file(self, read_test_settings: Any) -> None:
+        database = read_test_settings(
+            env_file="POSTGRES_PASSWORD=file-password\n",
+            POSTGRES_PASSWORD="shell-password",
+        )
+
+        assert database["PASSWORD"] == "shell-password"
+
+    def test_database_url_wins_over_the_defaults(self, read_test_settings: Any) -> None:
+        database = read_test_settings(DATABASE_URL="postgres://u:secret@dbhost:6543/other")
+
+        assert (database["HOST"], database["PORT"], database["NAME"]) == ("dbhost", 6543, "other")
+
+    def test_source_has_no_hardcoded_password(self) -> None:
+        source = Path(config_settings_test_path).read_text()
+
+        assert "paceforge-dev" not in source
+        assert not re.search(r"POSTGRES_PASSWORD[\"']\s*,\s*[\"'][^\"']", source)
+        assert not re.search(r"postgres(ql)?://[^\s\"']*:[^\s\"']*@", source)

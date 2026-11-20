@@ -105,6 +105,7 @@ jobs:
           # A password with URL-reserved characters must not break the config.
           POSTGRES_PASSWORD='p@ss:w/rd?a#b%c&d+e=f' \
             docker compose --profile backup -f compose.prod.yaml config >/dev/null
+          docker compose -f compose.dev.yaml --profile scheduler config >/dev/null
       - name: Validate Caddyfile
         run: |
           docker run --rm \

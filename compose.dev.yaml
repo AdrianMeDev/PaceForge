@@ -2,13 +2,16 @@
 # Copy .env.example to .env to override the defaults below.
 name: paceforge-dev
 
+# Set POSTGRES_PASSWORD in .env (or the shell) before the first start; there is no default.
+x-db-credentials: &db-credentials
+  POSTGRES_USER: ${POSTGRES_USER:-paceforge}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+  POSTGRES_DB: ${POSTGRES_DB:-paceforge}
+
 services:
   db:
     image: postgres:17.11
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-paceforge}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-paceforge-dev}
-      POSTGRES_DB: ${POSTGRES_DB:-paceforge}
+    environment: *db-credentials
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
@@ -32,7 +35,10 @@ services:
     profiles: [scheduler]
     command: ["uv", "run", "python", "manage.py", "run_scheduler"]
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-paceforge}:${POSTGRES_PASSWORD:-paceforge-dev}@db:5432/${POSTGRES_DB:-paceforge}
+      <<: *db-credentials
+      DATABASE_URL: ""
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
     working_dir: /app/backend
     volumes:
       - .:/app
