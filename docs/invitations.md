@@ -1,0 +1,152 @@
+# Invitations by email
+
+Administrators invite people to PaceForge on the **Invitations** page (under **Admin** in the
+navigation). PaceForge emails the signup link to the person and also shows the link once, so you
+can hand it on yourself. This guide covers sending, mail delivery in development and production,
+resending, expired and revoked invitations, the rate limit, the mail templates, the security rules
+and the admin API.
+
+## Send an invitation
+
+1. Sign in as an administrator with two-factor authentication turned on.
+2. Open **Invitations**, enter the email address and press **Send invitation by email**.
+3. PaceForge creates the invitation and sends **one** email to that address with the signup link.
+4. The page shows the link once, with one of two notices:
+   - *The invitation email was sent to …*: the mail went to the mail system (see
+     [Mail delivery](#mail-delivery) for what that means without SMTP).
+   - *The invitation email could not be delivered to …*: the invitation still exists. Copy the link
+     and send it yourself, or resend the invitation later.
+
+The link is shown only once. If you lose it, press **Resend** on the row.
+
+The invitation is valid for `INVITATION_TTL_DAYS` days (7 by default). It works once and only for
+the address it was created for.
+
+## Mail delivery
+
+Django sends the mail. The setting `SMTP_HOST` decides where it goes.
+
+| Setup | Where the mail goes | `email_sent` |
+| --- | --- | --- |
+| Development: `.env.example` points SMTP at Mailpit | Mailpit on `127.0.0.1:1025`. Read it at <http://localhost:8025>. | `true` when Mailpit accepts the mail |
+| Production with SMTP | Your SMTP server, set with `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD` and `SMTP_USE_TLS`. | `true` when the server accepts the mail |
+| No SMTP (`SMTP_HOST` empty) | The Django console: the mail is written to the output of the process. In production that is the `backend` container log. | `true`, although nothing leaves the server |
+
+**Without SMTP the page still says the email was sent.** The console backend never fails, so
+the notice cannot tell that no one will read the mail. Use the link on the page in that case.
+
+Mailpit runs with the development services:
+
+```sh
+docker compose -f compose.dev.yaml up -d db mailpit
+```
+
+**When delivery fails.** If the mail server cannot be reached, or it refuses the mail (a network
+error, a timeout or an SMTP error), PaceForge:
+
+- logs an error with the invitation id and the type of the error, never the address, the token or
+  the link,
+- keeps the invitation, and returns `email_sent: false`,
+- leaves `sent_at` as it was, so the table shows *Not sent* for a new invitation,
+- still returns the link, so the administrator is not blocked by a short outage.
+
+## Mail templates
+
+Both templates are in `backend/templates/accounts/email/`:
+
+- `invitation_subject.txt`: one line, the subject. It reads *You are invited to PaceForge*.
+- `invitation_message.txt`: the plain-text body. It has two variables: `signup_url`, the link, and
+  `expires_at`, the expiry time in UTC. The body has `{% autoescape off %}`, so the `&` in the link
+  is not written as `&amp;`. Keep the link on its own line.
+
+The mail is plain text only. After you edit a template, restart the backend.
+
+## Resend
+
+**Resend** is on the row of every **pending** and **expired** invitation. Resending:
+
+- creates a new link with a new token. **The old link stops working at once**, even if it was
+  still valid,
+- sets the expiry to now plus `INVITATION_TTL_DAYS`, so an expired invitation is pending again,
+- keeps the same invitation, so the list gets no new row,
+- sends one email, updates **Last sent** when the mail was delivered, and shows the new link once,
+  with the same notices as on create.
+
+**Used** and **revoked** invitations cannot be resent. The API answers `409`, and the page has no
+**Resend** button for them.
+
+## Expired invitations
+
+An invitation is **expired** when its expiry time has passed and it was neither used nor revoked.
+It stays in the list as a record. The page then:
+
+- shows the status **Expired**, in its own style,
+- shows a notice above the list with the number of expired invitations,
+- offers **Resend** on the row.
+
+## Revoke
+
+The page offers **Revoke** only for **pending** invitations. Revoking makes the link stop working,
+sets the status to **Revoked** and sends no mail. A revoked invitation cannot be resent; create a new
+one instead. A used invitation cannot be revoked (`409`).
+
+## Rate limit
+
+- Creating and resending share one limit: **20 per minute per administrator**
+  (`invitation_email` in `backend/config/settings.py`). A request over the limit answers `429`. Nothing
+  is created or sent.
+- Listing invitations is not limited.
+- The counters live in each server process. With several Gunicorn workers (`GUNICORN_WORKERS`),
+  each worker counts on its own.
+
+## Security and access
+
+- Only administrators with two-factor authentication can use the API. Anyone else gets `403`. An
+  administrator without two-factor authentication gets `403` with `"code": "mfa_required"`.
+- The list shows every invitation of the instance, not only the ones you sent.
+- The token is 256 bits of randomness. PaceForge stores only its SHA-256 hash. The plaintext token
+  exists in the email and in the API response, once.
+- The signup link carries the token and the address as query parameters. The signup form reads
+  them and fills in the address, which is read-only.
+- Whoever has the link can register with that address until the invitation is used, revoked or
+  expired. Send it only to the person it is for.
+- The link is built from the address that the administrator's request came in on. Open
+  **Invitations** on the public address of the instance (`APP_DOMAIN`), or the links point to the
+  wrong host.
+
+## Admin API
+
+All requests need a signed-in administrator with two-factor authentication. A `POST` also needs the
+CSRF token, like every other `POST`.
+
+| Request | What it does | Answers |
+| --- | --- | --- |
+| `GET /api/admin/invitations/` | Lists all invitations, newest first. | `200` |
+| `POST /api/admin/invitations/` with `{"email": "ann@example.com"}` | Creates the invitation and sends one email. | `201` with `invite_url` and `email_sent`; `400` for a bad address; `429` over the limit |
+| `POST /api/admin/invitations/<id>/resend/` | Issues a new link, expiry and email. | `200` with `invite_url` and `email_sent`; `404` unknown; `409` used or revoked; `429` |
+| `POST /api/admin/invitations/<id>/revoke/` | Revokes a pending or expired invitation. | `200`; `404` unknown; `409` used |
+
+Each invitation has these fields: `id`, `email`, `status` (`pending`, `used`, `revoked` or
+`expired`), `created_at`, `expires_at` and `sent_at`. `sent_at` is `null` until a mail was
+delivered. `invite_url` and `email_sent` come only with the create and resend answers. The list
+never contains a link.
+
+## Troubleshooting
+
+- **The page says the email could not be delivered.** Check the `SMTP_*` settings. The backend log
+  names the invitation id and the type of the error. Then press **Resend**, or hand the link on.
+- **Nothing arrives in development.** Check that Mailpit runs (`docker compose -f compose.dev.yaml
+  up -d mailpit`) and open <http://localhost:8025>.
+- **The mail arrives, but the link is refused.** A resend replaces the link. Use the newest mail, or
+  resend again.
+
+## For developers
+
+- `backend/accounts/services/invitations.py`: creating, sending, resending and revoking, and the
+  token hash.
+- `backend/accounts/views.py`: `InvitationListCreateView`, `InvitationResendView` and
+  `InvitationRevokeView`. `backend/accounts/throttles.py` holds `InvitationEmailThrottle`.
+- Tests: `backend/accounts/tests/test_invitations.py` and `test_invitation_api.py`, and in the
+  frontend `src/app/core/admin/invitations-api.spec.ts` and
+  `src/app/features/admin/invitations-page.spec.ts`. The backend tests read sent mail from Django's
+  test outbox, so no test contacts a real mail server.

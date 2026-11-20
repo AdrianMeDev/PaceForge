@@ -144,7 +144,7 @@ AI key; several people can share one instance without seeing each other's data.
 - **Depends on:** –
 - **Size:** M
 
-### M14 [~] Invitations by email
+### M14 [x] Invitations by email
 - **Goal:** The admin page sends the invitation link by email.
 - **Includes:** send and resend from the admin page, mail template, expired invitations shown, docs.
 - **Done when:** creating an invitation sends one email (Mailpit in development); tests green.
@@ -173,6 +173,7 @@ AI key; several people can share one instance without seeing each other's data.
 - README section and `docs/` updated for every user-visible change.
 
 ## Changelog
+- 2026-11-20: M14 completed — the Invitations page emails the signup link on create and resend (one plain-text mail per action; Mailpit in development, SMTP in production, the console when `SMTP_HOST` is empty), the link is still shown once as a fallback, failed deliveries are reported as `email_sent: false`, pending and expired invitations can be resent (new token and expiry, the old link stops working), expired invitations are marked on the page, creating and resending share 20 per minute per administrator, and the guide is in `docs/invitations.md`
 - 2026-11-20: M13 completed — per-user JSON export (`GET /api/me/export/`, no keys, passwords, activity files or other users' data) and account deletion (`POST /api/me/delete/`, with email, password and MFA code, last active administrator protected, Intervals.icu and AI providers untouched, sessions ended), both on the Security page with 5 requests per minute, and the guide in `docs/account-data.md`
 - 2026-11-20: M12 completed — encrypted database backups (`backup_db`, `run_backups` and an off-by-default `backup` service in `compose.prod.yaml`, AES-256-GCM with its own `BACKUP_ENCRYPTION_KEY`), retention by day and week, `restore_db` into an empty database with an end-to-end test, and the guide in `docs/backup-and-restore.md`
 - 2026-11-20: M11 completed — production deployment stack (`compose.prod.yaml`, Caddy with automatic HTTPS, non-root backend and frontend containers, `scheduler` service, `/api/health/`, production settings via `APP_DOMAIN`, CI container validation/build, and end-to-end VPS deployment docs)
