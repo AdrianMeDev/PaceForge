@@ -137,7 +137,7 @@ AI key; several people can share one instance without seeing each other's data.
 - **Depends on:** M11
 - **Size:** M
 
-### M13 [ ] Data export and account deletion
+### M13 [~] Data export and account deletion
 - **Goal:** Each user can download their data and delete their account.
 - **Includes:** JSON export of profile, goals, activities, plans, reviews and chat; account deletion with confirmation and MFA, removing keys and data (Intervals stays untouched); admin cannot be left without an admin.
 - **Done when:** export contains only the user's data; deletion removes all of it; isolation tests green.
