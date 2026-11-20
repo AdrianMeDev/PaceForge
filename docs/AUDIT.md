@@ -1895,7 +1895,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** M1
 - **Size:** M, ~4 commits
 
-### M3 [ ] Audit: Public proxy and static frontend
+### M3 [x] Audit: Public proxy and static frontend
 
 - **Goal:** Make the public proxy responsible for trusted scheme information, browser security headers and API routing.
 - **Includes:** F255 (forwarded scheme trust), F525 (content security policy), F543 (writable frontend assets), F544 (API requests receiving the SPA).
@@ -2250,3 +2250,4 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - 2026-11-20: audit planned
 - 2026-11-20: M1 done: discrete `POSTGRES_*` settings, no hardcoded database passwords, docs for existing and new volumes
 - 2026-11-20: M2 done: CI generates fresh Django and Fernet keys per run and verifies the PGDG APT key fingerprint before trusting it; M2 test suites use synthetic provider markers, guarded by a regression test against `sk-ant-` literals
+- 2026-11-20: M3 done: `DJANGO_TRUST_PROXY_HEADERS` defaults to `false` (F255; `true` on `backend` behind Caddy); strict CSP with `script-src 'self'` and `object-src 'none'` in `deploy/Caddyfile` (F525); frontend `/srv` owned by root and read-only for the runtime user (F543); static server answers `/api` with `404` (F544); container smoke tests in `deploy/smoke_test.py` for deep links, missing API routes and direct static `/api` requests

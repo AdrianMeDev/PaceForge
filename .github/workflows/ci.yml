@@ -134,6 +134,8 @@ jobs:
             caddy:2.10-alpine caddy validate --config /etc/caddy/Caddyfile
       - name: Build production images
         run: docker compose -f compose.prod.yaml build
+      - name: Smoke test proxy and static server
+        run: python3 deploy/smoke_test.py
       - name: Check PostgreSQL client tools in the backend image
         run: |
           docker compose -f compose.prod.yaml run --rm --no-deps --entrypoint pg_dump backend --version

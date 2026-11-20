@@ -42,6 +42,8 @@ services:
         required: false
     environment:
       <<: *backend-environment
+      # Caddy is the only way in and sets X-Forwarded-Proto, so Django may trust it.
+      DJANGO_TRUST_PROXY_HEADERS: "true"
     depends_on:
       db:
         condition: service_healthy

@@ -71,10 +71,11 @@ database are encrypted, and the key has to be backed up apart from the database.
 | `backend/`            | Django 6, Django REST framework, django-allauth (headless), PostgreSQL                     |
 | `backend/Dockerfile`  | Production backend image (Gunicorn, deploy checks, optional auto-migration)                |
 | `frontend/`           | Angular single-page app (standalone components, signals, zoneless)                         |
-| `frontend/Dockerfile` | Production frontend image (Angular build served by Caddy)                                  |
+| `frontend/Dockerfile` | Production frontend image (Angular build served read-only by Caddy, `/api` answers 404)    |
 | `compose.dev.yaml`    | Development services only: PostgreSQL and Mailpit (a catch-all mailbox)                    |
 | `compose.prod.yaml`   | Production stack: Caddy (HTTPS), frontend, backend, scheduler, PostgreSQL, optional backup |
-| `deploy/Caddyfile`    | Reverse proxy config with automatic HTTPS, security headers and upload limit               |
+| `deploy/Caddyfile`    | Reverse proxy config with automatic HTTPS, strict CSP, `/api` routing and upload limit     |
+| `deploy/smoke_test.py` | Container smoke test for the production images and the Caddyfile (see [Checks](#checks))  |
 | `.env.example`        | Template for the development configuration shared by Django and Compose                    |
 | `.env.prod.example`   | Template for the production configuration used by `compose.prod.yaml`                      |
 
@@ -1711,7 +1712,18 @@ cd frontend
 npm run format:check && npm run lint
 npx ng test --no-watch
 npx ng build
+
+# containers (needs Docker; the smoke test uses the images built here)
+cd ..   # back to the repository root; the compose file and the smoke test live there
+docker compose -f compose.prod.yaml build
+python3 deploy/smoke_test.py
 ```
+
+The container smoke test starts the frontend, the backend and Caddy on a private Docker network,
+on loopback ports only. It checks that the static server runs read-only and answers `/api` with
+`404`, that Caddy overwrites a spoofed `X-Forwarded-Proto`, that a deep SPA link loads under the
+strict Content Security Policy, and that a missing API route through Caddy returns `404`. It removes
+everything it creates on exit.
 
 The backend tests do not need a `.env` file. `config/settings_test.py` connects to
 `localhost:5432` as `paceforge`. Give it the password of your local `db` service in the shell, or
@@ -1737,6 +1749,7 @@ Set in `.env` or in the environment. Values without a default are required.
 | `DJANGO_DEBUG`                 | `false`                             | `true` for development. With `false`, cookies are sent only over HTTPS.           |
 | `DJANGO_ALLOWED_HOSTS`         | empty (or `APP_DOMAIN`)             | Comma-separated host names; must be set (directly or via `APP_DOMAIN`) when `DJANGO_DEBUG` is `false`. |
 | `DJANGO_CSRF_TRUSTED_ORIGINS`  | empty (or `https://<APP_DOMAIN>`)   | Comma-separated origins allowed to send state-changing requests.                  |
+| `DJANGO_TRUST_PROXY_HEADERS`   | `false`                             | `true` makes Django trust `X-Forwarded-Proto` from the proxy. `compose.prod.yaml` sets it on `backend` behind Caddy. Leave `false` if clients can reach Django without the proxy. |
 | `ENCRYPTION_KEY`               | –                                   | Instance key for secrets stored in the database; several keys separated by commas. Required. |
 | `BACKUP_ENCRYPTION_KEY`        | empty                               | Key for encrypted database backups; several keys separated by commas, the first one encrypts. Must differ from `ENCRYPTION_KEY`. Without it no backup is made. See [Backup and restore](#backup-and-restore). |
 | `BACKUP_DIR`                   | `backups/` in the repository root   | Folder for the backup files. In `compose.prod.yaml` the backup service uses `/backups`. |

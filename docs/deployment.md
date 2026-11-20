@@ -12,7 +12,7 @@ backups:
 | Service     | Role                                                                                                                 |
 | ----------- | -------------------------------------------------------------------------------------------------------------------- |
 | `caddy`     | Public reverse proxy on ports 80 and 443; gets and renews HTTPS certificates.                                        |
-| `frontend`  | Static Angular build served by Caddy on internal port 8080.                                                          |
+| `frontend`  | Static Angular build served read-only by Caddy on internal port 8080; answers `/api` with `404`.                      |
 | `backend`   | Django + Gunicorn on internal port 8000; runs deploy checks and migrations.                                          |
 | `scheduler` | Runs `python manage.py run_scheduler` after `backend` is healthy.                                                    |
 | `db`        | PostgreSQL 17.11 with persistent volume `pgdata`.                                                                    |
@@ -194,6 +194,26 @@ docker compose -f compose.prod.yaml up -d backend scheduler
   repair round). `GUNICORN_TIMEOUT` defaults to `240` seconds in `.env.prod.example`, and
   `deploy/Caddyfile` sets `response_header_timeout 240s` on the `backend` proxy to match.
   `GUNICORN_WORKERS` defaults to `2`.
+
+## Public proxy and static frontend
+
+- **Trusted scheme:** `DJANGO_TRUST_PROXY_HEADERS` defaults to `false`. With `false`, Django ignores
+  `X-Forwarded-Proto`, so a client that reaches Django without the proxy cannot claim HTTPS.
+  `compose.prod.yaml` sets it to `true` on `backend`, because Caddy is the only way in and replaces
+  `X-Forwarded-Proto` with the real scheme. Keep it `false` if you ever publish `backend` directly.
+- **Content Security Policy:** `deploy/Caddyfile` sends a strict policy: `default-src 'self'`,
+  `script-src 'self'`, `object-src 'none'`, `frame-ancestors 'none'`, and `'self'` for the other
+  sources, such as `connect-src`. Scripts load only from the app's own origin, and plugins are
+  blocked. Styles may still be inline. Adding an external script, font host or API host means
+  changing the policy in `deploy/Caddyfile` too.
+- **API routing:** Caddy sends `/api` and `/api/*` to `backend` and everything else to `frontend`.
+  An unknown API path returns the backend's `404`, not the app shell. `frontend` also answers `/api`
+  with `404`, so a request that reaches it directly never gets `index.html`.
+- **Read-only frontend files:** the `frontend` image copies the Angular build into `/srv` as `root`.
+  Caddy runs as the non-root user `paceforge`, which cannot change the files it serves.
+- **Smoke test:** after `docker compose -f compose.prod.yaml build`, run `python3 deploy/smoke_test.py`.
+  It needs Python 3 and Docker only. It uses loopback ports on a private network, never host ports 80
+  or 443, and removes its containers and networks on exit. CI runs it too.
 
 ## Updating and migrating
 

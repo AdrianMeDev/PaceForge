@@ -19,7 +19,10 @@ COPY Caddyfile /etc/caddy/Caddyfile
 COPY --from=builder /app/dist/paceforge/browser /srv
 
 RUN caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile \
-    && chown -R paceforge:paceforge /srv /data /config
+    && chown -R paceforge:paceforge /data /config \
+    && chown -R root:root /srv \
+    && find /srv -type d -exec chmod 0755 {} + \
+    && find /srv -type f -exec chmod 0644 {} +
 
 USER paceforge
 EXPOSE 8080

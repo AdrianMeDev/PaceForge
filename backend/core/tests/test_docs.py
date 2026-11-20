@@ -5,6 +5,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 DOC = (ROOT / "docs" / "backup-and-restore.md").read_text()
+DEPLOYMENT = (ROOT / "docs" / "deployment.md").read_text()
 README = (ROOT / "README.md").read_text()
 SETTINGS = (ROOT / "backend" / "config" / "settings.py").read_text()
 COMPOSE = (ROOT / "compose.prod.yaml").read_text()
@@ -37,6 +38,17 @@ class TestTheVariables:
     def test_the_documented_ranges_are_those_of_the_settings(self) -> None:
         for lower, name, upper in re.findall(r"(\d+) <= (BACKUP_[A-Z_]+) <= (\d+)", SETTINGS):
             assert f"`{lower}` to `{upper}`" in row(DOC, name), name
+
+
+class TestTheProxyTrust:
+    def test_the_trust_setting_defaults_to_false_in_the_settings(self) -> None:
+        assert 'env.bool("DJANGO_TRUST_PROXY_HEADERS", default=False)' in SETTINGS
+
+    def test_the_readme_documents_the_trust_setting_and_its_default(self) -> None:
+        assert "`false`" in row(README, "DJANGO_TRUST_PROXY_HEADERS")
+
+    def test_the_deployment_guide_documents_the_trust_setting_and_its_default(self) -> None:
+        assert "`DJANGO_TRUST_PROXY_HEADERS` defaults to `false`" in " ".join(DEPLOYMENT.split())
 
 
 class TestTheCommands:
