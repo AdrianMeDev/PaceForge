@@ -5,13 +5,16 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
+from django.db import IntegrityError
 from rest_framework.permissions import AllowAny
 from rest_framework.views import APIView
 
 from accounts.models import User
 from accounts.tests.conftest import AuthApi
+from activities.models import Activity
 from goals import services as goal_services
 from planning.models import PlannedWorkout
+from reviews import services as review_services
 from reviews.models import WorkoutReview
 
 from .builders import MONDAY, NOW, make_activity, make_plan
@@ -285,6 +288,51 @@ class TestRefusals:
             "code": "activity_taken",
         }
         assert WorkoutReview.objects.get().workout == first
+
+    @pytest.mark.django_db(transaction=True)
+    def test_an_activity_deleted_before_the_write_is_refused_and_stores_nothing(
+        self,
+        alice: User,
+        week: tuple[PlannedWorkout, PlannedWorkout],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        first, _ = week
+        run = make_activity(alice, "2026-11-09T07:00")
+        store = review_services._store
+
+        def delete_then_store(*args: Any, **kwargs: Any) -> None:
+            Activity.objects.filter(pk=run.pk).delete()
+            store(*args, **kwargs)
+
+        monkeypatch.setattr(review_services, "_store", delete_then_store)
+
+        response = decide(alice, first, activity=str(run.pk))
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert body(response) == {"activity": ["Choose an activity of this week."]}
+        assert not WorkoutReview.objects.exists()
+
+    def test_an_unrelated_integrity_error_propagates_and_stores_nothing(
+        self,
+        alice: User,
+        bob: User,
+        week: tuple[PlannedWorkout, PlannedWorkout],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        first, _ = week
+        run = make_activity(alice, "2026-11-09T07:00")
+        store = review_services._store
+
+        def reassign_then_store(*args: Any, **kwargs: Any) -> None:
+            Activity.objects.filter(pk=run.pk).update(owner=bob)
+            store(*args, **kwargs)
+
+        monkeypatch.setattr(review_services, "_store", reassign_then_store)
+
+        with pytest.raises(IntegrityError, match="reviews_review_link_owner"):
+            decide(alice, first, activity=str(run.pk))
+
+        assert not WorkoutReview.objects.exists()
 
     def test_a_workout_of_another_user_does_not_exist_and_is_left_alone(
         self, alice: User, bob: User

@@ -242,6 +242,9 @@ plan as a draft:
 - **Status.** `draft`, `confirmed`, `superseded` or `discarded`; at most one confirmed plan per
   user. Confirming a draft with errors is refused. The content of a plan that is not a draft is
   never changed.
+- **Ancestry.** A parent belongs to the same athlete and has a lower version number.
+  The database checks direct and bulk writes, including edits to parents with children.
+  Migration `0005_season_revision_ancestry` refuses existing invalid links.
 - **Changing on request.** `change` asks the coach to change a `confirmed` version or a draft as
   the athlete wishes (`request`, at most `REQUEST_MAX` characters, plain text with line breaks,
   checked before anything is sent) and stores the answer as the next version, a draft: `parent` the

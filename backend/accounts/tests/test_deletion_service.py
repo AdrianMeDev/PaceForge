@@ -1,5 +1,5 @@
 import http.client
-from datetime import timedelta
+from datetime import date, timedelta
 from typing import Any
 
 import pytest
@@ -19,9 +19,12 @@ from accounts.services.deletion import (
     delete_account,
     verify_mfa_code,
 )
-from activities.models import ActivityFile
+from activities.models import Activity, ActivityFile
+from chat.models import ChatMessage
 from core.models import OwnedModel
-from planning.models import WeeklyPlan, WorkoutExport
+from planning.models import PlannedWorkout, WeeklyPlan, WorkoutExport
+from reviews.models import WorkoutReview
+from season.models import SeasonPlanVersion
 
 from .conftest import enable_totp, totp_code
 from .test_export_service import make_user, populate
@@ -301,4 +304,88 @@ def test_authenticated_deletion_removes_historical_workouts_and_exports(
     assert WeeklyPlan.objects.get(owner=bob).workouts.count() == 1
     assert WorkoutExport.objects.get(owner=bob).workout_id is not None
     assert Session.objects.get().get_decoded()["_auth_user_id"] == str(bob.pk)
+    assert no_network == []
+
+
+@pytest.mark.django_db(transaction=True)
+def test_deletion_removes_guarded_season_history_and_linked_records(
+    no_network: list[str],
+) -> None:
+    alice = make_user("alice@example.com")
+    bob = make_user("bob@example.com")
+    now = timezone.now()
+    for user, tag in ((alice, "alice"), (bob, "bob")):
+        populate(user, tag)
+
+        season_v1 = SeasonPlanVersion.objects.get(owner=user)
+        season_v1.status = SeasonPlanVersion.Status.CONFIRMED
+        season_v1.confirmed_at = now - timedelta(days=1)
+        season_v1.save(update_fields=["status", "confirmed_at"])
+
+        season_v2 = SeasonPlanVersion.objects.create(
+            owner=user,
+            version=2,
+            parent=season_v1,
+            request=f"Season v2 {tag}",
+        )
+        season_v1.status = SeasonPlanVersion.Status.SUPERSEDED
+        season_v1.save(update_fields=["status"])
+        season_v2.status = SeasonPlanVersion.Status.CONFIRMED
+        season_v2.confirmed_at = now
+        season_v2.save(update_fields=["status", "confirmed_at"])
+
+        plan_one = WeeklyPlan.objects.get(owner=user)
+        plan_one.status = WeeklyPlan.Status.CONFIRMED
+        plan_one.confirmed_at = now
+        plan_one.save(update_fields=["status", "confirmed_at"])
+
+        plan_two = WeeklyPlan.objects.create(
+            owner=user,
+            week_start=date(2026, 3, 9),
+            note=f"Week 2 {tag}",
+        )
+        workout_two = PlannedWorkout.objects.create(
+            owner=user,
+            plan=plan_two,
+            day=date(2026, 3, 10),
+            sport="cycling",
+            title=f"Workout 2 {tag}",
+            goal="tempo",
+            duration_minutes=60,
+        )
+        plan_two.status = WeeklyPlan.Status.CONFIRMED
+        plan_two.confirmed_at = now
+        plan_two.save(update_fields=["status", "confirmed_at"])
+        second_activity = Activity.objects.get(owner=user, source="intervals_icu")
+        WorkoutReview.objects.create(
+            owner=user,
+            workout=workout_two,
+            activity=second_activity,
+            status=WorkoutReview.Status.DONE,
+        )
+
+        ChatMessage.objects.create(
+            owner=user,
+            role=ChatMessage.Role.COACH,
+            text=f"Season message {tag}",
+            season_plan=season_v2,
+        )
+
+    bob_rows = count_rows(bob)
+
+    delete(alice)
+
+    assert not User.objects.filter(pk=alice.pk).exists()
+    for model in owned_models():
+        assert not model.objects.filter(owner_id=alice.pk).exists(), model
+    assert count_rows(bob) == bob_rows
+    bob_v1 = SeasonPlanVersion.objects.get(owner=bob, version=1)
+    bob_v2 = SeasonPlanVersion.objects.get(owner=bob, version=2)
+    assert bob_v1.status == SeasonPlanVersion.Status.SUPERSEDED
+    assert bob_v2.status == SeasonPlanVersion.Status.CONFIRMED
+    assert bob_v2.parent_id == bob_v1.pk
+    assert WeeklyPlan.objects.filter(owner=bob, status=WeeklyPlan.Status.CONFIRMED).count() == 2
+    assert WorkoutReview.objects.filter(owner=bob, activity__isnull=False).count() == 2
+    assert ChatMessage.objects.filter(owner=bob, plan__isnull=False).count() == 1
+    assert ChatMessage.objects.filter(owner=bob, season_plan__isnull=False).count() == 1
     assert no_network == []

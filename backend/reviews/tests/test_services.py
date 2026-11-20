@@ -1,18 +1,24 @@
 from datetime import UTC, date, datetime, timedelta
+from typing import Any
 
 import pytest
-from django.db import connection
+from django.db import IntegrityError, connection
 from django.test.utils import CaptureQueriesContext
 
 from accounts.models import User
+from activities.models import Activity
 from athletes.models import AthleteProfile
 from goals import services as goal_services
 from planning.models import PlannedWorkout
+from reviews import services as review_services
 from reviews.matching import Origin, Status
 from reviews.models import WeekComment, WeekFeedback, WorkoutReview
 from reviews.services import (
     REVIEW_WEEKS,
+    ActivityLinkedElsewhere,
+    ActivityNotInWeek,
     WeekNotReviewable,
+    correct,
     has_anything,
     reviewable_weeks,
     week_review,
@@ -343,3 +349,54 @@ class TestTheSummaryOfAnyWeek:
             week_summary(alice, MONDAY)
 
         assert len(empty) == len(full)
+
+
+class TestCorrect:
+    def test_an_activity_linked_to_another_workout_raises_activity_linked_elsewhere(
+        self, alice: User
+    ) -> None:
+        first, second = make_plan(alice, workouts=2).workouts.all()
+        run = make_activity(alice, "2026-11-09T07:00")
+        correct(alice, MONDAY, first.pk, activity_id=run.pk)
+
+        with pytest.raises(ActivityLinkedElsewhere):
+            correct(alice, MONDAY, second.pk, activity_id=run.pk)
+
+        assert WorkoutReview.objects.get().workout == first
+
+    @pytest.mark.django_db(transaction=True)
+    def test_an_activity_deleted_before_the_write_raises_activity_not_in_week(
+        self, alice: User, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        workout = make_plan(alice, workouts=1).workouts.get()
+        run = make_activity(alice, "2026-11-09T07:00")
+        store = review_services._store
+
+        def delete_then_store(*args: Any, **kwargs: Any) -> None:
+            Activity.objects.filter(pk=run.pk).delete()
+            store(*args, **kwargs)
+
+        monkeypatch.setattr(review_services, "_store", delete_then_store)
+
+        with pytest.raises(ActivityNotInWeek):
+            correct(alice, MONDAY, workout.pk, activity_id=run.pk)
+
+        assert not WorkoutReview.objects.exists()
+
+    def test_an_unrelated_integrity_error_propagates_and_stores_nothing(
+        self, alice: User, bob: User, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        workout = make_plan(alice, workouts=1).workouts.get()
+        run = make_activity(alice, "2026-11-09T07:00")
+        store = review_services._store
+
+        def reassign_then_store(*args: Any, **kwargs: Any) -> None:
+            Activity.objects.filter(pk=run.pk).update(owner=bob)
+            store(*args, **kwargs)
+
+        monkeypatch.setattr(review_services, "_store", reassign_then_store)
+
+        with pytest.raises(IntegrityError, match="reviews_review_link_owner"):
+            correct(alice, MONDAY, workout.pk, activity_id=run.pk)
+
+        assert not WorkoutReview.objects.exists()

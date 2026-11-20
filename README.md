@@ -1040,8 +1040,10 @@ sessions (a long run, a threshold session, the race …) and a reason. The model
   kept; a plan with errors is still saved as a draft, so you see what is wrong, but it cannot be
   confirmed. **This costs several times what a week does**, and up to three calls; the limit is 3
   requests a minute.
-- **Versions:** every drafting is a new version. A draft can be **confirmed** (it replaces the
-  confirmed version, which stays as **superseded**) or **discarded**. A confirmed plan is never
+- **Versions:** every drafting is a new version. A parent must be an older version of the
+  same athlete. The database also enforces this for direct and bulk writes. A draft can be
+  **confirmed** (it replaces the confirmed version, which stays as **superseded**) or
+  **discarded**. A confirmed plan is never
   changed. A plan keeps the skeleton and the sports it was made for, so it stays readable and is
   checked against them when goals, time or the week move on; it is **not updated** by that.
   New coach drafts also keep the active goals, effective FTP, best times and typical weekly
@@ -1565,6 +1567,10 @@ What the app does with it, always by code and never by the coach's words:
 
 The illness is noted even when there is no plan to change: then the answer has no draft, but the
 absence is stored and named. Nothing about it is confirmed or sent from the chat.
+
+Chat messages can only link weekly and season plans owned by the same athlete. The database
+checks both links and refuses plan owner changes that would break them. Deleting a draft clears
+its message link and keeps the message.
 
 **What is stored and what goes to the provider.** The messages are stored (only you see them) and
 **Delete the conversation** removes them all, after a question; the drafts stay. With each message

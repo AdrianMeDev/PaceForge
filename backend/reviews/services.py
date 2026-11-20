@@ -12,6 +12,7 @@ from datetime import UTC, date, datetime, time, timedelta, tzinfo
 from uuid import UUID
 
 from django.db import IntegrityError, transaction
+from psycopg import errors as pg_errors
 
 from accounts.models import User
 from activities.duplicates import duration_of
@@ -32,6 +33,8 @@ REVIEW_WEEKS = 4
 
 # The statuses that describe an activity: they cannot be set on a workout that has none.
 NEEDS_AN_ACTIVITY = frozenset({"done", "partial", "replaced"})
+
+_ACTIVITY_TAKEN_CONSTRAINT = "reviews_one_workout_per_activity"
 
 
 class WeekNotReviewable(Exception):
@@ -269,9 +272,10 @@ def correct(
     says that none belongs to it (not both), ``status`` sets how it went (``""``: worked out from
     the activity). Nothing at all sets the workout back to the automatic match.
 
-    Raises ``WeekNotReviewable``, ``WorkoutNotFound``, ``ActivityNotInWeek``,
-    ``ActivityLinkedElsewhere`` and ``StatusNeedsAnActivity`` (a status that describes an activity
-    for a workout that has none, after the correction); in each case nothing is changed.
+    Raises ``WeekNotReviewable``, ``WorkoutNotFound``, ``ActivityNotInWeek`` (including if the
+    activity is deleted before the link is written), ``ActivityLinkedElsewhere`` and
+    ``StatusNeedsAnActivity`` (a status that describes an activity for a workout that has none,
+    after the correction); in each case nothing is changed. Any other database error propagates.
     """
     if activity_id is not None and no_activity:
         raise ValueError("A workout has an activity or none, not both.")
@@ -288,9 +292,20 @@ def correct(
             matched = next(item for item in after.match.workouts if item.workout_id == workout.pk)
             if status in NEEDS_AN_ACTIVITY and matched.activity_id is None:
                 raise StatusNeedsAnActivity
-    except IntegrityError:
-        # Another workout of the user holds the activity (the check of the database).
-        raise ActivityLinkedElsewhere from None
+    except IntegrityError as error:
+        cause = error.__cause__
+        constraint = cause.diag.constraint_name if isinstance(cause, pg_errors.Error) else None
+        if constraint == _ACTIVITY_TAKEN_CONSTRAINT:
+            # Another workout of the user holds the activity (the check of the database).
+            raise ActivityLinkedElsewhere from None
+        if (
+            isinstance(cause, pg_errors.ForeignKeyViolation)
+            and constraint
+            and "activity_id" in constraint
+        ):
+            # The activity was deleted between reading the week and writing the link.
+            raise ActivityNotInWeek from None
+        raise
     return after
 
 

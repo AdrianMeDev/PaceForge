@@ -1,5 +1,6 @@
 import uuid
 
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q
 from django.db.models.functions import Length
@@ -69,3 +70,16 @@ class ChatMessage(OwnedModel):
 
     def __str__(self) -> str:
         return f"{self.role} message of user {self.owner_id}"
+
+    def clean(self) -> None:
+        super().clean()
+        errors: dict[str, str] = {}
+        if self.owner_id is not None:
+            plan = self.plan
+            if plan is not None and plan.owner_id != self.owner_id:
+                errors["plan"] = "A message links a weekly plan of the same user."
+            season_plan = self.season_plan
+            if season_plan is not None and season_plan.owner_id != self.owner_id:
+                errors["season_plan"] = "A message links a season plan of the same user."
+        if errors:
+            raise ValidationError(errors)
