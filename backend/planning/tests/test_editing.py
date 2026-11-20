@@ -412,6 +412,18 @@ def sent_as_stored(plan: WeeklyPlan, user: User) -> dict[str, Any]:
 
 
 class TestStoringAChange:
+    @pytest.mark.parametrize("offset", [0, 6])
+    def test_week_boundary_days_can_be_saved(self, alice: User, offset: int) -> None:
+        old = confirmed(alice)
+        data = body(WeekPlan(THIS_WEEK, (workout(THIS_WEEK, offset, 60),)))
+
+        revised = revise(alice, old.pk, data)
+
+        assert revised.parent == old
+        assert services.load(alice, revised.pk).workouts[0].day == THIS_WEEK + timedelta(
+            days=offset
+        )
+
     def test_a_change_is_a_new_draft_made_from_the_version_it_started_from(
         self, alice: User
     ) -> None:
@@ -627,6 +639,27 @@ class TestStoringAChange:
 class TestRefusingAChange:
     def stored(self) -> int:
         return WeeklyPlan.objects.count() + PlannedWorkout.objects.count()
+
+    @pytest.mark.parametrize("offset", [-1, 7])
+    def test_out_of_week_workouts_are_reported_in_input_order_without_a_revision(
+        self, alice: User, offset: int
+    ) -> None:
+        old = confirmed(alice)
+        data = sent_as_stored(old, alice)
+        data["workouts"][2]["day"] = (THIS_WEEK + timedelta(days=offset)).isoformat()
+        count = self.stored()
+
+        for operation in (
+            lambda: check(alice, THIS_WEEK, data),
+            lambda: revise(alice, old.pk, data),
+        ):
+            with pytest.raises(PlanFormatError) as raised:
+                operation()
+
+            assert [p.path for p in raised.value.problems] == ["workouts[2].day"]
+            assert self.stored() == count
+        old.refresh_from_db()
+        assert old.status == WeeklyPlan.Status.CONFIRMED
 
     def test_a_lineage_that_is_not_one_of_the_plan_is_refused_by_its_place_in_the_body(
         self, alice: User

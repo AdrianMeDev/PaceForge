@@ -257,12 +257,33 @@ class TestSavingADraft:
         assert PlannedWorkout.objects.filter(plan=plan).count() == 0
 
     def test_a_plan_with_things_wrong_can_still_be_stored_as_a_draft(self, alice: User) -> None:
-        stray = WeekPlan(MONDAY, (workout(MONDAY, 9, 60), workout(MONDAY, 1, 600)))
+        stray = WeekPlan(MONDAY, (workout(MONDAY, 3, 60), workout(MONDAY, 1, 600)))
 
         plan = draft(alice, stray)
 
         assert PlannedWorkout.objects.filter(plan=plan).count() == 2
         assert not validate(alice, plan.pk).valid
+
+    @pytest.mark.parametrize("offset", [0, 6])
+    def test_week_boundary_days_can_be_saved(self, alice: User, offset: int) -> None:
+        week = WeekPlan(MONDAY, (workout(MONDAY, offset, 60),))
+
+        plan = draft(alice, week)
+
+        assert load(alice, plan.pk) == week
+
+    @pytest.mark.parametrize("offset", [-1, 7])
+    def test_out_of_week_workouts_leave_no_partial_revision(self, alice: User, offset: int) -> None:
+        parent = draft(alice)
+        week = WeekPlan(MONDAY, (workout(MONDAY, 4, 60), workout(MONDAY, offset, 60)))
+
+        with pytest.raises(PlanFormatError) as raised:
+            draft(alice, week, parent=parent.pk)
+
+        assert [p.path for p in raised.value.problems] == ["workouts[1].day"]
+        assert WeeklyPlan.objects.count() == 1
+        assert PlannedWorkout.objects.count() == 4
+        assert draft(alice, parent=parent.pk).version == 2
 
     def test_versions_of_a_week_count_up(self, alice: User) -> None:
         first = draft(alice)

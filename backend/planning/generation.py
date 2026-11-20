@@ -7,8 +7,9 @@ plan wins: an unreadable second answer does not throw away a readable first one.
 
 No database transaction is held while the provider answers (a call can take a minute). The plan
 is checked against what the user can do *after* the answer came in, as that is what confirming
-will check too. A plan with rule errors is still stored as a draft, so that the user sees what is
-wrong; it cannot be confirmed. What is stored of a call is the usage record of ``coach.services``
+will check too. A plan with training-rule errors is still stored as a draft, so that the user
+sees what is wrong; it cannot be confirmed. Out-of-week workouts must be repaired before storage.
+What is stored of a call is the usage record of ``coach.services``
 (facts, never text).
 """
 
@@ -49,7 +50,7 @@ class NoTimeAvailable(Exception):
 
 
 class PlanNotUsable(Exception):
-    """The coach did not give a readable plan, not even after being told what was wrong.
+    """The coach did not give a storable plan, not even after being told what was wrong.
     ``problems`` says what was wrong with the last answer (fixed texts, nothing of the answer)."""
 
     def __init__(self, problems: tuple[Problem, ...]) -> None:
@@ -153,6 +154,8 @@ def _assess(user: User, monday: date, text: str, truncated: bool) -> _Attempt:
         plan = services.canonical(extract_plan(text, monday))
     except PlanFormatError as error:
         return _Attempt(text, None, None, error.problems)
+    if problems := services.outside_week_problems(plan):
+        return _Attempt(text, None, None, problems)
     report = validate_week(plan, build_context(user, monday))
     return _Attempt(text, plan, report, ())
 

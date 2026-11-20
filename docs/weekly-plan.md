@@ -421,10 +421,12 @@ to the [season](season.md) as a draft around the stored absence.
 4. If the answer could not be read, was cut off, or the plan has errors, the coach is told **once**
    what was wrong (paths and fixed texts, never a word of its own answer) and may try again. There
    is no third try. The better of the two answers is kept: a readable plan beats an unreadable one,
-   fewer errors beat more, a tie goes to the later answer.
-5. The plan is stored as a **draft** (`reason`: "Drafted by the coach"), also with errors, so that
-   the user sees what is wrong. If no answer could be read, nothing is stored and the user is told
-   to try again.
+   fewer errors beat more, a tie goes to the later answer. Every workout must fall within the
+   plan week, from Monday through Sunday. An out-of-week answer is repairable but cannot be
+   kept as a fallback or stored.
+5. The plan is stored as a **draft** (`reason`: "Drafted by the coach"), also with training-rule
+   errors, so that the user sees what is wrong. If no answer could be read with all workouts in
+   the week, nothing is stored and the user is told to try again.
 
 **A note for the week.** `generate(user, monday, note)` takes an optional note of up to 300 characters
 (`NOTE_MAX` in `backend/planning/models.py`): plain text with line breaks, no other control
@@ -562,7 +564,10 @@ with the new steps and duration. A workout without a `lineage` is
 new; a workout of that plan that is not in the body is taken out. A `lineage` that is not one of
 the workouts of the plan in the address is refused, and so is a week that cannot be planned. The
 rationale of the plan in the address is kept, the one in the body is ignored. The draft is stored
-also if the checks find errors in it, so that the user sees what is wrong; it cannot be confirmed.
+also if the checks find training-rule errors in it, so that the user sees what is wrong; it cannot
+be confirmed. Every workout must stay within the plan week, from Monday through Sunday. An
+out-of-week workout returns `invalid_plan` with its input path, such as `workouts[2].day`.
+Nothing is stored, including no partial revision. The editor check reports the same problem.
 
 **Restoring a version.** `POST /api/planning/plans/<id>/restore/` copies a plan that was replaced
 (`superseded`) or `discarded` into the next version of its week, as a draft: the same workouts with
@@ -632,7 +637,7 @@ without a code is the limit of PaceForge itself.
 | `not_revisable` | 409 | Only a draft or a confirmed plan can be changed (`revise`); an older version has to be restored first. |
 | `not_confirmed` | 409 | Only a confirmed plan can be sent to Intervals.icu. |
 | `not_connected` | 409 | The user has not connected Intervals.icu. |
-| `not_usable` | 422 | The coach gave no readable plan, even after the repair; the problems come along. |
+| `not_usable` | 422 | The coach gave no readable plan with all workouts in the week, even after the repair; the problems come along. |
 | `invalid_plan` | 422 | The plan that was sent for a check cannot be read (the format, a lineage that is no id or is used twice, a plan for another week); the problems come along. |
 | `not_confirmable` | 422 | The plan has errors; the findings come along. |
 | `rate_limited` | 429 | The provider asked to slow down (`retry_after` in seconds, if it said). |

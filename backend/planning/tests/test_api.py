@@ -155,7 +155,7 @@ def body(response: Any) -> Any:
 
 
 def draft(user: User, *workouts: Workout, monday: date = MONDAY) -> WeeklyPlan:
-    plan = WeekPlan(monday, workouts or (ride(0), ride(2)))
+    plan = WeekPlan(monday, workouts or (ride(0, monday=monday), ride(2, monday=monday)))
     return services.save_draft(user, plan, reason="by hand")
 
 
@@ -1015,6 +1015,25 @@ class TestRevising:
 
         assert confirmed.status_code == HTTPStatus.OK
         assert WeeklyPlan.objects.get(pk=old.pk).status == "superseded"
+
+    @pytest.mark.parametrize("offset", [-1, 7])
+    def test_out_of_week_revision_is_a_handled_error(self, alice: User, offset: int) -> None:
+        old = self.confirmed(alice)
+        data = stored_body(old)
+        data["workouts"][2]["day"] = (MONDAY + timedelta(days=offset)).isoformat()
+        counts = (WeeklyPlan.objects.count(), PlannedWorkout.objects.count())
+
+        response = signed_in(alice).call("POST", plan_url(old.pk, "revise/"), data)
+
+        assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+        assert body(response)["code"] == "invalid_plan"
+        assert body(response)["problems"] == [
+            {
+                "path": "workouts[2].day",
+                "message": "The workout does not lie within the week of the plan.",
+            }
+        ]
+        assert (WeeklyPlan.objects.count(), PlannedWorkout.objects.count()) == counts
 
     def test_a_lineage_that_is_not_one_of_the_plan_is_unprocessable(self, alice: User) -> None:
         old = self.confirmed(alice)
