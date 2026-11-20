@@ -40,7 +40,9 @@ Rules for both keys:
 
 - **Keep each key in a password manager or another secret store,** in at least two places.
 - **Never keep a key next to the backups:** not on the same disk, not in the same bucket, not in
-  the same folder, not in the same mail.
+  the same folder, not in the same mail. The one exception is the server that runs the scheduled
+  `backup` service. Its `.env` holds `BACKUP_ENCRYPTION_KEY`, and its volume holds the backups. See
+  [What the server, an off-host copy and the key protect](#what-the-server-an-off-host-copy-and-the-key-protect).
 - **Never copy a key off-site with a backup.** Off-site copies hold only encrypted backup files.
 - **Keep the two keys apart from each other.** The instance refuses to start when a backup key
   equals `ENCRYPTION_KEY` (check `core.E007`).
@@ -50,6 +52,26 @@ Rules for both keys:
 
 Whoever holds a backup file and `BACKUP_ENCRYPTION_KEY` can read all the data in it, except the
 secrets. Those also need `ENCRYPTION_KEY`. Keep that in mind when you decide where each key goes.
+
+### What the server, an off-host copy and the key protect
+
+The scheduled `backup` service runs on the production server. It needs `BACKUP_ENCRYPTION_KEY` in
+the server's `.env`, and it writes the backups to the volume `paceforge_backups` on that same
+server. So the key and the backups sit together. Keep that in mind:
+
+- **Backups on the server** help against mistakes, such as a deleted table, and against a damaged
+  database. They do not help if you lose the server or lose control of it.
+- **An off-host copy** helps against losing the server or its disk. Copy the backup files away, as
+  described in [Copying backups off-site](#copying-backups-off-site).
+- **A key kept apart** makes that copy useless to anyone who gets it alone. The off-host copy is
+  encrypted, so a leak of its storage shows only encrypted files. Keep the key in a password
+  manager, never with the off-host copy.
+- **The same key lets you restore when the server is gone.** Restore the off-host copy into a new
+  database, as in [Restoring into an empty database](#restoring-into-an-empty-database). Keep
+  `ENCRYPTION_KEY` apart too, for the same reasons.
+- **Whoever controls the server can read the live database and both keys anyway.** `.env` holds
+  `ENCRYPTION_KEY` and `BACKUP_ENCRYPTION_KEY`, and the backups are on the same disk. No off-host
+  copy changes that.
 
 ### Rotating `BACKUP_ENCRYPTION_KEY`
 

@@ -1903,7 +1903,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** -
 - **Size:** M, ~5 commits
 
-### M4 [~] Audit: Backup keys, subprocesses and restore credentials
+### M4 [x] Audit: Backup keys, subprocesses and restore credentials
 
 - **Goal:** Keep backup credentials separate from instance keys and expose PostgreSQL credentials only where the tools need them.
 - **Includes:** F254 (backup key separation), F256 (empty instance key ring), F261 (child process environment), F262 (equivalent key encodings), F269 (restore credentials in arguments), F270 (backup interval), F527 (same-host key custody).
@@ -2251,3 +2251,4 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - 2026-11-20: M1 done: discrete `POSTGRES_*` settings, no hardcoded database passwords, docs for existing and new volumes
 - 2026-11-20: M2 done: CI generates fresh Django and Fernet keys per run and verifies the PGDG APT key fingerprint before trusting it; M2 test suites use synthetic provider markers, guarded by a regression test against `sk-ant-` literals
 - 2026-11-20: M3 done: `DJANGO_TRUST_PROXY_HEADERS` defaults to `false` (F255; `true` on `backend` behind Caddy); strict CSP with `script-src 'self'` and `object-src 'none'` in `deploy/Caddyfile` (F525); frontend `/srv` owned by root and read-only for the runtime user (F543); static server answers `/api` with `404` (F544); container smoke tests in `deploy/smoke_test.py` for deep links, missing API routes and direct static `/api` requests
+- 2026-11-20: M4 done: backup keys are compared as decoded bytes against every instance key (F254, F262); an empty `ENCRYPTION_KEY` ring is refused at startup (F256); the PostgreSQL tools get only the libpq environment (F261); the restore takes its password from `--password-file` (F269); `BACKUP_INTERVAL_HOURS` is validated before the first dump (F270); the backup guide explains off-host copies and the separately held key (F527)

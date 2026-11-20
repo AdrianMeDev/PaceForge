@@ -169,6 +169,7 @@ password goes into a file (`--password-file`), never into the URL or the argumen
 
 The full guide, with the commands for production and local development, the key rotation, the
 off-site copies and the restore drills, is in [docs/backup-and-restore.md](docs/backup-and-restore.md).
+The scheduled `backup` service keeps its key and its backups on one server, so read [what an off-host copy and a separately held key protect](docs/backup-and-restore.md#what-the-server-an-off-host-copy-and-the-key-protect) before you rely on it.
 
 ## Navigation
 
