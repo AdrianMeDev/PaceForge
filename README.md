@@ -6,7 +6,7 @@
 
 A self-hostable, AI-assisted endurance coach for running, cycling, swimming and strength training.
 The status of each milestone and the open work are in [`docs/ROADMAP.md`](docs/ROADMAP.md). The
-long-term goal is described in `PROJECT_PLAN.md`.
+long-term goal is in its **Vision** and **Decisions** sections.
 
 **What works today:**
 

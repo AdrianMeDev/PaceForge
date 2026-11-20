@@ -152,8 +152,9 @@ AI key; several people can share one instance without seeing each other's data.
 - **Size:** S
 
 ### M15 [~] Status docs up to date
-- **Goal:** README and `PROJECT_PLAN.md` describe what works today and point to this roadmap.
-- **Includes:** rewrite the README's "What works today / Not there yet", replace the stage table in `PROJECT_PLAN.md` §15.4 with a pointer to `docs/ROADMAP.md`.
+- **Goal:** README and this roadmap describe what works today and point to each other.
+- **Includes:** rewrite the README's "What works today / Not there yet", and point the README's long-term goal to the Vision and Decisions sections of this roadmap.
+- **Note:** `PROJECT_PLAN.md` is a local, git-ignored file, so public docs must not link to it. Its stage table is updated by hand (see Manual checks).
 - **Done when:** no README statement contradicts the code; docs only.
 - **Depends on:** M1, M2, M3, M4, M5, M6, M7, M8, M9, M10, M11, M12, M13, M14
 - **Size:** S
@@ -163,6 +164,7 @@ AI key; several people can share one instance without seeing each other's data.
 - [ ] Push to the real Intervals.icu API: pace targets, strength event, Ride vs VirtualRide (Zwift).
 - [ ] Intervals.icu rate limits for personal keys (before M7 runs for several users).
 - [ ] M1 and M8 against a real Intervals account (activity and wellness fields).
+- [ ] Replace the stage table in the local `PROJECT_PLAN.md` §15.4 with a pointer to `docs/ROADMAP.md` (the file is git-ignored).
 
 ## Definition of done (every milestone)
 - Backend: `uv run ruff format --check .`, `uv run ruff check .`, `uv run mypy .`, migrations up to
