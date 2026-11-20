@@ -164,7 +164,8 @@ hand, and the `backup` service of `compose.prod.yaml` (off by default, profile `
 every `BACKUP_INTERVAL_HOURS` hours. Old backups are removed by `BACKUP_KEEP_DAILY` and
 `BACKUP_KEEP_WEEKLY`. A backup needs `BACKUP_ENCRYPTION_KEY`, a second key that must differ from
 [`ENCRYPTION_KEY`](#instance-key) and be stored apart from the backup files. The restore command,
-`restore_db`, writes a backup into an empty database.
+`restore_db`, writes a backup into an empty database. For a target given by `--database-url`, the
+password goes into a file (`--password-file`), never into the URL or the arguments.
 
 The full guide, with the commands for production and local development, the key rotation, the
 off-site copies and the restore drills, is in [docs/backup-and-restore.md](docs/backup-and-restore.md).

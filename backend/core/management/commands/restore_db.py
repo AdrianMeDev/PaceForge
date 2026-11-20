@@ -20,8 +20,15 @@ class Command(BaseCommand):
         parser.add_argument(
             "--database-url",
             default=None,
-            help="Target database, for example postgres://user:password@host:5432/name. "
+            help="Target database without a password, for example "
+            "postgres://user@host:5432/name. Give the password with --password-file. "
             "Default: DATABASE_URL.",
+        )
+        parser.add_argument(
+            "--password-file",
+            type=Path,
+            default=None,
+            help="File with the password of the --database-url target. Needs --database-url.",
         )
         parser.add_argument(
             "--key-file",
@@ -38,6 +45,9 @@ class Command(BaseCommand):
     def handle(self, *args: Any, **options: Any) -> None:
         database = None
         database_url: str | None = options["database_url"]
+        password_file: Path | None = options["password_file"]
+        if password_file is not None and database_url is None:
+            raise CommandError("--password-file needs --database-url.")
         if database_url is not None:
             if not database_url.strip():
                 raise CommandError("--database-url must not be empty.")
@@ -48,6 +58,13 @@ class Command(BaseCommand):
                 raise CommandError("--database-url is not a valid database URL.") from None
             if not database.get("NAME"):
                 raise CommandError("--database-url must name a database.")
+            if database.get("PASSWORD"):
+                # Arguments show up in process listings and shell history.
+                raise CommandError(
+                    "--database-url must not contain a password. Use --password-file instead."
+                )
+            if password_file is not None:
+                database["PASSWORD"] = self._read_password(password_file)
         try:
             keys = load_backup_keys(options["key_file"])
             restore_backup(
@@ -60,3 +77,15 @@ class Command(BaseCommand):
             raise CommandError(str(error)) from None
 
         self.stdout.write(self.style.SUCCESS(f"Restored {options['backup_file'].name}."))
+
+    @staticmethod
+    def _read_password(path: Path) -> str:
+        # Never echo the content: it is the password.
+        try:
+            password = path.read_text(encoding="utf-8")
+        except OSError, UnicodeError:
+            raise CommandError("The password file cannot be read.") from None
+        password = password.removesuffix("\n").removesuffix("\r")
+        if not password:
+            raise CommandError("The password file is empty.")
+        return password

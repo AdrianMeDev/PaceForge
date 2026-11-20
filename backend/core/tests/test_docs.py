@@ -57,6 +57,11 @@ class TestTheCommands:
             assert (COMMANDS / f"{command}.py").is_file(), command
             assert f"manage.py {command}" in DOC, command
 
+    def test_the_restore_takes_its_password_from_a_file(self) -> None:
+        assert "--password-file" in DOC
+        assert "--password-file" in README
+        assert not re.search(r"postgres(?:ql)?://[^\s/@:]+:[^\s@]*@", DOC)
+
     def test_the_guide_names_the_profile_of_the_backup_service(self) -> None:
         assert "profiles: [backup]" in COMPOSE
         assert "--profile backup" in DOC

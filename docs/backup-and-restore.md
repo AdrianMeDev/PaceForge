@@ -285,9 +285,21 @@ development data stays as it is.
      ../backups/paceforge-20261120-031500Z.pgdump.enc
    ```
 
-   If you prefer `--database-url`, URL-encode the password first (`@` is `%40`, `:` is `%3A`,
-   `/` is `%2F`, `#` is `%23`):
-   `postgres://paceforge:<url-encoded-password>@localhost:5432/paceforge_restore`.
+   If you prefer `--database-url`, put the password into a file that only you can read, and leave
+   it out of the URL. The command refuses a URL that contains a password, because arguments show up
+   in process listings and shell history. The file holds the password as UTF-8 text, and one
+   trailing line break is ignored:
+
+   ```sh
+   install -m 600 /dev/null ~/paceforge-restore.password
+   $EDITOR ~/paceforge-restore.password
+   uv run python manage.py restore_db ../backups/paceforge-20261120-031500Z.pgdump.enc \
+     --database-url postgres://paceforge@localhost:5432/paceforge_restore \
+     --password-file ~/paceforge-restore.password
+   ```
+
+   Without `--password-file`, `--database-url` sends no password and libpq looks in `~/.pgpass`.
+   Delete the password file when you are done.
 
    The command prints `Restored <name>.`. Run it again and it refuses, because the database now has
    tables.
@@ -337,4 +349,10 @@ months, and after each change of key or of PaceForge version.
   production, see the `chown` step above.
 - **`The target database is not empty.`** You are restoring into a database that has tables. Use an
   empty database (procedure A), or see `--allow-non-empty` above, with care.
+- **`--database-url must not contain a password.`** Remove the password from the URL and pass it
+  with `--password-file`.
+- **`--password-file needs --database-url.`** The file is only for a target given by URL. The
+  default database uses `POSTGRES_PASSWORD` or `DATABASE_URL`.
+- **`The password file cannot be read.`** The file is missing, not readable by you, or not UTF-8.
+- **`The password file is empty.`** The file has no password. Write it into the file.
 - **`The target database cannot be reached.`** Check `DATABASE_URL` and that `db` runs.

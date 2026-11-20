@@ -273,6 +273,12 @@ def test_pg_restore_error_is_propagated(
         run(str(backup_file), "--key-file", _key_file(tmp_path, key))
 
 
+def _password_file(tmp_path: Path, content: str = "s3cret@pw\n") -> str:
+    path = tmp_path / "target.password"
+    path.write_text(content, encoding="utf-8")
+    return str(path)
+
+
 def test_database_url_is_parsed_and_password_stays_out_of_arguments(
     stub: Path, emptiness: Emptiness, backup_file: Path, key: str, tmp_path: Path
 ) -> None:
@@ -281,7 +287,9 @@ def test_database_url_is_parsed_and_password_stays_out_of_arguments(
         "--key-file",
         _key_file(tmp_path, key),
         "--database-url",
-        "postgres://restorer:s3cret%40pw@db.example:5433/target",
+        "postgres://restorer@db.example:5433/target",
+        "--password-file",
+        _password_file(tmp_path, "s3cret@pw\r\n"),
     )
 
     args = recorded_args(stub)
@@ -301,6 +309,108 @@ def test_database_url_is_parsed_and_password_stays_out_of_arguments(
     assert all("s3cret" not in arg for arg in args)
     assert emptiness.seen[0]["NAME"] == "target"
     assert emptiness.seen[0]["HOST"] == "db.example"
+    assert emptiness.seen[0]["PASSWORD"] == "s3cret@pw"
+
+
+def test_database_url_with_a_password_is_refused_before_anything_runs(
+    stub: Path, emptiness: Emptiness, backup_file: Path, key: str, tmp_path: Path
+) -> None:
+    with pytest.raises(CommandError, match="must not contain a password") as error:
+        run(
+            str(backup_file),
+            "--key-file",
+            _key_file(tmp_path, key),
+            "--database-url",
+            "postgres://restorer:s3cret%40pw@db.example:5433/target",
+        )
+
+    assert "s3cret" not in str(error.value)
+    assert emptiness.seen == []
+    assert not stub.exists()
+
+
+def test_password_file_needs_a_database_url(
+    stub: Path, emptiness: Emptiness, backup_file: Path, key: str, tmp_path: Path
+) -> None:
+    with pytest.raises(CommandError, match="needs --database-url"):
+        run(
+            str(backup_file),
+            "--key-file",
+            _key_file(tmp_path, key),
+            "--password-file",
+            _password_file(tmp_path),
+        )
+
+    assert emptiness.seen == []
+    assert not stub.exists()
+
+
+def test_missing_password_file_is_reported(
+    stub: Path, emptiness: Emptiness, backup_file: Path, key: str, tmp_path: Path
+) -> None:
+    with pytest.raises(CommandError, match="cannot be read"):
+        run(
+            str(backup_file),
+            "--key-file",
+            _key_file(tmp_path, key),
+            "--database-url",
+            "postgres://restorer@db.example:5433/target",
+            "--password-file",
+            str(tmp_path / "nope.password"),
+        )
+
+    assert emptiness.seen == []
+    assert not stub.exists()
+
+
+@pytest.mark.parametrize("content", ["", "\n", "\r\n"])
+def test_empty_password_file_is_refused(
+    stub: Path, emptiness: Emptiness, backup_file: Path, key: str, tmp_path: Path, content: str
+) -> None:
+    with pytest.raises(CommandError, match="is empty"):
+        run(
+            str(backup_file),
+            "--key-file",
+            _key_file(tmp_path, key),
+            "--database-url",
+            "postgres://restorer@db.example:5433/target",
+            "--password-file",
+            _password_file(tmp_path, content),
+        )
+
+    assert emptiness.seen == []
+    assert not stub.exists()
+
+
+def test_unreadable_password_file_does_not_show_its_content(
+    stub: Path, emptiness: Emptiness, backup_file: Path, key: str, tmp_path: Path
+) -> None:
+    path = tmp_path / "binary.password"
+    path.write_bytes(b"\xff\xfesecret-bytes")
+
+    with pytest.raises(CommandError, match="cannot be read") as error:
+        run(
+            str(backup_file),
+            "--key-file",
+            _key_file(tmp_path, key),
+            "--database-url",
+            "postgres://restorer@db.example:5433/target",
+            "--password-file",
+            str(path),
+        )
+
+    assert "secret" not in str(error.value)
+    assert emptiness.seen == []
+
+
+def test_help_shows_no_password_in_the_example() -> None:
+    from django.core.management import load_command_class
+
+    help_text = load_command_class("core", "restore_db").create_parser("manage.py", "restore_db")
+    text = help_text.format_help()
+
+    assert ":password@" not in text
+    assert "--password-file" in text
 
 
 @pytest.mark.parametrize("empty_url", ["", "   "])
@@ -335,7 +445,7 @@ def test_database_url_without_a_name_is_rejected(
             "--key-file",
             _key_file(tmp_path, key),
             "--database-url",
-            "postgres://user:pw@host:5432/",
+            "postgres://user@host:5432/",
         )
 
 
