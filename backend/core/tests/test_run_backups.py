@@ -61,6 +61,43 @@ def test_loop_sleeps_the_configured_interval(
     assert calls == ["backup_db", "backup_db"]
 
 
+@pytest.mark.parametrize("args", [[], ["--once"]])
+@pytest.mark.parametrize("interval", [0, -1, 169, 1.5, True])
+def test_invalid_interval_fails_before_the_first_round(
+    calls: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+    settings: Any,
+    interval: Any,
+    args: list[str],
+) -> None:
+    def no_sleep(seconds: float) -> None:
+        raise AssertionError("must not sleep with an invalid interval")
+
+    monkeypatch.setattr(run_backups.time, "sleep", no_sleep)
+    settings.BACKUP_INTERVAL_HOURS = interval
+    with pytest.raises(CommandError, match="BACKUP_INTERVAL_HOURS must be a whole number"):
+        call_command("run_backups", *args, stdout=StringIO())
+    assert calls == []
+
+
+@pytest.mark.parametrize("interval", [1, 168])
+def test_interval_limits_are_valid(
+    calls: list[str], monkeypatch: pytest.MonkeyPatch, settings: Any, interval: int
+) -> None:
+    sleeps: list[float] = []
+
+    def fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+        raise StopLoop
+
+    monkeypatch.setattr(run_backups.time, "sleep", fake_sleep)
+    settings.BACKUP_INTERVAL_HOURS = interval
+    with pytest.raises(StopLoop):
+        call_command("run_backups", stdout=StringIO())
+    assert calls == ["backup_db"]
+    assert sleeps == [interval * 3600]
+
+
 def test_once_failure_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     def failing(name: str, *args: Any, **kwargs: Any) -> None:
         raise CommandError("pg_dump failed")

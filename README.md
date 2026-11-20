@@ -164,10 +164,12 @@ hand, and the `backup` service of `compose.prod.yaml` (off by default, profile `
 every `BACKUP_INTERVAL_HOURS` hours. Old backups are removed by `BACKUP_KEEP_DAILY` and
 `BACKUP_KEEP_WEEKLY`. A backup needs `BACKUP_ENCRYPTION_KEY`, a second key that must differ from
 [`ENCRYPTION_KEY`](#instance-key) and be stored apart from the backup files. The restore command,
-`restore_db`, writes a backup into an empty database.
+`restore_db`, writes a backup into an empty database. For a target given by `--database-url`, the
+password goes into a file (`--password-file`), never into the URL or the arguments.
 
 The full guide, with the commands for production and local development, the key rotation, the
 off-site copies and the restore drills, is in [docs/backup-and-restore.md](docs/backup-and-restore.md).
+The scheduled `backup` service keeps its key and its backups on one server, so read [what an off-host copy and a separately held key protect](docs/backup-and-restore.md#what-the-server-an-off-host-copy-and-the-key-protect) before you rely on it.
 
 ## Navigation
 
@@ -1681,8 +1683,8 @@ and **Service Workers** show what the browser found.
 
 Secrets that the database holds for users are encrypted with a separate instance key
 (`ENCRYPTION_KEY`, Fernet: AES with an integrity check), so a copy of the database alone reveals
-nothing. Django refuses to start without it, and the system check (`manage.py check`) names a key
-that is not valid.
+nothing. Django refuses to start without it, and also when the value is made only of commas or
+spaces. The system check (`manage.py check`) names a key that is not valid.
 
 - **Generate it once** (from `backend/`), keep it in the environment or a secret file, never in the
   repository: `uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`

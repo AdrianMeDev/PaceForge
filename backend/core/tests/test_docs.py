@@ -57,6 +57,11 @@ class TestTheCommands:
             assert (COMMANDS / f"{command}.py").is_file(), command
             assert f"manage.py {command}" in DOC, command
 
+    def test_the_restore_takes_its_password_from_a_file(self) -> None:
+        assert "--password-file" in DOC
+        assert "--password-file" in README
+        assert not re.search(r"postgres(?:ql)?://[^\s/@:]+:[^\s@]*@", DOC)
+
     def test_the_guide_names_the_profile_of_the_backup_service(self) -> None:
         assert "profiles: [backup]" in COMPOSE
         assert "--profile backup" in DOC
@@ -71,6 +76,32 @@ class TestTheLinks:
         assert "(deployment.md" in DOC
         assert (ROOT / "docs" / "deployment.md").is_file()
         assert (ROOT / "README.md").is_file()
+
+
+class TestTheOffHostSubsection:
+    HEADING = "### What the server, an off-host copy and the key protect"
+    ANCHOR = "#what-the-server-an-off-host-copy-and-the-key-protect"
+
+    def test_the_guide_has_the_subsection(self) -> None:
+        assert self.HEADING in DOC.splitlines()
+
+    def test_the_anchor_is_the_slug_of_the_heading(self) -> None:
+        slug = re.sub(r"[^\w\- ]", "", self.HEADING.lstrip("# ").lower()).replace(" ", "-")
+        assert self.ANCHOR == f"#{slug}"
+
+    def test_the_readme_links_to_the_subsection(self) -> None:
+        assert f"docs/backup-and-restore.md{self.ANCHOR})" in README
+
+    def test_the_deployment_guide_links_to_the_subsection(self) -> None:
+        assert f"backup-and-restore.md{self.ANCHOR})" in DEPLOYMENT
+
+    def test_the_key_rule_names_the_server_as_the_one_exception(self) -> None:
+        assert "The one exception is the server that runs the scheduled" in " ".join(DOC.split())
+
+    def test_the_deployment_guide_asks_for_a_second_copy_of_the_backup_key(self) -> None:
+        assert "Keep a second copy apart from the server and the backup files" in " ".join(
+            DEPLOYMENT.split()
+        )
 
 
 class TestTheDatabaseCredentials:

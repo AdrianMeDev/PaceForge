@@ -8,6 +8,7 @@ The test needs ``pg_dump`` and ``pg_restore`` of PostgreSQL 17. It uses the ones
 import base64
 import os
 import re
+import shlex
 import shutil
 import stat
 import subprocess
@@ -58,6 +59,9 @@ def _native_tool(name: str) -> str | None:
     return None
 
 
+_DOCKER_VARIABLES = ("DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG", "XDG_RUNTIME_DIR")
+
+
 def _compose_wrapper(directory: Path, name: str) -> str | None:
     """A script that runs ``name`` in the ``db`` container, with stdin and PGPASSWORD passed on."""
     docker = shutil.which("docker")
@@ -65,7 +69,13 @@ def _compose_wrapper(directory: Path, name: str) -> str | None:
         return None
     script = directory / name
     command = f'exec "{docker}" compose -f "{COMPOSE_FILE}" exec -T -e PGPASSWORD db {name} "$@"'
-    script.write_text(f"#!/bin/sh\n{command}\n")
+    # The tools get a minimal environment, so hand docker the variables it needs to find the daemon.
+    exports = "".join(
+        f"export {variable}={shlex.quote(os.environ[variable])}\n"
+        for variable in _DOCKER_VARIABLES
+        if variable in os.environ
+    )
+    script.write_text(f"#!/bin/sh\n{exports}{command}\n")
     script.chmod(0o700)
     return str(script)
 
@@ -99,9 +109,20 @@ def _connect(name: str, **options: Any) -> psycopg.Connection[Any]:
 def _database_url(name: str) -> str:
     database = backup.settings.DATABASES["default"]
     return (
-        f"postgres://{quote(str(database['USER']), safe='')}:"
-        f"{quote(str(database['PASSWORD']), safe='')}@{database['HOST']}:{database['PORT']}/{name}"
+        f"postgres://{quote(str(database['USER']), safe='')}"
+        f"@{database['HOST']}:{database['PORT']}/{name}"
     )
+
+
+def _password_options(directory: Path) -> list[str]:
+    """``--password-file`` with a ``0600`` file; none when the test database has no password."""
+    password = str(backup.settings.DATABASES["default"].get("PASSWORD") or "")
+    if not password:
+        return []  # libpq falls back to ~/.pgpass
+    path = directory / "target.password"
+    path.touch(mode=0o600)
+    path.write_text(f"{password}\n", encoding="utf-8")
+    return ["--password-file", str(path)]
 
 
 @contextmanager
@@ -195,16 +216,17 @@ def test_encrypted_backup_restores_into_empty_database(
 
     with empty_database() as target:
         url = _database_url(target)
+        password = _password_options(tmp_path)
 
         # A wrong backup key fails and leaves the database empty.
         settings.BACKUP_ENCRYPTION_KEYS = [base64.urlsafe_b64encode(os.urandom(32)).decode()]
         with pytest.raises(CommandError):
-            call_command("restore_db", str(archive), "--database-url", url)
+            call_command("restore_db", str(archive), "--database-url", url, *password)
         assert _table_count(target) == 0
 
         # The right key restores everything.
         settings.BACKUP_ENCRYPTION_KEYS = [backup_key]
-        call_command("restore_db", str(archive), "--database-url", url)
+        call_command("restore_db", str(archive), "--database-url", url, *password)
         for model, count in expected.items():
             assert _rows(target, model) == count
         assert (
@@ -233,7 +255,7 @@ def test_encrypted_backup_restores_into_empty_database(
         # A second restore into the now filled database is refused and changes nothing.
         tables = _table_count(target)
         with pytest.raises(CommandError, match="not empty"):
-            call_command("restore_db", str(archive), "--database-url", url)
+            call_command("restore_db", str(archive), "--database-url", url, *password)
         assert _table_count(target) == tables
         for model, count in expected.items():
             assert _rows(target, model) == count

@@ -72,9 +72,12 @@ Never commit `.env`. Edit `.env` and fill in every empty value:
    `ENCRYPTION_KEY=<new>,<old>`.
 
 4. **Backup key (`BACKUP_ENCRYPTION_KEY`):** generate a second Fernet-style key with the same
-   command as in step 3. It must differ from `ENCRYPTION_KEY`. Store it apart from the backup files
-   and from `ENCRYPTION_KEY`. Without it no backup can be made. See
-   [Backup and restore](backup-and-restore.md#two-keys-stored-apart).
+   command as in step 3. It must differ from `ENCRYPTION_KEY`. The scheduled `backup` service reads
+   it from `.env` on this server, so the key sits on the same server as the backups. Keep a second
+   copy apart from the server and the backup files, for example in a password manager, and never
+   with an off-host copy. Without the key no backup can be made. See
+   [Backup and restore](backup-and-restore.md#two-keys-stored-apart) and
+   [What the server, an off-host copy and the key protect](backup-and-restore.md#what-the-server-an-off-host-copy-and-the-key-protect).
 5. **Database password (`POSTGRES_PASSWORD`):** generate a long random password, for example:
 
    ```sh

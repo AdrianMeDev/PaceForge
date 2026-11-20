@@ -64,6 +64,22 @@ def parse_backup_keys(raw_keys: Sequence[str]) -> list[bytes]:
     return keys
 
 
+def shares_an_instance_key(backup_keys: Sequence[bytes]) -> bool:
+    """Whether a decoded backup key equals a decoded ``ENCRYPTION_KEYS`` entry (also an old one).
+
+    Compares bytes, not text: the last character of a key only uses some of its bits, so two
+    spellings can decode to the same key. Instance keys that cannot be decoded are skipped
+    (``core.E002`` reports them).
+    """
+    instance_keys: set[bytes] = set()
+    for key in settings.ENCRYPTION_KEYS:
+        try:
+            instance_keys.add(base64.urlsafe_b64decode(key))
+        except ValueError:
+            continue
+    return any(key in instance_keys for key in backup_keys)
+
+
 def _configured_keys(keys: Sequence[str] | None) -> list[bytes]:
     parsed = parse_backup_keys(settings.BACKUP_ENCRYPTION_KEYS if keys is None else keys)
     if not parsed:

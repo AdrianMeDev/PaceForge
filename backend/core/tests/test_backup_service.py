@@ -33,20 +33,66 @@ def write_stub(path: Path, body: str) -> Path:
     return path
 
 
+PASSWORD = "p@ss:w/rd?a#b%c&d+e=f"
+
+
+def recorded_args(record: Path) -> list[str]:
+    return record.read_text().splitlines()
+
+
+def recorded_password(record: Path) -> str:
+    return (record.parent / "password.txt").read_text().removesuffix("\n")
+
+
+SECRET_MARKERS = (
+    "ENCRYPTION_KEY",
+    "BACKUP_ENCRYPTION_KEY",
+    "DJANGO_SECRET_KEY",
+    "DATABASE_URL",
+    "POSTGRES_PASSWORD",
+    "UNRELATED_SETTING",
+)
+
+
+def recorded_environment(record: Path) -> dict[str, str]:
+    lines = (record.parent / "env.txt").read_text().splitlines()
+    return dict(line.split("=", 1) for line in lines if "=" in line)
+
+
 @pytest.fixture
 def key() -> str:
     return new_key()
 
 
 @pytest.fixture
+def database(settings: Any) -> dict[str, str]:
+    target = {
+        "HOST": "db.example",
+        "PORT": "5433",
+        "USER": "dumper",
+        "NAME": "paceforge",
+        "PASSWORD": PASSWORD,
+    }
+    settings.DATABASES = {
+        **settings.DATABASES,
+        "default": {**settings.DATABASES["default"], **target},
+    }
+    return target
+
+
+@pytest.fixture
 def stub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """A pg_dump that records its arguments and PGPASSWORD, then writes a fixed dump."""
-    record = tmp_path / "record.txt"
+    """A pg_dump that records its arguments (one per line) and PGPASSWORD, then dumps DUMP."""
+    record = tmp_path / "args.txt"
+    password = tmp_path / "password.txt"
     dump = tmp_path / "dump.bin"
     dump.write_bytes(DUMP)
     script = write_stub(
         tmp_path / "pg_dump_stub",
-        f'echo "$PGPASSWORD" > "{record}"\necho "$@" >> "{record}"\ncat "{dump}"',
+        f'printf "%s\\n" "$PGPASSWORD" > "{password}"\n'
+        f'printf "%s\\n" "$@" > "{record}"\n'
+        f'env > "{tmp_path / "env.txt"}"\n'
+        f'cat "{dump}"',
     )
     monkeypatch.setattr(backup, "PG_DUMP", str(script))
     return record
@@ -83,19 +129,47 @@ def test_create_backup_writes_encrypted_0600_file(stub: Path, out: Path, key: st
 
 
 def test_create_backup_passes_password_by_environment_only(
-    stub: Path, out: Path, key: str, settings: Any
+    stub: Path, out: Path, key: str, database: dict[str, str]
 ) -> None:
-    password = "p@ss:w/rd?a#b%c&d+e=f"
+    create_backup(out, [key])
+    args = recorded_args(stub)
+
+    assert args == [
+        "-Fc",
+        "--no-password",
+        "-h",
+        "db.example",
+        "-p",
+        "5433",
+        "-U",
+        "dumper",
+        "-d",
+        "paceforge",
+    ]
+    assert recorded_password(stub) == PASSWORD
+    assert all(PASSWORD not in arg for arg in args)
+
+
+def test_create_backup_gives_pg_dump_only_the_libpq_environment(
+    stub: Path, out: Path, key: str, monkeypatch: pytest.MonkeyPatch, settings: Any
+) -> None:
     settings.DATABASES = {
         **settings.DATABASES,
-        "default": {**settings.DATABASES["default"], "PASSWORD": password},
+        "default": {**settings.DATABASES["default"], "PASSWORD": ""},
     }
-    create_backup(out, [key])
-    lines = stub.read_text().splitlines()
+    for name in SECRET_MARKERS:
+        monkeypatch.setenv(name, f"marker-{name}")
+    monkeypatch.setenv("PGPASSWORD", "inherited-password")
+    monkeypatch.setenv("PGSSLMODE", "require")
 
-    assert lines[0] == password
-    assert "-Fc" in lines[1].split()
-    assert password not in lines[1]
+    create_backup(out, [key])
+
+    child = recorded_environment(stub)
+    assert not any(name in child for name in SECRET_MARKERS)
+    assert not any("marker-" in value for value in child.values())
+    assert "PGPASSWORD" not in child
+    assert child["PATH"] == os.environ["PATH"]
+    assert child["PGSSLMODE"] == "require"
 
 
 def test_create_backup_cleans_up_when_pg_dump_fails(

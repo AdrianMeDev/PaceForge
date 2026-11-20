@@ -25,6 +25,7 @@ The file is named after the UTC time it was made, for example
 plain dump never touches the disk. The output is AES-256-GCM in chunks, with `BACKUP_ENCRYPTION_KEY`.
 Each chunk is checked on restore, and any change, a missing end or a reordered chunk is refused.
 The file is written with mode `0600`, and it appears under its final name only when it is complete.
+The PostgreSQL tools get only their own variables, never the keys.
 
 ## Two keys, stored apart
 
@@ -39,7 +40,9 @@ Rules for both keys:
 
 - **Keep each key in a password manager or another secret store,** in at least two places.
 - **Never keep a key next to the backups:** not on the same disk, not in the same bucket, not in
-  the same folder, not in the same mail.
+  the same folder, not in the same mail. The one exception is the server that runs the scheduled
+  `backup` service. Its `.env` holds `BACKUP_ENCRYPTION_KEY`, and its volume holds the backups. See
+  [What the server, an off-host copy and the key protect](#what-the-server-an-off-host-copy-and-the-key-protect).
 - **Never copy a key off-site with a backup.** Off-site copies hold only encrypted backup files.
 - **Keep the two keys apart from each other.** The instance refuses to start when a backup key
   equals `ENCRYPTION_KEY` (check `core.E007`).
@@ -49,6 +52,26 @@ Rules for both keys:
 
 Whoever holds a backup file and `BACKUP_ENCRYPTION_KEY` can read all the data in it, except the
 secrets. Those also need `ENCRYPTION_KEY`. Keep that in mind when you decide where each key goes.
+
+### What the server, an off-host copy and the key protect
+
+The scheduled `backup` service runs on the production server. It needs `BACKUP_ENCRYPTION_KEY` in
+the server's `.env`, and it writes the backups to the volume `paceforge_backups` on that same
+server. So the key and the backups sit together. Keep that in mind:
+
+- **Backups on the server** help against mistakes, such as a deleted table, and against a damaged
+  database. They do not help if you lose the server or lose control of it.
+- **An off-host copy** helps against losing the server or its disk. Copy the backup files away, as
+  described in [Copying backups off-site](#copying-backups-off-site).
+- **A key kept apart** makes that copy useless to anyone who gets it alone. The off-host copy is
+  encrypted, so a leak of its storage shows only encrypted files. Keep the key in a password
+  manager, never with the off-host copy.
+- **The same key lets you restore when the server is gone.** Restore the off-host copy into a new
+  database, as in [Restoring into an empty database](#restoring-into-an-empty-database). Keep
+  `ENCRYPTION_KEY` apart too, for the same reasons.
+- **Whoever controls the server can read the live database and both keys anyway.** `.env` holds
+  `ENCRYPTION_KEY` and `BACKUP_ENCRYPTION_KEY`, and the backups are on the same disk. No off-host
+  copy changes that.
 
 ### Rotating `BACKUP_ENCRYPTION_KEY`
 
@@ -284,9 +307,21 @@ development data stays as it is.
      ../backups/paceforge-20261120-031500Z.pgdump.enc
    ```
 
-   If you prefer `--database-url`, URL-encode the password first (`@` is `%40`, `:` is `%3A`,
-   `/` is `%2F`, `#` is `%23`):
-   `postgres://paceforge:<url-encoded-password>@localhost:5432/paceforge_restore`.
+   If you prefer `--database-url`, put the password into a file that only you can read, and leave
+   it out of the URL. The command refuses a URL that contains a password, because arguments show up
+   in process listings and shell history. The file holds the password as UTF-8 text, and one
+   trailing line break is ignored:
+
+   ```sh
+   install -m 600 /dev/null ~/paceforge-restore.password
+   $EDITOR ~/paceforge-restore.password
+   uv run python manage.py restore_db ../backups/paceforge-20261120-031500Z.pgdump.enc \
+     --database-url postgres://paceforge@localhost:5432/paceforge_restore \
+     --password-file ~/paceforge-restore.password
+   ```
+
+   Without `--password-file`, `--database-url` sends no password and libpq looks in `~/.pgpass`.
+   Delete the password file when you are done.
 
    The command prints `Restored <name>.`. Run it again and it refuses, because the database now has
    tables.
@@ -336,4 +371,10 @@ months, and after each change of key or of PaceForge version.
   production, see the `chown` step above.
 - **`The target database is not empty.`** You are restoring into a database that has tables. Use an
   empty database (procedure A), or see `--allow-non-empty` above, with care.
+- **`--database-url must not contain a password.`** Remove the password from the URL and pass it
+  with `--password-file`.
+- **`--password-file needs --database-url.`** The file is only for a target given by URL. The
+  default database uses `POSTGRES_PASSWORD` or `DATABASE_URL`.
+- **`The password file cannot be read.`** The file is missing, not readable by you, or not UTF-8.
+- **`The password file is empty.`** The file has no password. Write it into the file.
 - **`The target database cannot be reached.`** Check `DATABASE_URL` and that `db` runs.

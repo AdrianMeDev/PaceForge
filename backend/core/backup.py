@@ -4,6 +4,8 @@
 lives in a pipe, never on disk. The encrypted data goes to a ``0600`` temporary file next to the
 target and is moved into place with an atomic rename, so a backup is either complete or absent.
 The database password reaches ``pg_dump`` through the ``PGPASSWORD`` environment variable only.
+The PostgreSQL tools get an allowlisted environment (``PATH``, ``HOME``, locale, ``TZ``, ``TMPDIR``
+and ``PG*``), so the encryption keys and other secrets never reach them.
 
 ``restore_backup`` is the reverse: it streams ``decrypt_stream`` straight into ``pg_restore`` and
 refuses to touch a database that already has tables unless the operator allows it.
@@ -22,7 +24,12 @@ from typing import IO, Any, BinaryIO, cast
 import psycopg
 from django.conf import settings
 
-from core.backup_crypto import decrypt_stream, encrypt_stream, parse_backup_keys
+from core.backup_crypto import (
+    decrypt_stream,
+    encrypt_stream,
+    parse_backup_keys,
+    shares_an_instance_key,
+)
 
 PG_DUMP = "pg_dump"
 PG_RESTORE = "pg_restore"
@@ -30,6 +37,7 @@ BACKUP_SUFFIX = ".pgdump.enc"
 _NAME_TIME_FORMAT = "%Y%m%d-%H%M%SZ"
 _NAME_PATTERN = re.compile(r"paceforge-(\d{8}-\d{6}Z)" + re.escape(BACKUP_SUFFIX))
 _MAX_ERROR_TEXT = 500
+_PG_ENV_NAMES = frozenset({"PATH", "HOME", "LANG", "LANGUAGE", "TZ", "TMPDIR"})
 
 
 class BackupError(Exception):
@@ -54,14 +62,22 @@ def load_backup_keys(key_file: Path | None = None) -> list[str]:
         raise BackupError(
             "No backup key found: set BACKUP_ENCRYPTION_KEY or pass a key file with --key-file."
         )
-    parse_backup_keys(keys)
-    if set(keys) & set(settings.ENCRYPTION_KEYS):
+    if shares_an_instance_key(parse_backup_keys(keys)):
         raise BackupError("A backup key must differ from ENCRYPTION_KEY.")
     return keys
 
 
 def backup_filename(moment: datetime) -> str:
     return f"paceforge-{moment.astimezone(UTC).strftime(_NAME_TIME_FORMAT)}{BACKUP_SUFFIX}"
+
+
+def _pg_environment() -> dict[str, str]:
+    """The inherited variables the PostgreSQL tools may see; never the keys or other secrets."""
+    return {
+        name: value
+        for name, value in os.environ.items()
+        if name != "PGPASSWORD" and (name in _PG_ENV_NAMES or name.startswith(("LC_", "PG")))
+    }
 
 
 def _pg_command(
@@ -76,8 +92,7 @@ def _pg_command(
     if database.get("USER"):
         command += ["-U", str(database["USER"])]
     command += ["-d", str(database["NAME"])]
-    env = dict(os.environ)
-    env.pop("PGPASSWORD", None)
+    env = _pg_environment()
     if database.get("PASSWORD"):
         env["PGPASSWORD"] = str(database["PASSWORD"])
     return command, env

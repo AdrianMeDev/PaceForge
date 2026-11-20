@@ -2,8 +2,10 @@
 
 Each round runs ``backup_db`` with the BACKUP_* settings. ``--once`` does one round and stops
 (a failure then ends the command with an error); otherwise a failed round is reported and the
-command sleeps ``BACKUP_INTERVAL_HOURS`` before the next one. The output is the file name, its
-size and the number of removed backups; no keys or data are printed.
+command sleeps ``BACKUP_INTERVAL_HOURS`` before the next one. The interval must be a whole number
+from 1 to 168; anything else fails before the first round, so a bad value cannot cause a tight
+dump loop. The output is the file name, its size and the number of removed backups; no keys or
+data are printed.
 """
 
 import time
@@ -25,6 +27,9 @@ class Command(BaseCommand):
         parser.add_argument("--once", action="store_true", help="Make one backup and stop.")
 
     def handle(self, *args: Any, **options: Any) -> None:
+        interval = settings.BACKUP_INTERVAL_HOURS
+        if isinstance(interval, bool) or not isinstance(interval, int) or not 1 <= interval <= 168:
+            raise CommandError("BACKUP_INTERVAL_HOURS must be a whole number from 1 to 168.")
         while True:
             try:
                 call_command("backup_db", stdout=self.stdout)

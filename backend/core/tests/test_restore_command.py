@@ -38,14 +38,63 @@ def backup_file(tmp_path: Path, key: str) -> Path:
     return path
 
 
+PASSWORD = "p@ss:w/rd?a#b%c&d+e=f"
+RESTORE_OPTIONS = ["--no-owner", "--no-privileges", "--exit-on-error", "--single-transaction"]
+CLEAN_OPTIONS = ["--clean", "--if-exists"]
+CONNECTION = ["--no-password", "-h", "db.example", "-p", "5433", "-U", "dumper", "-d", "paceforge"]
+
+
+def recorded_args(record: Path) -> list[str]:
+    return record.read_text().splitlines()
+
+
+def recorded_password(record: Path) -> str:
+    return (record.parent / "password.txt").read_text().removesuffix("\n")
+
+
+SECRET_MARKERS = (
+    "ENCRYPTION_KEY",
+    "BACKUP_ENCRYPTION_KEY",
+    "DJANGO_SECRET_KEY",
+    "DATABASE_URL",
+    "POSTGRES_PASSWORD",
+    "UNRELATED_SETTING",
+)
+
+
+def recorded_environment(record: Path) -> dict[str, str]:
+    lines = (record.parent / "env.txt").read_text().splitlines()
+    return dict(line.split("=", 1) for line in lines if "=" in line)
+
+
+@pytest.fixture
+def database(settings: Any) -> dict[str, str]:
+    target = {
+        "HOST": "db.example",
+        "PORT": "5433",
+        "USER": "dumper",
+        "NAME": "paceforge",
+        "PASSWORD": PASSWORD,
+    }
+    settings.DATABASES = {
+        **settings.DATABASES,
+        "default": {**settings.DATABASES["default"], **target},
+    }
+    return target
+
+
 @pytest.fixture
 def stub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """A pg_restore that records PGPASSWORD, its arguments and stdin."""
-    record = tmp_path / "record.txt"
+    """A pg_restore that records its arguments (one per line), PGPASSWORD and stdin."""
+    record = tmp_path / "args.txt"
+    password = tmp_path / "password.txt"
     received = tmp_path / "received.bin"
     script = write_stub(
         tmp_path / "pg_restore_stub",
-        f'echo "$PGPASSWORD" > "{record}"\necho "$@" >> "{record}"\ncat > "{received}"',
+        f'printf "%s\\n" "$PGPASSWORD" > "{password}"\n'
+        f'printf "%s\\n" "$@" > "{record}"\n'
+        f'env > "{tmp_path / "env.txt"}"\n'
+        f'cat > "{received}"',
     )
     monkeypatch.setattr(backup, "PG_RESTORE", str(script))
     return record
@@ -82,25 +131,43 @@ def test_restore_into_empty_database_streams_decrypted_dump(
     backup_file: Path,
     key: str,
     tmp_path: Path,
-    settings: Any,
+    database: dict[str, str],
 ) -> None:
-    password = "p@ss:w/rd?a#b%c&d+e=f"
-    settings.DATABASES = {
-        **settings.DATABASES,
-        "default": {**settings.DATABASES["default"], "PASSWORD": password},
-    }
     run(str(backup_file), "--key-file", _key_file(tmp_path, key))
 
-    lines = stub.read_text().splitlines()
-    options = lines[1].split()
+    args = recorded_args(stub)
     assert (tmp_path / "received.bin").read_bytes() == DUMP
-    assert lines[0] == password
-    assert "--single-transaction" in options
-    assert "--exit-on-error" in options
-    assert "--no-owner" in options
-    assert "--no-privileges" in options
-    assert "--clean" not in options
-    assert password not in lines[1]
+    assert recorded_password(stub) == PASSWORD
+    assert args == [*RESTORE_OPTIONS, *CONNECTION]
+    assert all(PASSWORD not in arg for arg in args)
+
+
+def test_restore_gives_pg_restore_only_the_libpq_environment(
+    stub: Path,
+    emptiness: Emptiness,
+    backup_file: Path,
+    key: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    settings: Any,
+) -> None:
+    settings.DATABASES = {
+        **settings.DATABASES,
+        "default": {**settings.DATABASES["default"], "PASSWORD": ""},
+    }
+    for name in SECRET_MARKERS:
+        monkeypatch.setenv(name, f"marker-{name}")
+    monkeypatch.setenv("PGPASSWORD", "inherited-password")
+    monkeypatch.setenv("PGSSLMODE", "require")
+
+    run(str(backup_file), "--key-file", _key_file(tmp_path, key))
+
+    child = recorded_environment(stub)
+    assert not any(name in child for name in SECRET_MARKERS)
+    assert not any("marker-" in value for value in child.values())
+    assert "PGPASSWORD" not in child
+    assert child["PATH"] == os.environ["PATH"]
+    assert child["PGSSLMODE"] == "require"
 
 
 def _key_file(tmp_path: Path, key: str) -> str:
@@ -121,15 +188,18 @@ def test_restore_refuses_non_empty_database(
 
 
 def test_allow_non_empty_cleans_existing_objects(
-    stub: Path, emptiness: Emptiness, backup_file: Path, key: str, tmp_path: Path
+    stub: Path,
+    emptiness: Emptiness,
+    backup_file: Path,
+    key: str,
+    tmp_path: Path,
+    database: dict[str, str],
 ) -> None:
     emptiness.empty = False
 
     run(str(backup_file), "--key-file", _key_file(tmp_path, key), "--allow-non-empty")
 
-    options = stub.read_text().splitlines()[1].split()
-    assert "--clean" in options
-    assert "--if-exists" in options
+    assert recorded_args(stub) == [*RESTORE_OPTIONS, *CLEAN_OPTIONS, *CONNECTION]
     assert (tmp_path / "received.bin").read_bytes() == DUMP
 
 
@@ -203,6 +273,12 @@ def test_pg_restore_error_is_propagated(
         run(str(backup_file), "--key-file", _key_file(tmp_path, key))
 
 
+def _password_file(tmp_path: Path, content: str = "s3cret@pw\n") -> str:
+    path = tmp_path / "target.password"
+    path.write_text(content, encoding="utf-8")
+    return str(path)
+
+
 def test_database_url_is_parsed_and_password_stays_out_of_arguments(
     stub: Path, emptiness: Emptiness, backup_file: Path, key: str, tmp_path: Path
 ) -> None:
@@ -211,13 +287,16 @@ def test_database_url_is_parsed_and_password_stays_out_of_arguments(
         "--key-file",
         _key_file(tmp_path, key),
         "--database-url",
-        "postgres://restorer:s3cret%40pw@db.example:5433/target",
+        "postgres://restorer@db.example:5433/target",
+        "--password-file",
+        _password_file(tmp_path, "s3cret@pw\r\n"),
     )
 
-    lines = stub.read_text().splitlines()
-    assert lines[0] == "s3cret@pw"
-    assert "s3cret" not in lines[1]
-    assert lines[1].split()[-8:] == [
+    args = recorded_args(stub)
+    assert recorded_password(stub) == "s3cret@pw"
+    assert args == [
+        *RESTORE_OPTIONS,
+        "--no-password",
         "-h",
         "db.example",
         "-p",
@@ -227,8 +306,111 @@ def test_database_url_is_parsed_and_password_stays_out_of_arguments(
         "-d",
         "target",
     ]
+    assert all("s3cret" not in arg for arg in args)
     assert emptiness.seen[0]["NAME"] == "target"
     assert emptiness.seen[0]["HOST"] == "db.example"
+    assert emptiness.seen[0]["PASSWORD"] == "s3cret@pw"
+
+
+def test_database_url_with_a_password_is_refused_before_anything_runs(
+    stub: Path, emptiness: Emptiness, backup_file: Path, key: str, tmp_path: Path
+) -> None:
+    with pytest.raises(CommandError, match="must not contain a password") as error:
+        run(
+            str(backup_file),
+            "--key-file",
+            _key_file(tmp_path, key),
+            "--database-url",
+            "postgres://restorer:s3cret%40pw@db.example:5433/target",
+        )
+
+    assert "s3cret" not in str(error.value)
+    assert emptiness.seen == []
+    assert not stub.exists()
+
+
+def test_password_file_needs_a_database_url(
+    stub: Path, emptiness: Emptiness, backup_file: Path, key: str, tmp_path: Path
+) -> None:
+    with pytest.raises(CommandError, match="needs --database-url"):
+        run(
+            str(backup_file),
+            "--key-file",
+            _key_file(tmp_path, key),
+            "--password-file",
+            _password_file(tmp_path),
+        )
+
+    assert emptiness.seen == []
+    assert not stub.exists()
+
+
+def test_missing_password_file_is_reported(
+    stub: Path, emptiness: Emptiness, backup_file: Path, key: str, tmp_path: Path
+) -> None:
+    with pytest.raises(CommandError, match="cannot be read"):
+        run(
+            str(backup_file),
+            "--key-file",
+            _key_file(tmp_path, key),
+            "--database-url",
+            "postgres://restorer@db.example:5433/target",
+            "--password-file",
+            str(tmp_path / "nope.password"),
+        )
+
+    assert emptiness.seen == []
+    assert not stub.exists()
+
+
+@pytest.mark.parametrize("content", ["", "\n", "\r\n"])
+def test_empty_password_file_is_refused(
+    stub: Path, emptiness: Emptiness, backup_file: Path, key: str, tmp_path: Path, content: str
+) -> None:
+    with pytest.raises(CommandError, match="is empty"):
+        run(
+            str(backup_file),
+            "--key-file",
+            _key_file(tmp_path, key),
+            "--database-url",
+            "postgres://restorer@db.example:5433/target",
+            "--password-file",
+            _password_file(tmp_path, content),
+        )
+
+    assert emptiness.seen == []
+    assert not stub.exists()
+
+
+def test_unreadable_password_file_does_not_show_its_content(
+    stub: Path, emptiness: Emptiness, backup_file: Path, key: str, tmp_path: Path
+) -> None:
+    path = tmp_path / "binary.password"
+    path.write_bytes(b"\xff\xfesecret-bytes")
+
+    with pytest.raises(CommandError, match="cannot be read") as error:
+        run(
+            str(backup_file),
+            "--key-file",
+            _key_file(tmp_path, key),
+            "--database-url",
+            "postgres://restorer@db.example:5433/target",
+            "--password-file",
+            str(path),
+        )
+
+    assert "secret" not in str(error.value)
+    assert emptiness.seen == []
+
+
+def test_help_shows_no_password_in_the_example() -> None:
+    from django.core.management import load_command_class
+
+    help_text = load_command_class("core", "restore_db").create_parser("manage.py", "restore_db")
+    text = help_text.format_help()
+
+    assert ":password@" not in text
+    assert "--password-file" in text
 
 
 @pytest.mark.parametrize("empty_url", ["", "   "])
@@ -263,7 +445,7 @@ def test_database_url_without_a_name_is_rejected(
             "--key-file",
             _key_file(tmp_path, key),
             "--database-url",
-            "postgres://user:pw@host:5432/",
+            "postgres://user@host:5432/",
         )
 
 
