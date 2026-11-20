@@ -27,6 +27,8 @@ DEBUG = env.bool("DJANGO_DEBUG", default=False)
 # Several keys, comma separated: the first one encrypts, all of them decrypt (key rotation).
 # Keep it apart from database backups.
 ENCRYPTION_KEYS = [key.strip() for key in env.str("ENCRYPTION_KEY").split(",") if key.strip()]
+if not ENCRYPTION_KEYS:
+    raise ImproperlyConfigured("ENCRYPTION_KEY must contain at least one key")
 # Key for encrypted database backups (see core/backup_crypto.py). Optional: without it no backup
 # is made. Several keys, comma separated: the first one encrypts, all of them decrypt. It must
 # differ from ENCRYPTION_KEY and be kept apart from the backups.

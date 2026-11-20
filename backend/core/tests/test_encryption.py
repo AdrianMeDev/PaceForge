@@ -216,10 +216,20 @@ class TestConfiguration:
         assert result.returncode == 0, result.stderr
         assert result.stdout.strip() == str([first, second])
 
-    def test_an_empty_variable_leaves_no_keys_for_the_check_to_report(self) -> None:
+    def test_a_single_key_imports(self) -> None:
+        key = new_key()
+
         result = import_settings(
-            "import config.settings as s; print(s.ENCRYPTION_KEYS)", ENCRYPTION_KEY=" , "
+            "import config.settings as s; print(s.ENCRYPTION_KEYS)", ENCRYPTION_KEY=key
         )
 
         assert result.returncode == 0, result.stderr
-        assert result.stdout.strip() == "[]"
+        assert result.stdout.strip() == str([key])
+
+    @pytest.mark.parametrize("value", ["", " ", " , ", ",\t,"])
+    def test_a_variable_without_any_key_is_refused(self, value: str) -> None:
+        result = import_settings("import config.settings", ENCRYPTION_KEY=value)
+
+        assert result.returncode != 0
+        assert "ImproperlyConfigured" in result.stderr
+        assert "ENCRYPTION_KEY" in result.stderr

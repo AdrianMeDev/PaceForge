@@ -1681,8 +1681,8 @@ and **Service Workers** show what the browser found.
 
 Secrets that the database holds for users are encrypted with a separate instance key
 (`ENCRYPTION_KEY`, Fernet: AES with an integrity check), so a copy of the database alone reveals
-nothing. Django refuses to start without it, and the system check (`manage.py check`) names a key
-that is not valid.
+nothing. Django refuses to start without it, and also when the value is made only of commas or
+spaces. The system check (`manage.py check`) names a key that is not valid.
 
 - **Generate it once** (from `backend/`), keep it in the environment or a secret file, never in the
   repository: `uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`

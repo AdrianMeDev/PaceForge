@@ -1903,7 +1903,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** -
 - **Size:** M, ~5 commits
 
-### M4 [ ] Audit: Backup keys, subprocesses and restore credentials
+### M4 [~] Audit: Backup keys, subprocesses and restore credentials
 
 - **Goal:** Keep backup credentials separate from instance keys and expose PostgreSQL credentials only where the tools need them.
 - **Includes:** F254 (backup key separation), F256 (empty instance key ring), F261 (child process environment), F262 (equivalent key encodings), F269 (restore credentials in arguments), F270 (backup interval), F527 (same-host key custody).
