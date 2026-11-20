@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 
 from coach.providers import transport
-from coach.providers.anthropic import API_VERSION, AnthropicProvider
+from coach.providers.anthropic import API_VERSION, THINKING_ALLOWANCE, AnthropicProvider
 from coach.providers.base import (
     CoachProvider,
     Completion,
@@ -17,6 +17,7 @@ from coach.providers.base import (
     RateLimitedError,
     UnexpectedResponseError,
 )
+from season.prompt import SEASON_MAX_TOKENS
 
 from .fake_providers import FakeProvider, message_events, running, sse_body
 
@@ -87,7 +88,7 @@ class TestTheRequest:
 
         assert fake.requests[0]["json"] == {
             "model": MODEL,
-            "max_tokens": 321,
+            "max_tokens": 321 + THINKING_ALLOWANCE,
             "system": [
                 {
                     "type": "text",
@@ -757,3 +758,27 @@ class TestThePromptCache:
         headers = fake.requests[0]["headers"]
         assert headers["anthropic-version"] == "2023-06-01"
         assert "anthropic-beta" not in headers
+
+
+class TestTheEffort:
+    def test_an_effort_is_sent_in_the_output_config(self, fake: FakeProvider) -> None:
+        fake.reply(ANSWER)
+
+        AnthropicProvider(KEY, MODEL, base_url=fake.url, effort="low").complete("", HELLO, 100)
+
+        assert fake.requests[0]["json"]["output_config"] == {"effort": "low"}
+
+    def test_without_an_effort_there_is_no_output_config(self, fake: FakeProvider) -> None:
+        complete(fake)
+
+        assert "output_config" not in fake.requests[0]["json"]
+
+    def test_the_thinking_allowance_keeps_the_largest_limit_within_64000_tokens(self) -> None:
+        assert SEASON_MAX_TOKENS + THINKING_ALLOWANCE <= 64_000
+
+    def test_the_effort_is_not_shown(self) -> None:
+        provider = AnthropicProvider(KEY, MODEL, effort="max")
+
+        assert (
+            repr(provider) == f"AnthropicProvider(model={MODEL!r}, base_url={provider._base_url!r})"
+        )

@@ -48,6 +48,15 @@ never gets one.
   database constraint `coach_effort_only_anthropic`).
 - **No status reset:** an effort changes how long the model thinks, not what is called, so
   changing it keeps `status`.
+- **On the wire:** `AnthropicProvider` sends a non-empty effort as `output_config: {"effort": …}`.
+  Not every model takes every level (`xhigh` came with Claude Opus 4.7, and older models such as
+  Claude Sonnet 4.5 take no effort at all); a model that does not take it refuses the request, and
+  PaceForge reports an unexpected answer. Leave the effort empty for such a model.
+- **Thinking allowance:** newer Claude models always think, and their thinking counts towards
+  `max_tokens`. `AnthropicProvider` adds `THINKING_ALLOWANCE` (`16000`) to the size of the answer
+  that a task asks for (for example `SEASON_MAX_TOKENS`), so the thinking does not cut off the
+  JSON. Only the tokens the model writes are billed, and the sum stays within 64,000 output
+  tokens. Answers are streamed, so a large limit does not run into an HTTP timeout.
 
 ## Per-model pricing (`AIModelPrice`)
 

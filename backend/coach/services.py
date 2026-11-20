@@ -254,7 +254,7 @@ def call(
         raise DeadlineExceededError("There was no time left for the answer.")
     try:
         model = configuration.model_for(purpose)
-        provider = provider_for(configuration, model)
+        provider = provider_for(configuration, model, configuration.effort_for(purpose))
     except DecryptionError:
         _finish(user, configuration, purpose, Outcome.INVALID_KEY, None, Status.INVALID)
         raise InvalidKeyError("The stored key is not usable.") from None

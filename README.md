@@ -357,8 +357,9 @@ Things to know before you allow one of them:
    `. _ : / -`, up to 100 characters) and the key (visible characters without spaces, up to 500;
    the field is a password field and never prefilled). Press **Save**.
 2. Press **Check connection**. PaceForge sends one request with the fixed text `Reply with the
-   single word: ok` (at most 16 tokens, no system prompt) and **nothing about you or your
-   training**, and shows how it went.
+   single word: ok` (an answer of at most 16 tokens, no system prompt, no effort) and **nothing
+   about you or your training**, and shows how it went. For Anthropic, every request also allows
+   16,000 tokens of thinking on top of the answer (see [docs/coach.md](docs/coach.md#effort-per-task)).
 3. Optionally set task-specific models (same provider and key; leave any field empty to use the
    normal model):
    - **Model for the season plan:** the season is the biggest thing the coach is asked, so a

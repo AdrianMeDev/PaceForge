@@ -23,6 +23,12 @@ from .transport import TIMEOUT_SECONDS, post_sse
 
 API_VERSION = "2023-06-01"
 
+# Thinking counts towards ``max_tokens``, and newer models always think. The callers give the size
+# of the answer they expect; this much is added for the thinking before it, so that the answer is
+# not cut off. Only what the model writes is billed, and streaming keeps a large limit from timing
+# out. The sum stays within the 64,000 output tokens of the smallest current models.
+THINKING_ALLOWANCE = 16_000
+
 # The prompt cache: everything up to a marked block is stored for five minutes, and a request that
 # starts with the same bytes reads it for a tenth of the price of reading it again.
 CACHE_MARK = {"type": "ephemeral"}
@@ -36,6 +42,7 @@ class AnthropicProvider:
         *,
         base_url: str | None = None,
         timeout: float = TIMEOUT_SECONDS,
+        effort: str = "",
     ) -> None:
         if not api_key:
             raise ValueError("The API key is empty.")
@@ -45,6 +52,7 @@ class AnthropicProvider:
         self._model = model
         self._base_url = (base_url or settings.ANTHROPIC_API_BASE_URL).rstrip("/")
         self._timeout = timeout
+        self._effort = effort
 
     def __repr__(self) -> str:
         return f"AnthropicProvider(model={self._model!r}, base_url={self._base_url!r})"
@@ -64,10 +72,13 @@ class AnthropicProvider:
             raise ValueError("max_tokens must be at least 1.")
         payload: dict[str, object] = {
             "model": self._model,
-            "max_tokens": max_tokens,
+            "max_tokens": max_tokens + THINKING_ALLOWANCE,
             "messages": _messages(messages, cached=bool(system)),
             "stream": True,
         }
+        if self._effort:
+            # Not every model takes every level; one that does not refuses the request.
+            payload["output_config"] = {"effort": self._effort}
         if system:
             # The same for every request of one purpose, so that the next week, the next try and
             # the next review read it from the cache.
