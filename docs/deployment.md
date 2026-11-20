@@ -194,6 +194,9 @@ docker compose -f compose.prod.yaml up -d backend scheduler
   repair round). `GUNICORN_TIMEOUT` defaults to `240` seconds in `.env.prod.example`, and
   `deploy/Caddyfile` sets `response_header_timeout 240s` on the `backend` proxy to match.
   `GUNICORN_WORKERS` defaults to `2`.
+- **Content Security Policy:** `deploy/Caddyfile` allows scripts, frames and plugins only from the
+  app's own origin (`script-src 'self'`, `object-src 'none'`). Styles may still be inline. Adding an
+  external script, font host or API host means changing the policy in `deploy/Caddyfile` too.
 
 ## Updating and migrating
 
