@@ -6,15 +6,17 @@ authentication, and a repeatable update workflow.
 
 ## Architecture
 
-`compose.prod.yaml` runs five services on an internal Docker network:
+`compose.prod.yaml` runs five services on an internal Docker network, and an optional sixth one for
+backups:
 
-| Service     | Role                                                                          |
-| ----------- | ----------------------------------------------------------------------------- |
-| `caddy`     | Public reverse proxy on ports 80 and 443; gets and renews HTTPS certificates. |
-| `frontend`  | Static Angular build served by Caddy on internal port 8080.                   |
-| `backend`   | Django + Gunicorn on internal port 8000; runs deploy checks and migrations.   |
-| `scheduler` | Runs `python manage.py run_scheduler` after `backend` is healthy.             |
-| `db`        | PostgreSQL 17.11 with persistent volume `pgdata`.                             |
+| Service     | Role                                                                                                                 |
+| ----------- | -------------------------------------------------------------------------------------------------------------------- |
+| `caddy`     | Public reverse proxy on ports 80 and 443; gets and renews HTTPS certificates.                                        |
+| `frontend`  | Static Angular build served by Caddy on internal port 8080.                                                          |
+| `backend`   | Django + Gunicorn on internal port 8000; runs deploy checks and migrations.                                          |
+| `scheduler` | Runs `python manage.py run_scheduler` after `backend` is healthy.                                                    |
+| `db`        | PostgreSQL 17.11 with persistent volume `pgdata`.                                                                    |
+| `backup`    | Off by default (profile `backup`): runs `run_backups`, encrypted database backups into volume `backups`. See [Backup and restore](backup-and-restore.md). |
 
 Only `caddy` publishes host ports (`80`, `443`, `443/udp`). Everything else stays on the internal
 network.
@@ -69,12 +71,16 @@ Never commit `.env`. Edit `.env` and fill in every empty value:
    can read them. To rotate keys later, put the new key first and keep the old key after a comma:
    `ENCRYPTION_KEY=<new>,<old>`.
 
-4. **Database password (`POSTGRES_PASSWORD`):** choose a strong password using **letters and digits
+4. **Backup key (`BACKUP_ENCRYPTION_KEY`):** generate a second Fernet-style key with the same
+   command as in step 3. It must differ from `ENCRYPTION_KEY`. Store it apart from the backup files
+   and from `ENCRYPTION_KEY`. Without it no backup can be made. See
+   [Backup and restore](backup-and-restore.md#two-keys-stored-apart).
+5. **Database password (`POSTGRES_PASSWORD`):** choose a strong password using **letters and digits
    only**. It is embedded directly into `DATABASE_URL` inside `compose.prod.yaml`, and PostgreSQL
    refuses to start if it is empty.
-5. **Email (`SMTP_*` and `DEFAULT_FROM_EMAIL`):** set `DEFAULT_FROM_EMAIL` and your SMTP server
+6. **Email (`SMTP_*` and `DEFAULT_FROM_EMAIL`):** set `DEFAULT_FROM_EMAIL` and your SMTP server
    details, or leave `SMTP_HOST` empty to log emails to the `backend` container output.
-6. **AI endpoints (`AI_ALLOWED_BASE_URLS`):** optionally list comma-separated base URLs for
+7. **AI endpoints (`AI_ALLOWED_BASE_URLS`):** optionally list comma-separated base URLs for
    OpenAI-compatible AI providers (for example `https://api.openai.com/v1`). Leave empty to allow
    Anthropic only.
 
@@ -167,15 +173,16 @@ Always back up the database before updating.
 
 ### 1. Back up the database
 
-Create a compressed `pg_dump` backup from the running `db` container:
+Make an encrypted backup with the `backup` service. The `db` container must be running and
+`BACKUP_ENCRYPTION_KEY` must be set in `.env`:
 
 ```sh
-docker compose -f compose.prod.yaml exec -T db \
-  pg_dump -U "${POSTGRES_USER:-paceforge}" -Fc "${POSTGRES_DB:-paceforge}" \
-  > "paceforge-$(date +%F-%H%M).dump"
+docker compose -f compose.prod.yaml --profile backup run --rm --no-deps backup python manage.py backup_db
 ```
 
-Keep `ENCRYPTION_KEY` backed up separately from the `.dump` file.
+The file is written to the `backups` volume. Copy it off the server, and keep `ENCRYPTION_KEY` and
+`BACKUP_ENCRYPTION_KEY` stored apart from it. Retention, scheduled backups and restores are
+described in [Backup and restore](backup-and-restore.md).
 
 ### 2. Pull and rebuild images
 

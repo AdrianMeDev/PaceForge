@@ -26,6 +26,12 @@ ENV PATH="/app/.venv/bin:$PATH" \
 RUN groupadd --system --gid 10001 paceforge \
     && useradd --system --uid 10001 --gid paceforge --no-create-home --shell /usr/sbin/nologin paceforge
 
+# pg_dump and pg_restore for the encrypted backups (PostgreSQL 17 on Debian Trixie, matching db).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends postgresql-client \
+    && rm -rf /var/lib/apt/lists/* \
+    && install -d -o paceforge -g paceforge -m 0700 /backups
+
 WORKDIR /app
 COPY --from=builder --chown=paceforge:paceforge /app /app
 

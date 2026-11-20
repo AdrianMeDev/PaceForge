@@ -48,6 +48,14 @@ jobs:
           python-version: "3.14"
           enable-cache: true
           cache-dependency-glob: backend/uv.lock
+      # pg_dump and pg_restore 17 for the backup restore test; the runner image ships an older client.
+      - name: Install PostgreSQL 17 client tools
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt noble-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-client-17
       - run: uv sync --frozen
       - run: uv run ruff format --check .
       - run: uv run ruff check .
@@ -93,6 +101,7 @@ jobs:
         run: |
           docker compose -f compose.prod.yaml config >/dev/null
           docker compose --env-file .env.prod.example -f compose.prod.yaml config >/dev/null
+          docker compose --profile backup --env-file .env.prod.example -f compose.prod.yaml config >/dev/null
       - name: Validate Caddyfile
         run: |
           docker run --rm \
@@ -101,3 +110,7 @@ jobs:
             caddy:2.10-alpine caddy validate --config /etc/caddy/Caddyfile
       - name: Build production images
         run: docker compose -f compose.prod.yaml build
+      - name: Check PostgreSQL client tools in the backend image
+        run: |
+          docker compose -f compose.prod.yaml run --rm --no-deps --entrypoint pg_dump backend --version
+          docker compose -f compose.prod.yaml run --rm --no-deps --entrypoint pg_restore backend --version
