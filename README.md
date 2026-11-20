@@ -64,6 +64,8 @@ long-term goal is in its **Vision** and **Decisions** sections.
 Before an instance is exposed to the internet, read [Instance key](#instance-key): secrets in the
 database are encrypted, and the key has to be backed up apart from the database.
 
+PaceForge is not medical advice. Read the [Disclaimer](#disclaimer) before you train with its plans.
+
 ## Layout
 
 | Path                  | What it is                                                                                 |
@@ -1855,3 +1857,20 @@ Set in `.env` or in the environment. Values without a default are required.
 - **Sign-in is refused with "too many failed attempts".** That is the brute-force protection: five
   failed attempts for an address lock it for five minutes. The counters live in the server
   process, so restarting the dev server clears them.
+
+## Security
+
+Report a vulnerability privately, as described in [`SECURITY.md`](SECURITY.md). The findings of
+the code audit and the milestones that fix them are in [`docs/AUDIT.md`](docs/AUDIT.md).
+
+## Disclaimer
+
+PaceForge is not a doctor, a physiotherapist or a licensed coach, and nothing it shows is medical
+advice. Its plans and chat answers come from an AI model and from rules in code; both can be wrong.
+Check a plan before you train with it, listen to your body, and see a doctor before you start
+training, when you are ill or injured, and when something feels wrong. You use PaceForge at your
+own risk.
+
+## License
+
+PaceForge is released under the [MIT License](LICENSE).

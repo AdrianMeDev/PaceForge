@@ -96,12 +96,12 @@ class TestTheRequest:
 class TestTheAnswer:
     def test_it_returns_the_athlete_id_and_nothing_else(self, fake: FakeIntervals) -> None:
         fake.body = json.dumps(
-            {"id": "i797177", "email": "someone@example.com", "name": "Someone", "zwift_user_id": 5}
+            {"id": "i100001", "email": "someone@example.com", "name": "Someone", "zwift_user_id": 5}
         ).encode()
 
         athlete = client(fake).get_athlete()
 
-        assert athlete == Athlete(id="i797177")
+        assert athlete == Athlete(id="i100001")
         assert "someone" not in repr(athlete).lower()
 
     @pytest.mark.parametrize("athlete_id", ["i1", "123456", "a_b-c", "x" * 50])

@@ -1,4 +1,4 @@
-"""The checks a week plan has to pass (PROJECT_PLAN 7.3). Pure functions on a plan and its context.
+"""The checks a week plan has to pass. Pure functions on a plan and its context.
 
 Every check returns its findings as a list and raises on nothing that a parsed plan can contain.
 A finding has a stable ``code`` and a ``path`` into the plan (the same paths as the parser's

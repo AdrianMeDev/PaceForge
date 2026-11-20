@@ -7,7 +7,7 @@ Intervals.icu, a week review with actual data and changes by message. Each athle
 AI key; several people can share one instance without seeing each other's data.
 
 ## Scope
-- **Done (stages 1–7a of `PROJECT_PLAN.md` §15.4):** accounts with invitation, MFA and isolation;
+- **Done before this roadmap:** accounts with invitation, MFA and isolation;
   Intervals.icu key and thresholds; FIT/TCX/GPX and Strava import; profile, VDOT zones, limitations;
   goals A/B/C with realism check (running); training time, intensity levels, double days, fixed
   sessions; season skeleton and AI season plan with versions and change requests; AI week plan with
@@ -19,7 +19,7 @@ AI key; several people can share one instance without seeing each other's data.
   account deletion, invitations by email.
 - **Later:** drag and drop on the week plan, realism check for cycling/swim/triathlon races,
   workout library as inspiration, Gemini adapter, passkeys, managed mode, planned training blocks.
-- **Not planned:** OAuth for Intervals.icu (API key, §15.3), pushing a week without confirmation.
+- **Not planned:** OAuth for Intervals.icu (API key only, see [phase0-intervals.md](phase0-intervals.md)), pushing a week without confirmation.
 
 ## Architecture
 - **Stack:** Django 6.1 (JSON views), django-allauth with MFA, PostgreSQL 17; Angular 22
@@ -37,9 +37,9 @@ AI key; several people can share one instance without seeing each other's data.
 ## Decisions
 | # | Decision | Why | Alternative |
 |---|---|---|---|
-| 1 | Minutes stay the basis of all checks; load is an added estimate per workout | Checks and season already work in minutes (§15.3.4) | Switch checks to TSS |
+| 1 | Minutes stay the basis of all checks; load is an added estimate per workout | Checks and season already work in minutes | Switch checks to TSS |
 | 2 | Background jobs as management commands run by a scheduler container, no broker | No new infrastructure for a small instance | Celery with Redis |
-| 3 | Jobs never push to Intervals and never confirm a plan | Push only after confirmation (§15.3.8) | Optional auto-push |
+| 3 | Jobs never push to Intervals and never confirm a plan | Push only after confirmation | Optional auto-push |
 | 4 | The chat changes plans only through actions run by code, always as a new draft | Same safety as week and season plans | Free rewriting by the LLM |
 | 5 | Checks against real providers and the real Intervals API stay manual (see below) | They need the athlete's keys and cost money | Recorded fixtures only |
 

@@ -130,7 +130,7 @@ class TestTheStatus:
         self, fake: FakeIntervals, alice: User
     ) -> None:
         api = signed_in(alice)
-        athlete(fake, "i797177")
+        athlete(fake, "i100001")
         api.call("PUT", URL, {"api_key": KEY})
 
         body = api.call("GET", URL).json()
@@ -138,7 +138,7 @@ class TestTheStatus:
         assert set(body) == STATE_FIELDS
         assert body["connected"] is True
         assert body["status"] == "connected"
-        assert body["athlete_id"] == "i797177"
+        assert body["athlete_id"] == "i100001"
         assert body["last_sync_at"] is None
         assert body["last_sync_error"] == ""
 

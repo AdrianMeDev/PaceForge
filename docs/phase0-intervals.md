@@ -7,7 +7,7 @@ connected in Intervals.icu, and the connection will use API keys only.
 
 ## Decision: API key, no OAuth
 
-PaceForge connects to Intervals.icu with the athlete's **personal API key** (PROJECT_PLAN 5.3).
+PaceForge connects to Intervals.icu with the athlete's **personal API key**.
 OAuth (5.1, 5.2) is not planned.
 
 - The project is meant for single athletes who host it themselves and invite one or two
