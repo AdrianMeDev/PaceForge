@@ -38,14 +38,47 @@ def backup_file(tmp_path: Path, key: str) -> Path:
     return path
 
 
+PASSWORD = "p@ss:w/rd?a#b%c&d+e=f"
+RESTORE_OPTIONS = ["--no-owner", "--no-privileges", "--exit-on-error", "--single-transaction"]
+CLEAN_OPTIONS = ["--clean", "--if-exists"]
+CONNECTION = ["--no-password", "-h", "db.example", "-p", "5433", "-U", "dumper", "-d", "paceforge"]
+
+
+def recorded_args(record: Path) -> list[str]:
+    return record.read_text().splitlines()
+
+
+def recorded_password(record: Path) -> str:
+    return (record.parent / "password.txt").read_text().removesuffix("\n")
+
+
+@pytest.fixture
+def database(settings: Any) -> dict[str, str]:
+    target = {
+        "HOST": "db.example",
+        "PORT": "5433",
+        "USER": "dumper",
+        "NAME": "paceforge",
+        "PASSWORD": PASSWORD,
+    }
+    settings.DATABASES = {
+        **settings.DATABASES,
+        "default": {**settings.DATABASES["default"], **target},
+    }
+    return target
+
+
 @pytest.fixture
 def stub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """A pg_restore that records PGPASSWORD, its arguments and stdin."""
-    record = tmp_path / "record.txt"
+    """A pg_restore that records its arguments (one per line), PGPASSWORD and stdin."""
+    record = tmp_path / "args.txt"
+    password = tmp_path / "password.txt"
     received = tmp_path / "received.bin"
     script = write_stub(
         tmp_path / "pg_restore_stub",
-        f'echo "$PGPASSWORD" > "{record}"\necho "$@" >> "{record}"\ncat > "{received}"',
+        f'printf "%s\\n" "$PGPASSWORD" > "{password}"\n'
+        f'printf "%s\\n" "$@" > "{record}"\n'
+        f'cat > "{received}"',
     )
     monkeypatch.setattr(backup, "PG_RESTORE", str(script))
     return record
@@ -82,25 +115,15 @@ def test_restore_into_empty_database_streams_decrypted_dump(
     backup_file: Path,
     key: str,
     tmp_path: Path,
-    settings: Any,
+    database: dict[str, str],
 ) -> None:
-    password = "p@ss:w/rd?a#b%c&d+e=f"
-    settings.DATABASES = {
-        **settings.DATABASES,
-        "default": {**settings.DATABASES["default"], "PASSWORD": password},
-    }
     run(str(backup_file), "--key-file", _key_file(tmp_path, key))
 
-    lines = stub.read_text().splitlines()
-    options = lines[1].split()
+    args = recorded_args(stub)
     assert (tmp_path / "received.bin").read_bytes() == DUMP
-    assert lines[0] == password
-    assert "--single-transaction" in options
-    assert "--exit-on-error" in options
-    assert "--no-owner" in options
-    assert "--no-privileges" in options
-    assert "--clean" not in options
-    assert password not in lines[1]
+    assert recorded_password(stub) == PASSWORD
+    assert args == [*RESTORE_OPTIONS, *CONNECTION]
+    assert all(PASSWORD not in arg for arg in args)
 
 
 def _key_file(tmp_path: Path, key: str) -> str:
@@ -121,15 +144,18 @@ def test_restore_refuses_non_empty_database(
 
 
 def test_allow_non_empty_cleans_existing_objects(
-    stub: Path, emptiness: Emptiness, backup_file: Path, key: str, tmp_path: Path
+    stub: Path,
+    emptiness: Emptiness,
+    backup_file: Path,
+    key: str,
+    tmp_path: Path,
+    database: dict[str, str],
 ) -> None:
     emptiness.empty = False
 
     run(str(backup_file), "--key-file", _key_file(tmp_path, key), "--allow-non-empty")
 
-    options = stub.read_text().splitlines()[1].split()
-    assert "--clean" in options
-    assert "--if-exists" in options
+    assert recorded_args(stub) == [*RESTORE_OPTIONS, *CLEAN_OPTIONS, *CONNECTION]
     assert (tmp_path / "received.bin").read_bytes() == DUMP
 
 
@@ -214,10 +240,11 @@ def test_database_url_is_parsed_and_password_stays_out_of_arguments(
         "postgres://restorer:s3cret%40pw@db.example:5433/target",
     )
 
-    lines = stub.read_text().splitlines()
-    assert lines[0] == "s3cret@pw"
-    assert "s3cret" not in lines[1]
-    assert lines[1].split()[-8:] == [
+    args = recorded_args(stub)
+    assert recorded_password(stub) == "s3cret@pw"
+    assert args == [
+        *RESTORE_OPTIONS,
+        "--no-password",
         "-h",
         "db.example",
         "-p",
@@ -227,6 +254,7 @@ def test_database_url_is_parsed_and_password_stays_out_of_arguments(
         "-d",
         "target",
     ]
+    assert all("s3cret" not in arg for arg in args)
     assert emptiness.seen[0]["NAME"] == "target"
     assert emptiness.seen[0]["HOST"] == "db.example"
 
