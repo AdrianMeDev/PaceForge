@@ -14,6 +14,7 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { describeFailure } from '../../core/api/failures';
 import { CoachApi } from '../../core/coach/coach-api';
 import { SeasonApi } from '../../core/season/season-api';
 import {
@@ -321,8 +322,8 @@ export class SeasonPage implements OnInit {
           this.view.set('signed_out');
           break;
       }
-    } catch {
-      this.errors.set([FALLBACK]);
+    } catch (error) {
+      this.errors.set([describeFailure(error)]);
     } finally {
       this.work.set(null);
     }
@@ -426,8 +427,8 @@ export class SeasonPage implements OnInit {
           this.view.set('signed_out');
           break;
       }
-    } catch {
-      this.errors.set([FALLBACK]);
+    } catch (error) {
+      this.errors.set([describeFailure(error)]);
     } finally {
       this.work.set(null);
     }

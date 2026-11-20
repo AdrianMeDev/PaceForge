@@ -1866,6 +1866,15 @@ Set in `.env` or in the environment. Values without a default are required.
   `AI_REQUEST_DEADLINE_SECONDS`. No repair round is started once less than a minute is left, so at
   most the call that ran out of time was paid for. Choose a lower effort or a faster model for that
   task on the Connections page, or try again.
+- **Drafting, changing or asking the coach fails with a message that names an HTTP status, or
+  says that the server did not answer.** The page shows the status it got and writes the error to
+  the browser console. `HTTP 0` / "did not answer" means the connection broke off before an answer
+  arrived (a proxy, the network, the browser); 502 and 504 mean a proxy or Gunicorn gave up
+  waiting; 500 is an error in PaceForge. In production the reason is in the server log:
+  `docker compose -f compose.prod.yaml logs --since 1h backend`. A draft may have been stored
+  anyway, so reload the page before you try again (every try costs money at your provider). API
+  requests always bypass the service worker of the installed app (`ngsw-bypass`), so it never
+  stands between the page and such an answer.
 - **An administrator cannot reach the admin pages and keeps landing on the security page.** That is
   the rule that administrators need two-factor authentication; set it up there.
 - **Sign-in is refused with "too many failed attempts".** That is the brute-force protection: five

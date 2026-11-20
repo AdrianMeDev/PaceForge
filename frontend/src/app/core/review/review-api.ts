@@ -7,6 +7,7 @@ import {
   Sport as ActivitySport,
 } from '../activities/activities-models';
 import { API_BASE } from '../api/api-providers';
+import { UnexpectedReplyError } from '../api/failures';
 import {
   ProviderProblem,
   Sport as PlannedSport,
@@ -66,6 +67,7 @@ const PROVIDER_PROBLEMS: readonly string[] = [
   'invalid_key',
   'rate_limited',
   'unavailable',
+  'too_slow',
   'unexpected',
   'not_allowed',
 ];
@@ -539,5 +541,5 @@ function oneOf(value: unknown, allowed: readonly string[], reply: Reply): string
 }
 
 function unexpected(reply: Reply): Error {
-  return new Error(`Unexpected response with status ${reply.status}`);
+  return new UnexpectedReplyError(reply.status);
 }

@@ -2,6 +2,7 @@ import { HttpClient, HttpErrorResponse, HttpResponse } from '@angular/common/htt
 import { Injectable, inject } from '@angular/core';
 import { Observable, firstValueFrom } from 'rxjs';
 import { API_BASE } from '../api/api-providers';
+import { UnexpectedReplyError } from '../api/failures';
 import {
   Reply,
   UUID,
@@ -737,5 +738,8 @@ function isRealDate(value: unknown): value is string {
 }
 
 function unexpected(reply: Reply): Error {
-  return new Error(`The season API answered with an unexpected result (HTTP ${reply.status}).`);
+  return new UnexpectedReplyError(
+    reply.status,
+    `The season API answered with an unexpected result (HTTP ${reply.status}).`,
+  );
 }

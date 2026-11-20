@@ -1,4 +1,5 @@
 import { Invalid } from '../goals/goals-models';
+import { UnexpectedReplyError } from './failures';
 import {
   Finding,
   GenerateResult,
@@ -15,6 +16,7 @@ const PROBLEMS: readonly string[] = [
   'invalid_key',
   'rate_limited',
   'unavailable',
+  'too_slow',
   'unexpected',
   'not_allowed',
 ];
@@ -149,7 +151,7 @@ export function isOneOf<T extends string>(value: unknown, allowed: readonly stri
 }
 
 export function unexpected(reply: Reply): Error {
-  return new Error(`Unexpected response with status ${reply.status}`);
+  return new UnexpectedReplyError(reply.status);
 }
 
 /**

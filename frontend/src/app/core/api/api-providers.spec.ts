@@ -58,4 +58,23 @@ describe('provideApiClient', () => {
       backend.expectOne('https://other.example.com/api').request.headers.has('X-CSRFToken'),
     ).toBe(false);
   });
+
+  it('sends API requests past the service worker', () => {
+    http.post('/api/season/plans/generate/', {}).subscribe();
+    http.get('/api/me/').subscribe();
+
+    for (const url of ['/api/season/plans/generate/', '/api/me/']) {
+      expect(backend.expectOne(url).request.headers.get('ngsw-bypass')).toBe('true');
+    }
+  });
+
+  it('leaves other requests to the service worker', () => {
+    http.get('/manifest.webmanifest').subscribe();
+    http.get('/apiary.png').subscribe();
+
+    expect(backend.expectOne('/manifest.webmanifest').request.headers.has('ngsw-bypass')).toBe(
+      false,
+    );
+    expect(backend.expectOne('/apiary.png').request.headers.has('ngsw-bypass')).toBe(false);
+  });
 });

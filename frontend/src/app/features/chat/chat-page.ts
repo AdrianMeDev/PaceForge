@@ -1,6 +1,7 @@
 import { DatePipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { describeFailure } from '../../core/api/failures';
 import { ChatApi } from '../../core/chat/chat-api';
 import { ChatMessage } from '../../core/chat/chat-models';
 import { weekRange } from '../planning/plan-format';
@@ -11,7 +12,6 @@ type View = 'loading' | 'unreachable' | 'ready' | 'signed_out';
 
 /** The longest message the server takes (`USER_TEXT_MAX` in `backend/chat/models.py`). */
 export const TEXT_MAX = 2000;
-const FALLBACK = 'Something went wrong. Please try again.';
 const TOO_MANY = 'Too many messages in a short time. Please wait a minute and try again.';
 const NOT_CONFIGURED = 'No AI provider is set up, so your coach cannot answer.';
 const DELETE_FAILED = 'The conversation could not be deleted. Please try again.';
@@ -103,8 +103,8 @@ export class ChatPage implements OnInit {
           this.view.set('signed_out');
           break;
       }
-    } catch {
-      this.errors.set([FALLBACK]);
+    } catch (error) {
+      this.errors.set([describeFailure(error)]);
     } finally {
       this.sending.set(false);
     }

@@ -1,6 +1,7 @@
 import { DatePipe } from '@angular/common';
 import { Component, inject, input, output, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { describeFailure } from '../../core/api/failures';
 import { ReviewApi } from '../../core/review/review-api';
 import {
   CoachComment as CoachCommentData,
@@ -9,7 +10,6 @@ import {
 } from '../../core/review/review-models';
 import { recommendationText } from './review-format';
 
-const FALLBACK = 'Something went wrong. Please try again.';
 const NOTHING_TO_REVIEW = 'There is nothing to look back on in this week yet.';
 const NOT_CONFIGURED = 'No AI provider is set up.';
 const NOT_USABLE = 'The coach did not give a comment that could be used. Please try again.';
@@ -98,8 +98,8 @@ export class CoachComment {
           this.signedOut.emit();
           break;
       }
-    } catch {
-      this.message.set(FALLBACK);
+    } catch (error) {
+      this.message.set(describeFailure(error));
     } finally {
       this.asking.set(false);
       this.busy.emit(false);

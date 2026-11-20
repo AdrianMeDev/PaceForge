@@ -8,6 +8,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
+import { describeFailure } from '../../core/api/failures';
 import { CoachApi } from '../../core/coach/coach-api';
 import { PlanningApi } from '../../core/planning/planning-api';
 import {
@@ -247,8 +248,8 @@ export class PlanningPage implements OnInit {
           this.view.set('signed_out');
           break;
       }
-    } catch {
-      this.errors.set([FALLBACK]);
+    } catch (error) {
+      this.errors.set([describeFailure(error)]);
     } finally {
       this.work.set(null);
     }

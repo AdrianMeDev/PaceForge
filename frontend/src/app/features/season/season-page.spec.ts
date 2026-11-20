@@ -1,3 +1,4 @@
+import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
@@ -1162,6 +1163,21 @@ describe('SeasonPage', () => {
         expect(alerts()).toEqual(['Something went wrong. Please try again.']);
         expect(rows()).toHaveLength(4);
         expect(query<HTMLButtonElement>(page, '[data-testid="generate"]').disabled).toBe(false);
+      });
+
+      it('names the status of a request that failed on the way', async () => {
+        const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        await load([CONFIRMED]);
+        generate.mockRejectedValue(new HttpErrorResponse({ status: 504 }));
+
+        await click('generate');
+
+        expect(alerts()).toEqual([
+          'The server gave up waiting (HTTP 504). Reload the page to see whether anything was ' +
+            'saved before you try again.',
+        ]);
+        expect(logged).toHaveBeenCalled();
+        logged.mockRestore();
       });
 
       it('says when the session is gone', async () => {
