@@ -5,7 +5,9 @@ from http import HTTPStatus
 from typing import Any
 
 import pytest
+from rest_framework.permissions import AllowAny
 from rest_framework.test import APIClient
+from rest_framework.views import APIView
 
 from accounts.models import User
 from core.testing import assert_not_listed
@@ -25,6 +27,36 @@ def _client_for(user: User) -> APIClient:
 
 
 class TestAuthentication:
+    @pytest.mark.parametrize(
+        ("method", "url"),
+        [
+            ("GET", SETTINGS_URL),
+            ("PATCH", SETTINGS_URL),
+            ("HEAD", SETTINGS_URL),
+            ("OPTIONS", SETTINGS_URL),
+            ("GET", RUNS_URL),
+            ("HEAD", RUNS_URL),
+            ("OPTIONS", RUNS_URL),
+        ],
+    )
+    def test_anonymous_requests_are_refused_when_defaults_allow_any(
+        self, monkeypatch: pytest.MonkeyPatch, method: str, url: str
+    ) -> None:
+        alice = make_user("alice@example.com")
+        JobSettings.objects.create(owner=alice)
+        JobRun.objects.create(owner=alice, job=Job.SYNC, outcome=Outcome.DONE)
+        settings_before = list(JobSettings.objects.values())
+        runs_before = list(JobRun.objects.values())
+        monkeypatch.setattr(APIView, "permission_classes", [AllowAny])
+
+        response = APIClient().generic(
+            method, url, data='{"sync": false}', content_type="application/json"
+        )
+
+        assert response.status_code == HTTPStatus.FORBIDDEN
+        assert list(JobSettings.objects.values()) == settings_before
+        assert list(JobRun.objects.values()) == runs_before
+
     def test_unauthenticated_requests_are_refused(self) -> None:
         anonymous = APIClient()
 

@@ -1,6 +1,8 @@
 from http import HTTPStatus
 
 import pytest
+from rest_framework.permissions import AllowAny
+from rest_framework.views import APIView
 
 from accounts.models import User
 
@@ -13,6 +15,17 @@ ME = "/api/me/"
 
 def test_anonymous_users_are_refused(api: AuthApi) -> None:
     assert api.call("GET", ME).status_code == HTTPStatus.FORBIDDEN
+
+
+@pytest.mark.parametrize("method", ["GET", "HEAD", "OPTIONS"])
+def test_anonymous_users_are_refused_when_defaults_allow_any(
+    api: AuthApi, verified_user: User, monkeypatch: pytest.MonkeyPatch, method: str
+) -> None:
+    monkeypatch.setattr(APIView, "permission_classes", [AllowAny])
+    before = list(User.objects.values())
+
+    assert api.call(method, ME).status_code == HTTPStatus.FORBIDDEN
+    assert list(User.objects.values()) == before
 
 
 def test_returns_only_the_own_account(

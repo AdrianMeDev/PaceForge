@@ -1,10 +1,12 @@
 from rest_framework import serializers, status
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.throttling import BaseThrottle
 from rest_framework.views import APIView
 
 from accounts.models import User
+from core.views import authenticated_user
 from integrations import services
 from integrations.intervals import (
     IntervalsError,
@@ -21,8 +23,7 @@ KEY_REFUSED = "Intervals.icu did not accept this API key. Check that you copied 
 
 
 def _user(request: Request) -> User:
-    assert isinstance(request.user, User)  # IsAuthenticated is the default permission
-    return request.user
+    return authenticated_user(request)
 
 
 def _state(connection: ProviderConnection | None) -> Response:
@@ -41,6 +42,7 @@ def failure_response(error: IntervalsError) -> Response:
 class IntervalsConnectionView(APIView):
     """The signed-in user's own Intervals.icu connection; there is no id and no user parameter."""
 
+    permission_classes = [IsAuthenticated]
     throttle_classes = [ProviderConnectionThrottle]
 
     def get_throttles(self) -> list[BaseThrottle]:
@@ -67,6 +69,7 @@ class IntervalsConnectionView(APIView):
 
 
 class IntervalsCheckView(APIView):
+    permission_classes = [IsAuthenticated]
     throttle_classes = [ProviderConnectionThrottle]
 
     def post(self, request: Request) -> Response:
