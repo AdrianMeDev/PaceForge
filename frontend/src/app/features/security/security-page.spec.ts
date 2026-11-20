@@ -146,11 +146,32 @@ describe('SecurityPage', () => {
     );
 
   describe('the page', () => {
-    it('has a header and one card for two-factor authentication', async () => {
+    it('has a header and the cards for two-factor authentication, data and deletion', async () => {
       await setup();
 
       expect(query(page, 'app-page-header h1').textContent).toBe('Security');
-      expect(query(page, 'section.card h2').textContent?.trim()).toBe('Two-factor authentication');
+      expect(
+        Array.from(page.querySelectorAll('section.card > h2')).map((h) => h.textContent?.trim()),
+      ).toEqual(['Two-factor authentication', 'Your data', 'Delete account']);
+    });
+
+    it('mounts the data and deletion panels below the two-factor card', async () => {
+      await setup();
+
+      const cards = Array.from(page.querySelectorAll('.security > *')).map((el) =>
+        el.tagName.toLowerCase(),
+      );
+      expect(cards).toEqual([
+        'app-page-header',
+        'section',
+        'app-data-export-panel',
+        'app-delete-account-panel',
+      ]);
+    });
+
+    it('asks for the authenticator code in the deletion panel only when it is on', async () => {
+      await setup(MEMBER_ON);
+      expect(page.querySelector('#delete-mfa-code')).not.toBeNull();
     });
   });
 
