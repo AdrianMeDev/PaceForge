@@ -1,5 +1,5 @@
 # Roadmap: PaceForge
-Updated: 2026-11-19
+Updated: 2026-11-20
 
 ## Vision
 A self-hosted AI endurance coach: a season plan up to the race, a concrete week from it that goes to
@@ -130,7 +130,7 @@ AI key; several people can share one instance without seeing each other's data.
 - **Depends on:** M7
 - **Size:** M
 
-### M12 [~] Backup and restore
+### M12 [x] Backup and restore
 - **Goal:** The database can be backed up encrypted and restored, with the instance key kept apart.
 - **Includes:** backup command or service (pg_dump, encrypted), retention, restore procedure, a test that restores into an empty database, docs.
 - **Done when:** the restore test passes and the docs describe backup, key storage and restore.
@@ -173,6 +173,7 @@ AI key; several people can share one instance without seeing each other's data.
 - README section and `docs/` updated for every user-visible change.
 
 ## Changelog
+- 2026-11-20: M12 completed — encrypted database backups (`backup_db`, `run_backups` and an off-by-default `backup` service in `compose.prod.yaml`, AES-256-GCM with its own `BACKUP_ENCRYPTION_KEY`), retention by day and week, `restore_db` into an empty database with an end-to-end test, and the guide in `docs/backup-and-restore.md`
 - 2026-11-20: M11 completed — production deployment stack (`compose.prod.yaml`, Caddy with automatic HTTPS, non-root backend and frontend containers, `scheduler` service, `/api/health/`, production settings via `APP_DOMAIN`, CI container validation/build, and end-to-end VPS deployment docs)
 - 2026-11-19: M10 completed — segment editor on the Week plan page (warm-up, repeated blocks, cool-down, duration, zone, reordering, removing structure) with automatic duration calculation, checks after each change, new draft on save, and updating the same Intervals.icu event on push
 - 2026-11-19: M9 completed — optional per-model prices (input, output and cached input per million tokens), monthly usage and estimated cost in the athlete's time zone on the Connections page, and separate optional models for the week plan and coach chat

@@ -110,7 +110,20 @@ save the recovery codes (see [Two-factor authentication](#two-factor-authenticat
 To run PaceForge on a VPS with automatic HTTPS, follow [docs/deployment.md](docs/deployment.md). It
 covers prerequisites, `.env` and key generation, starting `compose.prod.yaml`, creating the first
 administrator without database edits, switching `REGISTRATION_MODE` between `invite_only` and
-`closed`, and the backup, update and migration workflow.
+`closed`, and the update and migration workflow. Backups and restores are described in
+[Backup and restore](#backup-and-restore).
+
+## Backup and restore
+
+PaceForge can back up its whole database into one encrypted file: `backup_db` makes one backup by
+hand, and the `backup` service of `compose.prod.yaml` (off by default, profile `backup`) makes one
+every `BACKUP_INTERVAL_HOURS` hours. Old backups are removed by `BACKUP_KEEP_DAILY` and
+`BACKUP_KEEP_WEEKLY`. A backup needs `BACKUP_ENCRYPTION_KEY`, a second key that must differ from
+[`ENCRYPTION_KEY`](#instance-key) and be stored apart from the backup files. The restore command,
+`restore_db`, writes a backup into an empty database.
+
+The full guide, with the commands for production and local development, the key rotation, the
+off-site copies and the restore drills, is in [docs/backup-and-restore.md](docs/backup-and-restore.md).
 
 ## Navigation
 
@@ -1610,7 +1623,8 @@ that is not valid.
 - **Generate it once** (from `backend/`), keep it in the environment or a secret file, never in the
   repository: `uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`
 - **Back it up apart from the database.** A database backup without the key does not restore the
-  encrypted secrets. Whoever holds both can read them.
+  encrypted secrets. Whoever holds both can read them. The backups have their own key,
+  `BACKUP_ENCRYPTION_KEY`; see [Backup and restore](#backup-and-restore).
 - **Rotating:** put the new key first and keep the old one after it, separated by a comma
   (`ENCRYPTION_KEY=<new>,<old>`). New values use the first key, old values stay readable. There is
   no command yet that re-encrypts old values, so the old key must stay in the list.
@@ -1653,6 +1667,11 @@ Set in `.env` or in the environment. Values without a default are required.
 | `DJANGO_ALLOWED_HOSTS`         | empty (or `APP_DOMAIN`)             | Comma-separated host names; must be set (directly or via `APP_DOMAIN`) when `DJANGO_DEBUG` is `false`. |
 | `DJANGO_CSRF_TRUSTED_ORIGINS`  | empty (or `https://<APP_DOMAIN>`)   | Comma-separated origins allowed to send state-changing requests.                  |
 | `ENCRYPTION_KEY`               | –                                   | Instance key for secrets stored in the database; several keys separated by commas. Required. |
+| `BACKUP_ENCRYPTION_KEY`        | empty                               | Key for encrypted database backups; several keys separated by commas, the first one encrypts. Must differ from `ENCRYPTION_KEY`. Without it no backup is made. See [Backup and restore](#backup-and-restore). |
+| `BACKUP_DIR`                   | `backups/` in the repository root   | Folder for the backup files. In `compose.prod.yaml` the backup service uses `/backups`. |
+| `BACKUP_INTERVAL_HOURS`        | `24`                                | Hours between two scheduled backups (whole number from 1 to 168). |
+| `BACKUP_KEEP_DAILY`            | `7`                                 | Days of backups to keep, the newest of each day (whole number from 1 to 365). |
+| `BACKUP_KEEP_WEEKLY`           | `4`                                 | Weeks of backups to keep, the newest of each week (whole number from 0 to 104). |
 | `REGISTRATION_MODE`            | `invite_only`                       | `closed`, `invite_only` or `open`. Anything else stops Django at startup.         |
 | `INVITATION_TTL_DAYS`          | `7`                                 | How long an invitation stays valid.                                               |
 | `INTERVALS_API_BASE_URL`       | `https://intervals.icu/api/v1`      | Only for tests or a fake server: where the Intervals.icu API is. `http://` or `https://`. |

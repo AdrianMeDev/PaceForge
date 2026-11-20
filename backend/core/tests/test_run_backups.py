@@ -12,6 +12,12 @@ class StopLoop(Exception):
     pass
 
 
+@pytest.fixture(autouse=True)
+def no_database_connections(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The loop closes stale connections between rounds; these tests run without a database.
+    monkeypatch.setattr(run_backups, "close_old_connections", lambda: None)
+
+
 @pytest.fixture
 def calls(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     seen: list[str] = []

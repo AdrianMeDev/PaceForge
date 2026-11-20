@@ -115,7 +115,7 @@ class TestKeys:
         decrypt_stream(io.BytesIO(out.getvalue()), plain)
         assert plain.getvalue() == b"data"
 
-    @pytest.mark.parametrize("bad", ["", "short", "!" * 44, new_key()[:-1], new_key() + "A"])
+    @pytest.mark.parametrize("bad", ["", "short", "!" * 44, "A" * 43, "A" * 45])
     def test_parse_rejects_malformed_keys(self, bad: str) -> None:
         with pytest.raises(BackupCryptoError, match="Key 2 of BACKUP_ENCRYPTION_KEY"):
             parse_backup_keys([new_key(), bad])
