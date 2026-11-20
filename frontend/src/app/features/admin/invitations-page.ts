@@ -10,7 +10,11 @@ import {
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { InvitationsApi } from '../../core/admin/invitations-api';
-import { Invitation, InvitationStatus } from '../../core/admin/invitations-models';
+import {
+  Invitation,
+  InvitationDelivery,
+  InvitationStatus,
+} from '../../core/admin/invitations-models';
 import { PageHeader } from '../../shared/page-header';
 
 type View = 'loading' | 'unreachable' | 'ready' | 'mfa_required' | 'forbidden';
@@ -18,12 +22,12 @@ type Copied = 'idle' | 'copied' | 'failed';
 
 /**
  * The link and the address it belongs to, shown once after an invitation was created or sent
- * again. `emailSent` tells whether the mail went out; `resent` tells which action it was.
+ * again. `delivery` tells what happened to the mail; `resent` tells which action it was.
  */
 interface IssuedLink {
   email: string;
   url: string;
-  emailSent: boolean;
+  delivery: InvitationDelivery;
   resent: boolean;
 }
 
@@ -105,7 +109,7 @@ export class InvitationsPage implements OnInit {
           this.issued.set({
             email: result.invitation.email,
             url: result.inviteUrl,
-            emailSent: result.emailSent,
+            delivery: result.delivery,
             resent: false,
           });
           this.copied.set('idle');
@@ -175,7 +179,7 @@ export class InvitationsPage implements OnInit {
           this.issued.set({
             email: result.invitation.email,
             url: result.inviteUrl,
-            emailSent: result.emailSent,
+            delivery: result.delivery,
             resent: true,
           });
           this.copied.set('idle');

@@ -4,6 +4,7 @@ import { InvitationsApi } from '../../core/admin/invitations-api';
 import {
   CreateInvitationResult,
   Invitation,
+  InvitationDelivery,
   ListInvitationsResult,
   ResendInvitationResult,
   RevokeInvitationResult,
@@ -89,11 +90,14 @@ describe('InvitationsPage', () => {
     await settle(fixture);
   }
 
-  const created = (email = 'ann@example.com', emailSent = true): CreateInvitationResult => ({
+  const created = (
+    email = 'ann@example.com',
+    delivery: InvitationDelivery = 'sent',
+  ): CreateInvitationResult => ({
     kind: 'created',
     invitation: invitation({ email }),
     inviteUrl: LINK,
-    emailSent,
+    delivery,
   });
 
   const rows = () => Array.from(page.querySelectorAll('tbody tr'));
@@ -283,7 +287,7 @@ describe('InvitationsPage', () => {
         kind: 'created',
         invitation: invitation({ email: 'bob@example.com' }),
         inviteUrl: 'http://localhost:4200/account/signup?invitation=OTHER',
-        emailSent: true,
+        delivery: 'sent',
       });
 
       await invite('bob@example.com');
@@ -515,6 +519,29 @@ describe('InvitationsPage', () => {
   });
 
   describe('email feedback', () => {
+    it.each(['sent', 'console', 'failed'] as const)(
+      'shows only the %s notice after create and keeps the link available',
+      async (delivery) => {
+        await setup();
+        api.create.mockResolvedValue(created('ann@example.com', delivery));
+
+        await invite('ann@example.com');
+
+        const notices = page.querySelectorAll('[data-result]');
+        expect(notices).toHaveLength(1);
+        expect(notices[0].getAttribute('data-result')).toBe(delivery);
+        const messages = {
+          sent: 'The invitation email was sent to ann@example.com.',
+          console:
+            'No mail server is configured; the email was only written to the server log. Send the link yourself.',
+          failed: 'The invitation email could not be delivered to ann@example.com.',
+        };
+        expect(notices[0].textContent?.replace(/\s+/g, ' ').trim()).toBe(messages[delivery]);
+        expect(notices[0].getAttribute('role')).toBe(delivery === 'failed' ? 'alert' : 'status');
+        expect(query<HTMLInputElement>(page, '#invite-link').value).toBe(LINK);
+      },
+    );
+
     it('says the email was sent and still shows the fallback link', async () => {
       await setup();
       api.create.mockResolvedValue(created());
@@ -530,7 +557,7 @@ describe('InvitationsPage', () => {
 
     it('says the delivery failed and still shows the link', async () => {
       await setup();
-      api.create.mockResolvedValue(created('ann@example.com', false));
+      api.create.mockResolvedValue(created('ann@example.com', 'failed'));
 
       await invite('ann@example.com');
 
@@ -572,14 +599,37 @@ describe('InvitationsPage', () => {
 
   describe('resending', () => {
     const resent = (
-      emailSent = true,
+      delivery: InvitationDelivery = 'sent',
       issued: Invitation = invitation({ id: 'inv-4', email: 'di@example.com' }),
     ): ResendInvitationResult => ({
       kind: 'resent',
       invitation: issued,
       inviteUrl: LINK,
-      emailSent,
+      delivery,
     });
+
+    it.each(['sent', 'console', 'failed'] as const)(
+      'shows only the %s notice after resend and keeps the link available',
+      async (delivery) => {
+        await setup(ok(PENDING));
+        api.resend.mockResolvedValue(resent(delivery, PENDING));
+
+        await click('Resend');
+
+        const notices = page.querySelectorAll('[data-result]');
+        expect(notices).toHaveLength(1);
+        expect(notices[0].getAttribute('data-result')).toBe(delivery);
+        const messages = {
+          sent: 'The invitation email was sent to ann@example.com.',
+          console:
+            'No mail server is configured; the email was only written to the server log. Send the link yourself.',
+          failed: 'The invitation email could not be delivered to ann@example.com.',
+        };
+        expect(notices[0].textContent?.replace(/\s+/g, ' ').trim()).toBe(messages[delivery]);
+        expect(notices[0].getAttribute('role')).toBe(delivery === 'failed' ? 'alert' : 'status');
+        expect(query<HTMLInputElement>(page, '#invite-link').value).toBe(LINK);
+      },
+    );
 
     it('offers Resend on pending and expired rows only', async () => {
       await setup(ok(PENDING, USED, REVOKED, EXPIRED));
@@ -607,7 +657,7 @@ describe('InvitationsPage', () => {
 
     it('resends a pending invitation and reports a failed delivery', async () => {
       await setup(ok(PENDING));
-      api.resend.mockResolvedValue(resent(false, PENDING));
+      api.resend.mockResolvedValue(resent('failed', PENDING));
 
       await click('Resend');
 

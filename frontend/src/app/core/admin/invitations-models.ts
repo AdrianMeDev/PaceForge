@@ -1,3 +1,5 @@
+export type InvitationDelivery = 'sent' | 'console' | 'failed';
+
 export type InvitationStatus = 'pending' | 'used' | 'revoked' | 'expired';
 
 /** One invitation as the admin API lists it. The link is never part of it. */
@@ -22,17 +24,17 @@ export type ListInvitationsResult = { kind: 'ok'; invitations: Invitation[] } | 
 
 /**
  * `inviteUrl` exists only in the answer to the creating request: the server keeps just a hash.
- * `emailSent` is `false` when the mail could not be delivered; the link still works.
+ * `delivery` distinguishes mail acceptance, console output and failure; the link still works.
  */
 export type CreateInvitationResult =
-  | { kind: 'created'; invitation: Invitation; inviteUrl: string; emailSent: boolean }
+  | { kind: 'created'; invitation: Invitation; inviteUrl: string; delivery: InvitationDelivery }
   | { kind: 'invalid'; errors: string[] }
   | { kind: 'rate_limited' }
   | Denied;
 
 /** Like creating, resending issues a new link, so it is returned here as well. */
 export type ResendInvitationResult =
-  | { kind: 'resent'; invitation: Invitation; inviteUrl: string; emailSent: boolean }
+  | { kind: 'resent'; invitation: Invitation; inviteUrl: string; delivery: InvitationDelivery }
   /** The invitation was already used or revoked and cannot be sent again. */
   | { kind: 'conflict' }
   | { kind: 'not_found' }

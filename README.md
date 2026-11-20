@@ -199,8 +199,11 @@ last sent time unchanged. Sending, resending and expired invitations are describ
 
 1. **Create an invitation.** Sign in as the administrator (with two-factor authentication turned on,
    see above), choose **Invitations** in the navigation, enter `ann@example.com` and press **Send
-   invitation by email**. The page says whether the email was sent. The link is shown **once**; keep
-   it as a fallback or press **Copy link** and send it to the person. If the link is lost, press
+   invitation by email**. The page distinguishes sent mail, console output and delivery failure.
+   Without SMTP it says: "No mail server is configured; the email was only written to the server
+   log. Send the link yourself." The same notices appear after **Resend**.
+   The link is shown **once**; keep it as a fallback or press **Copy link** and send it to the
+   person. If the link is lost, press
    **Resend** on the invitation: the old link stops working. Open the link in a private window so
    you stay signed in as the administrator in the other one.
 2. **Sign up.** The email address is prefilled and read-only. The page accepts fragment links

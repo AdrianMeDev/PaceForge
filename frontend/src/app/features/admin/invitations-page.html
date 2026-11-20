@@ -62,7 +62,7 @@
       @if (issued(); as link) {
         <div class="card issued" role="region" aria-label="New invitation link">
           <h2 class="m-0 mb-3 text-lg font-semibold">Invitation for {{ link.email }}</h2>
-          @if (link.emailSent) {
+          @if (link.delivery === 'sent') {
             <p class="notice" data-result="sent" role="status">
               The invitation email was sent to {{ link.email }}.
             </p>
@@ -70,6 +70,12 @@
               This link is shown <strong>only now</strong>. Keep it as a fallback in case the email
               does not arrive. If you lose it, send the invitation again.
             </p>
+          } @else if (link.delivery === 'console') {
+            <p class="notice" data-result="console" role="status">
+              No mail server is configured; the email was only written to the server log. Send the
+              link yourself.
+            </p>
+            <p>This link is shown <strong>only now</strong>. Copy it before leaving this page.</p>
           } @else {
             <p class="alert" data-result="failed" role="alert">
               The invitation email could not be delivered to {{ link.email }}.

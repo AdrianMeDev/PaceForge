@@ -10,10 +10,11 @@ and the admin API.
 
 1. Sign in as an administrator with two-factor authentication turned on.
 2. Open **Invitations**, enter the email address and press **Send invitation by email**.
-3. PaceForge creates the invitation and sends **one** email to that address with the signup link.
-4. The page shows the link once, with one of two notices:
-   - *The invitation email was sent to …*: the mail went to the mail system (see
-     [Mail delivery](#mail-delivery) for what that means without SMTP).
+3. PaceForge creates the invitation and attempts to send **one** email with the signup link.
+4. The page shows the link once, with one of three notices:
+   - *The invitation email was sent to …*: the mail system accepted the message.
+   - *No mail server is configured; the email was only written to the server log. Send the link
+     yourself.*: no mail left the server. Copy the link and send it yourself.
    - *The invitation email could not be delivered to …*: the invitation still exists. Copy the link
      and send it yourself, or resend the invitation later.
 
@@ -41,15 +42,15 @@ again to restart signup.
 
 Django sends the mail. The setting `SMTP_HOST` decides where it goes.
 
-| Setup | Where the mail goes | `delivery` | `email_sent` | `sent_at` |
-| --- | --- | --- | --- | --- |
-| Development: `.env.example` points SMTP at Mailpit | Mailpit on `127.0.0.1:1025`. Read it at <http://localhost:8025>. | `sent` when accepted | `true` | Updated |
-| Production with SMTP | Your SMTP server, set with `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD` and `SMTP_USE_TLS`. | `sent` when accepted | `true` | Updated |
-| No SMTP (`SMTP_HOST` empty) | The Django console: the mail is written to the output of the process. In production that is the `backend` container log. | `console` | `false` | Unchanged |
-| Network or SMTP error | The mail could not be sent. | `failed` | `false` | Unchanged |
+| Setup | Where the mail goes | `delivery` | Page notice | `email_sent` | `sent_at` |
+| --- | --- | --- | --- | --- | --- |
+| Development: `.env.example` points SMTP at Mailpit | Mailpit on `127.0.0.1:1025`. Read it at <http://localhost:8025>. | `sent` when accepted | Email was sent | `true` | Updated |
+| Production with SMTP | Your SMTP server, set with `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD` and `SMTP_USE_TLS`. | `sent` when accepted | Email was sent | `true` | Updated |
+| No SMTP (`SMTP_HOST` empty) | The Django console: the mail is written to the output of the process. In production that is the `backend` container log. | `console` | Only written to the server log; send the link yourself | `false` | Unchanged |
+| Network or SMTP error | The mail could not be sent. | `failed` | Email could not be delivered | `false` | Unchanged |
 
-Without SMTP, nothing leaves the server. The page reports that the email could not be delivered.
-Copy the link on the page and send it yourself. Console output does not update **Last sent**.
+Without SMTP, nothing leaves the server. The page reports that the email was only written to the
+server log. Copy the link on the page and send it yourself. Console output does not update **Last sent**.
 A `sent` result means the mail system accepted the message; it does not confirm inbox delivery.
 
 Mailpit runs with the development services:
@@ -161,6 +162,8 @@ contains a link.
 
 ## Troubleshooting
 
+- **The page says the email was only written to the server log.** Configure SMTP to send mail,
+  or copy the link and send it yourself. This notice also appears after a console-only resend.
 - **The page says the email could not be delivered.** Check the `SMTP_*` settings. The backend log
   names the invitation id and the type of the error. Then press **Resend**, or hand the link on.
 - **Nothing arrives in development.** Check that Mailpit runs (`docker compose -f compose.dev.yaml

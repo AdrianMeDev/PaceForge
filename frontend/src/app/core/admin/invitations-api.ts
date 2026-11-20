@@ -6,6 +6,7 @@ import {
   CreateInvitationResult,
   Denied,
   Invitation,
+  InvitationDelivery,
   ListInvitationsResult,
   ResendInvitationResult,
   RevokeInvitationResult,
@@ -17,7 +18,8 @@ const INVALID_FALLBACK = 'The request was not accepted.';
 /** The answer to creating or resending: the invitation plus the link and the mail result. */
 interface IssuedBody extends Invitation {
   invite_url: string;
-  email_sent: boolean;
+  delivery: unknown;
+  email_sent?: boolean;
 }
 
 interface Reply {
@@ -119,8 +121,11 @@ export class InvitationsApi {
 }
 
 /** Splits the answer to creating or resending into the invitation and the parts around it. */
-function issuedOf({ invite_url, email_sent, ...invitation }: IssuedBody) {
-  return { invitation, inviteUrl: invite_url, emailSent: email_sent };
+function issuedOf({ invite_url, delivery, ...invitation }: IssuedBody) {
+  delete invitation.email_sent;
+  const outcome: InvitationDelivery =
+    delivery === 'sent' || delivery === 'console' ? delivery : 'failed';
+  return { invitation, inviteUrl: invite_url, delivery: outcome };
 }
 
 function denied(reply: Reply): Denied {
