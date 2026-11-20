@@ -676,6 +676,137 @@ class TestWhatIsNotRecorded:
         assert config.last_checked_at is None
 
 
+class TestAllowlistEnforcement:
+    OPENAI_ANSWER = {
+        "choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}],
+        "usage": {"prompt_tokens": 3, "completion_tokens": 1},
+    }
+
+    def test_approved_self_hosted_endpoint_succeeds_for_call(
+        self, alice: User, settings: Any
+    ) -> None:
+        with running() as approved, running() as unlisted:
+            approved_url = approved.url + "/v1"
+            settings.AI_ALLOWED_BASE_URLS = (approved_url,)
+            configure(
+                alice,
+                provider="openai_compatible",
+                model="llama3.1:8b",
+                api_key="",
+                base_url=approved_url,
+            )
+            approved.reply(self.OPENAI_ANSWER)
+
+            result = ask(alice)
+
+            assert result == Completion("ok", 3, 1, False)
+            assert len(approved.requests) == 1
+            assert approved.requests[0]["raw_path"] == "/v1/chat/completions"
+            assert unlisted.requests == []
+            assert len(records(alice)) == 1
+
+    def test_approved_self_hosted_endpoint_succeeds_for_check(
+        self, alice: User, settings: Any
+    ) -> None:
+        with running() as approved, running() as unlisted:
+            approved_url = approved.url + "/v1"
+            settings.AI_ALLOWED_BASE_URLS = (approved_url,)
+            configure(
+                alice,
+                provider="openai_compatible",
+                model="llama3.1:8b",
+                api_key="",
+                base_url=approved_url,
+            )
+            approved.reply(self.OPENAI_ANSWER)
+
+            config = services.check(alice)
+
+            assert config.status == "connected"
+            assert len(approved.requests) == 1
+            assert approved.requests[0]["raw_path"] == "/v1/chat/completions"
+            assert unlisted.requests == []
+            assert len(records(alice)) == 1
+
+    def test_directly_created_unapproved_base_url_is_refused_in_call_and_check(
+        self, alice: User, settings: Any
+    ) -> None:
+        with running() as approved, running() as unlisted:
+            settings.AI_ALLOWED_BASE_URLS = (approved.url + "/v1",)
+            config = configure(
+                alice,
+                provider="openai_compatible",
+                model="llama3.1:8b",
+                api_key="",
+                base_url=unlisted.url + "/v1",
+            )
+
+            for invoke in (lambda: ask(alice), lambda: services.check(alice)):
+                with pytest.raises(EndpointNotAllowedError):
+                    invoke()
+
+            assert unlisted.requests == []
+            assert approved.requests == []
+            assert AIUsageRecord.objects.count() == 0
+            config = reload(config)
+            assert config.status == "untested"
+            assert config.last_checked_at is None
+
+    def test_queryset_updated_unapproved_base_url_is_refused_in_call_and_check(
+        self, alice: User, settings: Any
+    ) -> None:
+        with running() as approved, running() as unlisted:
+            settings.AI_ALLOWED_BASE_URLS = (approved.url + "/v1",)
+            config = configure(
+                alice,
+                provider="openai_compatible",
+                model="llama3.1:8b",
+                api_key="",
+                base_url=approved.url + "/v1",
+            )
+            AIProviderConfiguration.objects.filter(pk=config.pk).update(
+                base_url=unlisted.url + "/v1"
+            )
+
+            for invoke in (lambda: ask(alice), lambda: services.check(alice)):
+                with pytest.raises(EndpointNotAllowedError):
+                    invoke()
+
+            assert unlisted.requests == []
+            assert approved.requests == []
+            assert AIUsageRecord.objects.count() == 0
+            config = reload(config)
+            assert config.status == "untested"
+            assert config.last_checked_at is None
+
+    def test_stale_base_url_removed_from_allowlist_is_refused_in_call_and_check(
+        self, alice: User, settings: Any
+    ) -> None:
+        with running() as approved, running() as stale:
+            approved_url = approved.url + "/v1"
+            stale_url = stale.url + "/v1"
+            settings.AI_ALLOWED_BASE_URLS = (approved_url, stale_url)
+            config = configure(
+                alice,
+                provider="openai_compatible",
+                model="llama3.1:8b",
+                api_key="",
+                base_url=stale_url,
+            )
+            settings.AI_ALLOWED_BASE_URLS = (approved_url,)
+
+            for invoke in (lambda: ask(alice), lambda: services.check(alice)):
+                with pytest.raises(EndpointNotAllowedError):
+                    invoke()
+
+            assert stale.requests == []
+            assert approved.requests == []
+            assert AIUsageRecord.objects.count() == 0
+            config = reload(config)
+            assert config.status == "untested"
+            assert config.last_checked_at is None
+
+
 class TestTheCheck:
     def test_it_sends_the_fixed_prompt_and_nothing_of_the_user(
         self, fake: FakeProvider, alice: User

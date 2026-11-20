@@ -281,17 +281,48 @@ class TestTheAllowList:
         with pytest.raises(EndpointNotAllowedError):
             OpenAICompatibleProvider(fake.url + "/v1", MODEL)
 
+        assert fake.requests == []
+
     @pytest.mark.parametrize("variant", ["/", "?x=1", "/chat", "#f", " "])
-    def test_only_the_listed_text_counts(self, base: str, variant: str) -> None:
+    def test_only_the_listed_text_counts(self, fake: FakeProvider, base: str, variant: str) -> None:
         with pytest.raises(EndpointNotAllowedError):
             OpenAICompatibleProvider(base + variant, MODEL)
 
-    def test_the_address_of_the_fake_is_taken_from_the_list_not_from_the_request(
-        self, fake: FakeProvider, base: str
-    ) -> None:
-        complete(fake, base)
+        assert fake.requests == []
 
-        assert fake.requests[0]["raw_path"].startswith("/v1/")
+    def test_only_an_approved_self_hosted_endpoint_receives_requests(self, settings: Any) -> None:
+        with running() as approved, running() as unlisted:
+            approved_url = approved.url + "/v1"
+            unlisted_url = unlisted.url + "/v1"
+            settings.AI_ALLOWED_BASE_URLS = (approved_url,)
+            approved.reply(ANSWER)
+
+            result = provider(approved_url, KEY).complete("", HELLO, 100)
+
+            assert result == Completion("Hi there", 12, 5, False)
+            assert len(approved.requests) == 1
+            assert approved.requests[0]["raw_path"] == "/v1/chat/completions"
+            assert unlisted.requests == []
+
+            with pytest.raises(EndpointNotAllowedError):
+                provider(unlisted_url, KEY)
+
+            assert len(approved.requests) == 1
+            assert unlisted.requests == []
+
+    def test_removing_an_endpoint_before_complete_makes_zero_requests(
+        self, fake: FakeProvider, base: str, settings: Any
+    ) -> None:
+        fake.reply(ANSWER)
+        chosen = provider(base, KEY)
+        settings.AI_ALLOWED_BASE_URLS = ()
+
+        with pytest.raises(
+            EndpointNotAllowedError, match="This address is not allowed on this server."
+        ):
+            chosen.complete("", HELLO, 100)
+
+        assert fake.requests == []
 
     def test_the_refusal_says_nothing_about_the_address_or_the_key(self, settings: Any) -> None:
         settings.AI_ALLOWED_BASE_URLS = ()
