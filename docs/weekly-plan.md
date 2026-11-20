@@ -17,6 +17,11 @@ Plausibility is not coaching advice. The rules below stop plans that cannot be d
 illness, a zone the athlete has no threshold for) and plans that are obviously unwise (five hard
 days, a doubled volume). They do not say that a plan is *good*.
 
+Workouts can only be added, edited, moved or individually removed while their plan is a draft.
+The database checks the stored status of both plans when moving a workout. These checks also
+apply to bulk writes and serialize with confirmation. Confirmed, superseded and discarded plans
+keep their workouts unchanged. Deleting a whole plan or an authenticated account still works.
+
 ## Example
 
 ```json

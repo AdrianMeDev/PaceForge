@@ -1184,6 +1184,9 @@ links to the Connections page.
    the version that was confirmed before. On a phone the buttons stay in a bar above the tab bar.
 5. Send the confirmed week to your calendar: see [Sending to Intervals.icu](#sending-to-intervalsicu).
 
+Workouts can only be edited while their plan is a draft. Confirmed, replaced and discarded
+versions keep their workouts unchanged. Deleting a whole plan or your account still removes them.
+
 Unreadable plans report problems at trusted schema paths. Unknown fields are reported once per
 object at its parent path, without naming the unknown keys.
 

@@ -21,6 +21,7 @@ from accounts.services.deletion import (
 )
 from activities.models import ActivityFile
 from core.models import OwnedModel
+from planning.models import WeeklyPlan, WorkoutExport
 
 from .conftest import enable_totp, totp_code
 from .test_export_service import make_user, populate
@@ -262,3 +263,42 @@ def test_invitations_of_the_user_go_and_the_ones_to_others_stay() -> None:
         "friend@example.com",
         "other@example.com",
     ]
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize("status", ["confirmed", "superseded", "discarded"])
+def test_authenticated_deletion_removes_historical_workouts_and_exports(
+    no_network: list[str],
+    status: str,
+) -> None:
+    alice = make_user("alice@example.com")
+    bob = make_user("bob@example.com")
+    for user, tag in ((alice, "alice"), (bob, "bob")):
+        populate(user, tag)
+        plan = WeeklyPlan.objects.get(owner=user)
+        workout = plan.workouts.get()
+        WorkoutExport.objects.create(
+            owner=user,
+            week_start=plan.week_start,
+            workout=workout,
+            external_id=tag,
+            status="synced",
+            event_id=1,
+        )
+        plan.status = status
+        plan.confirmed_at = timezone.now() if status != "discarded" else None
+        plan.save(update_fields=["status", "confirmed_at"])
+    bob_rows = count_rows(bob)
+    sign_in(alice)
+    sign_in(bob)
+
+    delete(alice)
+
+    assert not User.objects.filter(pk=alice.pk).exists()
+    for model in owned_models():
+        assert not model.objects.filter(owner_id=alice.pk).exists(), model
+    assert count_rows(bob) == bob_rows
+    assert WeeklyPlan.objects.get(owner=bob).workouts.count() == 1
+    assert WorkoutExport.objects.get(owner=bob).workout_id is not None
+    assert Session.objects.get().get_decoded()["_auth_user_id"] == str(bob.pk)
+    assert no_network == []

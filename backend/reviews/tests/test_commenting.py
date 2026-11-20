@@ -17,7 +17,6 @@ from coach.providers.base import (
     UnexpectedResponseError,
 )
 from goals import services as goal_services
-from planning.models import PlannedWorkout
 from planning.tests.scripted import Scripted
 from reviews import commenting
 from reviews.briefing import build_briefing, to_json
@@ -46,12 +45,17 @@ def _clock(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture
-def alice() -> User:
+def workout_fields() -> dict[str, Any]:
+    return {}
+
+
+@pytest.fixture
+def alice(workout_fields: dict[str, Any]) -> User:
     user = User.objects.create_user("alice@example.com")
     AIProviderConfiguration.objects.create(
         owner=user, provider="anthropic", model="claude-sonnet-5-5", api_key=KEY
     )
-    make_plan(user, workouts=2)
+    make_plan(user, workouts=[workout_fields] * 2)
     make_activity(user, "2026-11-09T07:00", rpe=6)
     return user
 
@@ -111,10 +115,10 @@ class TestAGoodAnswer:
         assert (record.purpose, record.outcome) == ("week_review", "success")
         assert (record.input_tokens, record.output_tokens) == (100, 50)
 
+    @pytest.mark.parametrize("workout_fields", [{"title": MARKER, "notes": MARKER}])
     def test_the_coach_is_told_no_free_text(
         self, alice: User, provide: Callable[..., Scripted]
     ) -> None:
-        PlannedWorkout.objects.filter(owner=alice).update(title=MARKER, notes=MARKER)
         make_activity(alice, "2026-11-11T07:00", notes=MARKER, sport="strength")
         WeekFeedback.objects.create(owner=alice, week_start=MONDAY, fatigue=4, notes=MARKER)
         scripted = provide(good())

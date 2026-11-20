@@ -4,7 +4,6 @@ import pytest
 
 from accounts.models import User
 from goals import services as goal_services
-from planning.models import PlannedWorkout
 from planning.schema import DURATION_MAX, MAX_WORKOUTS
 from reviews.briefing import MAX_BYTES, MAX_UNPLANNED, build_briefing, to_json
 from reviews.models import WeekComment, WeekFeedback
@@ -160,8 +159,7 @@ class TestTheWorkouts:
         assert data["statuses"]["done"] == 1 and data["statuses"]["missed"] == 1
 
     def test_load_per_sport_includes_unrated_intervals_activities(self, alice: User) -> None:
-        plan = make_plan(alice, workouts=2)
-        PlannedWorkout.objects.filter(plan=plan, day=MONDAY).update(sport="cycling", goal="tempo")
+        make_plan(alice, workouts=[{"sport": "cycling", "goal": "tempo"}, {}])
         make_activity(alice, "2026-11-09T07:00", sport="cycling", training_load=79.5)
         make_activity(alice, "2026-11-10T07:00", rpe=5)
         make_activity(alice, "2026-11-12T07:00", sport="swimming", training_load=0)
@@ -226,8 +224,7 @@ class TestTheFeedback:
 
 class TestWhatIsNeverTold:
     def test_no_free_text_and_no_id_whatever_the_user_wrote(self, alice: User) -> None:
-        plan = make_plan(alice, workouts=2)
-        PlannedWorkout.objects.filter(plan=plan).update(title=MARKER, notes=MARKER)
+        plan = make_plan(alice, workouts=[{"title": MARKER, "notes": MARKER}] * 2)
         run = make_activity(
             alice,
             "2026-11-09T07:00",
@@ -315,9 +312,10 @@ class TestTheText:
         assert ", " not in text and ": " not in text
 
     def test_a_week_at_every_limit_stays_below_the_size_limit(self, alice: User) -> None:
-        plan = make_plan(alice, workouts=MAX_WORKOUTS)
-        PlannedWorkout.objects.filter(plan=plan).update(
-            duration_minutes=DURATION_MAX, zone_system="power", zone=7
+        make_plan(
+            alice,
+            workouts=[{"duration_minutes": DURATION_MAX, "zone_system": "power", "zone": 7}]
+            * MAX_WORKOUTS,
         )
         for n in range(MAX_WORKOUTS):
             make_activity(
