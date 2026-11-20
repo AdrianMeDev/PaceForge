@@ -292,8 +292,25 @@ class TestTheArchive:
             import_export(alice, io.BytesIO(b"this is not a zip archive"))
 
     def test_a_path_that_does_not_exist(self, alice: User, tmp_path: Path) -> None:
-        with pytest.raises(ExportError, match="not a ZIP"):
-            import_export(alice, tmp_path / "nothing.zip")
+        missing = tmp_path / "nothing.zip"
+        with pytest.raises(ExportError) as raised:
+            import_export(alice, missing)
+
+        message = str(raised.value)
+        assert "not found" in message
+        assert "not a ZIP" not in message
+        assert str(missing) not in message
+        assert "nothing.zip" not in message
+
+    def test_a_directory_cannot_be_opened(self, alice: User, tmp_path: Path) -> None:
+        with pytest.raises(ExportError) as raised:
+            import_export(alice, tmp_path)
+
+        message = str(raised.value)
+        assert "cannot be opened" in message
+        assert "not found" not in message
+        assert "not a ZIP" not in message
+        assert str(tmp_path) not in message
 
     def test_an_archive_without_the_list(self, alice: User) -> None:
         with pytest.raises(ExportError, match="no activities.csv"):
@@ -415,8 +432,25 @@ class TestTheCommand:
         path = tmp_path / "bad.zip"
         path.write_bytes(b"no zip")
 
-        with pytest.raises(CommandError, match="not a ZIP"):
+        with pytest.raises(CommandError) as raised:
             self.run(str(path), "--user", "alice@example.com")
+
+        message = str(raised.value)
+        assert "not a ZIP" in message
+        assert str(path) not in message
+        assert "bad.zip" not in message
+
+    def test_a_missing_archive(self, alice: User, tmp_path: Path) -> None:
+        missing = tmp_path / "missing.zip"
+
+        with pytest.raises(CommandError) as raised:
+            self.run(str(missing), "--user", "alice@example.com")
+
+        message = str(raised.value)
+        assert "not found" in message
+        assert "not a ZIP" not in message
+        assert str(missing) not in message
+        assert "missing.zip" not in message
 
     def test_the_user_is_needed(self, tmp_path: Path) -> None:
         with pytest.raises(CommandError, match="--user"):

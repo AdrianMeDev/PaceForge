@@ -312,7 +312,11 @@ def import_export(
     """
     try:
         archive = zipfile.ZipFile(source)
-    except zipfile.BadZipFile, OSError:
+    except FileNotFoundError:
+        raise ExportError("The archive file was not found.") from None
+    except OSError:
+        raise ExportError("The archive file cannot be opened.") from None
+    except zipfile.BadZipFile:
         raise ExportError("The file is not a ZIP archive.") from None
     with archive:
         if len(archive.infolist()) > MAX_MEMBERS:
