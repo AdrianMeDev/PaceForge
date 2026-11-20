@@ -465,6 +465,26 @@ class TestTheAnswer:
         with pytest.raises(UnexpectedResponseError):
             provider(base).complete("", HELLO, 10)
 
+    @pytest.mark.parametrize(
+        "raw_body",
+        [
+            b'{"choices": [{"message": {"content": "Hi"}}], "usage": {"prompt_tokens": NaN}}',
+            b'{"choices": [{"message": {"content": "Hi"}}], "usage": {"prompt_tokens": Infinity}}',
+            b'{"choices": [{"message": {"content": "Hi"}}], "usage": {"prompt_tokens": -Infinity}}',
+            b'{"choices": [{"message": {"content": "Hi"}}], "usage": {"nested": [1e400]}}',
+        ],
+        ids=["nan", "infinity", "neg-infinity", "nested-overflow"],
+    )
+    def test_an_answer_with_non_finite_numbers_is_rejected(
+        self, fake: FakeProvider, base: str, raw_body: bytes
+    ) -> None:
+        fake.body = raw_body
+
+        with pytest.raises(UnexpectedResponseError) as raised:
+            provider(base).complete("", HELLO, 10)
+
+        assert str(raised.value) == "The answer is not JSON."
+
     def test_an_answer_that_is_too_large_is_rejected(
         self, fake: FakeProvider, base: str, monkeypatch: pytest.MonkeyPatch
     ) -> None:

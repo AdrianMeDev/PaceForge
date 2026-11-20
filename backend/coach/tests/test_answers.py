@@ -44,6 +44,20 @@ class TestWhatIsAccepted:
 
         assert read_json_object(text, LIMIT)
 
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            ('{"a": 1.5, "b": -0.25, "c": 0.0}', {"a": 1.5, "b": -0.25, "c": 0.0}),
+            ('{"a": 1e308, "b": -1e308}', {"a": 1e308, "b": -1e308}),
+            (
+                '{"a": 1.7976931348623157e+308, "b": 1e-308}',
+                {"a": 1.7976931348623157e308, "b": 1e-308},
+            ),
+        ],
+    )
+    def test_finite_floats_and_boundary_values(self, text: str, expected: dict[str, float]) -> None:
+        assert read_json_object(text, LIMIT) == expected
+
 
 class TestWhatIsRefused:
     def test_an_answer_that_is_too_long(self) -> None:
@@ -94,6 +108,20 @@ class TestWhatIsRefused:
             "The answer holds a number or a nesting that cannot be read."
         )
 
+    @pytest.mark.parametrize(
+        "text",
+        [
+            '{"a": 1e400}',
+            '{"a": -1e400}',
+            '{"a": 1e309}',
+            '{"a": {"b": 1e400}}',
+            '{"a": [1, {"b": -1e400}]}',
+            '{"a": [1e309]}',
+        ],
+    )
+    def test_overflowing_floats_are_refused(self, text: str) -> None:
+        assert refused(text) == "The answer holds a number or a nesting that cannot be read."
+
     def test_a_decoder_that_gives_up_on_the_nesting_is_refused_not_crashed_on(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -129,7 +157,10 @@ class TestWhatIsRefused:
             f"{MARKER} {{}}",
             f'{{"a": {MARKER}}}',
             f'{{"a": "{MARKER}" ' + "x" * LIMIT + "}",
+            f'{{"a": 1e400, "b": "{MARKER}"}}',
         ],
     )
     def test_nothing_of_the_answer_is_repeated(self, text: str) -> None:
-        assert MARKER not in refused(text)
+        message = refused(text)
+        assert MARKER not in message
+        assert "1e400" not in message

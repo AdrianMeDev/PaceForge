@@ -11,6 +11,7 @@ Built on the standard library, like the Intervals.icu client. The rules it keeps
 
 import http.client
 import json
+import math
 import re
 import urllib.error
 import urllib.request
@@ -94,9 +95,20 @@ def post_json(
     if cut_off:
         raise ProviderUnavailableError("The answer was cut off.")
     try:
-        return json.loads(body)
+        return json.loads(body, parse_constant=_no_constants, parse_float=_finite_float)
     except ValueError:
         raise UnexpectedResponseError("The answer is not JSON.") from None
+
+
+def _no_constants(_: str) -> Any:
+    raise ValueError("non-finite constant")
+
+
+def _finite_float(raw: str) -> float:
+    value = float(raw)
+    if not math.isfinite(value):
+        raise ValueError("non-finite float")
+    return value
 
 
 def error_for_status(status: int, retry_after: str | None = None) -> ProviderError:

@@ -7,6 +7,7 @@ object has to look like is the business of the caller.
 """
 
 import json
+import math
 import re
 from typing import Any
 
@@ -38,7 +39,10 @@ def read_json_object(text: str, max_chars: int) -> object:
         )
     try:
         return json.loads(
-            stripped, object_pairs_hook=_no_repeated_keys, parse_constant=_no_constants
+            stripped,
+            object_pairs_hook=_no_repeated_keys,
+            parse_constant=_no_constants,
+            parse_float=_finite_float,
         )
     except json.JSONDecodeError as error:
         # the decoder's message is one of a few fixed phrases; the position is only numbers
@@ -69,3 +73,10 @@ def _no_repeated_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 
 def _no_constants(_: str) -> Any:
     raise _Refused("NaN and Infinity are not allowed.")
+
+
+def _finite_float(raw: str) -> float:
+    value = float(raw)
+    if not math.isfinite(value):
+        raise ValueError("non-finite float")
+    return value
