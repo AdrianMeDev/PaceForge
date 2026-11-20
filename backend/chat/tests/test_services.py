@@ -52,7 +52,7 @@ from season.snapshots import collect_inputs
 
 pytestmark = pytest.mark.django_db
 
-KEY = "sk-ant-test-0123456789-abcdefghij"
+KEY = "synthetic-test-token-abcdefghij"
 INTERVALS_KEY = "k3y-0123456789-abcdefghij"
 SATURDAY = "2026-11-14"
 SUNDAY = "2026-11-15"

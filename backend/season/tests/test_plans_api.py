@@ -42,7 +42,7 @@ PLANS = "/api/season/plans/"
 GENERATE = f"{PLANS}generate/"
 NOW = datetime(2026, 11, 19, 12, 0, tzinfo=UTC)
 MONDAY = date(2026, 11, 16)
-KEY = "sk-ant-test-0123456789-abcdefghij"
+KEY = "test-provider-marker-0123456789"
 DETAIL_FIELDS = {
     "id",
     "version",
@@ -170,6 +170,7 @@ class TestGenerating:
         response = signed_in(alice).call("POST", GENERATE)
 
         assert response.status_code == HTTPStatus.CREATED
+        assert KEY not in response.content.decode()
         data = body(response)
         assert set(data) == DETAIL_FIELDS
         assert (data["status"], data["version"], data["parent"]) == ("draft", 1, None)
@@ -291,6 +292,7 @@ class TestGenerating:
 
         assert response.status_code == status
         assert body(response)["code"] == code
+        assert KEY not in response.content.decode()
 
     def test_the_fourth_request_within_a_minute_is_throttled_before_the_provider(
         self, alice: User, provide: Callable[..., Scripted]

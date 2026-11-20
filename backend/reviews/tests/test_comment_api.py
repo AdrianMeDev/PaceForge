@@ -27,7 +27,7 @@ from .conftest import make_user, signed_in
 pytestmark = pytest.mark.django_db
 
 MARKER = "SECRETMARKER"
-KEY = "sk-ant-test-0123456789-abcdefghij"
+KEY = "synthetic-test-token-abcdefghij"
 COMMENT = f"/api/reviews/weeks/{MONDAY}/comment/"
 
 
@@ -202,10 +202,10 @@ class TestWhenTheCoachFails:
     @pytest.mark.parametrize(
         ("error", "http_status", "code"),
         [
-            (InvalidKeyError(MARKER), 502, "invalid_key"),
-            (ProviderUnavailableError(MARKER), 503, "unavailable"),
-            (UnexpectedResponseError(MARKER), 502, "unexpected"),
-            (EndpointNotAllowedError(MARKER), 502, "not_allowed"),
+            (InvalidKeyError(f"{MARKER} {KEY}"), 502, "invalid_key"),
+            (ProviderUnavailableError(f"{MARKER} {KEY}"), 503, "unavailable"),
+            (UnexpectedResponseError(f"{MARKER} {KEY}"), 502, "unexpected"),
+            (EndpointNotAllowedError(f"{MARKER} {KEY}"), 502, "not_allowed"),
         ],
     )
     def test_a_provider_problem_has_its_own_status_and_a_fixed_text(
@@ -222,7 +222,7 @@ class TestWhenTheCoachFails:
 
         assert response.status_code == http_status
         assert body(response) == {"detail": PROBLEMS[code], "code": code}
-        assert MARKER not in response.content.decode()
+        assert MARKER not in response.content.decode() and KEY not in response.content.decode()
         assert not WeekComment.objects.exists()
 
     def test_rate_limiting_says_how_long_to_wait(

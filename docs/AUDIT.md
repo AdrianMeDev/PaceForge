@@ -1887,7 +1887,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** -
 - **Size:** M, ~5 commits
 
-### M2 [ ] Audit: CI trust and test credentials
+### M2 [x] Audit: CI trust and test credentials
 
 - **Goal:** Make CI verify its package source and keep reusable or live-looking keys out of workflows and test fixtures.
 - **Includes:** F5 (CI encryption key), F6 (CI Django key), F8 (PostgreSQL signing key), F401 (weekly generation fixture), F488 (season generation fixture), F207, F215, F252, F345, F446, F494, F499, F609 (related provider fixtures).
@@ -2249,3 +2249,4 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 
 - 2026-11-20: audit planned
 - 2026-11-20: M1 done: discrete `POSTGRES_*` settings, no hardcoded database passwords, docs for existing and new volumes
+- 2026-11-20: M2 done: CI generates fresh Django and Fernet keys per run and verifies the PGDG APT key fingerprint before trusting it; M2 test suites use synthetic provider markers, guarded by a regression test against `sk-ant-` literals

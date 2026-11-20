@@ -42,7 +42,7 @@ pytestmark = pytest.mark.django_db
 
 NOW = datetime(2026, 11, 19, 12, 0, tzinfo=UTC)
 MONDAY = date(2026, 11, 16)
-KEY = "sk-ant-test-0123456789-abcdefghij"
+KEY = "test-provider-marker-0123456789"
 Status = SeasonPlanVersion.Status
 
 
@@ -243,6 +243,17 @@ class TestADraftFromTheFirstAnswer:
         assert "secret" not in scripted.calls[0][1][0].content
         assert "bob" not in scripted.calls[0][1][0].content
         assert versions(alice)[0].input_snapshot == collect_inputs(alice)
+
+    def test_the_provider_key_is_never_sent_to_the_coach(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        scripted = provide(good(alice))
+
+        generate(alice)
+
+        for system, messages, _ in scripted.calls:
+            assert KEY not in system
+            assert all(KEY not in message.content for message in messages)
 
     def test_the_draft_can_be_confirmed(
         self, alice: User, provide: Callable[..., Scripted]

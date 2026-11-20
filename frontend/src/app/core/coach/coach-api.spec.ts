@@ -16,7 +16,7 @@ import {
 
 const URL = '/api/coach/provider/';
 const CHECK_URL = '/api/coach/provider/check/';
-const KEY = 'sk-ant-replay-0123456789-notreal';
+const KEY = 'test-provider-marker-not-real';
 const FAKE_ADDRESS = 'http://127.0.0.1:8031/v1';
 
 // The shapes are those of the real API (replayed with curl against a real Django).
@@ -671,6 +671,7 @@ describe('CoachApi', () => {
       const { result } = await run(api.getCosts(), 'GET', COSTS_URL, extra as object, 200);
 
       expect(result).toEqual({ kind: 'ok', state: COSTS });
+      expect(JSON.stringify(result)).not.toContain(KEY);
     });
 
     it.each(WRONG_COSTS)('rejects an answer with %s', async (_name, reply) => {
