@@ -367,6 +367,13 @@ Things to know before you allow one of them:
    - **Model for the week plan:** a lighter model can be enough for the weekly plan.
    - **Model for the coach chat:** a lighter model can keep the chat quick and cheap.
    The connection check and week review always use the normal model.
+   For **Anthropic** you can also choose how long the model may think (**Effort**: the model's
+   default, Low, Medium, High, Extra high or Max), once for all tasks and, if you like, for the
+   season plan, the week plan and the chat. A lower effort answers sooner and costs less. A slow
+   model (for example Claude Fable) may need a lower effort for the season plan to finish before
+   the deadline of the request. Not every model takes every level, and older ones take none: if
+   the provider refuses, choose another level or the model's default. Changing the effort keeps
+   the status. The check never sends an effort.
 4. Change anything later by saving again. Any change of provider, model, task models, address or
    key sets the status back to **Not checked yet**; saving the very same setup again changes nothing. The check
    always uses the **saved** setup (the page says when you have unsaved changes).
@@ -1857,8 +1864,8 @@ Set in `.env` or in the environment. Values without a default are required.
   have been stored anyway: look at the versions of the week.
 - **"The coach did not finish in time."** The answer, streamed or not, did not arrive within
   `AI_REQUEST_DEADLINE_SECONDS`. No repair round is started once less than a minute is left, so at
-  most the call that ran out of time was paid for. Choose a faster model for that task, or try
-  again.
+  most the call that ran out of time was paid for. Choose a lower effort or a faster model for that
+  task on the Connections page, or try again.
 - **An administrator cannot reach the admin pages and keeps landing on the security page.** That is
   the rule that administrators need two-factor authentication; set it up there.
 - **Sign-in is refused with "too many failed attempts".** That is the brute-force protection: five

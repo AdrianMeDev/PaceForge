@@ -26,6 +26,11 @@ export interface AiUsage {
 }
 
 /**
+ * How long an Anthropic model may think before it answers. Not every model takes every level.
+ */
+export type AiEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
+/**
  * The user's AI provider setup. The key is not part of it and never comes back from the server:
  * `has_key` only says that one is stored. `allowed_base_urls` are the addresses the operator
  * allows for OpenAI-compatible endpoints (empty: none, so only Anthropic can be chosen).
@@ -41,6 +46,12 @@ export interface AiProviderState {
   week_model: string;
   /** The model for the coach chat; empty: the normal model does it. */
   chat_model: string;
+  /** Anthropic only. Empty: none is sent and the model uses its own default. */
+  effort: AiEffort | '';
+  /** The effort for the season plan, the week plan and the chat; empty: the normal effort. */
+  season_effort: AiEffort | '';
+  week_effort: AiEffort | '';
+  chat_effort: AiEffort | '';
   base_url: string | null;
   has_key: boolean;
   status: AiStatus | null;
@@ -64,6 +75,11 @@ export interface AiProviderInput {
   week_model?: string;
   /** Empty: the coach chat uses the normal model. */
   chat_model?: string;
+  /** Anthropic only; left out or empty: none (for the tasks: the normal effort). */
+  effort?: AiEffort | '';
+  season_effort?: AiEffort | '';
+  week_effort?: AiEffort | '';
+  chat_effort?: AiEffort | '';
   base_url?: string;
   api_key?: string;
 }

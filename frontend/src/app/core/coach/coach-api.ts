@@ -5,6 +5,7 @@ import { API_BASE } from '../api/api-providers';
 import { toInvalid } from '../api/coach-replies';
 import {
   AiCostsState,
+  AiEffort,
   AiProviderInput,
   AiProviderKind,
   AiProviderState,
@@ -31,6 +32,7 @@ const PRICES_URL = `${COSTS_URL}prices/`;
 const HANDLED_ERRORS = [400, 401, 403, 404, 429];
 const PROVIDERS: readonly string[] = ['anthropic', 'openai_compatible'];
 const STATUSES: readonly string[] = ['untested', 'connected', 'invalid', 'unavailable'];
+const EFFORTS: readonly string[] = ['', 'low', 'medium', 'high', 'xhigh', 'max'];
 const PROBLEMS: readonly string[] = [
   'invalid_key',
   'rate_limited',
@@ -219,6 +221,10 @@ function toState(raw: unknown, reply: Reply): AiProviderState {
     season_model: item['season_model'],
     week_model: item['week_model'],
     chat_model: item['chat_model'],
+    effort: toEffort(item['effort'], reply),
+    season_effort: toEffort(item['season_effort'], reply),
+    week_effort: toEffort(item['week_effort'], reply),
+    chat_effort: toEffort(item['chat_effort'], reply),
     base_url: baseUrl,
     has_key: item['has_key'],
     status,
@@ -342,6 +348,13 @@ function isDecimal(value: unknown): value is string {
 
 function isTimestampOrNull(value: unknown): value is string | null {
   return value === null || (typeof value === 'string' && !Number.isNaN(Date.parse(value)));
+}
+
+function toEffort(value: unknown, reply: Reply): AiEffort | '' {
+  if (!isOneOf<AiEffort | ''>(value, EFFORTS)) {
+    throw unexpected(reply);
+  }
+  return value;
 }
 
 function isOneOf<T extends string>(value: unknown, allowed: readonly string[]): value is T {

@@ -35,6 +35,10 @@ const NOT_SET_UP = {
   season_model: '',
   week_model: '',
   chat_model: '',
+  effort: '',
+  season_effort: '',
+  week_effort: '',
+  chat_effort: '',
   base_url: null,
   has_key: false,
   status: null,
@@ -204,6 +208,11 @@ describe('CoachApi', () => {
     ['null as week model', altered(ANTHROPIC, [['week_model'], null])],
     ['no chat model', altered(ANTHROPIC, [['chat_model'], REMOVE])],
     ['a number as chat model', altered(ANTHROPIC, [['chat_model'], 5])],
+    ['no effort', altered(ANTHROPIC, [['effort'], REMOVE])],
+    ['an unknown effort', altered(ANTHROPIC, [['effort'], 'extreme'])],
+    ['null as season effort', altered(ANTHROPIC, [['season_effort'], null])],
+    ['a capital week effort', altered(ANTHROPIC, [['week_effort'], 'LOW'])],
+    ['a number as chat effort', altered(ANTHROPIC, [['chat_effort'], 3])],
     ['a number as address', altered(COMPATIBLE, [['base_url'], 5])],
     ['no key flag', altered(ANTHROPIC, [['has_key'], REMOVE])],
     ['a text as key flag', altered(ANTHROPIC, [['has_key'], 'true'])],
@@ -298,6 +307,14 @@ describe('CoachApi', () => {
       const { result } = await run(api.get(), 'GET', URL, CONNECTED, 200);
 
       expect(result).toEqual({ kind: 'ok', state: CONNECTED as AiProviderState });
+    });
+
+    it('returns the efforts of a setup', async () => {
+      const efforts = { effort: 'high', season_effort: 'low', week_effort: '', chat_effort: 'max' };
+
+      const { result } = await run(api.get(), 'GET', URL, { ...CONNECTED, ...efforts }, 200);
+
+      expect(result).toMatchObject({ kind: 'ok', state: efforts });
     });
 
     it('returns an OpenAI-compatible setup with its address and without a key', async () => {

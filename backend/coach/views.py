@@ -26,8 +26,8 @@ PROBLEMS = {
     "invalid_key": "The provider did not accept the key. Check that you copied all of it.",
     "rate_limited": "The provider is asking to slow down. Please try again in a moment.",
     "unavailable": "The provider cannot be reached right now. Please try again later.",
-    "too_slow": "The coach did not finish in time. Choose a faster model for this task, "
-    "or try again.",
+    "too_slow": "The coach did not finish in time. Choose a lower effort or a faster model for "
+    "this task, or try again.",
     "unexpected": "The provider answered in an unexpected way. Check the model name and try again.",
     "not_allowed": "This address is no longer allowed on this server. Choose another one.",
 }

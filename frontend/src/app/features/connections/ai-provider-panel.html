@@ -39,6 +39,21 @@
             <dd data-testid="week-model">{{ current.week_model || 'The normal model' }}</dd>
             <dt>Model for the coach chat</dt>
             <dd data-testid="chat-model">{{ current.chat_model || 'The normal model' }}</dd>
+            @if (current.provider === 'anthropic') {
+              <dt>Effort</dt>
+              <dd data-testid="efforts">
+                {{ current.effort ? effortLabel[current.effort] : "The model's default" }}
+                @if (current.season_effort || current.week_effort || current.chat_effort) {
+                  <span>
+                    (season plan:
+                    {{ current.season_effort ? effortLabel[current.season_effort] : 'the same' }},
+                    week plan:
+                    {{ current.week_effort ? effortLabel[current.week_effort] : 'the same' }}, chat:
+                    {{ current.chat_effort ? effortLabel[current.chat_effort] : 'the same' }})
+                  </span>
+                }
+              </dd>
+            }
             @if (current.base_url) {
               <dt>Address</dt>
               <dd data-testid="address">{{ current.base_url }}</dd>
@@ -211,6 +226,37 @@
               above.
             </p>
           </div>
+
+          @if (provider() === 'anthropic') {
+            <fieldset class="field efforts" aria-describedby="ai-effort-hint">
+              <legend>How long the model may think (optional)</legend>
+              @for (field of efforts; track field.name) {
+                <div class="field">
+                  <label [for]="'ai-' + field.name">{{ field.label }}</label>
+                  <select
+                    [id]="'ai-' + field.name"
+                    [attr.aria-invalid]="fieldErrors()[field.name] ? true : null"
+                    (change)="chooseEffort(field.value, read($event))"
+                  >
+                    <option value="" [selected]="field.value() === ''">{{ field.empty }}</option>
+                    @for (level of effortLevels; track level) {
+                      <option [value]="level" [selected]="field.value() === level">
+                        {{ effortLabel[level] }}
+                      </option>
+                    }
+                  </select>
+                  @if (fieldErrors()[field.name]; as message) {
+                    <p class="field-error" role="alert">{{ message }}</p>
+                  }
+                </div>
+              }
+              <p class="hint" id="ai-effort-hint">
+                A lower effort answers sooner and costs less; a higher one thinks longer. A slow
+                model may need a lower effort for the season plan to finish in time. Not every model
+                takes every level: if one refuses, choose another or the model's default.
+              </p>
+            </fieldset>
+          }
 
           @if (provider() === 'openai_compatible') {
             <div class="field">

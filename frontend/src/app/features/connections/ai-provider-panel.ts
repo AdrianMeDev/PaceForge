@@ -1,7 +1,17 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
-import { Component, OnInit, computed, inject, output, signal, viewChild } from '@angular/core';
+import {
+  Component,
+  OnInit,
+  WritableSignal,
+  computed,
+  inject,
+  output,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { CoachApi } from '../../core/coach/coach-api';
 import {
+  AiEffort,
   AiProviderInput,
   AiProviderKind,
   AiProviderState,
@@ -36,6 +46,20 @@ export const STATUS_TEXT: Record<AiStatus, string> = {
   unavailable: 'The provider could not be reached at the last check',
 };
 
+export const EFFORT_LABELS: Record<AiEffort, string> = {
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
+  xhigh: 'Extra high',
+  max: 'Max',
+};
+
+type EffortName = 'effort' | 'season_effort' | 'week_effort' | 'chat_effort';
+
+function isEffort(value: string): value is AiEffort {
+  return Object.hasOwn(EFFORT_LABELS, value);
+}
+
 /** The names of the fields as the server knows them, for the messages next to them. */
 const FIELDS = [
   'provider',
@@ -43,6 +67,10 @@ const FIELDS = [
   'season_model',
   'week_model',
   'chat_model',
+  'effort',
+  'season_effort',
+  'week_effort',
+  'chat_effort',
   'base_url',
   'api_key',
 ];
@@ -76,6 +104,10 @@ export class AiProviderPanel implements OnInit {
   protected readonly seasonModel = signal('');
   protected readonly weekModel = signal('');
   protected readonly chatModel = signal('');
+  protected readonly effort = signal<AiEffort | ''>('');
+  protected readonly seasonEffort = signal<AiEffort | ''>('');
+  protected readonly weekEffort = signal<AiEffort | ''>('');
+  protected readonly chatEffort = signal<AiEffort | ''>('');
   protected readonly baseUrl = signal('');
   protected readonly apiKey = signal('');
   protected readonly removeKey = signal(false);
@@ -88,6 +120,36 @@ export class AiProviderPanel implements OnInit {
 
   protected readonly providerLabel = PROVIDER_LABELS;
   protected readonly statusText = STATUS_TEXT;
+  protected readonly effortLabel = EFFORT_LABELS;
+  protected readonly effortLevels: readonly AiEffort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
+
+  /** The effort fields of the form (Anthropic only), the normal one first. */
+  protected readonly efforts: {
+    name: EffortName;
+    label: string;
+    empty: string;
+    value: WritableSignal<AiEffort | ''>;
+  }[] = [
+    { name: 'effort', label: 'Effort', empty: "The model's default", value: this.effort },
+    {
+      name: 'season_effort',
+      label: 'Effort for the season plan',
+      empty: 'The effort above',
+      value: this.seasonEffort,
+    },
+    {
+      name: 'week_effort',
+      label: 'Effort for the week plan',
+      empty: 'The effort above',
+      value: this.weekEffort,
+    },
+    {
+      name: 'chat_effort',
+      label: 'Effort for the coach chat',
+      empty: 'The effort above',
+      value: this.chatEffort,
+    },
+  ];
 
   /** Anthropic always; the OpenAI-compatible choice only if the operator allows an address. */
   protected readonly providers = computed<AiProviderKind[]>(() => {
@@ -140,6 +202,8 @@ export class AiProviderPanel implements OnInit {
       this.seasonModel().trim() !== state.season_model ||
       this.weekModel().trim() !== state.week_model ||
       this.chatModel().trim() !== state.chat_model ||
+      (this.provider() === 'anthropic' &&
+        this.efforts.some((field) => field.value() !== state[field.name])) ||
       (this.provider() === 'openai_compatible' && this.baseUrl() !== state.base_url) ||
       this.apiKey() !== '' ||
       this.removeKey()
@@ -167,6 +231,10 @@ export class AiProviderPanel implements OnInit {
 
   protected read(event: Event): string {
     return (event.target as HTMLInputElement | HTMLSelectElement).value;
+  }
+
+  protected chooseEffort(field: WritableSignal<AiEffort | ''>, value: string): void {
+    field.set(isEffort(value) ? value : '');
   }
 
   protected isChecked(event: Event): boolean {
@@ -339,6 +407,11 @@ export class AiProviderPanel implements OnInit {
     };
     if (compatible) {
       input.base_url = this.baseUrl();
+    } else {
+      // Only Anthropic takes an effort; an OpenAI-compatible setup is saved without one.
+      for (const field of this.efforts) {
+        input[field.name] = field.value();
+      }
     }
     if (key !== '') {
       input.api_key = key;
@@ -356,6 +429,9 @@ export class AiProviderPanel implements OnInit {
     this.seasonModel.set(state.season_model);
     this.weekModel.set(state.week_model);
     this.chatModel.set(state.chat_model);
+    for (const field of this.efforts) {
+      field.value.set(state[field.name]);
+    }
     this.baseUrl.set(state.base_url ?? state.allowed_base_urls[0] ?? '');
     this.apiKey.set('');
     this.removeKey.set(false);
