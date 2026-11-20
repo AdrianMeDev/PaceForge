@@ -144,8 +144,9 @@ CSRF_TRUSTED_ORIGINS = env.list(
 )
 
 # Behind an HTTPS reverse proxy (Caddy) the request arrives as plain HTTP. Trust the proxy's
-# X-Forwarded-Proto header only when the proxy is the sole way in (default outside debug mode).
-if env.bool("DJANGO_TRUST_PROXY_HEADERS", default=not DEBUG):
+# X-Forwarded-Proto header only when DJANGO_TRUST_PROXY_HEADERS=true (opt-in, off by default).
+# Otherwise a client that reaches Django directly could spoof the scheme and the URLs built from it.
+if env.bool("DJANGO_TRUST_PROXY_HEADERS", default=False):
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 ACCOUNT_DEFAULT_HTTP_PROTOCOL = "http" if DEBUG else "https"
 SECURE_CONTENT_TYPE_NOSNIFF = True

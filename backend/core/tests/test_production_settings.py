@@ -17,6 +17,7 @@ from django.test import RequestFactory
 from config import settings as config_settings
 
 config_settings_test_path = Path(config_settings.__file__).with_name("settings_test.py")
+compose_prod_path = config_settings_test_path.parents[2] / "compose.prod.yaml"
 
 STRONG_KEY = "k7Qz-Vh2mXp9LdR4tYw8NcB6sUe3JfGa1oIyHb5KxZv0MqTnAr"
 
@@ -93,7 +94,7 @@ class TestProductionDefaults:
     def test_production_defaults(self, read_settings: Any) -> None:
         read = read_settings()
 
-        assert read["SECURE_PROXY_SSL_HEADER"] == ("HTTP_X_FORWARDED_PROTO", "https")
+        assert "SECURE_PROXY_SSL_HEADER" not in read
         assert read["ACCOUNT_DEFAULT_HTTP_PROTOCOL"] == "https"
         assert read["SECURE_HSTS_SECONDS"] == 31536000
         assert read["CONN_MAX_AGE"] == 60
@@ -101,6 +102,13 @@ class TestProductionDefaults:
         assert read["DATABASES"]["default"]["CONN_HEALTH_CHECKS"] is True
         assert read["SECURE_CONTENT_TYPE_NOSNIFF"] is True
         assert read["X_FRAME_OPTIONS"] == "DENY"
+
+    def test_the_proxy_header_is_trusted_only_when_enabled(self, read_settings: Any) -> None:
+        assert "SECURE_PROXY_SSL_HEADER" not in read_settings(DJANGO_DEBUG="false")
+
+        read = read_settings(DJANGO_DEBUG="false", DJANGO_TRUST_PROXY_HEADERS="true")
+
+        assert read["SECURE_PROXY_SSL_HEADER"] == ("HTTP_X_FORWARDED_PROTO", "https")
 
     def test_debug_defaults(self, read_settings: Any) -> None:
         read = read_settings(DJANGO_DEBUG="true")
@@ -159,6 +167,51 @@ class TestForwardedProto:
 
         link = request.build_absolute_uri("/account/signup?invitation=t&email=a%40b.c")
         assert link.startswith("https://pace.example.com/account/signup?")
+
+
+class TestDirectRequests:
+    """Django reached without a trusted proxy must not take the scheme from the client."""
+
+    def test_a_forwarded_scheme_is_ignored_by_default(
+        self, read_settings: Any, settings: Any
+    ) -> None:
+        read = read_settings(DJANGO_DEBUG="false", APP_DOMAIN="pace.example.com")
+        settings.SECURE_PROXY_SSL_HEADER = read.get("SECURE_PROXY_SSL_HEADER")
+        settings.ALLOWED_HOSTS = ["pace.example.com"]
+        request = RequestFactory().get(
+            "/", HTTP_HOST="pace.example.com", HTTP_X_FORWARDED_PROTO="https"
+        )
+
+        assert not request.is_secure()
+        assert request.build_absolute_uri("/account/signup") == (
+            "http://pace.example.com/account/signup"
+        )
+
+    def test_a_forwarded_scheme_is_trusted_behind_the_proxy(
+        self, read_settings: Any, settings: Any
+    ) -> None:
+        read = read_settings(
+            DJANGO_DEBUG="false", APP_DOMAIN="pace.example.com", DJANGO_TRUST_PROXY_HEADERS="true"
+        )
+        settings.SECURE_PROXY_SSL_HEADER = read.get("SECURE_PROXY_SSL_HEADER")
+        settings.ALLOWED_HOSTS = ["pace.example.com"]
+        request = RequestFactory().get(
+            "/", HTTP_HOST="pace.example.com", HTTP_X_FORWARDED_PROTO="https"
+        )
+
+        assert request.is_secure()
+        assert request.build_absolute_uri("/account/signup") == (
+            "https://pace.example.com/account/signup"
+        )
+
+
+class TestProductionCompose:
+    def test_the_backend_trusts_the_proxy_header(self) -> None:
+        compose = compose_prod_path.read_text()
+        backend = re.search(r"^  backend:\n(.*?)^  \S", compose, re.MULTILINE | re.DOTALL)
+
+        assert backend is not None
+        assert 'DJANGO_TRUST_PROXY_HEADERS: "true"' in backend.group(1)
 
 
 @pytest.fixture

@@ -1895,7 +1895,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** M1
 - **Size:** M, ~4 commits
 
-### M3 [ ] Audit: Public proxy and static frontend
+### M3 [~] Audit: Public proxy and static frontend
 
 - **Goal:** Make the public proxy responsible for trusted scheme information, browser security headers and API routing.
 - **Includes:** F255 (forwarded scheme trust), F525 (content security policy), F543 (writable frontend assets), F544 (API requests receiving the SPA).

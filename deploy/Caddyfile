@@ -19,6 +19,8 @@
 			max_size 32MB
 		}
 		reverse_proxy backend:8000 {
+			# Django trusts this header only with DJANGO_TRUST_PROXY_HEADERS=true (set on backend).
+			header_up X-Forwarded-Proto {scheme}
 			# AI calls can be slow; this matches the Gunicorn timeout.
 			transport http {
 				response_header_timeout 240s
