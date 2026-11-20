@@ -27,7 +27,7 @@ import zlib
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import IO
+from typing import IO, Literal
 
 from django.conf import settings
 
@@ -292,6 +292,9 @@ class ImportCounts:
         )
 
 
+type _RepeatedOutcome = Literal["duplicate", "missing", "unreadable"]
+
+
 def import_export(
     user: User,
     source: str | os.PathLike[str] | IO[bytes],
@@ -324,8 +327,19 @@ def import_export(
         listing = _read_list(archive)
         counts = ImportCounts(lines_unreadable=listing.unreadable)
         rows = sorted(listing.rows, key=lambda row: (row.start, row.activity_id))
+        outcomes: dict[str, _RepeatedOutcome] = {}
         for done, row in enumerate(rows, 1):
-            _import_row(user, archive, row, counts)
+            outcome = outcomes.get(row.filename) if row.filename is not None else None
+            if outcome == "duplicate":
+                counts.duplicates += 1
+            elif outcome == "missing":
+                counts.missing += 1
+            elif outcome == "unreadable":
+                counts.unreadable += 1
+            else:
+                outcome = _import_row(user, archive, row, counts)
+                if row.filename is not None:
+                    outcomes[row.filename] = outcome
             if progress is not None:
                 progress(done, len(rows))
     if counts.imported or counts.entered:
@@ -367,7 +381,9 @@ def _read_member(archive: zipfile.ZipFile, name: str, limit: int) -> bytes:
     return data
 
 
-def _import_row(user: User, archive: zipfile.ZipFile, row: StravaRow, counts: ImportCounts) -> None:
+def _import_row(
+    user: User, archive: zipfile.ZipFile, row: StravaRow, counts: ImportCounts
+) -> _RepeatedOutcome:
     try:
         if row.filename is None:
             _enter(user, row)
@@ -377,10 +393,15 @@ def _import_row(user: User, archive: zipfile.ZipFile, row: StravaRow, counts: Im
             counts.imported += 1
     except DuplicateActivityError:
         counts.duplicates += 1
+        return "duplicate"
     except _Missing:
         counts.missing += 1
+        return "missing"
     except ActivityFileError, FileTooLargeError, _MemberError, _Unusable:
         counts.unreadable += 1
+        return "unreadable"
+    # Once imported, further references to this member are duplicates.
+    return "duplicate"
 
 
 class _Missing(Exception):

@@ -3,12 +3,14 @@ import io
 import zipfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from django.core.management import CommandError, call_command
 
 from accounts.models import User
 from activities.models import Activity, ActivityFile
+from activities.parsing import parse_activity_file, unpack
 from activities.services import import_activity
 from activities.strava import _MAX_FIELD, ExportError, ImportCounts, import_export
 
@@ -157,6 +159,86 @@ class TestRecordings:
 
         assert counts.imported == 1
         assert Activity.objects.filter(owner=bob).count() == 1
+
+
+class TestRepeatedMembers:
+    @pytest.mark.parametrize(
+        ("case", "expected", "opens", "unpacks", "parses"),
+        [
+            ("new", ImportCounts(imported=1, duplicates=39), 1, 1, 1),
+            ("existing", ImportCounts(duplicates=40), 1, 1, 1),
+            ("corrupt_recording", ImportCounts(unreadable=40), 1, 1, 1),
+            ("corrupt_gzip", ImportCounts(unreadable=40), 1, 1, 0),
+            ("oversized_gzip", ImportCounts(unreadable=40), 1, 1, 0),
+            ("oversized_member", ImportCounts(unreadable=40), 0, 0, 0),
+            ("missing", ImportCounts(missing=40), 0, 0, 0),
+        ],
+    )
+    def test_each_member_is_attempted_once(
+        self,
+        alice: User,
+        settings: object,
+        case: str,
+        expected: ImportCounts,
+        opens: int,
+        unpacks: int,
+        parses: int,
+    ) -> None:
+        settings.ACTIVITY_UPLOAD_MAX_BYTES = 5_000  # type: ignore[attr-defined]
+        recording = activity_file(start=day(0))
+        if case == "existing":
+            import_activity(alice, recording)
+        data = {
+            "corrupt_recording": gzip.compress(b"not a recording"),
+            "corrupt_gzip": b"\x1f\x8bbroken",
+            "oversized_gzip": gzip.compress(b"x" * 20_000),
+            "oversized_member": b"x" * 20_000,
+        }.get(case, gzip.compress(recording))
+        filename = "activities/repeated.fit.gz"
+        source = archive(
+            {} if case == "missing" else {filename: data},
+            [row(n, filename) for n in range(40)],
+        )
+        progress: list[tuple[int, int]] = []
+
+        with (
+            patch.object(
+                zipfile.ZipFile, "getinfo", autospec=True, side_effect=zipfile.ZipFile.getinfo
+            ) as lookup,
+            patch.object(
+                zipfile.ZipFile, "open", autospec=True, side_effect=zipfile.ZipFile.open
+            ) as opened,
+            patch.object(
+                zipfile.ZipExtFile, "read", autospec=True, side_effect=zipfile.ZipExtFile.read
+            ) as read,
+            patch("activities.services.unpack", wraps=unpack) as unpacked,
+            patch("activities.services.parse_activity_file", wraps=parse_activity_file) as parsed,
+        ):
+            counts = import_export(
+                alice, source, progress=lambda done, total: progress.append((done, total))
+            )
+
+        assert counts == expected
+        assert counts.total == 40
+        assert sum(call.args[1] == filename for call in lookup.call_args_list) == 1
+        assert sum(call.args[1].filename == filename for call in opened.call_args_list) == opens
+        assert sum(call.args[0].name == filename for call in read.call_args_list) == opens
+        assert unpacked.call_count == unpacks
+        assert parsed.call_count == parses
+        assert progress == [(n, 40) for n in range(1, 41)]
+        assert Activity.objects.count() == (1 if case in ("new", "existing") else 0)
+        assert ActivityFile.objects.count() == Activity.objects.count()
+
+    def test_cached_outcomes_do_not_survive_an_import(self, alice: User) -> None:
+        filename = "activities/repeated.fit.gz"
+        rows = [row(n, filename) for n in range(40)]
+
+        assert import_export(alice, archive({}, rows)) == ImportCounts(missing=40)
+        members = {filename: gzip.compress(activity_file(start=day(0)))}
+        assert import_export(alice, archive(members, rows)) == ImportCounts(
+            imported=1, duplicates=39
+        )
+        assert import_export(alice, archive(members, rows)) == ImportCounts(duplicates=40)
 
 
 class TestLinesWithoutARecording:
