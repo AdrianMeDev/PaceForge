@@ -1,4 +1,5 @@
-"""One safe POST with a JSON body, shared by the provider adapters.
+"""One safe POST with a JSON body, shared by the provider adapters: answered with JSON, or with a
+stream of server-sent events.
 
 Built on the standard library, like the Intervals.icu client. The rules it keeps:
 
@@ -15,6 +16,7 @@ import math
 import re
 import urllib.error
 import urllib.request
+from collections.abc import Iterator
 from typing import Any
 
 from .base import (
@@ -29,6 +31,9 @@ from .base import (
 # for the whole call.
 TIMEOUT_SECONDS = 60.0
 MAX_RESPONSE_BYTES = 2_000_000
+# A stream says the same in more bytes: every piece of text comes in an event of its own.
+MAX_STREAM_BYTES = 8_000_000
+MAX_LINE_BYTES = 1_000_000
 # What a provider asks us to wait is only passed on up to this many seconds.
 MAX_RETRY_AFTER = 3600
 
@@ -61,20 +66,8 @@ def post_json(
     url: str, headers: dict[str, str], payload: dict[str, Any], *, timeout: float = TIMEOUT_SECONDS
 ) -> object:
     """The decoded JSON of the answer to ``payload``, or a ``ProviderError``."""
-    _validate_headers(headers)
-    body_bytes = json.dumps(payload).encode("utf-8")
     try:
-        request = urllib.request.Request(
-            url,
-            data=body_bytes,
-            method="POST",
-            headers={
-                **headers,
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-                "User-Agent": "PaceForge",
-            },
-        )
+        request = _request(url, headers, payload, "application/json")
         with _opener.open(request, timeout=timeout) as response:
             status = response.status
             body = response.read(MAX_RESPONSE_BYTES + 1)
@@ -95,9 +88,86 @@ def post_json(
     if cut_off:
         raise ProviderUnavailableError("The answer was cut off.")
     try:
-        return json.loads(body, parse_constant=_no_constants, parse_float=_finite_float)
+        return _decode(body)
     except ValueError:
         raise UnexpectedResponseError("The answer is not JSON.") from None
+
+
+def post_sse(
+    url: str, headers: dict[str, str], payload: dict[str, Any], *, timeout: float = TIMEOUT_SECONDS
+) -> Iterator[object]:
+    """The decoded ``data`` of each server-sent event of the answer to ``payload``, as it arrives,
+    or a ``ProviderError``.
+
+    ``timeout`` is the wait for each step (connect, each read), so an answer that takes minutes
+    but keeps coming is not cut short. A stream that ends before its last byte is a
+    ``ProviderUnavailableError``; whether it ended where the API says it should is up to the
+    caller, who knows the events."""
+    try:
+        request = _request(url, headers, payload, "text/event-stream")
+        with _opener.open(request, timeout=timeout) as response:
+            if response.status != 200:
+                raise UnexpectedResponseError(
+                    f"Unexpected answer from the provider (HTTP {response.status})."
+                )
+            kind = (response.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+            if kind != "text/event-stream":
+                raise UnexpectedResponseError("The answer is not a stream of events.")
+            yield from _events(response)
+    except urllib.error.HTTPError as error:
+        raise error_for_status(error.code, error.headers.get("Retry-After")) from None
+    except ValueError:
+        raise ProviderError("The request could not be prepared.") from None
+    except OSError, http.client.HTTPException:
+        # Connection refused or reset, DNS, TLS, timeouts, a stream that broke off.
+        raise ProviderUnavailableError("The provider could not be reached.") from None
+
+
+def _request(
+    url: str, headers: dict[str, str], payload: dict[str, Any], accept: str
+) -> urllib.request.Request:
+    _validate_headers(headers)
+    return urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        method="POST",
+        headers={
+            **headers,
+            "Content-Type": "application/json",
+            "Accept": accept,
+            "User-Agent": "PaceForge",
+        },
+    )
+
+
+def _events(response: http.client.HTTPResponse) -> Iterator[object]:
+    """The ``data`` of each event, read line by line with the size limits. Only ``data`` lines
+    count: the providers put the type of an event into its data as well, and ``event``, ``id``,
+    ``retry`` and comments are not needed. An event that the stream does not finish with an empty
+    line is dropped, as the format says."""
+    total = 0
+    lines: list[bytes] = []
+    while line := response.readline(MAX_LINE_BYTES + 1):
+        total += len(line)
+        if total > MAX_STREAM_BYTES or len(line) > MAX_LINE_BYTES:
+            raise UnexpectedResponseError("The answer is larger than expected.")
+        line = line.rstrip(b"\r\n")
+        if not line:
+            if lines:
+                try:
+                    yield _decode(b"\n".join(lines))
+                except ValueError:
+                    raise UnexpectedResponseError("An event of the answer is not JSON.") from None
+                lines = []
+        elif line.startswith(b"data:"):
+            value = line[len(b"data:") :]
+            lines.append(value[1:] if value.startswith(b" ") else value)
+    if response.length:
+        raise ProviderUnavailableError("The answer was cut off.")
+
+
+def _decode(raw: bytes) -> object:
+    return json.loads(raw, parse_constant=_no_constants, parse_float=_finite_float)
 
 
 def _no_constants(_: str) -> Any:

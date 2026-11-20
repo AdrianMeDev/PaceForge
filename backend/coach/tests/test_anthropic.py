@@ -18,7 +18,7 @@ from coach.providers.base import (
     UnexpectedResponseError,
 )
 
-from .fake_providers import FakeProvider, running
+from .fake_providers import FakeProvider, message_events, running, sse_body
 
 KEY = "sk-ant-test-0123456789-abcdefghij"
 MODEL = "claude-sonnet-5-5"
@@ -71,7 +71,7 @@ class TestTheRequest:
         assert request["method"] == "POST"
         assert request["path"] == "/v1/messages"
         assert request["raw_path"] == "/v1/messages"
-        assert request["headers"]["accept"] == "application/json"
+        assert request["headers"]["accept"] == "text/event-stream"
         assert request["headers"]["x-api-key"] == KEY
         assert request["headers"]["anthropic-version"] == API_VERSION == "2023-06-01"
         assert request["headers"]["content-type"] == "application/json"
@@ -104,6 +104,7 @@ class TestTheRequest:
                 },
                 {"role": "assistant", "content": "Hello"},
             ],
+            "stream": True,
         }
 
     def test_an_empty_system_prompt_is_left_out(self, fake: FakeProvider) -> None:
@@ -290,7 +291,7 @@ class TestTheAnswer:
     def test_an_answer_that_is_too_large_is_rejected(
         self, fake: FakeProvider, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr(transport, "MAX_RESPONSE_BYTES", 200)
+        monkeypatch.setattr(transport, "MAX_STREAM_BYTES", 200)
         fake.reply({**ANSWER, "content": [{"type": "text", "text": "x" * 500}]})
 
         with pytest.raises(UnexpectedResponseError, match="larger"):
@@ -300,14 +301,14 @@ class TestTheAnswer:
         self, fake: FakeProvider, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         fake.reply(ANSWER)
-        monkeypatch.setattr(transport, "MAX_RESPONSE_BYTES", len(fake.body))
+        monkeypatch.setattr(transport, "MAX_STREAM_BYTES", len(sse_body(ANSWER)))
 
         assert provider(fake).complete("", HELLO, 10).text == "Hi there"
 
     def test_an_answer_that_is_cut_off_is_a_failure_to_reach_the_provider(
         self, fake: FakeProvider
     ) -> None:
-        fake.reply(ANSWER)
+        fake.events = message_events(ANSWER)[:-1]
         fake.missing_bytes = 50
 
         with pytest.raises(ProviderUnavailableError):
@@ -401,12 +402,14 @@ class TestFailures:
 
 
 class TestReadingTheAnswer:
-    def test_at_most_the_limit_plus_one_byte_is_read(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_each_line_is_read_with_a_limit(self, monkeypatch: pytest.MonkeyPatch) -> None:
         asked: list[int | None] = []
+        lines = sse_body(ANSWER).splitlines(keepends=True)
 
         class Answer:
             status = 200
             length = None
+            headers = {"Content-Type": "text/event-stream"}
 
             def __enter__(self) -> Answer:
                 return self
@@ -414,15 +417,181 @@ class TestReadingTheAnswer:
             def __exit__(self, *args: object) -> None:
                 return None
 
-            def read(self, amount: int | None = None) -> bytes:
+            def readline(self, amount: int = -1) -> bytes:
                 asked.append(amount)
-                return json.dumps(ANSWER).encode()
+                return lines.pop(0) if lines else b""
 
         monkeypatch.setattr(transport._opener, "open", lambda *a, **k: Answer())
 
-        AnthropicProvider(KEY, MODEL, base_url="http://127.0.0.1:1").complete("", HELLO, 10)
+        result = AnthropicProvider(KEY, MODEL, base_url="http://127.0.0.1:1").complete(
+            "", HELLO, 10
+        )
 
-        assert asked == [transport.MAX_RESPONSE_BYTES + 1]
+        assert result.text == "Hi there"
+        assert set(asked) == {transport.MAX_LINE_BYTES + 1}
+
+
+class TestTheStream:
+    """The events as the API sends them, beyond what a plain answer turned into events shows."""
+
+    EVENTS: list[object] = [
+        {
+            "type": "message_start",
+            "message": {
+                "id": "msg_01",
+                "type": "message",
+                "role": "assistant",
+                "content": [],
+                "stop_reason": None,
+                "usage": {
+                    "input_tokens": 20,
+                    "output_tokens": 1,
+                    "cache_read_input_tokens": 3000,
+                    "cache_creation_input_tokens": 400,
+                },
+            },
+        },
+        {"type": "ping"},
+        {
+            "type": "content_block_start",
+            "index": 0,
+            "content_block": {"type": "thinking", "thinking": "", "signature": ""},
+        },
+        {
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {"type": "thinking_delta", "thinking": "NOT THIS"},
+        },
+        {"type": "content_block_delta", "index": 0, "delta": {"type": "signature_delta"}},
+        {"type": "content_block_stop", "index": 0},
+        {"type": "content_block_start", "index": 1, "content_block": {"type": "text", "text": ""}},
+        {
+            "type": "content_block_delta",
+            "index": 1,
+            "delta": {"type": "text_delta", "text": '{"a"'},
+        },
+        {
+            "type": "content_block_delta",
+            "index": 1,
+            "delta": {"type": "text_delta", "text": ": 1}"},
+        },
+        {"type": "content_block_stop", "index": 1},
+        {"type": "a_later_event", "anything": True},
+        {
+            "type": "message_delta",
+            "delta": {"stop_reason": "end_turn"},
+            "usage": {"output_tokens": 42},
+        },
+        {"type": "message_stop"},
+    ]
+
+    def stream(self, fake: FakeProvider, events: list[object]) -> Completion:
+        fake.events = events
+        return provider(fake).complete("", HELLO, 100)
+
+    def test_the_text_and_all_counts_are_put_together(self, fake: FakeProvider) -> None:
+        result = self.stream(fake, self.EVENTS)
+
+        assert result == Completion('{"a": 1}', 3420, 42, False, 3000, 400)
+
+    def test_the_stop_reason_of_the_end_says_whether_it_was_cut_off(
+        self, fake: FakeProvider
+    ) -> None:
+        events = [*self.EVENTS]
+        events[-2] = {"type": "message_delta", "delta": {"stop_reason": "max_tokens"}}
+
+        assert self.stream(fake, events).truncated is True
+
+    def test_a_stream_that_ends_before_its_end_event_was_cut_off(self, fake: FakeProvider) -> None:
+        with pytest.raises(ProviderUnavailableError):
+            self.stream(fake, self.EVENTS[:-1])
+
+    @pytest.mark.parametrize(
+        ("kind", "expected"),
+        [
+            ("overloaded_error", ProviderUnavailableError),
+            ("api_error", ProviderUnavailableError),
+            ("rate_limit_error", RateLimitedError),
+            ("authentication_error", InvalidKeyError),
+            ("permission_error", InvalidKeyError),
+            ("invalid_request_error", UnexpectedResponseError),
+            (None, UnexpectedResponseError),
+        ],
+    )
+    def test_an_error_in_the_stream(
+        self, fake: FakeProvider, kind: str | None, expected: type[ProviderError]
+    ) -> None:
+        error = {"type": "error", "error": {"type": kind, "message": "PROVIDER TEXT"}}
+
+        with pytest.raises(expected) as raised:
+            self.stream(fake, [*self.EVENTS[:7], error])
+
+        assert "PROVIDER TEXT" not in str(raised.value)
+
+    @pytest.mark.parametrize(
+        "events",
+        [
+            [{"type": "content_block_start", "index": 0, "content_block": {}}],
+            ["not an event"],
+            [
+                EVENTS[0],
+                {"type": "content_block_start", "index": 1, "content_block": {"type": "text"}},
+            ],
+            [
+                EVENTS[0],
+                {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta"}},
+            ],
+            [
+                EVENTS[0],
+                {"type": "content_block_start", "index": 0, "content_block": {"type": "tool_use"}},
+                {
+                    "type": "content_block_delta",
+                    "index": 0,
+                    "delta": {"type": "text_delta", "text": "x"},
+                },
+            ],
+        ],
+    )
+    def test_events_that_make_no_sense_are_rejected(
+        self, fake: FakeProvider, events: list[object]
+    ) -> None:
+        with pytest.raises(UnexpectedResponseError):
+            self.stream(fake, [*events, {"type": "message_stop"}])
+
+    def test_an_event_that_is_not_json_is_rejected(
+        self, fake: FakeProvider, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("coach.tests.fake_providers.sse", lambda data: b"data: {oops\n\n")
+        fake.events = [{"type": "message_start"}]
+
+        with pytest.raises(UnexpectedResponseError, match="not JSON"):
+            provider(fake).complete("", HELLO, 10)
+
+    def test_a_line_that_is_too_long_is_rejected(
+        self, fake: FakeProvider, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(transport, "MAX_LINE_BYTES", 100)
+
+        with pytest.raises(UnexpectedResponseError, match="larger"):
+            self.stream(fake, self.EVENTS)
+
+    def test_an_answer_that_keeps_coming_may_take_longer_than_the_timeout(
+        self, fake: FakeProvider
+    ) -> None:
+        fake.events = self.EVENTS
+        fake.event_delay = 0.05
+        assert len(self.EVENTS) * fake.event_delay > 0.3
+
+        result = provider(fake, timeout=0.3).complete("", HELLO, 100)
+
+        assert result.text == '{"a": 1}'
+
+    def test_a_stream_that_stalls_longer_than_the_timeout_fails(self, fake: FakeProvider) -> None:
+        fake.events = self.EVENTS
+        fake.event_delay = 1.0
+
+        with pytest.raises(ProviderUnavailableError):
+            provider(fake, timeout=0.2).complete("", HELLO, 100)
 
 
 class TestSecrecy:
