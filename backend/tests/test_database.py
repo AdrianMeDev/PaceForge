@@ -97,11 +97,14 @@ def test_role_with_url_reserved_password_connects_everywhere(
     # The test database holds the Django tables, so it is not empty; reaching it is the point.
     assert database_is_empty(database) is False
 
-    command, command_env = _pg_command("pg_isready", [], database)
+    command, command_env = _pg_command("psql", ["-tA", "-c", "SELECT current_user"], database)
     assert command_env["PGPASSWORD"] == password
     assert password not in " ".join(command)
     if shutil.which(command[0]):
-        subprocess.run(command, env=command_env, check=True, capture_output=True, timeout=30)
+        result = subprocess.run(
+            command, env=command_env, check=True, capture_output=True, text=True, timeout=30
+        )
+        assert result.stdout.strip() == role
 
 
 def test_compose_prod_defines_the_database_environment_once() -> None:

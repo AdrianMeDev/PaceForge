@@ -280,7 +280,7 @@ development data stays as it is.
 
    ```sh
    cd backend
-   POSTGRES_DB=paceforge_restore uv run python manage.py restore_db \
+   DATABASE_URL= POSTGRES_DB=paceforge_restore uv run python manage.py restore_db \
      ../backups/paceforge-20261120-031500Z.pgdump.enc
    ```
 
@@ -295,7 +295,7 @@ development data stays as it is.
    win over `.env`. `migrate` should report no migrations to apply:
 
    ```sh
-   POSTGRES_DB=paceforge_restore uv run python manage.py migrate
+   DATABASE_URL= POSTGRES_DB=paceforge_restore uv run python manage.py migrate
    ```
 
 5. Drop the scratch database when you are done:
