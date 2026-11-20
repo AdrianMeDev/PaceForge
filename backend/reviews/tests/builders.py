@@ -1,6 +1,7 @@
 """Rows for the tests of the week review: a confirmed plan and activities in the week of
 ``MONDAY``, with the clock of the tests fixed on ``NOW``."""
 
+from collections.abc import Sequence
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
@@ -15,26 +16,33 @@ assert MONDAY.weekday() == 0
 
 
 def make_plan(
-    owner: User, monday: date = MONDAY, status: str = "confirmed", workouts: int = 0
+    owner: User,
+    monday: date = MONDAY,
+    status: str = "confirmed",
+    workouts: int | Sequence[dict[str, Any]] = 0,
 ) -> WeeklyPlan:
     stamp = NOW if status in ("confirmed", "superseded") else None
     version = WeeklyPlan.objects.filter(owner=owner, week_start=monday).count() + 1
     plan = WeeklyPlan.objects.create(
         owner=owner, week_start=monday, version=version, status="draft"
     )
+    specs = [{} for _ in range(workouts)] if isinstance(workouts, int) else workouts
     PlannedWorkout.objects.bulk_create(
         [
             PlannedWorkout(
-                owner=owner,
-                plan=plan,
-                day=monday + timedelta(days=n % 7),
-                position=n // 7,
-                sport="running",
-                title=f"Run {n}",
-                goal="endurance",
-                duration_minutes=60,
+                **{
+                    "owner": owner,
+                    "plan": plan,
+                    "day": monday + timedelta(days=n % 7),
+                    "position": n // 7,
+                    "sport": "running",
+                    "title": f"Run {n}",
+                    "goal": "endurance",
+                    "duration_minutes": 60,
+                    **spec,
+                }
             )
-            for n in range(workouts)
+            for n, spec in enumerate(specs)
         ]
     )
     WeeklyPlan.objects.filter(pk=plan.pk).update(status=status, confirmed_at=stamp)

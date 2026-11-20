@@ -1943,7 +1943,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** M7
 - **Size:** M, ~5 commits
 
-### M9 [ ] Audit: Weekly plan ownership and immutable revisions
+### M9 [~] Audit: Weekly plan ownership and immutable revisions
 
 - **Goal:** Enforce weekly plan ownership, revision ancestry and confirmed-history rules at the persistence boundary.
 - **Includes:** F367 (workout write bypasses), F368 (confirmed weekly plan edits), F369 (workout owner and date), F386 (revision cycles), F407 (direct-write ownership coverage).

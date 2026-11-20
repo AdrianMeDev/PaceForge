@@ -379,33 +379,28 @@ class TestOneWeek:
         assert "owner" not in activity and "source_hash" not in activity and "laps" not in activity
 
     def test_it_takes_the_same_number_of_queries_however_much_data_there_is(
-        self, alice: User
+        self, alice: User, bob: User
     ) -> None:
-        api = signed_in(alice)
-        plan = make_plan(alice, workouts=1)
+        small_api = signed_in(alice)
+        make_plan(alice, workouts=1)
         make_activity(alice, "2026-11-09T07:00")
         with CaptureQueriesContext(connection) as small:
-            api.call("GET", week_url())
-        PlannedWorkout.objects.bulk_create(
-            PlannedWorkout(
-                owner=alice,
-                plan=plan,
-                day=MONDAY + timedelta(days=n % 7),
-                position=n // 7,
-                sport="cycling",
-                title="Ride",
-                goal="endurance",
-                duration_minutes=60,
-            )
-            for n in range(1, 10)
+            small_api.call("GET", week_url())
+
+        large_api = signed_in(bob)
+        make_plan(
+            bob,
+            workouts=[
+                {},
+                *[{"sport": "cycling", "title": "Ride"} for _ in range(1, 10)],
+            ],
         )
+        make_activity(bob, "2026-11-09T07:00")
         for hour in range(10):
-            make_activity(alice, f"2026-11-1{hour % 4}T{hour:02d}:30", rpe=4)
-        WeekComment.objects.create(
-            owner=alice, week_start=MONDAY, comment="Fine.", next_week="hold"
-        )
+            make_activity(bob, f"2026-11-1{hour % 4}T{hour:02d}:30", rpe=4)
+        WeekComment.objects.create(owner=bob, week_start=MONDAY, comment="Fine.", next_week="hold")
         with CaptureQueriesContext(connection) as large:
-            api.call("GET", week_url())
+            large_api.call("GET", week_url())
 
         assert len(small) == len(large)
 
