@@ -575,7 +575,11 @@ uv run python manage.py import_strava ~/Downloads/export_12345.zip --user you@ex
   skipped because you have them already, recordings that cannot be read or are not in the export,
   and lines of the list that could not be read. Estimated thresholds are refreshed once at the end.
 - **No limit of the page applies** (30 a minute); each recording is still limited to
-  `ACTIVITY_UPLOAD_MAX_BYTES` after unpacking, and nothing is ever extracted to disk.
+  `ACTIVITY_UPLOAD_MAX_BYTES` after unpacking, and nothing is ever extracted to disk. Each run
+  has a shared 2 GiB unpacking budget (the CSV, ZIP members and gzip output) and at most 10,000
+  recording parse attempts. Failed reads reserve their full output allowance. Repeated filenames
+  are processed once. Nested gzip is unreadable. Exhausting either budget stops the command with
+  an error. Activities already saved remain, and their estimated thresholds are refreshed.
 - **English and German exports are read.** `activities.csv` comes in the language of the archive
   and is read by the names of its columns (*Activity ID*, *Activity Date*, *Activity Type*,
   *Elapsed Time*, *Distance*, *Filename*, in German *Aktivitäts-ID*, *Aktivitätsdatum*,

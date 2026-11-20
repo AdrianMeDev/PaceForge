@@ -34,7 +34,7 @@ from django.conf import settings
 from accounts.models import User
 from athletes.estimates import refresh_estimates_safely
 
-from .parsing import ActivityFileError, values
+from .parsing import ActivityFileError, is_compressed, unpack, values
 from .parsing.types import CYCLING, OTHER, RUNNING, STRENGTH, SWIMMING
 from .serializers import DISTANCE_MAX_KM, DURATION_MAX_MINUTES, EARLIEST
 from .services import DuplicateActivityError, FileTooLargeError, enter_activity, import_activity
@@ -263,10 +263,45 @@ def _start(text: str) -> datetime | None:
 LIST_NAME = "activities.csv"
 MAX_MEMBERS = 200_000
 MAX_LIST_BYTES = 64 * 1024 * 1024
+MAX_TOTAL_UNPACKED_BYTES = 2 * 1024 * 1024 * 1024
+MAX_PARSED_RECORDINGS = 10_000
+_WORK_LIMIT_MESSAGE = "The archive exceeds the bulk import work limit."
 
 
 class ExportError(Exception):
     """The export as a whole cannot be read (not a ZIP, no list, …). The message is a fixed text."""
+
+
+@dataclass
+class _Budget:
+    unpacked_bytes: int = 0
+    parsed_recordings: int = 0
+
+    def limit(self, file_limit: int) -> int:
+        # One extra byte may be produced to detect exhaustion, then the import stops.
+        return min(file_limit, MAX_TOTAL_UNPACKED_BYTES - self.unpacked_bytes)
+
+    def charge(self, size: int) -> None:
+        self.unpacked_bytes += size
+        if self.unpacked_bytes > MAX_TOTAL_UNPACKED_BYTES:
+            raise ExportError(_WORK_LIMIT_MESSAGE)
+
+    def unpack(self, data: bytes, file_limit: int) -> bytes:
+        limit = self.limit(file_limit)
+        try:
+            result = unpack(data, limit)
+        except ActivityFileError:
+            # A failed unpack does not expose its partial output. Charge the full allowance
+            # conservatively, including the probe byte, even for a damaged stream.
+            self.charge(limit + 1)
+            raise
+        self.charge(len(result))
+        return result
+
+    def parse(self) -> None:
+        if self.parsed_recordings >= MAX_PARSED_RECORDINGS:
+            raise ExportError(_WORK_LIMIT_MESSAGE)
+        self.parsed_recordings += 1
 
 
 @dataclass
@@ -308,10 +343,12 @@ def import_export(
     A recording goes through ``import_activity``, so a duplicate (also one from another source,
     also by hand) is skipped and counted and an import run twice adds nothing; the sport of the
     list is used where the file does not know it. A line without a recording is entered like a
-    session by hand. Estimated thresholds are refreshed once at the end.
+    session by hand. ZIP output (including the list) and one gzip layer share a byte budget;
+    recording parse attempts have a separate cap. Nested gzip is refused. Estimated thresholds
+    are refreshed once at the end, also when a budget stops an import that saved activities.
 
     ``progress(done, total)`` is called after each line. Raises ``ExportError`` if the ZIP or the
-    list is unusable.
+    list is unusable or a work budget is exceeded.
     """
     try:
         archive = zipfile.ZipFile(source)
@@ -324,32 +361,35 @@ def import_export(
     with archive:
         if len(archive.infolist()) > MAX_MEMBERS:
             raise ExportError("The ZIP archive holds too many files.")
-        listing = _read_list(archive)
+        budget = _Budget()
+        listing = _read_list(archive, budget)
         counts = ImportCounts(lines_unreadable=listing.unreadable)
         rows = sorted(listing.rows, key=lambda row: (row.start, row.activity_id))
         outcomes: dict[str, _RepeatedOutcome] = {}
-        for done, row in enumerate(rows, 1):
-            outcome = outcomes.get(row.filename) if row.filename is not None else None
-            if outcome == "duplicate":
-                counts.duplicates += 1
-            elif outcome == "missing":
-                counts.missing += 1
-            elif outcome == "unreadable":
-                counts.unreadable += 1
-            else:
-                outcome = _import_row(user, archive, row, counts)
-                if row.filename is not None:
-                    outcomes[row.filename] = outcome
-            if progress is not None:
-                progress(done, len(rows))
-    if counts.imported or counts.entered:
-        refresh_estimates_safely(user)
+        try:
+            for done, row in enumerate(rows, 1):
+                outcome = outcomes.get(row.filename) if row.filename is not None else None
+                if outcome == "duplicate":
+                    counts.duplicates += 1
+                elif outcome == "missing":
+                    counts.missing += 1
+                elif outcome == "unreadable":
+                    counts.unreadable += 1
+                else:
+                    outcome = _import_row(user, archive, row, counts, budget)
+                    if row.filename is not None:
+                        outcomes[row.filename] = outcome
+                if progress is not None:
+                    progress(done, len(rows))
+        finally:
+            if counts.imported or counts.entered:
+                refresh_estimates_safely(user)
     return counts
 
 
-def _read_list(archive: zipfile.ZipFile) -> StravaList:
+def _read_list(archive: zipfile.ZipFile, budget: _Budget) -> StravaList:
     try:
-        data = _read_member(archive, LIST_NAME, MAX_LIST_BYTES)
+        data = _read_member(archive, LIST_NAME, MAX_LIST_BYTES, budget)
     except KeyError:
         raise ExportError(f"The ZIP archive has no {LIST_NAME}.") from None
     except _MemberError:
@@ -364,32 +404,35 @@ class _MemberError(Exception):
     """A member that cannot be read: damaged, encrypted or larger than the limit."""
 
 
-def _read_member(archive: zipfile.ZipFile, name: str, limit: int) -> bytes:
+def _read_member(archive: zipfile.ZipFile, name: str, limit: int, budget: _Budget) -> bytes:
     """The content of the member ``name``, at most ``limit`` bytes of it ever held. ``KeyError`` if
     the archive has no such member. The size the archive declares is not believed."""
     info = archive.getinfo(name)
     if info.is_dir() or info.file_size > limit:
         raise _MemberError
+    read_limit = budget.limit(limit)
     try:
         with archive.open(info) as member:
-            data = member.read(limit + 1)
+            data = member.read(read_limit + 1)
     except zipfile.BadZipFile, zlib.error, RuntimeError, NotImplementedError, EOFError, OSError:
         # RuntimeError: encrypted; NotImplementedError: a compression method that is not known
+        budget.charge(read_limit + 1)
         raise _MemberError from None
+    budget.charge(len(data))
     if len(data) > limit:
         raise _MemberError
     return data
 
 
 def _import_row(
-    user: User, archive: zipfile.ZipFile, row: StravaRow, counts: ImportCounts
+    user: User, archive: zipfile.ZipFile, row: StravaRow, counts: ImportCounts, budget: _Budget
 ) -> _RepeatedOutcome:
     try:
         if row.filename is None:
             _enter(user, row)
             counts.entered += 1
         else:
-            _import_file(user, archive, row)
+            _import_file(user, archive, row, budget)
             counts.imported += 1
     except DuplicateActivityError:
         counts.duplicates += 1
@@ -412,12 +455,18 @@ class _Unusable(Exception):
     """A line without a recording that is too little to enter."""
 
 
-def _import_file(user: User, archive: zipfile.ZipFile, row: StravaRow) -> None:
+def _import_file(user: User, archive: zipfile.ZipFile, row: StravaRow, budget: _Budget) -> None:
     assert row.filename is not None
+    limit = settings.ACTIVITY_UPLOAD_MAX_BYTES
     try:
-        data = _read_member(archive, row.filename, settings.ACTIVITY_UPLOAD_MAX_BYTES)
+        data = _read_member(archive, row.filename, limit, budget)
     except KeyError:
         raise _Missing from None
+    if is_compressed(data):
+        data = budget.unpack(data, limit)
+        if is_compressed(data):
+            raise _MemberError  # Only one gzip layer; import_activity must not unpack again.
+    budget.parse()
     sport = None if row.sport == OTHER else row.sport
     import_activity(user, data, sport=sport)
 

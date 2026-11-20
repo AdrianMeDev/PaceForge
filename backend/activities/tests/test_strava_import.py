@@ -1,16 +1,17 @@
 import gzip
 import io
 import zipfile
+import zlib
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 from django.core.management import CommandError, call_command
 
 from accounts.models import User
 from activities.models import Activity, ActivityFile
-from activities.parsing import parse_activity_file, unpack
+from activities.parsing import is_compressed, parse_activity_file, unpack
 from activities.services import import_activity
 from activities.strava import _MAX_FIELD, ExportError, ImportCounts, import_export
 
@@ -202,6 +203,8 @@ class TestRepeatedMembers:
         progress: list[tuple[int, int]] = []
 
         with (
+            patch("activities.strava.MAX_PARSED_RECORDINGS", 1),
+            patch("activities.strava.MAX_TOTAL_UNPACKED_BYTES", 20_000),
             patch.object(
                 zipfile.ZipFile, "getinfo", autospec=True, side_effect=zipfile.ZipFile.getinfo
             ) as lookup,
@@ -211,7 +214,7 @@ class TestRepeatedMembers:
             patch.object(
                 zipfile.ZipExtFile, "read", autospec=True, side_effect=zipfile.ZipExtFile.read
             ) as read,
-            patch("activities.services.unpack", wraps=unpack) as unpacked,
+            patch("activities.strava.unpack", wraps=unpack) as unpacked,
             patch("activities.services.parse_activity_file", wraps=parse_activity_file) as parsed,
         ):
             counts = import_export(
@@ -239,6 +242,191 @@ class TestRepeatedMembers:
             imported=1, duplicates=39
         )
         assert import_export(alice, archive(members, rows)) == ImportCounts(duplicates=40)
+
+
+class TestWorkBudgets:
+    @pytest.mark.parametrize("compressed", [False, True])
+    def test_total_output_across_distinct_members_is_bounded(
+        self, alice: User, monkeypatch: pytest.MonkeyPatch, compressed: bool
+    ) -> None:
+        data = b"not a recording" * 100
+        packed = gzip.compress(data) if compressed else data
+        names = [f"activities/{n}.fit" + (".gz" if compressed else "") for n in range(100)]
+        rows = [row(n, name) for n, name in enumerate(names)]
+        listing = csv_export(*rows)
+        per_file = len(packed) + (len(data) if compressed else 0)
+        cap = len(listing) + 3 * per_file + per_file // 2
+        monkeypatch.setattr("activities.strava.MAX_TOTAL_UNPACKED_BYTES", cap)
+        source = archive(dict.fromkeys(names, packed), listing=listing)
+        produced = 0
+        original_read = zipfile.ZipExtFile.read
+        original_decompressobj = zlib.decompressobj
+
+        def read(member: zipfile.ZipExtFile, size: int = -1) -> bytes:
+            nonlocal produced
+            result = original_read(member, size)
+            produced += len(result)
+            return result
+
+        def decompressobj(window: int) -> Mock:
+            real = original_decompressobj(window)
+            tracked = Mock(wraps=real)
+
+            def decompress(data: bytes, max_length: int) -> bytes:
+                nonlocal produced
+                result = real.decompress(data, max_length)
+                produced += len(result)
+                tracked.eof = real.eof
+                return result
+
+            def flush() -> bytes:
+                nonlocal produced
+                result = real.flush()
+                produced += len(result)
+                return result
+
+            tracked.decompress.side_effect = decompress
+            tracked.flush.side_effect = flush
+            return tracked
+
+        def tracked_unpack(data: bytes, limit: int) -> bytes:
+            with patch("activities.parsing.compressed.zlib.decompressobj", decompressobj):
+                return unpack(data, limit)
+
+        with (
+            patch.object(zipfile.ZipExtFile, "read", read),
+            patch("activities.strava.unpack", tracked_unpack),
+            patch("activities.services.parse_activity_file", wraps=parse_activity_file) as parsed,
+        ):
+            with pytest.raises(
+                ExportError, match=r"^The archive exceeds the bulk import work limit\.$"
+            ):
+                import_export(alice, source)
+
+        assert produced == cap + 1  # Only the final exhaustion probe exceeds the budget.
+        assert parsed.call_count == 3
+        assert not Activity.objects.exists()
+
+    @pytest.mark.parametrize("compressed", [False, True])
+    @pytest.mark.parametrize("valid", [False, True])
+    def test_distinct_parse_attempts_are_bounded_and_saved_activities_refresh(
+        self, alice: User, monkeypatch: pytest.MonkeyPatch, compressed: bool, valid: bool
+    ) -> None:
+        monkeypatch.setattr("activities.strava.MAX_PARSED_RECORDINGS", 3)
+        names = [f"activities/{n}.fit" + (".gz" if compressed else "") for n in range(100)]
+        members = {}
+        for n, name in enumerate(names):
+            data = activity_file(start=day(n)) if valid else b"not a recording"
+            members[name] = gzip.compress(data) if compressed else data
+        calls: list[User] = []
+        monkeypatch.setattr("activities.strava.refresh_estimates_safely", calls.append)
+        with patch("activities.services.parse_activity_file", wraps=parse_activity_file) as parsed:
+            with pytest.raises(ExportError, match="work limit"):
+                import_export(
+                    alice, archive(members, [row(n, name) for n, name in enumerate(names)])
+                )
+
+        assert parsed.call_count == 3
+        assert Activity.objects.count() == (3 if valid else 0)
+        assert calls == ([alice] if valid else [])
+
+    def test_the_list_uses_the_same_byte_budget(
+        self, alice: User, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        listing = csv_export(row(0, ""))
+        monkeypatch.setattr("activities.strava.MAX_TOTAL_UNPACKED_BYTES", len(listing) - 1)
+        with pytest.raises(ExportError, match="work limit"):
+            import_export(alice, archive({}, listing=listing))
+        assert not Activity.objects.exists()
+
+    @pytest.mark.parametrize("compressed", [False, True])
+    def test_exact_byte_and_parse_limits_are_allowed(
+        self, alice: User, monkeypatch: pytest.MonkeyPatch, compressed: bool
+    ) -> None:
+        data = activity_file(start=day(0))
+        packed = gzip.compress(data) if compressed else data
+        filename = "activities/1.fit.gz" if compressed else "activities/1.fit"
+        rows = [row(n, filename) for n in range(40)]
+        cap = len(csv_export(*rows)) + len(packed) + (len(data) if compressed else 0)
+        monkeypatch.setattr("activities.strava.MAX_TOTAL_UNPACKED_BYTES", cap)
+        monkeypatch.setattr("activities.strava.MAX_PARSED_RECORDINGS", 1)
+
+        assert import_export(alice, archive({filename: packed}, rows)) == ImportCounts(
+            imported=1, duplicates=39
+        )
+
+    @pytest.mark.parametrize("compressed", [False, True])
+    def test_individual_oversized_files_remain_unreadable_within_budget(
+        self, alice: User, monkeypatch: pytest.MonkeyPatch, compressed: bool
+    ) -> None:
+        monkeypatch.setattr("django.conf.settings.ACTIVITY_UPLOAD_MAX_BYTES", 5_000)
+        monkeypatch.setattr("activities.strava.MAX_TOTAL_UNPACKED_BYTES", 20_000)
+        data = b"x" * 20_000
+        filename = "activities/large.fit.gz" if compressed else "activities/large.fit"
+        source = archive(
+            {filename: gzip.compress(data) if compressed else data}, [row(0, filename)]
+        )
+        with patch("activities.services.parse_activity_file", wraps=parse_activity_file) as parsed:
+            assert import_export(alice, source) == ImportCounts(unreadable=1)
+        parsed.assert_not_called()
+
+    @pytest.mark.parametrize("broken", [False, True])
+    def test_failed_gzip_attempts_also_consume_the_shared_budget(
+        self, alice: User, monkeypatch: pytest.MonkeyPatch, broken: bool
+    ) -> None:
+        monkeypatch.setattr("django.conf.settings.ACTIVITY_UPLOAD_MAX_BYTES", 5_000)
+        packed = b"\x1f\x8bbroken" if broken else gzip.compress(b"x" * 20_000)
+        names = [f"activities/{n}.fit.gz" for n in range(100)]
+        rows = [row(n, name) for n, name in enumerate(names)]
+        cap = len(csv_export(*rows)) + 2 * (len(packed) + 5_001) + len(packed) + 2_500
+        monkeypatch.setattr("activities.strava.MAX_TOTAL_UNPACKED_BYTES", cap)
+        with (
+            patch("activities.strava.unpack", wraps=unpack) as unpacked,
+            patch("activities.services.parse_activity_file", wraps=parse_activity_file) as parsed,
+        ):
+            with pytest.raises(ExportError, match="work limit"):
+                import_export(alice, archive(dict.fromkeys(names, packed), rows))
+        assert unpacked.call_count == 3
+        assert unpacked.call_args.args[1] == 2_500
+        parsed.assert_not_called()
+
+    def test_manual_activities_refresh_when_a_later_recording_exhausts_the_budget(
+        self, alice: User, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("activities.strava.MAX_PARSED_RECORDINGS", 0)
+        calls: list[User] = []
+        monkeypatch.setattr("activities.strava.refresh_estimates_safely", calls.append)
+        source = archive(
+            {"activities/1.fit": activity_file(start=day(1))},
+            [row(0, ""), row(1, "activities/1.fit")],
+        )
+        with pytest.raises(ExportError, match="work limit"):
+            import_export(alice, source)
+        assert Activity.objects.count() == 1
+        assert Activity.objects.get().source == Activity.Source.MANUAL
+        assert calls == [alice]
+
+    def test_nested_gzip_is_refused_before_import_activity_can_unpack_it(self, alice: User) -> None:
+        nested = gzip.compress(gzip.compress(activity_file(start=day(0))))
+        source = archive({"activities/nested.fit.gz": nested}, [row(0, "activities/nested.fit.gz")])
+        with (
+            patch("activities.strava.unpack", wraps=unpack) as unpacked,
+            patch("activities.services.unpack", wraps=unpack) as service_unpack,
+            patch("activities.services.parse_activity_file", wraps=parse_activity_file) as parsed,
+        ):
+            assert import_export(alice, source) == ImportCounts(unreadable=1)
+        assert unpacked.call_count == 1
+        service_unpack.assert_not_called()
+        parsed.assert_not_called()
+
+    def test_import_activity_receives_only_plain_data(self, alice: User) -> None:
+        data = gzip.compress(activity_file(start=day(0)))
+        with patch("activities.services.unpack", wraps=unpack) as service_unpack:
+            import_export(
+                alice, archive({"activities/1.fit.gz": data}, [row(0, "activities/1.fit.gz")])
+            )
+        assert service_unpack.call_count == 1
+        assert not is_compressed(service_unpack.call_args.args[0])
 
 
 class TestLinesWithoutARecording:
@@ -533,6 +721,16 @@ class TestTheCommand:
         assert "not a ZIP" not in message
         assert str(missing) not in message
         assert "missing.zip" not in message
+
+    @pytest.mark.parametrize("budget", ["MAX_TOTAL_UNPACKED_BYTES", "MAX_PARSED_RECORDINGS"])
+    def test_budget_exhaustion_is_a_fixed_command_error(
+        self, alice: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, budget: str
+    ) -> None:
+        monkeypatch.setattr(f"activities.strava.{budget}", 0)
+        path = self.zip_at(tmp_path)
+        with pytest.raises(CommandError) as raised:
+            self.run(str(path), "--user", "alice@example.com")
+        assert str(raised.value) == "The archive exceeds the bulk import work limit."
 
     def test_the_user_is_needed(self, tmp_path: Path) -> None:
         with pytest.raises(CommandError, match="--user"):
