@@ -201,8 +201,10 @@ administrator and 5 per hour per recipient across all workers. A request over ei
    it as a fallback or press **Copy link** and send it to the person. If the link is lost, press
    **Resend** on the invitation: the old link stops working. Open the link in a private window so
    you stay signed in as the administrator in the other one.
-2. **Sign up.** The email address is prefilled and read-only. Choose a password. The page says a
-   confirmation link was sent.
+2. **Sign up.** The email address is prefilled and read-only. The page accepts fragment links
+   (`/account/signup#invitation=…&email=…`) and older query links. It replaces the URL with
+   `/account/signup` after reading the link. Keep the original link if you need to reload.
+   Choose a password. The page says a confirmation link was sent.
 3. **Confirm the address.** Open Mailpit (<http://localhost:8025>), open the message and follow
    the link. The page shows the address; confirming happens only when you press **Confirm email
    address**. Opening the link alone confirms nothing.

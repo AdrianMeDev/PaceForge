@@ -22,6 +22,22 @@ The link is shown only once. If you lose it, press **Resend** on the row.
 The invitation is valid for `INVITATION_TTL_DAYS` days (7 by default). It works once and only for
 the address it was created for.
 
+## Signup links
+
+The signup page accepts `/account/signup#invitation=<token>&email=<encoded-address>`.
+The fragment (the part after `#`) stays in the browser when the page is requested.
+Encode both values as URL parameters, including `+` as `%2B` and `%` as `%25`.
+
+During the transition, the backend still issues the older query form,
+`/account/signup?invitation=<token>&email=<encoded-address>`. Those links still work.
+Fragment support is deployed first, before the backend starts issuing fragment links.
+If both forms occur in a link, the fragment invitation takes precedence.
+
+After reading either form, the signup page replaces the current history entry with
+`/account/signup`. The token and address stay in the open form, and the address is read-only.
+Reloading that bare URL shows the invitation-only message. Open the original invitation link
+again to restart signup.
+
 ## Mail delivery
 
 Django sends the mail. The setting `SMTP_HOST` decides where it goes.
@@ -112,8 +128,8 @@ is not limited.
 - The list shows every invitation of the instance, not only the ones you sent.
 - The token is 256 bits of randomness. PaceForge stores only its SHA-256 hash. The plaintext token
   exists in the email and in the API response, once.
-- The signup link carries the token and the address as query parameters. The signup form reads
-  them and fills in the address, which is read-only.
+- The signup form accepts fragment links and older query links. It removes the token and address
+  from the visible URL after reading them. See [Signup links](#signup-links) for the transition.
 - Whoever has the link can register with that address until the invitation is used, revoked or
   expired. Send it only to the person it is for.
 - The link uses `APP_ORIGIN`. It defaults to `https://<APP_DOMAIN>`, or `http://localhost:4200`
