@@ -5,7 +5,7 @@ key is decrypted only where a call needs it. The network call never runs inside 
 transaction. What is recorded about a call is in ``AIUsageRecord``: facts, never text.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -18,7 +18,7 @@ from django.utils import timezone
 from accounts.models import User
 from core.encryption import DecryptionError
 
-from .models import AIProviderConfiguration, AIUsageRecord
+from .models import EFFORT_FIELDS, AIProviderConfiguration, AIUsageRecord
 from .providers import provider_for
 from .providers.base import (
     Completion,
@@ -92,6 +92,7 @@ def save_configuration(
     season_model: str = "",
     week_model: str = "",
     chat_model: str = "",
+    efforts: Mapping[str, str] | None = None,
 ) -> AIProviderConfiguration:
     """Create or change the user's configuration.
 
@@ -99,6 +100,8 @@ def save_configuration(
     key is only kept while provider and address stay the same: it must never be sent to a
     place the user did not give it for. Anything that changes what is called (provider, model,
     address, key) sets the status back to ``untested`` and forgets the times of the last check.
+    ``efforts`` holds the four effort fields (``EFFORT_FIELDS``; a missing one is empty); they
+    change how long a model may think, not what is called, so the status stays.
 
     Raises Django's ``ValidationError`` (by field) and saves nothing if the result is not valid.
     """
@@ -106,7 +109,15 @@ def save_configuration(
         try:
             with transaction.atomic():
                 return _save(
-                    user, provider, model, base_url, api_key, season_model, week_model, chat_model
+                    user,
+                    provider,
+                    model,
+                    base_url,
+                    api_key,
+                    season_model,
+                    week_model,
+                    chat_model,
+                    efforts or {},
                 )
         except IntegrityError:
             # A second request created the row first; the next round changes that one.
@@ -124,6 +135,7 @@ def _save(
     season_model: str = "",
     week_model: str = "",
     chat_model: str = "",
+    efforts: Mapping[str, str] | None = None,
 ) -> AIProviderConfiguration:
     existing = _own(user).select_for_update().first()
     configuration = existing or AIProviderConfiguration(owner=user)
@@ -155,6 +167,8 @@ def _save(
     configuration.season_model = season_model
     configuration.week_model = week_model
     configuration.chat_model = chat_model
+    for name in EFFORT_FIELDS:
+        setattr(configuration, name, (efforts or {}).get(name, ""))
     configuration.base_url = base_url
     # Not ``full_clean``: its constraint check would repeat every message of ``clean``.
     errors = _problems(configuration)
@@ -168,7 +182,15 @@ def _save(
     if existing is None:
         configuration.save()
     else:
-        fields = ["provider", "model", "season_model", "week_model", "chat_model", "base_url"]
+        fields = [
+            "provider",
+            "model",
+            "season_model",
+            "week_model",
+            "chat_model",
+            *EFFORT_FIELDS,
+            "base_url",
+        ]
         if key_written:
             fields.append("api_key")
         if changed:

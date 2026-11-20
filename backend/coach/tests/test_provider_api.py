@@ -29,6 +29,10 @@ STATE_FIELDS = {
     "season_model",
     "week_model",
     "chat_model",
+    "effort",
+    "season_effort",
+    "week_effort",
+    "chat_effort",
     "base_url",
     "has_key",
     "status",
@@ -150,6 +154,10 @@ class TestReading:
             "season_model": "",
             "week_model": "",
             "chat_model": "",
+            "effort": "",
+            "season_effort": "",
+            "week_effort": "",
+            "chat_effort": "",
             "base_url": None,
             "has_key": False,
             "status": None,
@@ -1020,3 +1028,64 @@ class TestSecrecy:
         assert OTHER_KEY not in everything
         assert "sk-ant" not in everything
         assert "has space" not in everything
+
+
+EFFORTS = {"effort": "high", "season_effort": "low", "week_effort": "medium", "chat_effort": ""}
+
+
+class TestTheEfforts:
+    def test_they_are_saved_and_shown(self, alice: User) -> None:
+        state = body(save(signed_in(alice), anthropic(**EFFORTS)))
+
+        assert {name: state[name] for name in EFFORTS} == EFFORTS
+        assert stored(alice).season_effort == "low"
+        assert read(signed_in(alice))["effort"] == "high"
+
+    def test_they_are_empty_when_left_out_and_saving_again_without_them_clears_them(
+        self, alice: User
+    ) -> None:
+        api = signed_in(alice)
+        save(api, anthropic(**EFFORTS))
+
+        state = body(save(api, anthropic()))
+
+        assert {name: state[name] for name in EFFORTS} == dict.fromkeys(EFFORTS, "")
+
+    @pytest.mark.parametrize("value", ["extreme", "LOW", 5, True, None, ["low"]])
+    @pytest.mark.parametrize("field", ["effort", "season_effort", "week_effort", "chat_effort"])
+    def test_a_value_that_is_no_effort_is_refused(
+        self, alice: User, field: str, value: Any
+    ) -> None:
+        response = save(signed_in(alice), anthropic(**{field: value}))
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert field in body(response)
+        assert not AIProviderConfiguration.objects.exists()
+
+    def test_a_compatible_endpoint_takes_no_effort(self, alice: User, settings: Any) -> None:
+        base = "http://localhost:11434/v1"
+        settings.AI_ALLOWED_BASE_URLS = (base,)
+
+        response = save(signed_in(alice), compatible(base, week_effort="low"))
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert body(response) == {"week_effort": ["Only Anthropic takes an effort."]}
+
+    def test_changing_the_effort_keeps_the_status(self, alice: User) -> None:
+        api = signed_in(alice)
+        save(api, anthropic())
+        AIProviderConfiguration.objects.filter(owner=alice).update(status="connected")
+        keep_the_key = {k: v for k, v in anthropic(effort="max").items() if k != "api_key"}
+
+        state = body(save(api, keep_the_key))
+
+        assert (state["effort"], state["status"]) == ("max", "connected")
+
+    def test_a_user_sees_and_changes_only_their_own(self, alice: User, bob: User) -> None:
+        save(signed_in(bob), anthropic(effort="max", chat_effort="low"))
+
+        assert read(signed_in(alice))["effort"] == ""
+        save(signed_in(alice), anthropic(effort="low"))
+
+        assert stored(bob).effort == "max"
+        assert stored(bob).chat_effort == "low"

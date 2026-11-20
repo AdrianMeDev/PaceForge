@@ -9,7 +9,7 @@ from rest_framework.views import APIView
 from accounts.models import User
 
 from . import pricing, services
-from .models import AIModelPrice
+from .models import EFFORT_FIELDS, AIModelPrice
 from .providers.base import (
     DeadlineExceededError,
     EndpointNotAllowedError,
@@ -59,6 +59,7 @@ class ProviderView(APIView):
                 season_model=data.get("season_model", ""),
                 week_model=data.get("week_model", ""),
                 chat_model=data.get("chat_model", ""),
+                efforts={name: data.get(name, "") for name in EFFORT_FIELDS},
                 base_url=data.get("base_url", ""),
                 api_key=data.get("api_key"),
             )

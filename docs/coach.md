@@ -27,6 +27,28 @@ default `model` and three optional task-specific models:
 - **History:** Each `AIUsageRecord` stores the `model` string used at the time of the call, so
   later configuration changes or removals do not alter historical records.
 
+## Effort per task
+
+For Anthropic, the configuration also holds how long a model may think before it answers
+(`effort`). It works like the models: a default `effort` and three optional task efforts.
+
+| Field | Task (`AIUsageRecord.Purpose`) | Fallback when blank |
+| --- | --- | --- |
+| `season_effort` | `season_plan` | `effort` |
+| `week_effort` | `weekly_plan` | `effort` |
+| `chat_effort` | `chat` | `effort` |
+| `effort` | `week_review` and default | none is sent |
+
+`AIProviderConfiguration.effort_for(purpose)` selects the effort. The connection check (`check`)
+never gets one.
+
+- **Values:** empty, `low`, `medium`, `high`, `xhigh` or `max`. Empty means that none is sent and
+  the model uses its own default.
+- **Anthropic only:** an OpenAI-compatible setup with an effort is refused (`clean` and the
+  database constraint `coach_effort_only_anthropic`).
+- **No status reset:** an effort changes how long the model thinks, not what is called, so
+  changing it keeps `status`.
+
 ## Per-model pricing (`AIModelPrice`)
 
 Model prices are optional and entered by each user in USD per million tokens; PaceForge ships no
@@ -72,8 +94,10 @@ calendar month and the `11` preceding calendar months (`MONTHS = 12`).
 All endpoints require an authenticated session and operate exclusively on `request.user`:
 
 - `GET /api/coach/provider/`: returns the provider setup (including `season_model`, `week_model`,
-  `chat_model`), `allowed_base_urls`, and the 30-day `usage` summary.
-- `PUT /api/coach/provider/`: creates or replaces the provider setup.
+  `chat_model`, `effort`, `season_effort`, `week_effort`, `chat_effort`), `allowed_base_urls`,
+  and the 30-day `usage` summary.
+- `PUT /api/coach/provider/`: creates or replaces the provider setup. An effort field that is left
+  out is saved empty; a value that is not one of the levels is refused with `400`.
 - `DELETE /api/coach/provider/`: deletes the provider setup and stored key (`204`).
 - `POST /api/coach/provider/check/`: sends the fixed check prompt (`Reply with the single word: ok`,
   max 16 tokens) using `model`; rate-limited to `10` requests per minute per user (`CoachCheckThrottle`).

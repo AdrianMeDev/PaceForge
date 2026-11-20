@@ -549,3 +549,57 @@ class TestTheModelPrice:
         alice.delete()
 
         assert AIModelPrice.objects.count() == 1
+
+
+class TestTheEfforts:
+    FIELDS = ("effort", "season_effort", "week_effort", "chat_effort")
+
+    @pytest.mark.parametrize("field", FIELDS)
+    @pytest.mark.parametrize("value", ["", "low", "medium", "high", "xhigh", "max"])
+    def test_they_are_optional_and_the_levels_pass(
+        self, alice: User, field: str, value: str
+    ) -> None:
+        check(alice, **anthropic(**{field: value}))
+
+    @pytest.mark.parametrize("field", FIELDS)
+    def test_another_word_is_refused(self, alice: User, field: str) -> None:
+        refused(alice, field, **anthropic(**{field: "extreme"}))
+
+    @pytest.mark.parametrize("field", FIELDS)
+    def test_only_anthropic_takes_an_effort(self, alice: User, field: str) -> None:
+        refused(alice, field, **compatible(**{field: "low"}))
+
+    def test_the_database_keeps_efforts_away_from_other_providers(self, alice: User) -> None:
+        message = rejected_by_database(owner=alice, **compatible(chat_effort="low"))
+
+        assert "coach_effort_only_anthropic" in message
+
+    def test_each_purpose_gets_its_own_effort_and_falls_back_to_the_normal_one(
+        self, alice: User
+    ) -> None:
+        plain = AIProviderConfiguration(owner=alice, **anthropic(effort="high"))
+        special = AIProviderConfiguration(
+            owner=alice,
+            **anthropic(
+                effort="high", season_effort="max", week_effort="low", chat_effort="medium"
+            ),
+        )
+        purpose = AIUsageRecord.Purpose
+
+        assert {p: plain.effort_for(p) for p in purpose if p != purpose.CHECK} == {
+            p: "high" for p in purpose if p != purpose.CHECK
+        }
+        assert special.effort_for(purpose.SEASON_PLAN) == "max"
+        assert special.effort_for(purpose.WEEKLY_PLAN) == "low"
+        assert special.effort_for(purpose.CHAT) == "medium"
+        assert special.effort_for(purpose.WEEK_REVIEW) == "high"
+
+    def test_the_connection_check_gets_no_effort(self, alice: User) -> None:
+        configuration = AIProviderConfiguration(owner=alice, **anthropic(effort="max"))
+
+        assert configuration.effort_for(AIUsageRecord.Purpose.CHECK) == ""
+
+    def test_without_any_effort_none_is_sent(self, alice: User) -> None:
+        configuration = AIProviderConfiguration(owner=alice, **anthropic())
+
+        assert {configuration.effort_for(p) for p in AIUsageRecord.Purpose} == {""}
