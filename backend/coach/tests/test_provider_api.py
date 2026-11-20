@@ -912,6 +912,7 @@ class TestTheCheck:
             "invalid_key",
             "rate_limited",
             "unavailable",
+            "too_slow",
             "unexpected",
             "not_allowed",
         }

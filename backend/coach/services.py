@@ -9,6 +9,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import Count, QuerySet, Sum
@@ -21,6 +22,8 @@ from .models import AIProviderConfiguration, AIUsageRecord
 from .providers import provider_for
 from .providers.base import (
     Completion,
+    Deadline,
+    DeadlineExceededError,
     InvalidKeyError,
     Message,
     ProviderUnavailableError,
@@ -32,6 +35,9 @@ from .providers.base import (
 CHECK_PROMPT = "Reply with the single word: ok"
 CHECK_MAX_TOKENS = 16
 USAGE_DAYS = 30
+# A repair round is only started with at least this much time left before the deadline: an
+# answer that cannot arrive in time is paid for and thrown away.
+MIN_ATTEMPT_SECONDS = 60
 
 Status = AIProviderConfiguration.Status
 Outcome = AIUsageRecord.Outcome
@@ -54,6 +60,17 @@ class UsageSummary:
 
 def _now() -> datetime:
     return timezone.now()
+
+
+def request_deadline() -> Deadline:
+    """The deadline for the calls of one request of the athlete (a plan, a change, a chat answer,
+    a review comment), ``AI_REQUEST_DEADLINE_SECONDS`` from now."""
+    return Deadline.after(settings.AI_REQUEST_DEADLINE_SECONDS)
+
+
+def time_for_another_attempt(deadline: Deadline) -> bool:
+    """Whether a repair round can still be started before ``deadline``."""
+    return deadline.remaining() >= MIN_ATTEMPT_SECONDS
 
 
 def _own(user: User) -> QuerySet[AIProviderConfiguration]:
@@ -187,11 +204,15 @@ def call(
     messages: Sequence[Message],
     max_tokens: int,
     json_output: bool = False,
+    deadline: Deadline | None = None,
 ) -> Completion:
     """Ask the user's own provider, and record the call.
 
     ``json_output`` asks for a JSON object where the provider has a mode for it (the answer is
     read strictly either way); the connection check does not ask, its answer is the word "ok".
+    ``deadline`` is when the answer must be there; once it has passed nothing is sent and
+    ``DeadlineExceededError`` is raised, and a provider that is still answering then gives up
+    with the same error (recorded as ``unavailable``).
 
     Raises ``NotConfiguredError`` if there is no configuration, ``EndpointNotAllowedError`` if the
     operator has taken the address off the list (nothing is sent, nothing is recorded), and the
@@ -207,6 +228,8 @@ def call(
     configuration = _own(user).first()
     if configuration is None:
         raise NotConfiguredError
+    if deadline is not None and deadline.passed():
+        raise DeadlineExceededError("There was no time left for the answer.")
     try:
         model = configuration.model_for(purpose)
         provider = provider_for(configuration, model)
@@ -215,12 +238,18 @@ def call(
         raise InvalidKeyError("The stored key is not usable.") from None
     # EndpointNotAllowedError passes through: no call was made, so there is nothing to record.
     try:
-        completion = provider.complete(system, messages, max_tokens, json_output=json_output)
+        completion = provider.complete(
+            system, messages, max_tokens, json_output=json_output, deadline=deadline
+        )
     except InvalidKeyError:
         _finish(user, configuration, purpose, Outcome.INVALID_KEY, None, Status.INVALID)
         raise
     except RateLimitedError:
         _finish(user, configuration, purpose, Outcome.RATE_LIMITED, None, None)
+        raise
+    except DeadlineExceededError:
+        # A slow answer is no outage: the provider was there, it only took too long.
+        _finish(user, configuration, purpose, Outcome.UNAVAILABLE, None, None)
         raise
     except ProviderUnavailableError:
         _finish(user, configuration, purpose, Outcome.UNAVAILABLE, None, Status.UNAVAILABLE)

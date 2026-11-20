@@ -11,6 +11,7 @@ from django.conf import settings
 
 from .base import (
     Completion,
+    Deadline,
     InvalidKeyError,
     Message,
     ProviderError,
@@ -54,6 +55,7 @@ class AnthropicProvider:
         messages: Sequence[Message],
         max_tokens: int,
         json_output: bool = False,
+        deadline: Deadline | None = None,
     ) -> Completion:
         # The Messages API has no JSON mode that fits a plain request: the flag is ignored.
         if not messages:
@@ -75,6 +77,7 @@ class AnthropicProvider:
             {"x-api-key": self._api_key, "anthropic-version": API_VERSION},
             payload,
             timeout=self._timeout,
+            deadline=deadline,
         )
         return _completion(_assemble(events))
 

@@ -520,13 +520,17 @@ What it cannot do is get a plan past the parser and the rules.
 
 ### Time and the web server
 
-Drafting is **synchronous**: the request waits for the provider. A call may take up to 60 seconds
-per step of the connection, so a draft with a repair can take about `ATTEMPTS` times 60 = 120
-seconds. Everything in front of PaceForge has to allow that: set the read timeout of a reverse
-proxy (for nginx `proxy_read_timeout`) and the timeout of the application server's workers to at
-least 150 seconds. Otherwise the request is cut off while the call to the provider (and its cost)
-goes on, and the user sees an error although a draft may have been stored; the versions list shows
-it. A proxy that replaces a 502 or 503 by a page of its own hides the reason from the app, which
+Drafting is **synchronous**: the request waits for the provider. Answers from Anthropic are
+streamed, so a model may think and write for minutes. All calls of one request (the answer and its
+repairs) share one deadline, `AI_REQUEST_DEADLINE_SECONDS` (default 210 seconds). A call that is
+still running then is given up (`too_slow`), and a repair round is only started with at least
+`MIN_ATTEMPT_SECONDS` (60) left, so no money goes into an answer that cannot arrive in time.
+Everything in front of PaceForge has to wait longer than the deadline: the timeout of the
+application server's workers (`GUNICORN_TIMEOUT`, default 240; Django does not start if the
+deadline is not below it) and the read timeout of a reverse proxy (for nginx
+`proxy_read_timeout`). Otherwise the request is cut off while the call to the provider (and its
+cost) goes on, and the user sees an error although a draft may have been stored; the versions list
+shows it. A proxy that replaces a 502 or 503 by a page of its own hides the reason from the app, which
 then shows a general text for that kind of problem.
 
 ### The API
@@ -650,6 +654,7 @@ without a code is the limit of PaceForge itself.
 | `not_allowed` | 502 | The address is no longer on the operator's list. |
 | `unexpected` | 502 | The provider (or Intervals.icu) answered in an unexpected way. |
 | `unavailable` | 503 | The provider could not be reached. |
+| `too_slow` | 503 | The coach did not finish before the deadline of the request (`AI_REQUEST_DEADLINE_SECONDS`). |
 
 ## Sending to Intervals.icu
 

@@ -1,5 +1,6 @@
 """What every AI provider offers, and what can go wrong, independent of the provider's API."""
 
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal, Protocol, runtime_checkable
@@ -28,10 +29,37 @@ class Completion:
     cache_write_tokens: int | None = None
 
 
+@dataclass(frozen=True)
+class Deadline:
+    """The moment by which a request of the athlete must have its answer, on the monotonic clock.
+    All the calls and repairs of one request share it, so that together they end before the web
+    server gives up on the request and the money is spent on an answer nobody receives."""
+
+    at: float
+
+    @classmethod
+    def after(cls, seconds: float) -> Deadline:
+        return cls(clock() + seconds)
+
+    def remaining(self) -> float:
+        """The seconds left, never below zero."""
+        return max(0.0, self.at - clock())
+
+    def passed(self) -> bool:
+        return self.remaining() <= 0
+
+
+def clock() -> float:
+    """The clock of the deadlines; tests replace it."""
+    return time.monotonic()
+
+
 @runtime_checkable
 class CoachProvider(Protocol):
     """``json_output`` asks the provider to answer with a JSON object where it has a mode for it.
-    A provider without one ignores it: the caller reads the answer strictly either way."""
+    A provider without one ignores it: the caller reads the answer strictly either way.
+    ``deadline``, if given, is when the answer must be there; a provider that has not finished by
+    then gives up with a ``DeadlineExceededError``."""
 
     def complete(
         self,
@@ -39,6 +67,7 @@ class CoachProvider(Protocol):
         messages: Sequence[Message],
         max_tokens: int,
         json_output: bool = False,
+        deadline: Deadline | None = None,
     ) -> Completion: ...
 
 
@@ -65,6 +94,11 @@ class RateLimitedError(ProviderError):
 
 class ProviderUnavailableError(ProviderError):
     """The provider could not be reached or is busy (network, timeout, 408, 5xx); try later."""
+
+
+class DeadlineExceededError(ProviderUnavailableError):
+    """The answer did not arrive before the deadline of the request; the call was given up.
+    The provider may still have worked on it (and billed it)."""
 
 
 class UnexpectedResponseError(ProviderError):

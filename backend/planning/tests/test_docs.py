@@ -16,10 +16,10 @@ from accounts.models import User
 from availability.intensity import LEVEL_LIMITS
 from availability.models import SESSIONS_PER_WEEK_MAX, SPORTS, BodyPart
 from availability.serializers import MAX_LIMITATIONS, availability_data
+from coach import services as coach_services
 from coach import views as coach_views
 from coach.endpoints import parse_base_urls
 from coach.providers.openai_compatible import JSON_MODE_HOSTS
-from coach.providers.transport import TIMEOUT_SECONDS
 from planning import briefing, editing, generation, models, prompt, rules, schema
 from planning.briefing import build_briefing
 from planning.context import PlanContext
@@ -314,13 +314,13 @@ class TestTheDraftingLimits:
 
         assert code == {r[0] for r in rows(subsection("The drafting limits"))}
 
-    def test_the_time_a_draft_may_take_is_attempts_times_the_timeout(self) -> None:
+    def test_the_time_a_draft_may_take_is_the_deadline_of_the_request(self) -> None:
         text = subsection("Time and the web server")
 
-        assert generation.ATTEMPTS * TIMEOUT_SECONDS == 120
-        assert "60 seconds" in text
-        assert "= 120" in text
-        assert "150 seconds" in text
+        assert "AI_REQUEST_DEADLINE_SECONDS" in text
+        assert f"default {settings.AI_REQUEST_DEADLINE_SECONDS} seconds" in text
+        assert f"`MIN_ATTEMPT_SECONDS` ({coach_services.MIN_ATTEMPT_SECONDS})" in text
+        assert f"default {settings.GUNICORN_TIMEOUT}" in text
 
 
 class TestTheApi:

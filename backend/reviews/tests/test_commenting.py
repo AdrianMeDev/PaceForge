@@ -370,3 +370,27 @@ class TestBeforeAnythingIsSent:
 class TestTheLimitsAreWrittenOutOnPurpose:
     def test_the_numbers(self) -> None:
         assert (ATTEMPTS, COMMENT_MAX_TOKENS) == (2, 1000)
+
+
+class TestTheDeadline:
+    def test_the_answer_and_its_repair_share_one_deadline(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        scripted = provide("Looks like a good week!", good())
+
+        comment_on(alice, MONDAY)
+
+        first, second = scripted.deadlines
+        assert first is not None
+        assert first is second
+
+    def test_no_repair_is_started_without_time_for_it(
+        self, alice: User, provide: Callable[..., Scripted], settings: Any
+    ) -> None:
+        settings.AI_REQUEST_DEADLINE_SECONDS = coach_services.MIN_ATTEMPT_SECONDS - 1
+        scripted = provide("Looks like a good week!", good())
+
+        with pytest.raises(CommentNotUsable):
+            comment_on(alice, MONDAY)
+
+        assert len(scripted.calls) == 1

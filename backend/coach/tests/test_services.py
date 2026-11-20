@@ -11,6 +11,7 @@ from coach import services
 from coach.models import AIProviderConfiguration, AIUsageRecord
 from coach.providers.base import (
     Completion,
+    Deadline,
     EndpointNotAllowedError,
     InvalidKeyError,
     Message,
@@ -411,7 +412,12 @@ class TestJsonOutput:
             self.asked: list[bool] = []
 
         def complete(
-            self, system: str, messages: Any, max_tokens: int, json_output: bool = False
+            self,
+            system: str,
+            messages: Any,
+            max_tokens: int,
+            json_output: bool = False,
+            deadline: Deadline | None = None,
         ) -> Completion:
             self.asked.append(json_output)
             return Completion("ok", 1, 1)

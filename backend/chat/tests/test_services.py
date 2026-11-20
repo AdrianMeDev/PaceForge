@@ -1192,3 +1192,27 @@ class TestALongerAbsence:
         assert theirs.status == "confirmed"
         assert UnavailablePeriod.objects.for_user(bob).count() == 0
         assert ChatMessage.objects.for_user(bob).count() == 0
+
+
+class TestTheDeadline:
+    def test_the_answer_and_its_repair_share_one_deadline(
+        self, athlete: User, provide: Callable[..., Scripted]
+    ) -> None:
+        scripted = provide("Sure!", said("Fine."))
+
+        send(athlete, "How is my week?")
+
+        first, second = scripted.deadlines
+        assert first is not None
+        assert first is second
+
+    def test_no_repair_is_started_without_time_for_it(
+        self, athlete: User, provide: Callable[..., Scripted], settings: Any
+    ) -> None:
+        settings.AI_REQUEST_DEADLINE_SECONDS = coach_services.MIN_ATTEMPT_SECONDS - 1
+        scripted = provide("Sure!", said("Fine."))
+
+        sent = send(athlete, "How is my week?")
+
+        assert sent.coach.text == NOT_USABLE
+        assert len(scripted.calls) == 1

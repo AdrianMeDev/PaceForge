@@ -248,6 +248,16 @@ AI_ALLOWED_BASE_URLS = parse_base_urls(
     [env.str("ANTHROPIC_API_BASE_URL", default="https://api.anthropic.com")],
 )
 
+# How long all the AI calls of one request (a plan, a change, a chat answer) may take together, in
+# seconds. It must end before Gunicorn (GUNICORN_TIMEOUT, read by backend/entrypoint.sh) and the
+# proxy give up on the request, or the answer is paid for and never arrives.
+GUNICORN_TIMEOUT = env.int("GUNICORN_TIMEOUT", default=240)
+AI_REQUEST_DEADLINE_SECONDS = env.int("AI_REQUEST_DEADLINE_SECONDS", default=210)
+if not 0 < AI_REQUEST_DEADLINE_SECONDS < GUNICORN_TIMEOUT:
+    raise ImproperlyConfigured(
+        "AI_REQUEST_DEADLINE_SECONDS must be a whole number above 0 and below GUNICORN_TIMEOUT"
+    )
+
 # The largest activity file (FIT or TCX) that is accepted, in bytes, before it is even parsed.
 ACTIVITY_UPLOAD_MAX_BYTES = env.int("ACTIVITY_UPLOAD_MAX_BYTES", default=25 * 1024 * 1024)
 if ACTIVITY_UPLOAD_MAX_BYTES <= 0:

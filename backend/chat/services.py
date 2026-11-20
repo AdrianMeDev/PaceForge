@@ -140,6 +140,7 @@ def send(user: User, text: str) -> Sent:
     ][::-1]
     messages = [first_message(build_briefing(user, loaded), told, text)]
     problems: tuple[Problem, ...] = ()
+    deadline = coach.request_deadline()
     for attempt in range(1, ATTEMPTS + 1):
         completion = coach.call(
             user,
@@ -148,6 +149,7 @@ def send(user: User, text: str) -> Sent:
             messages,
             CHAT_MAX_TOKENS,
             json_output=True,
+            deadline=deadline,
         )
         if completion.truncated:
             problems = (Problem("", "The answer was cut off before its end; make it shorter."),)
@@ -160,9 +162,10 @@ def send(user: User, text: str) -> Sent:
                 problems = error.problems
             else:
                 return _store(user, text, reply, parent, changed, changes, sick, replan, today)
-        if attempt < ATTEMPTS:
-            answer = completion.text if completion.text.strip() else "(no answer)"
-            messages = [messages[0], Message("assistant", answer), repair_message(problems)]
+        if attempt == ATTEMPTS or not coach.time_for_another_attempt(deadline):
+            break
+        answer = completion.text if completion.text.strip() else "(no answer)"
+        messages = [messages[0], Message("assistant", answer), repair_message(problems)]
     fallback = ONE_WEEK_ONLY if _names_other_week(problems) else NOT_USABLE
     return _store(user, text, fallback, None, None, (), None, None, today)
 

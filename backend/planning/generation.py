@@ -112,6 +112,7 @@ def generate(user: User, monday: date, note: str = "") -> Generated:
         raise NoTimeAvailable
     messages = [first_message(briefing)]
     best: _Attempt | None = None
+    deadline = coach.request_deadline()
     for attempt_number in range(1, ATTEMPTS + 1):
         try:
             completion = coach.call(
@@ -121,6 +122,7 @@ def generate(user: User, monday: date, note: str = "") -> Generated:
                 messages,
                 PLAN_MAX_TOKENS,
                 json_output=True,
+                deadline=deadline,
             )
         except ProviderError, coach.NotConfiguredError:
             if best is None or best.plan is None:
@@ -131,7 +133,11 @@ def generate(user: User, monday: date, note: str = "") -> Generated:
         # later answer, which has been told what was wrong.
         if best is None or best.plan is None or _no_worse(attempt, best):
             best = attempt
-        if attempt.sound or attempt_number == ATTEMPTS:
+        if (
+            attempt.sound
+            or attempt_number == ATTEMPTS
+            or not coach.time_for_another_attempt(deadline)
+        ):
             break
         errors = attempt.report.errors if attempt.report else ()
         messages = [

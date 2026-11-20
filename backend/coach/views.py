@@ -11,6 +11,7 @@ from accounts.models import User
 from . import pricing, services
 from .models import AIModelPrice
 from .providers.base import (
+    DeadlineExceededError,
     EndpointNotAllowedError,
     InvalidKeyError,
     ProviderError,
@@ -25,6 +26,8 @@ PROBLEMS = {
     "invalid_key": "The provider did not accept the key. Check that you copied all of it.",
     "rate_limited": "The provider is asking to slow down. Please try again in a moment.",
     "unavailable": "The provider cannot be reached right now. Please try again later.",
+    "too_slow": "The coach did not finish in time. Choose a faster model for this task, "
+    "or try again.",
     "unexpected": "The provider answered in an unexpected way. Check the model name and try again.",
     "not_allowed": "This address is no longer allowed on this server. Choose another one.",
 }
@@ -163,6 +166,8 @@ def provider_problem(error: ProviderError) -> Response:
         if error.retry_after is not None:
             response["Retry-After"] = str(error.retry_after)
         return response
+    if isinstance(error, DeadlineExceededError):
+        return _problem(status.HTTP_503_SERVICE_UNAVAILABLE, "too_slow")
     if isinstance(error, ProviderUnavailableError):
         return _problem(status.HTTP_503_SERVICE_UNAVAILABLE, "unavailable")
     if isinstance(error, EndpointNotAllowedError):
