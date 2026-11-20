@@ -151,7 +151,7 @@ AI key; several people can share one instance without seeing each other's data.
 - **Depends on:** –
 - **Size:** S
 
-### M15 [ ] Status docs up to date
+### M15 [~] Status docs up to date
 - **Goal:** README and `PROJECT_PLAN.md` describe what works today and point to this roadmap.
 - **Includes:** rewrite the README's "What works today / Not there yet", replace the stage table in `PROJECT_PLAN.md` §15.4 with a pointer to `docs/ROADMAP.md`.
 - **Done when:** no README statement contradicts the code; docs only.

@@ -5,30 +5,64 @@
 # PaceForge
 
 A self-hostable, AI-assisted endurance coach for running, cycling, swimming and strength training.
-The long-term goal is described in `PROJECT_PLAN.md`; this repository is in early development.
+The status of each milestone and the open work are in [`docs/ROADMAP.md`](docs/ROADMAP.md). The
+long-term goal is described in `PROJECT_PLAN.md`.
 
-**What works today:** accounts for a multi-user instance, invitation-only registration with an
-admin page that emails invitations and resends them ([Invitations](docs/invitations.md)), email verification, sign-in and sign-out with server-side sessions,
-password reset, two-factor authentication (authenticator app plus recovery codes, mandatory for
-administrators), a personal Intervals.icu connection with an API key (stored encrypted), importing
-activities from FIT, TCX and GPX files (also the whole Strava export) and syncing non-Strava
-activities from Intervals.icu, an athlete profile with your time zone, your thresholds (typed in,
-read from Intervals.icu or estimated from your activities) and the training zones that follow from
-them, goals (races, threshold targets and general goals, with priorities A, B and C), your training time
-(minutes per weekday, a weekly budget, injuries and limitations, vacation and illness), your own AI provider
-([Anthropic or an OpenAI-compatible endpoint](#ai-coach-bring-your-own-key), key stored encrypted,
-with a connection check and a usage overview), the model and the plausibility checks for a
-training week ([format and rules](docs/weekly-plan.md)), a **Week plan** page on which your own
-AI coach drafts a training week that you read, change by hand, confirm or discard ([Week plan](#week-plan)), a
-**Season** page with the phases and the volume of every week up to your race
-([Season](#season)), a **Week review** page that shows how a week went against the confirmed plan, on which you rate your
-sessions, say how the week felt and ask your coach about it ([Week review](#week-review)), and the
-data-isolation foundation the training features will build on.
-**Not there yet:** more of the coach: it drafts a
-week, but you cannot yet change a draft by talking to it, and it has not been tried against a real
-provider (see [Week plan](#week-plan)). Before an instance is exposed to the
-internet, read [Instance key](#instance-key): secrets in the database are encrypted, and the key
-has to be backed up apart from the database.
+**What works today:**
+
+- **Accounts:** a multi-user instance with invitation-only registration. Invitations are sent by email
+  and can be resent from the admin page ([Invitations](docs/invitations.md)). Email verification,
+  server-side sessions, password reset and two-factor authentication (authenticator app and recovery
+  codes, mandatory for administrators). Every query is scoped to the signed-in user.
+- **Your data:** a JSON export and account deletion on the Security page, each with a password and MFA
+  check ([Data export and account deletion](#data-export-and-account-deletion)).
+- **Intervals.icu:** a personal connection with an API key, stored encrypted. Activities and daily
+  wellness (sleep, HRV, resting HR, weight) sync from Intervals.icu. Activities can also be imported
+  from FIT, TCX and GPX files, including the whole Strava export.
+- **Athlete profile:** your time zone, your thresholds (typed in, read from Intervals.icu or estimated
+  from your activities) and the training zones that follow from them.
+- **Goals and training time:** races, threshold targets and general goals with priorities A, B and C,
+  a realism check for running races, and your training time: minutes per weekday, a weekly budget,
+  injuries, limitations, vacation and illness.
+- **Your AI coach:** your own provider ([Anthropic or an OpenAI-compatible endpoint](#ai-coach-bring-your-own-key)),
+  with its key stored encrypted, a connection check, a usage overview and the monthly cost per model.
+  You can set a separate model for the week plan and for the chat.
+- **Week plan** ([Week plan](#week-plan)): the coach drafts a training week, checked by code
+  ([format and rules](docs/weekly-plan.md)). You read it, change it by hand (including the segments and
+  intervals of a workout), then confirm or discard it. Load is shown per workout as an estimate, planned
+  and done. A confirmed week is pushed to Intervals.icu, and a later version updates the same events.
+- **Season** ([Season](#season)): the phases and the weekly volume up to your race, an AI season plan
+  with versions and change requests. The Season, Goals and Profile pages hint when the confirmed plan no
+  longer fits, for example after changed goals, a new FTP or more training time. After several weak weeks,
+  the week review proposes an adjustment.
+- **Week review** ([Week review](#week-review)): how a week went against the confirmed plan, with planned
+  and done load per sport, your ratings, how the week felt and a coach comment. Running volume has its own,
+  stricter limit.
+- **Coach chat** ([Coach chat](#coach-chat)): changes the current week or one of the next weeks when you
+  ask. It handles illness (paused days and a careful return) and longer absences, which go into a season
+  change request. Every change is a new draft that you confirm.
+- **Dashboard** ([Dashboard](#dashboard)): get-started steps, and wellness trends over 7 and 28 days with
+  recovery warnings.
+- **Background jobs** ([Background jobs](#background-jobs)): sync, the Sunday week review and the next
+  week's draft run on their own. Each job can be turned off. Jobs never confirm a plan or push to Intervals.icu.
+- **Install as an app:** the web app can be installed as a PWA ([Install as an app](#install-as-an-app)).
+- **Production:** [Production deployment](#production-deployment) with Docker Compose, Caddy for HTTPS
+  and a scheduler service.
+- **Backups:** encrypted database backups with retention, and a restore into an empty database
+  ([Backup and restore](#backup-and-restore)).
+
+**Not there yet:** the open manual checks and the later items from
+[`docs/ROADMAP.md`](docs/ROADMAP.md#manual-checks-not-for-unattended-runs).
+
+- **Manual checks:** the week plan, season plan and chat against a real Anthropic and an
+  OpenAI-compatible provider; pushing to the real Intervals.icu API (pace targets, strength event,
+  Ride vs VirtualRide); Intervals.icu rate limits for personal keys; activity and wellness fields
+  against a real Intervals account.
+- **Later:** drag and drop on the week plan, realism checks for cycling, swim and triathlon races, a
+  workout library as inspiration, a Gemini adapter, passkeys, managed mode and planned training blocks.
+
+Before an instance is exposed to the internet, read [Instance key](#instance-key): secrets in the
+database are encrypted, and the key has to be backed up apart from the database.
 
 ## Layout
 
