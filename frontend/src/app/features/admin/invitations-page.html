@@ -27,8 +27,9 @@
       <div class="card">
         <h2 class="m-0 mb-3 text-lg font-semibold">Invite someone</h2>
         <p>
-          Enter the email address of the person. You will get a link to hand on yourself; no email
-          is sent. The link works once, for 7 days, and only for that address.
+          Enter the email address of the person. They get the invitation by email. You also get the
+          link, in case the email does not arrive. The link works once, for 7 days, and only for
+          that address.
         </p>
 
         @for (message of errors(); track $index) {
@@ -53,7 +54,7 @@
             }
           </div>
           <button type="submit" class="btn btn-primary" [disabled]="busy()">
-            {{ busy() ? 'Working…' : 'Create invitation' }}
+            {{ busy() ? 'Working…' : 'Send invitation by email' }}
           </button>
         </form>
       </div>
@@ -61,10 +62,23 @@
       @if (issued(); as link) {
         <div class="card issued" role="region" aria-label="New invitation link">
           <h2 class="m-0 mb-3 text-lg font-semibold">Invitation for {{ link.email }}</h2>
-          <p>
-            This link is shown <strong>only now</strong>. Send it to the person yourself. If you
-            lose it, revoke the invitation and create a new one.
-          </p>
+          @if (link.emailSent) {
+            <p class="notice" data-result="sent" role="status">
+              The invitation email was sent to {{ link.email }}.
+            </p>
+            <p>
+              This link is shown <strong>only now</strong>. Keep it as a fallback in case the email
+              does not arrive. If you lose it, send the invitation again.
+            </p>
+          } @else {
+            <p class="alert" data-result="failed" role="alert">
+              The invitation email could not be delivered to {{ link.email }}.
+            </p>
+            <p>
+              This link is shown <strong>only now</strong>. Send it to the person yourself, or send
+              the invitation again later.
+            </p>
+          }
           <div class="field">
             <label for="invite-link">Invitation link</label>
             <input
@@ -98,6 +112,12 @@
       @if (invitations().length === 0) {
         <p class="hint">No invitations yet.</p>
       } @else {
+        @if (expiredCount() > 0) {
+          <p class="notice" id="expired-notice" role="status">
+            {{ expiredCount() === 1 ? '1 invitation has' : expiredCount() + ' invitations have' }}
+            expired. Use Resend to send a new link.
+          </p>
+        }
         <div class="table-wrap">
           <table>
             <thead>
@@ -106,6 +126,7 @@
                 <th scope="col">Status</th>
                 <th scope="col">Created</th>
                 <th scope="col">Expires</th>
+                <th scope="col">Last sent</th>
                 <th scope="col"><span class="visually-hidden">Actions</span></th>
               </tr>
             </thead>
@@ -120,41 +141,63 @@
                   </td>
                   <td>{{ invitation.created_at | date: 'medium' }}</td>
                   <td>{{ invitation.expires_at | date: 'medium' }}</td>
+                  <td class="sent-at">
+                    @if (invitation.sent_at) {
+                      {{ invitation.sent_at | date: 'medium' }}
+                    } @else {
+                      Not sent
+                    }
+                  </td>
                   <td class="row-actions">
-                    @if (invitation.status === 'pending') {
-                      @if (confirming() === invitation.id) {
-                        <span
-                          class="confirm"
-                          role="group"
-                          [attr.aria-label]="'Revoke ' + invitation.email"
-                        >
-                          Revoke this invitation?
+                    @if (invitation.status === 'pending' || invitation.status === 'expired') {
+                      <span class="row-buttons">
+                        @if (confirming() !== invitation.id) {
                           <button
                             type="button"
-                            class="btn btn-primary btn-sm"
+                            class="btn btn-secondary btn-sm"
                             [disabled]="busy()"
-                            (click)="revoke(invitation)"
+                            [attr.aria-label]="'Resend invitation for ' + invitation.email"
+                            (click)="resend(invitation)"
                           >
-                            Yes, revoke
+                            Resend
                           </button>
-                          <button
-                            type="button"
-                            class="btn btn-ghost btn-sm"
-                            (click)="cancelRevoke()"
-                          >
-                            Cancel
-                          </button>
-                        </span>
-                      } @else {
-                        <button
-                          type="button"
-                          class="btn btn-secondary btn-sm"
-                          [attr.aria-label]="'Revoke invitation for ' + invitation.email"
-                          (click)="ask(invitation)"
-                        >
-                          Revoke
-                        </button>
-                      }
+                        }
+                        @if (invitation.status === 'pending') {
+                          @if (confirming() === invitation.id) {
+                            <span
+                              class="confirm"
+                              role="group"
+                              [attr.aria-label]="'Revoke ' + invitation.email"
+                            >
+                              Revoke this invitation?
+                              <button
+                                type="button"
+                                class="btn btn-primary btn-sm"
+                                [disabled]="busy()"
+                                (click)="revoke(invitation)"
+                              >
+                                Yes, revoke
+                              </button>
+                              <button
+                                type="button"
+                                class="btn btn-ghost btn-sm"
+                                (click)="cancelRevoke()"
+                              >
+                                Cancel
+                              </button>
+                            </span>
+                          } @else {
+                            <button
+                              type="button"
+                              class="btn btn-secondary btn-sm"
+                              [attr.aria-label]="'Revoke invitation for ' + invitation.email"
+                              (click)="ask(invitation)"
+                            >
+                              Revoke
+                            </button>
+                          }
+                        }
+                      </span>
                     }
                   </td>
                 </tr>

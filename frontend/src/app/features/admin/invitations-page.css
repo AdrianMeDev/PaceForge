@@ -33,9 +33,28 @@ td {
   font-weight: 600;
 }
 
-.status[data-status='revoked'],
-.status[data-status='expired'] {
+.status[data-status='revoked'] {
   color: var(--muted);
+}
+
+.status[data-status='expired'] {
+  color: var(--warning);
+  font-weight: 600;
+}
+
+.notice {
+  margin: 0 0 0.75rem;
+}
+
+.sent-at {
+  white-space: nowrap;
+}
+
+.row-buttons {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .row-actions {

@@ -1,8 +1,11 @@
+import smtplib
 import uuid
+from datetime import timedelta
 from http import HTTPStatus
 from urllib.parse import parse_qs, urlparse
 
 import pytest
+from django.core import mail
 
 from accounts.models import User, UserInvitation
 from accounts.services.invitations import consume_invitation, create_invitation
@@ -93,7 +96,7 @@ def test_list_never_exposes_tokens_or_hashes(staff_api: AuthApi, verified_staff:
 
     assert response.status_code == HTTPStatus.OK
     [item] = response.json()
-    assert set(item) == {"id", "email", "status", "created_at", "expires_at"}
+    assert set(item) == {"id", "email", "status", "created_at", "expires_at", "sent_at"}
     assert created.token not in response.content.decode()
     assert created.invitation.token_hash not in response.content.decode()
 
@@ -144,3 +147,180 @@ def test_revoking_unknown_invitation_returns_404(staff_api: AuthApi) -> None:
     response = staff_api.call("POST", f"{URL}{uuid.uuid4()}/revoke/")
 
     assert response.status_code == HTTPStatus.NOT_FOUND
+
+
+def token_of(url: str) -> str:
+    return parse_qs(urlparse(url).query)["invitation"][0]
+
+
+def signup(token: str, email: str = "invitee@example.com") -> int:
+    response = AuthApi().request(
+        "POST",
+        "/auth/signup",
+        {"email": email, "password": PASSWORD, "invitation_token": token},
+    )
+    return response.status_code
+
+
+def test_create_sends_one_email_with_a_working_link(staff_api: AuthApi) -> None:
+    response = staff_api.call("POST", URL, {"email": "invitee@example.com"})
+
+    body = response.json()
+    assert body["email_sent"] is True
+    assert body["sent_at"] is not None
+    [message] = mail.outbox
+    assert message.to == ["invitee@example.com"]
+    assert body["invite_url"] in message.body
+    assert signup(token_of(body["invite_url"])) == HTTPStatus.UNAUTHORIZED
+    assert User.objects.filter(email="invitee@example.com").exists()
+
+
+def test_create_survives_an_smtp_failure(
+    staff_api: AuthApi, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def failing_send(*args, **kwargs):
+        raise smtplib.SMTPException("refused")
+
+    monkeypatch.setattr("accounts.services.invitations.send_mail", failing_send)
+
+    response = staff_api.call("POST", URL, {"email": "invitee@example.com"})
+
+    assert response.status_code == HTTPStatus.CREATED
+    body = response.json()
+    assert body["email_sent"] is False
+    assert body["sent_at"] is None
+    assert mail.outbox == []
+    # The link still works, so the admin can hand it on.
+    assert signup(token_of(body["invite_url"])) == HTTPStatus.UNAUTHORIZED
+
+
+def test_resend_rotates_the_link_of_a_pending_invitation(
+    staff_api: AuthApi, verified_staff: User
+) -> None:
+    created = create_invitation(invited_by=verified_staff, email="invitee@example.com")
+
+    response = staff_api.call("POST", f"{URL}{created.invitation.pk}/resend/")
+
+    assert response.status_code == HTTPStatus.OK
+    body = response.json()
+    assert body["email_sent"] is True
+    assert body["status"] == "pending"
+    assert body["sent_at"] is not None
+    [message] = mail.outbox
+    assert body["invite_url"] in message.body
+    new_token = token_of(body["invite_url"])
+    assert new_token != created.token
+    assert signup(created.token) == HTTPStatus.BAD_REQUEST
+    assert signup(new_token) == HTTPStatus.UNAUTHORIZED
+
+
+def test_resend_revives_an_expired_invitation(staff_api: AuthApi, verified_staff: User) -> None:
+    created = create_invitation(
+        invited_by=verified_staff, email="invitee@example.com", ttl=timedelta(days=-1)
+    )
+    assert created.invitation.status == "expired"
+
+    response = staff_api.call("POST", f"{URL}{created.invitation.pk}/resend/")
+
+    assert response.status_code == HTTPStatus.OK
+    assert response.json()["status"] == "pending"
+    assert len(mail.outbox) == 1
+    assert signup(created.token) == HTTPStatus.BAD_REQUEST
+    assert signup(token_of(response.json()["invite_url"])) == HTTPStatus.UNAUTHORIZED
+
+
+def test_resend_reports_an_smtp_failure(
+    staff_api: AuthApi, verified_staff: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    created = create_invitation(invited_by=verified_staff, email="invitee@example.com")
+
+    def failing_send(*args, **kwargs):
+        raise OSError("connection refused")
+
+    monkeypatch.setattr("accounts.services.invitations.send_mail", failing_send)
+
+    response = staff_api.call("POST", f"{URL}{created.invitation.pk}/resend/")
+
+    assert response.status_code == HTTPStatus.OK
+    assert response.json()["email_sent"] is False
+    assert signup(token_of(response.json()["invite_url"])) == HTTPStatus.UNAUTHORIZED
+
+
+def test_resend_refuses_used_and_revoked_invitations(
+    staff_api: AuthApi, verified_staff: User
+) -> None:
+    used = create_invitation(invited_by=verified_staff, email="used@example.com")
+    consume_invitation(used.token, user=User.objects.create_user("used@example.com"))
+    revoked = create_invitation(invited_by=verified_staff, email="revoked@example.com")
+    staff_api.call("POST", f"{URL}{revoked.invitation.pk}/revoke/")
+
+    for invitation in (used.invitation, revoked.invitation):
+        response = staff_api.call("POST", f"{URL}{invitation.pk}/resend/")
+        assert response.status_code == HTTPStatus.CONFLICT
+
+    assert mail.outbox == []
+    assert signup(revoked.token, "revoked@example.com") == HTTPStatus.BAD_REQUEST
+
+
+def test_resending_unknown_invitation_returns_404(staff_api: AuthApi) -> None:
+    response = staff_api.call("POST", f"{URL}{uuid.uuid4()}/resend/")
+
+    assert response.status_code == HTTPStatus.NOT_FOUND
+    assert mail.outbox == []
+
+
+def test_resend_is_refused_for_anonymous_and_non_staff(
+    api: AuthApi, verified_staff: User, verified_user: User
+) -> None:
+    created = create_invitation(invited_by=verified_staff, email="a@example.com")
+    resend = f"{URL}{created.invitation.pk}/resend/"
+    assert api.call("POST", resend).status_code == HTTPStatus.FORBIDDEN
+
+    assert api.login(verified_user.email).status_code == HTTPStatus.OK
+    assert api.call("POST", resend).status_code == HTTPStatus.FORBIDDEN
+
+    assert mail.outbox == []
+    assert UserInvitation.objects.get(pk=created.invitation.pk).token_hash == (
+        created.invitation.token_hash
+    )
+
+
+def test_resend_is_refused_for_staff_without_mfa(api: AuthApi, verified_staff: User) -> None:
+    created = create_invitation(invited_by=verified_staff, email="a@example.com")
+    assert api.login(verified_staff.email).status_code == HTTPStatus.OK
+
+    response = api.call("POST", f"{URL}{created.invitation.pk}/resend/")
+
+    assert response.status_code == HTTPStatus.FORBIDDEN
+    assert mail.outbox == []
+
+
+def test_resend_requires_csrf_token(staff_api: AuthApi, verified_staff: User) -> None:
+    created = create_invitation(invited_by=verified_staff, email="a@example.com")
+
+    response = staff_api.client.post(
+        f"{URL}{created.invitation.pk}/resend/", content_type="application/json"
+    )
+
+    assert response.status_code == HTTPStatus.FORBIDDEN
+    assert mail.outbox == []
+
+
+def test_create_is_rate_limited_but_listing_is_not(staff_api: AuthApi) -> None:
+    statuses = [
+        staff_api.call("POST", URL, {"email": f"user{i}@example.com"}).status_code
+        for i in range(21)
+    ]
+
+    assert statuses == [HTTPStatus.CREATED] * 20 + [HTTPStatus.TOO_MANY_REQUESTS]
+    assert staff_api.call("GET", URL).status_code == HTTPStatus.OK
+
+
+def test_resend_is_rate_limited(staff_api: AuthApi, verified_staff: User) -> None:
+    created = create_invitation(invited_by=verified_staff, email="a@example.com")
+    resend = f"{URL}{created.invitation.pk}/resend/"
+
+    statuses = [staff_api.call("POST", resend).status_code for _ in range(21)]
+
+    assert statuses == [HTTPStatus.OK] * 20 + [HTTPStatus.TOO_MANY_REQUESTS]
+    assert len(mail.outbox) == 20

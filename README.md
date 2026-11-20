@@ -8,7 +8,7 @@ A self-hostable, AI-assisted endurance coach for running, cycling, swimming and 
 The long-term goal is described in `PROJECT_PLAN.md`; this repository is in early development.
 
 **What works today:** accounts for a multi-user instance, invitation-only registration with an
-admin page for invitations, email verification, sign-in and sign-out with server-side sessions,
+admin page that emails invitations and resends them ([Invitations](docs/invitations.md)), email verification, sign-in and sign-out with server-side sessions,
 password reset, two-factor authentication (authenticator app plus recovery codes, mandatory for
 administrators), a personal Intervals.icu connection with an API key (stored encrypted), importing
 activities from FIT, TCX and GPX files (also the whole Strava export) and syncing non-Strava
@@ -24,8 +24,7 @@ AI coach drafts a training week that you read, change by hand, confirm or discar
 ([Season](#season)), a **Week review** page that shows how a week went against the confirmed plan, on which you rate your
 sessions, say how the week felt and ask your coach about it ([Week review](#week-review)), and the
 data-isolation foundation the training features will build on.
-**Not there yet:** sending
-invitations by email (the administrator hands the link on) and more of the coach: it drafts a
+**Not there yet:** more of the coach: it drafts a
 week, but you cannot yet change a draft by talking to it, and it has not been tried against a real
 provider (see [Week plan](#week-plan)). Before an instance is exposed to the
 internet, read [Instance key](#instance-key): secrets in the database are encrypted, and the key
@@ -142,14 +141,17 @@ it is:
 
 ## Manual walkthrough: invitation to working account
 
-Administrators create invitations on the **Invitations** page. Nothing is sent by email: you get a
-link and hand it on yourself. The rest is what a new user sees.
+Administrators invite people on the **Invitations** page. PaceForge emails the signup link to the
+person, so one email is sent per invitation, and also shows the link once, so you can hand it on
+yourself if the mail does not arrive. Sending, resending and expired invitations are described in
+[docs/invitations.md](docs/invitations.md). The rest is what a new user sees.
 
 1. **Create an invitation.** Sign in as the administrator (with two-factor authentication turned on,
-   see above), choose **Invitations** in the navigation, enter `ann@example.com` and press **Create
-   invitation**. The link is shown **once**; press **Copy link** and send it to the person. If you
-   lose it, revoke the invitation in the list and create a new one. Open the link in a private
-   window so you stay signed in as the administrator in the other one.
+   see above), choose **Invitations** in the navigation, enter `ann@example.com` and press **Send
+   invitation by email**. The page says whether the email was sent. The link is shown **once**; keep
+   it as a fallback or press **Copy link** and send it to the person. If the link is lost, press
+   **Resend** on the invitation: the old link stops working. Open the link in a private window so
+   you stay signed in as the administrator in the other one.
 2. **Sign up.** The email address is prefilled and read-only. Choose a password. The page says a
    confirmation link was sent.
 3. **Confirm the address.** Open Mailpit (<http://localhost:8025>), open the message and follow
@@ -160,10 +162,11 @@ link and hand it on yourself. The rest is what a new user sees.
    open the mail in Mailpit, follow the link and choose a new password. You land on the sign-in
    page with a notice; the old password no longer works.
 
-An invitation is valid for 7 days, works once and is bound to the address it was created for. Using
-the link a second time, or after it was revoked, shows "This invitation is invalid, has expired or
-was issued for a different email address." The list on the Invitations page shows each invitation as
-pending, used, revoked or expired; only pending ones can be revoked.
+An invitation is valid for `INVITATION_TTL_DAYS` days (7 by default), works once and is bound to the
+address it was created for. Using the link a second time, or after it was revoked, shows "This
+invitation is invalid, has expired or was issued for a different email address." The list on the
+Invitations page shows each invitation as pending, used, revoked or expired. Pending and expired
+ones can be resent; only pending ones can be revoked.
 
 ## Two-factor authentication
 
@@ -1684,7 +1687,7 @@ Set in `.env` or in the environment. Values without a default are required.
 | `BACKUP_KEEP_DAILY`            | `7`                                 | Days of backups to keep, the newest of each day (whole number from 1 to 365). |
 | `BACKUP_KEEP_WEEKLY`           | `4`                                 | Weeks of backups to keep, the newest of each week (whole number from 0 to 104). |
 | `REGISTRATION_MODE`            | `invite_only`                       | `closed`, `invite_only` or `open`. Anything else stops Django at startup.         |
-| `INVITATION_TTL_DAYS`          | `7`                                 | How long an invitation stays valid.                                               |
+| `INVITATION_TTL_DAYS`          | `7`                                 | How long an invitation stays valid, counted again from each resend. See [docs/invitations.md](docs/invitations.md). |
 | `INTERVALS_API_BASE_URL`       | `https://intervals.icu/api/v1`      | Only for tests or a fake server: where the Intervals.icu API is. `http://` or `https://`. |
 | `INTERVALS_SYNC_WEEKS`         | `12`                                | Number of weeks of recent activities fetched from Intervals.icu on sync (whole number from 8 to 12). |
 | `JOBS_SYNC_HOURS`              | `6`                                 | Hours between two syncs of the scheduler (whole number from 1 to 24). |

@@ -225,6 +225,7 @@ REST_FRAMEWORK = {
         "chat": "10/min",
         "account_export": "5/min",
         "account_delete": "5/min",
+        "invitation_email": "20/min",
     },
 }
 

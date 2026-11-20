@@ -126,8 +126,12 @@ Then complete the initial sign-in in your browser:
    with an authenticator app, enter the 6-digit code, confirm your password, and save the recovery
    codes.
 3. **Invite users:** open **Invitations** in the navigation, enter a user's email address, and press
-   **Create invitation**. Copy the one-time link and send it to them. Invitations expire after
-   `INVITATION_TTL_DAYS` days (default `7`).
+   **Send invitation by email**. PaceForge emails the signup link to them, one email per invitation,
+   and shows the link once. Keep the link in case the email does not arrive. The email needs the
+   `SMTP_*` settings from step 1; with `SMTP_HOST` empty it only goes to the `backend` container log,
+   so copy the link then. Invitations expire after `INVITATION_TTL_DAYS` days (default `7`).
+   **Resend** on a pending or expired invitation issues a new link and a new expiry, and the old link
+   stops working. See [Invitations](invitations.md).
 
 ## Registration modes
 

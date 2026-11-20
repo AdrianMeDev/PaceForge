@@ -17,7 +17,9 @@ const PENDING: Invitation = {
   status: 'pending',
   created_at: '2026-11-12T21:07:49.046419Z',
   expires_at: '2026-11-19T21:07:49.046339Z',
+  sent_at: null,
 };
+const SENT: Invitation = { ...PENDING, sent_at: '2026-11-12T21:07:50.512003Z' };
 
 const MFA_REQUIRED = {
   detail: 'Two-factor authentication must be turned on for administrators.',
@@ -66,6 +68,12 @@ describe('InvitationsApi', () => {
       expect(result).toEqual({ kind: 'ok', invitations: [] });
     });
 
+    it('keeps the time the invitation mail was sent, or null before any mail', async () => {
+      const { result } = await run(api.list(), 'GET', URL, [SENT, PENDING], 200);
+
+      expect(result).toEqual({ kind: 'ok', invitations: [SENT, PENDING] });
+    });
+
     it('tells an administrator without two-factor authentication from other refusals', async () => {
       const { result } = await run(api.list(), 'GET', URL, MFA_REQUIRED, 403);
 
@@ -90,10 +98,8 @@ describe('InvitationsApi', () => {
   });
 
   describe('create', () => {
-    const CREATED = {
-      ...PENDING,
-      invite_url: 'http://localhost:4200/account/signup?invitation=tok&email=a%40b.de',
-    };
+    const LINK = 'http://localhost:4200/account/signup?invitation=tok&email=a%40b.de';
+    const CREATED = { ...SENT, invite_url: LINK, email_sent: true };
 
     it('sends the email address in the body', async () => {
       const { request } = await run(api.create('invitee@example.com'), 'POST', URL, CREATED, 201);
@@ -106,12 +112,38 @@ describe('InvitationsApi', () => {
 
       expect(result).toEqual({
         kind: 'created',
-        invitation: PENDING,
-        inviteUrl: CREATED.invite_url,
+        invitation: SENT,
+        inviteUrl: LINK,
+        emailSent: true,
       });
       expect(JSON.stringify(result.kind === 'created' ? result.invitation : {})).not.toContain(
         'tok',
       );
+    });
+
+    it('reports whether the invitation mail could not be delivered', async () => {
+      const body = { ...PENDING, invite_url: LINK, email_sent: false };
+
+      const { result } = await run(api.create('invitee@example.com'), 'POST', URL, body, 201);
+
+      expect(result).toEqual({
+        kind: 'created',
+        invitation: PENDING,
+        inviteUrl: LINK,
+        emailSent: false,
+      });
+    });
+
+    it('reports a rate limit when too many invitation mails were sent', async () => {
+      const { result } = await run(
+        api.create('invitee@example.com'),
+        'POST',
+        URL,
+        { detail: 'Request was throttled.' },
+        429,
+      );
+
+      expect(result).toEqual({ kind: 'rate_limited' });
     });
 
     it.each([
@@ -143,6 +175,105 @@ describe('InvitationsApi', () => {
 
     it('rejects on unexpected server errors', async () => {
       await expect(run(api.create('a@b.de'), 'POST', URL, 'boom', 500)).rejects.toBeDefined();
+    });
+  });
+
+  describe('resend', () => {
+    const RESEND = `${URL}${ID}/resend/`;
+    const LINK = 'http://localhost:4200/account/signup?invitation=new&email=a%40b.de';
+    const RESENT = { ...SENT, invite_url: LINK, email_sent: true };
+
+    it('posts to the resend address of that invitation', async () => {
+      const { request } = await run(api.resend(ID), 'POST', RESEND, RESENT, 200);
+
+      expect(request.request.method).toBe('POST');
+      expect(request.request.body).toEqual({});
+    });
+
+    it('returns the invitation with the new link and the mail result', async () => {
+      const { result } = await run(api.resend(ID), 'POST', RESEND, RESENT, 200);
+
+      expect(result).toEqual({
+        kind: 'resent',
+        invitation: SENT,
+        inviteUrl: LINK,
+        emailSent: true,
+      });
+    });
+
+    it('reports a mail that could not be delivered without failing the resend', async () => {
+      const body = { ...RESENT, email_sent: false };
+
+      const { result } = await run(api.resend(ID), 'POST', RESEND, body, 200);
+
+      expect(result).toEqual({
+        kind: 'resent',
+        invitation: SENT,
+        inviteUrl: LINK,
+        emailSent: false,
+      });
+    });
+
+    it('reports an invitation that was used or revoked', async () => {
+      const { result } = await run(
+        api.resend(ID),
+        'POST',
+        RESEND,
+        { detail: 'A used or revoked invitation cannot be sent again.' },
+        409,
+      );
+
+      expect(result).toEqual({ kind: 'conflict' });
+    });
+
+    it('reports an unknown invitation', async () => {
+      const { result } = await run(
+        api.resend(ID),
+        'POST',
+        RESEND,
+        { detail: 'No UserInvitation matches the given query.' },
+        404,
+      );
+
+      expect(result).toEqual({ kind: 'not_found' });
+    });
+
+    it('reports a rate limit', async () => {
+      const { result } = await run(
+        api.resend(ID),
+        'POST',
+        RESEND,
+        { detail: 'Request was throttled.' },
+        429,
+      );
+
+      expect(result).toEqual({ kind: 'rate_limited' });
+    });
+
+    it('tells the two kinds of refusal apart', async () => {
+      const first = await run(api.resend(ID), 'POST', RESEND, MFA_REQUIRED, 403);
+      const second = await run(api.resend(ID), 'POST', RESEND, PLAIN_REFUSAL, 403);
+
+      expect(first.result).toEqual({ kind: 'mfa_required' });
+      expect(second.result).toEqual({ kind: 'forbidden' });
+    });
+
+    it('keeps odd characters of an id out of the address', async () => {
+      const weird = '../../x?y=1';
+      const { request } = await run(
+        api.resend(weird),
+        'POST',
+        `${URL}${encodeURIComponent(weird)}/resend/`,
+        { detail: 'nope' },
+        404,
+      );
+
+      expect(request.request.url).not.toContain('../');
+      expect(request.request.url).not.toContain('?');
+    });
+
+    it('rejects on unexpected server errors', async () => {
+      await expect(run(api.resend(ID), 'POST', RESEND, 'boom', 500)).rejects.toBeDefined();
     });
   });
 
