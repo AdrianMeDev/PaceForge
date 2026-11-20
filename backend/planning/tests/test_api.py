@@ -10,7 +10,7 @@ import pytest
 from django.db import connection
 from django.http import QueryDict
 from django.test.utils import CaptureQueriesContext
-from rest_framework.parsers import FormParser
+from rest_framework.parsers import FormParser, JSONParser
 from rest_framework.request import Request
 from rest_framework.test import APIRequestFactory
 
@@ -479,6 +479,45 @@ class TestGenerating:
 
             assert response.status_code == HTTPStatus.BAD_REQUEST
             assert MARKER not in response.content.decode()
+
+    def test_deeply_nested_body_is_bad_request_and_asks_nothing(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        scripted = provide(good())
+        api = signed_in(alice)
+        deep = "[" * 1500 + f'"{MARKER}"' + "]" * 1500
+
+        response = api.client.post(
+            generate_url(),
+            data=deep,
+            content_type="application/json",
+            headers={"X-CSRFToken": api._csrf_token()},
+        )
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert MARKER not in response.content.decode()
+        assert scripted.calls == []
+        assert not WeeklyPlan.objects.exists()
+
+    def test_decoder_recursion_error_is_bad_request_and_asks_nothing(
+        self,
+        alice: User,
+        provide: Callable[..., Scripted],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        scripted = provide(good())
+
+        def _boom(*_args: Any, **_kwargs: Any) -> Any:
+            raise RecursionError(MARKER)
+
+        monkeypatch.setattr(JSONParser, "parse", _boom)
+
+        response = signed_in(alice).call("POST", generate_url(), {"note": MARKER})
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert MARKER not in response.content.decode()
+        assert scripted.calls == []
+        assert not WeeklyPlan.objects.exists()
 
     def test_rule_errors_are_part_of_the_answer_not_a_failure(
         self, alice: User, provide: Callable[..., Scripted]
@@ -1954,3 +1993,46 @@ class TestConfirmingAndSending:
             api.call("POST", plan_url(confirmed.pk, "push/")).status_code
             == HTTPStatus.TOO_MANY_REQUESTS
         )
+
+    def test_deeply_nested_body_is_bad_request_and_changes_nothing(
+        self, alice: User, calendar: Calendar
+    ) -> None:
+        connect_intervals(alice)
+        plan = draft(alice)
+        api = signed_in(alice)
+        deep = "[" * 1500 + f'"{MARKER}"' + "]" * 1500
+
+        response = api.client.post(
+            plan_url(plan.pk, "confirm/"),
+            data=deep,
+            content_type="application/json",
+            headers={"X-CSRFToken": api._csrf_token()},
+        )
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert MARKER not in response.content.decode()
+        plan.refresh_from_db()
+        assert plan.status == Status.DRAFT
+        assert calendar.calls == []
+
+    def test_decoder_recursion_error_is_bad_request_and_changes_nothing(
+        self,
+        alice: User,
+        calendar: Calendar,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        connect_intervals(alice)
+        plan = draft(alice)
+
+        def _boom(*_args: Any, **_kwargs: Any) -> Any:
+            raise RecursionError(MARKER)
+
+        monkeypatch.setattr(JSONParser, "parse", _boom)
+
+        response = signed_in(alice).call("POST", plan_url(plan.pk, "confirm/"), {"push": True})
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert MARKER not in response.content.decode()
+        plan.refresh_from_db()
+        assert plan.status == Status.DRAFT
+        assert calendar.calls == []
