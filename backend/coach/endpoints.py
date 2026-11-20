@@ -4,9 +4,34 @@ Pure functions without Django imports besides the settings error: ``config/setti
 while it is being read.
 """
 
+import re
+from collections.abc import Sequence
 from urllib.parse import urlsplit
 
 from django.core.exceptions import ImproperlyConfigured
+
+# Python and PostgreSQL both support these anchors. API prefixes such as /v1 are allowed.
+_PORT = (
+    r"(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]|0)"
+)
+# List Unicode whitespace explicitly as PostgreSQL's \s depends on its locale. NUL is
+# rejected by normalize_base_url and cannot be stored in PostgreSQL text at all.
+_FORBIDDEN = r"\s\x01-\x1f\x7f-\x9f" + "\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000"
+BASE_URL_DB_PATTERN = (
+    r"\Ahttps?://(?:[a-z0-9._~-]+|\[[0-9a-f:.]+\])"
+    rf"(?::{_PORT})?"
+    rf"(?:/[^{_FORBIDDEN}?#]*[^/{_FORBIDDEN}?#])?\Z"
+)
+
+
+def resolve_allowed_base_url(address: str, allowed: Sequence[str]) -> str | None:
+    """Return the matching canonical entry, refusing even matching malformed settings.
+
+    Configuration and calls require the exact canonical text of the parsed allowlist.
+    """
+    if normalize_base_url(address) != address:
+        return None
+    return next((entry for entry in allowed if entry == address), None)
 
 
 def parse_base_urls(setting: str, values: list[str]) -> tuple[str, ...]:
@@ -19,7 +44,7 @@ def parse_base_urls(setting: str, values: list[str]) -> tuple[str, ...]:
         text = raw.strip()
         if not text:
             continue
-        found_one = _normal_form(text)
+        found_one = normalize_base_url(text)
         if found_one is None:
             raise ImproperlyConfigured(
                 f"{setting}, entry {position}: use http:// or https://, a host, an optional port "
@@ -30,7 +55,13 @@ def parse_base_urls(setting: str, values: list[str]) -> tuple[str, ...]:
     return tuple(found)
 
 
-def _normal_form(text: str) -> str | None:
+def normalize_base_url(text: str) -> str | None:
+    """Normalize an HTTP(S) base URL, refusing whitespace and control characters."""
+    if any(
+        character.isspace() or ord(character) < 32 or 127 <= ord(character) <= 159
+        for character in text
+    ):
+        return None
     try:
         parts = urlsplit(text)
         port = parts.port  # raises ValueError for a port that is no number or out of range
@@ -48,4 +79,5 @@ def _normal_form(text: str) -> str | None:
     if ":" in host:  # an IPv6 address
         host = f"[{host}]"
     netloc = host if port is None else f"{host}:{port}"
-    return f"{parts.scheme}://{netloc}{parts.path.rstrip('/')}"
+    normalized = f"{parts.scheme}://{netloc}{parts.path.rstrip('/')}"
+    return normalized if re.fullmatch(BASE_URL_DB_PATTERN, normalized) else None

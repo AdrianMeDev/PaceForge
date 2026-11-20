@@ -1927,7 +1927,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** -
 - **Size:** M, ~5 commits
 
-### M7 [ ] Audit: AI provider transport and JSON decoding
+### M7 [~] Audit: AI provider transport and JSON decoding
 
 - **Goal:** Restrict outbound calls to operator-approved destinations and keep transport errors and non-finite numbers out of provider results.
 - **Includes:** F233 (stored endpoint validation), F243 (allowlist test), F234 (header errors exposing keys), F223 (numeric overflow), F239 (JSON error positions).

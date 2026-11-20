@@ -151,6 +151,33 @@ class TestJsonOutput:
         assert fake.requests[0]["json"]["response_format"] == {"type": "json_object"}
 
 
+class TestAllowedAddress:
+    def test_allowlist_is_checked_again_before_the_call(
+        self, settings: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        address = "https://example.org/v1"
+        settings.AI_ALLOWED_BASE_URLS = (address,)
+        chosen = provider(address)
+        settings.AI_ALLOWED_BASE_URLS = ()
+
+        def unexpected_call(*args: object, **kwargs: object) -> object:
+            pytest.fail("A removed endpoint must not receive a request.")
+
+        monkeypatch.setattr(openai_compatible, "post_json", unexpected_call)
+        with pytest.raises(
+            EndpointNotAllowedError, match="This address is not allowed on this server."
+        ):
+            chosen.complete("", HELLO, 10)
+
+    @pytest.mark.parametrize(
+        "address", ["ftp://example.org", "https://example.org/", "https://example.org/a\nb"]
+    )
+    def test_invalid_allowlist_override_is_refused(self, settings: Any, address: str) -> None:
+        settings.AI_ALLOWED_BASE_URLS = (address,)
+        with pytest.raises(EndpointNotAllowedError):
+            provider(address)
+
+
 class TestTheRequest:
     def test_it_goes_to_chat_completions_with_a_bearer_key(
         self, fake: FakeProvider, base: str

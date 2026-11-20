@@ -10,6 +10,8 @@ from django.db.models import Q
 from core.fields import EncryptedTextField
 from core.models import OwnedModel
 
+from .endpoints import BASE_URL_DB_PATTERN, resolve_allowed_base_url
+
 MODEL_MAX = 100
 BASE_URL_MAX = 200
 # Names such as claude-sonnet-5-5, gpt-4o, llama3.1:8b or org/model-name.
@@ -79,6 +81,10 @@ class AIProviderConfiguration(OwnedModel):
     class Meta:
         constraints = [
             models.UniqueConstraint(fields=["owner"], name="coach_one_provider_per_owner"),
+            models.CheckConstraint(
+                condition=Q(base_url="") | Q(base_url__regex=BASE_URL_DB_PATTERN),
+                name="coach_base_url_http_origin",
+            ),
             models.CheckConstraint(condition=~Q(model=""), name="coach_model_not_empty"),
             models.CheckConstraint(
                 condition=~Q(provider="anthropic") | Q(base_url=""),
@@ -114,8 +120,12 @@ class AIProviderConfiguration(OwnedModel):
         elif self.provider == self.Provider.OPENAI_COMPATIBLE:
             if not self.base_url:
                 errors["base_url"] = "Choose the address of the endpoint."
-            elif self.base_url not in settings.AI_ALLOWED_BASE_URLS:
-                errors["base_url"] = "This address is not allowed on this server."
+            else:
+                address = resolve_allowed_base_url(self.base_url, settings.AI_ALLOWED_BASE_URLS)
+                if address is None:
+                    errors["base_url"] = "This address is not allowed on this server."
+                else:
+                    self.base_url = address
         if self.api_key and (
             len(self.api_key) > KEY_MAX or not KEY_PATTERN.fullmatch(self.api_key)
         ):
