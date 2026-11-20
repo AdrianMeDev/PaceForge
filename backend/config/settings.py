@@ -223,6 +223,8 @@ REST_FRAMEWORK = {
         "planning_push": "10/min",
         "review_comment": "5/min",
         "chat": "10/min",
+        "account_export": "5/min",
+        "account_delete": "5/min",
     },
 }
 

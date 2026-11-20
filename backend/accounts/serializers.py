@@ -35,3 +35,14 @@ class MeSerializer(serializers.ModelSerializer[User]):
             "mfa_enabled": mfa_enabled,
             "mfa_setup_required": instance.is_staff and not mfa_enabled,
         }
+
+
+class AccountDeleteSerializer(serializers.Serializer):
+    """What the athlete must give to delete the account: the email, the password and, with an
+    authenticator app, a code. Nothing of it is ever echoed back."""
+
+    confirmation = serializers.CharField(trim_whitespace=False, write_only=True)
+    password = serializers.CharField(trim_whitespace=False, write_only=True)
+    mfa_code = serializers.CharField(
+        required=False, allow_blank=True, trim_whitespace=False, write_only=True
+    )

@@ -88,6 +88,11 @@ export class AuthStore {
     this.setAnonymous([]);
   }
 
+  /** Forgets the user locally, for a session the server has already ended (e.g. by deletion). */
+  clearSession(): void {
+    this.setAnonymous([]);
+  }
+
   private async loadUser(): Promise<void> {
     this._user.set(await this.api.getMe());
     this._pendingFlows.set([]);

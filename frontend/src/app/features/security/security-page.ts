@@ -8,6 +8,8 @@ import { ActivatedRoute } from '@angular/router';
 import { ConfirmDialog } from '../../shared/confirm-dialog';
 import { PageHeader } from '../../shared/page-header';
 import { QrCode } from '../../shared/qr-code';
+import { DataExportPanel } from './data-export-panel';
+import { DeleteAccountPanel } from './delete-account-panel';
 
 type View = 'loading' | 'unreachable' | 'off' | 'setup' | 'on' | 'codes';
 
@@ -42,7 +44,14 @@ function noticeFor(key: string | null): string | null {
  */
 @Component({
   selector: 'app-security-page',
-  imports: [ReactiveFormsModule, ConfirmDialog, PageHeader, QrCode],
+  imports: [
+    ReactiveFormsModule,
+    ConfirmDialog,
+    PageHeader,
+    QrCode,
+    DataExportPanel,
+    DeleteAccountPanel,
+  ],
   templateUrl: './security-page.html',
   styleUrl: './security-page.css',
 })

@@ -1,0 +1,96 @@
+<section class="card" aria-labelledby="delete-heading">
+  <h2 id="delete-heading" class="m-0 mb-3 text-lg font-semibold">Delete account</h2>
+
+  @if (alert(); as message) {
+    <p class="alert" role="alert">{{ message }}</p>
+  }
+
+  <p>
+    Deleting your account <strong>permanently</strong> removes your profile, goals, activities,
+    plans, chat history and settings from PaceForge. This cannot be undone. Download your data first
+    if you want to keep a copy.
+  </p>
+  <p class="hint">
+    Only PaceForge is changed. Your data and workouts on Intervals.icu stay as they are.
+  </p>
+
+  <form [formGroup]="form" (ngSubmit)="ask()" novalidate>
+    <div class="field">
+      <label for="delete-confirmation">Type your email address ({{ user()?.email }})</label>
+      <input
+        id="delete-confirmation"
+        type="email"
+        formControlName="confirmation"
+        autocomplete="off"
+        [attr.aria-invalid]="
+          (form.controls.confirmation.touched && form.controls.confirmation.invalid) ||
+          mismatch() ||
+          serverErrors().confirmation !== undefined
+        "
+      />
+      @if (form.controls.confirmation.touched && form.controls.confirmation.invalid) {
+        <p class="field-error">Enter your email address to confirm.</p>
+      } @else if (mismatch()) {
+        <p class="field-error">This is not the email address of your account.</p>
+      }
+      @if (serverErrors().confirmation; as message) {
+        <p class="field-error">{{ message }}</p>
+      }
+    </div>
+
+    <div class="field">
+      <label for="delete-password">Password</label>
+      <input
+        id="delete-password"
+        type="password"
+        formControlName="password"
+        autocomplete="current-password"
+        [attr.aria-invalid]="
+          (form.controls.password.touched && form.controls.password.invalid) ||
+          serverErrors().password !== undefined
+        "
+      />
+      @if (form.controls.password.touched && form.controls.password.invalid) {
+        <p class="field-error">Enter your password.</p>
+      }
+      @if (serverErrors().password; as message) {
+        <p class="field-error">{{ message }}</p>
+      }
+    </div>
+
+    @if (user()?.mfa_enabled) {
+      <div class="field">
+        <label for="delete-mfa-code">Authenticator or recovery code</label>
+        <input
+          id="delete-mfa-code"
+          type="text"
+          inputmode="numeric"
+          formControlName="mfaCode"
+          autocomplete="one-time-code"
+          [attr.aria-invalid]="
+            (form.controls.mfaCode.touched && form.controls.mfaCode.invalid) ||
+            serverErrors().mfaCode !== undefined
+          "
+        />
+        @if (form.controls.mfaCode.touched && form.controls.mfaCode.invalid) {
+          <p class="field-error">Enter the code from your app.</p>
+        }
+        @if (serverErrors().mfaCode; as message) {
+          <p class="field-error">{{ message }}</p>
+        }
+      </div>
+    }
+
+    <button type="submit" class="btn btn-danger" [disabled]="busy()">
+      {{ busy() ? 'Deleting…' : 'Delete my account' }}
+    </button>
+  </form>
+
+  <app-confirm-dialog
+    title="Delete your account?"
+    message="Your account and all its data will be deleted for good. This cannot be undone."
+    confirmLabel="Delete account"
+    [danger]="true"
+    (confirmed)="delete()"
+  />
+</section>

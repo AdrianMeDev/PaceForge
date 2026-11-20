@@ -1,0 +1,19 @@
+<section class="card" aria-labelledby="export-heading">
+  <h2 id="export-heading" class="m-0 mb-3 text-lg font-semibold">Your data</h2>
+
+  @if (error(); as message) {
+    <p class="alert" role="alert">{{ message }}</p>
+  }
+
+  <p>
+    Download a copy of what PaceForge stores about you as one JSON file: your profile, goals,
+    availability, activities, training plans, season, reviews, chat history and settings.
+  </p>
+  <p class="hint">
+    The file does not contain your password, your two-factor secret and recovery codes, API keys, or
+    the uploaded activity files.
+  </p>
+  <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="download()">
+    {{ busy() ? 'Preparing…' : 'Download my data' }}
+  </button>
+</section>

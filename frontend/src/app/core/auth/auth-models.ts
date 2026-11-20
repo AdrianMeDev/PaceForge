@@ -118,3 +118,26 @@ export type RecoveryCodesResult =
 
 export type RegenerateRecoveryCodesResult =
   ({ kind: 'regenerated' } & RecoveryCodeSet) | ReauthenticationRequired;
+
+/** `file` is the JSON export; `filename` is the name the server suggests for it. */
+export type AccountExportResult =
+  | { kind: 'exported'; file: Blob; filename: string }
+  | { kind: 'forbidden' }
+  | { kind: 'rate_limited' };
+
+/** What the athlete typed to delete the account. Nothing here is kept after the request. */
+export interface DeleteAccountRequest {
+  /** The email address of the account, typed again. */
+  confirmation: string;
+  password: string;
+  /** Authenticator or recovery code; needed only when two-factor authentication is on. */
+  mfaCode?: string;
+}
+
+/** `invalid` carries one error per field (`confirmation`, `password`, `mfa_code`). */
+export type DeleteAccountResult =
+  | { kind: 'deleted' }
+  | { kind: 'invalid'; errors: ApiError[] }
+  | { kind: 'forbidden' }
+  | { kind: 'last_admin' }
+  | { kind: 'rate_limited' };

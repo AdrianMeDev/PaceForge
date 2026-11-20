@@ -1,10 +1,13 @@
-import { HttpClient, HttpErrorResponse, HttpResponse } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpHeaders, HttpResponse } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable, firstValueFrom } from 'rxjs';
 import { API_BASE, AUTH_BASE } from '../api/api-providers';
 import {
+  AccountExportResult,
   ApiError,
   AuthFlow,
+  DeleteAccountRequest,
+  DeleteAccountResult,
   EmailVerificationInfo,
   LoginResult,
   Me,
@@ -28,6 +31,11 @@ import {
 const EMAIL_VERIFICATION_KEY_HEADER = 'X-Email-Verification-Key';
 const PASSWORD_RESET_KEY_HEADER = 'X-Password-Reset-Key';
 
+const EXPORT_FALLBACK_FILENAME = 'paceforge-export.json';
+
+/** A plain file name, so the download cannot point to another folder or hide a dot file. */
+const SAFE_FILENAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+
 /** Keys travel in a header; anything but visible ASCII cannot be sent and cannot be a valid key. */
 const HEADER_SAFE = /^[\x21-\x7E]+$/;
 
@@ -48,6 +56,7 @@ const INVALID_RESET_KEY: ApiError = {
 interface Reply {
   status: number;
   body: unknown;
+  headers: HttpHeaders;
 }
 
 interface FlowsBody {
@@ -56,6 +65,11 @@ interface FlowsBody {
 
 interface ErrorsBody {
   errors?: ApiError[];
+}
+
+/** Error body of the `/api/me/` endpoints: a `code` for the cases the client handles. */
+interface ErrorBody {
+  code?: string;
 }
 
 interface EmailBody {
@@ -87,10 +101,13 @@ export class AuthApi {
   private async send(request: Observable<HttpResponse<unknown>>): Promise<Reply> {
     try {
       const response = await firstValueFrom(request);
-      return { status: response.status, body: response.body };
+      return { status: response.status, body: response.body, headers: response.headers };
     } catch (error) {
-      if (error instanceof HttpErrorResponse && [400, 401, 403, 404, 429].includes(error.status)) {
-        return { status: error.status, body: error.error };
+      if (
+        error instanceof HttpErrorResponse &&
+        [400, 401, 403, 404, 409, 429].includes(error.status)
+      ) {
+        return { status: error.status, body: error.error, headers: error.headers };
       }
       throw error;
     }
@@ -380,6 +397,59 @@ export class AuthApi {
   getMe(): Promise<Me> {
     return firstValueFrom(this.http.get<Me>(`${API_BASE}/me/`));
   }
+
+  /** Everything stored about the signed-in user, as a JSON file. */
+  async exportAccountData(): Promise<AccountExportResult> {
+    const reply = await this.send(
+      this.http.get(`${API_BASE}/me/export/`, { observe: 'response', responseType: 'blob' }),
+    );
+    switch (reply.status) {
+      case 200:
+        return {
+          kind: 'exported',
+          file: reply.body as Blob,
+          filename: exportFilenameOf(reply.headers.get('Content-Disposition')),
+        };
+      case 403:
+        return { kind: 'forbidden' };
+      case 429:
+        return { kind: 'rate_limited' };
+      default:
+        throw unexpected(reply);
+    }
+  }
+
+  /** Deletes the signed-in account and all its data; the server also ends the session. */
+  async deleteAccount({
+    confirmation,
+    password,
+    mfaCode = '',
+  }: DeleteAccountRequest): Promise<DeleteAccountResult> {
+    const reply = await this.send(
+      this.http.post(
+        `${API_BASE}/me/delete/`,
+        { confirmation, password, mfa_code: mfaCode },
+        { observe: 'response' },
+      ),
+    );
+    switch (reply.status) {
+      case 204:
+        return { kind: 'deleted' };
+      case 400:
+        return { kind: 'invalid', errors: fieldErrorsOf(reply.body) };
+      case 403:
+        return { kind: 'forbidden' };
+      case 409:
+        if ((reply.body as ErrorBody | null)?.code === 'last_admin') {
+          return { kind: 'last_admin' };
+        }
+        throw unexpected(reply);
+      case 429:
+        return { kind: 'rate_limited' };
+      default:
+        throw unexpected(reply);
+    }
+  }
 }
 
 function flowsOf(source: unknown): AuthFlow[] {
@@ -389,6 +459,24 @@ function flowsOf(source: unknown): AuthFlow[] {
 
 function errorsOf(body: unknown): ApiError[] {
   return (body as ErrorsBody | null)?.errors ?? [];
+}
+
+/** Django REST framework field errors: `{ "field": ["message", ...] }`. */
+function fieldErrorsOf(body: unknown): ApiError[] {
+  if (typeof body !== 'object' || body === null) {
+    return [];
+  }
+  return Object.entries(body).flatMap(([param, messages]) =>
+    Array.isArray(messages)
+      ? messages.map((message) => ({ code: 'invalid', message: String(message), param }))
+      : [],
+  );
+}
+
+/** The name from `attachment; filename="..."`, or a fixed name if it is missing or unsafe. */
+function exportFilenameOf(disposition: string | null): string {
+  const name = disposition?.match(/filename="([^"]+)"/)?.[1];
+  return name !== undefined && SAFE_FILENAME.test(name) ? name : EXPORT_FALLBACK_FILENAME;
 }
 
 function unexpected(reply: Reply): Error {

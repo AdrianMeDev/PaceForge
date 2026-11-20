@@ -1,7 +1,7 @@
 from django.http import HttpRequest, JsonResponse
 from django.urls import include, path
 
-from accounts.views import MeView
+from accounts.views import AccountDeleteView, AccountExportView, MeView
 
 
 def health(request: HttpRequest) -> JsonResponse:
@@ -12,6 +12,8 @@ urlpatterns = [
     path("api/health/", health, name="health"),
     path("api/auth/", include("allauth.headless.urls")),
     path("api/me/", MeView.as_view(), name="me"),
+    path("api/me/export/", AccountExportView.as_view(), name="account-export"),
+    path("api/me/delete/", AccountDeleteView.as_view(), name="account-delete"),
     path("api/admin/", include("accounts.urls")),
     path("api/integrations/", include("integrations.urls")),
     path("api/activities/", include("activities.urls")),

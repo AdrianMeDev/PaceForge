@@ -1,8 +1,13 @@
+import json
 from urllib.parse import urlencode
 
 from django.conf import settings
+from django.contrib.auth import logout
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import status
+from rest_framework.exceptions import ValidationError
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -10,15 +15,27 @@ from rest_framework.views import APIView
 from accounts.models import User, UserInvitation
 from accounts.permissions import IsMfaAdmin
 from accounts.serializers import (
+    AccountDeleteSerializer,
     InvitationCreateSerializer,
     InvitationSerializer,
     MeSerializer,
 )
+from accounts.services.deletion import (
+    AccountDeletionError,
+    ConfirmationMismatchError,
+    InvalidMfaCodeError,
+    InvalidPasswordError,
+    LastAdminError,
+    MfaRequiredError,
+    delete_account,
+)
+from accounts.services.export import build_user_export
 from accounts.services.invitations import (
     InvalidInvitationError,
     create_invitation,
     revoke_invitation,
 )
+from accounts.throttles import AccountDeleteThrottle, AccountExportThrottle
 
 
 class InvitationListCreateView(APIView):
@@ -66,3 +83,61 @@ class MeView(APIView):
     def get(self, request: Request) -> Response:
         assert isinstance(request.user, User)  # IsAuthenticated is the default permission
         return Response(MeSerializer(request.user).data)
+
+
+class AccountExportView(APIView):
+    """Everything stored about the signed-in user, as a JSON file to download."""
+
+    throttle_classes = [AccountExportThrottle]
+
+    def get(self, request: Request) -> HttpResponse:
+        assert isinstance(request.user, User)  # IsAuthenticated is the default permission
+        data = build_user_export(request.user)
+        filename = f"paceforge-export-{timezone.localdate().isoformat()}.json"
+        response = HttpResponse(
+            json.dumps(data, indent=2, ensure_ascii=False),
+            content_type="application/json",
+        )
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        response["Cache-Control"] = "no-store"
+        return response
+
+
+# Fixed texts: nothing of the request goes into an error.
+DELETE_ERRORS: dict[type[AccountDeletionError], tuple[str, str]] = {
+    ConfirmationMismatchError: ("confirmation", "The email does not match this account."),
+    InvalidPasswordError: ("password", "The password is wrong."),
+    MfaRequiredError: ("mfa_code", "A code from your authenticator app is required."),
+    InvalidMfaCodeError: ("mfa_code", "The code is not valid."),
+}
+
+
+class AccountDeleteView(APIView):
+    """Deletes the signed-in account and all its data, and ends the session."""
+
+    throttle_classes = [AccountDeleteThrottle]
+
+    def post(self, request: Request) -> Response:
+        assert isinstance(request.user, User)  # IsAuthenticated is the default permission
+        serializer = AccountDeleteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            delete_account(
+                request.user,
+                password=serializer.validated_data["password"],
+                confirmation=serializer.validated_data["confirmation"],
+                mfa_code=serializer.validated_data.get("mfa_code", ""),
+            )
+        except LastAdminError:
+            return Response(
+                {
+                    "detail": "The last administrator cannot be deleted.",
+                    "code": "last_admin",
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        except AccountDeletionError as error:
+            field, message = DELETE_ERRORS[type(error)]
+            raise ValidationError({field: [message]}) from error
+        logout(request._request)
+        return Response(status=status.HTTP_204_NO_CONTENT)

@@ -137,7 +137,7 @@ AI key; several people can share one instance without seeing each other's data.
 - **Depends on:** M11
 - **Size:** M
 
-### M13 [ ] Data export and account deletion
+### M13 [x] Data export and account deletion
 - **Goal:** Each user can download their data and delete their account.
 - **Includes:** JSON export of profile, goals, activities, plans, reviews and chat; account deletion with confirmation and MFA, removing keys and data (Intervals stays untouched); admin cannot be left without an admin.
 - **Done when:** export contains only the user's data; deletion removes all of it; isolation tests green.
@@ -173,6 +173,7 @@ AI key; several people can share one instance without seeing each other's data.
 - README section and `docs/` updated for every user-visible change.
 
 ## Changelog
+- 2026-11-20: M13 completed — per-user JSON export (`GET /api/me/export/`, no keys, passwords, activity files or other users' data) and account deletion (`POST /api/me/delete/`, with email, password and MFA code, last active administrator protected, Intervals.icu and AI providers untouched, sessions ended), both on the Security page with 5 requests per minute, and the guide in `docs/account-data.md`
 - 2026-11-20: M12 completed — encrypted database backups (`backup_db`, `run_backups` and an off-by-default `backup` service in `compose.prod.yaml`, AES-256-GCM with its own `BACKUP_ENCRYPTION_KEY`), retention by day and week, `restore_db` into an empty database with an end-to-end test, and the guide in `docs/backup-and-restore.md`
 - 2026-11-20: M11 completed — production deployment stack (`compose.prod.yaml`, Caddy with automatic HTTPS, non-root backend and frontend containers, `scheduler` service, `/api/health/`, production settings via `APP_DOMAIN`, CI container validation/build, and end-to-end VPS deployment docs)
 - 2026-11-19: M10 completed — segment editor on the Week plan page (warm-up, repeated blocks, cool-down, duration, zone, reordering, removing structure) with automatic duration calculation, checks after each change, new draft on save, and updating the same Intervals.icu event on push
