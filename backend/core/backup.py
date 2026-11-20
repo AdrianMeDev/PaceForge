@@ -22,7 +22,12 @@ from typing import IO, Any, BinaryIO, cast
 import psycopg
 from django.conf import settings
 
-from core.backup_crypto import decrypt_stream, encrypt_stream, parse_backup_keys
+from core.backup_crypto import (
+    decrypt_stream,
+    encrypt_stream,
+    parse_backup_keys,
+    shares_an_instance_key,
+)
 
 PG_DUMP = "pg_dump"
 PG_RESTORE = "pg_restore"
@@ -54,8 +59,7 @@ def load_backup_keys(key_file: Path | None = None) -> list[str]:
         raise BackupError(
             "No backup key found: set BACKUP_ENCRYPTION_KEY or pass a key file with --key-file."
         )
-    parse_backup_keys(keys)
-    if set(keys) & set(settings.ENCRYPTION_KEYS):
+    if shares_an_instance_key(parse_backup_keys(keys)):
         raise BackupError("A backup key must differ from ENCRYPTION_KEY.")
     return keys
 

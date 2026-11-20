@@ -31,7 +31,8 @@ if not ENCRYPTION_KEYS:
     raise ImproperlyConfigured("ENCRYPTION_KEY must contain at least one key")
 # Key for encrypted database backups (see core/backup_crypto.py). Optional: without it no backup
 # is made. Several keys, comma separated: the first one encrypts, all of them decrypt. It must
-# differ from ENCRYPTION_KEY and be kept apart from the backups.
+# differ from every key of ENCRYPTION_KEY (decoded, so another spelling counts) and be kept apart
+# from the backups. Enforced by check core.E007 and by load_backup_keys in core/backup.py.
 BACKUP_ENCRYPTION_KEYS = [
     key.strip() for key in env.str("BACKUP_ENCRYPTION_KEY", default="").split(",") if key.strip()
 ]

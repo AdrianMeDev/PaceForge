@@ -1,4 +1,3 @@
-import base64
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -6,7 +5,7 @@ from cryptography.fernet import Fernet
 from django.conf import settings
 from django.core.checks import CheckMessage, Error
 
-from .backup_crypto import BackupCryptoError, parse_backup_keys
+from .backup_crypto import BackupCryptoError, parse_backup_keys, shares_an_instance_key
 
 GENERATE_HINT = (
     'Generate one with: uv run python -c "from cryptography.fernet import Fernet; '
@@ -41,13 +40,7 @@ def check_backup_encryption_keys(app_configs: Any, **kwargs: Any) -> list[CheckM
     except BackupCryptoError as error:
         generate = f" {GENERATE_HINT}"
         return [Error(f"{error}{generate}", id="core.E006")]
-    instance_keys: set[bytes] = set()
-    for key in settings.ENCRYPTION_KEYS:
-        try:
-            instance_keys.add(base64.urlsafe_b64decode(key))
-        except ValueError:
-            continue  # reported by check_encryption_keys
-    if any(key in instance_keys for key in backup_keys):
+    if shares_an_instance_key(backup_keys):
         return [
             Error(
                 "BACKUP_ENCRYPTION_KEY must not contain a key of ENCRYPTION_KEY: a backup "
