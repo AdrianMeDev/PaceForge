@@ -92,12 +92,18 @@ one instead. A used invitation cannot be revoked (`409`).
 
 ## Rate limit
 
-- Creating and resending share one limit: **20 per minute per administrator**
-  (`invitation_email` in `backend/config/settings.py`). A request over the limit answers `429`. Nothing
-  is created or sent.
-- Listing invitations is not limited.
-- The counters live in each server process. With several Gunicorn workers (`GUNICORN_WORKERS`),
-  each worker counts on its own.
+Creating and resending share both limits:
+
+- **20 per minute per administrator**, across all recipient addresses.
+- **5 per hour per recipient address**, across all administrators. Address case does not matter.
+
+The counters live in PostgreSQL and are shared by all workers. Clearing the process cache does
+not reset them. The limits are set in `INVITATION_EMAIL_LIMITS` in `backend/config/settings.py`.
+Reservations count even when mail delivery fails.
+
+A request over either limit answers `429`. The `Retry-After` header gives the number of seconds
+to wait. No invitation is created, no token is rotated and no mail is sent. Listing invitations
+is not limited.
 
 ## Security and access
 
@@ -145,8 +151,12 @@ never contains a link.
 - `backend/accounts/services/invitations.py`: creating, sending, resending and revoking, and the
   token hash.
 - `backend/accounts/views.py`: `InvitationListCreateView`, `InvitationResendView` and
-  `InvitationRevokeView`. `backend/accounts/throttles.py` holds `InvitationEmailThrottle`.
-- Tests: `backend/accounts/tests/test_invitations.py` and `test_invitation_api.py`, and in the
+  `InvitationRevokeView`. Create validates the address before reserving; resend loads the stored
+  address before reserving. Both map `InvitationLimitError` to `429` with `Retry-After`.
+- `backend/accounts/services/invitation_limits.py`: atomic sender and recipient reservations in
+  database counters. These reservations happen before creating an invitation or rotating a token.
+- Tests: `backend/accounts/tests/test_invitations.py`, `test_invitation_limits.py` and
+  `test_invitation_api.py`, and in the
   frontend `src/app/core/admin/invitations-api.spec.ts` and
   `src/app/features/admin/invitations-page.spec.ts`. The backend tests read sent mail from Django's
   test outbox, so no test contacts a real mail server.

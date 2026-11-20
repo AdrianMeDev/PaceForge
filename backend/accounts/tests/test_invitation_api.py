@@ -6,8 +6,9 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 from django.core import mail
+from django.core.cache import cache
 
-from accounts.models import User, UserInvitation
+from accounts.models import InvitationEmailCounter, User, UserInvitation
 from accounts.services.invitations import consume_invitation, create_invitation
 
 from .conftest import PASSWORD, AuthApi, enable_totp
@@ -106,6 +107,7 @@ def test_create_rejects_invalid_email(staff_api: AuthApi) -> None:
 
     assert response.status_code == HTTPStatus.BAD_REQUEST
     assert UserInvitation.objects.count() == 0
+    assert not InvitationEmailCounter.objects.exists()
 
 
 def test_create_requires_csrf_token(staff_api: AuthApi) -> None:
@@ -266,6 +268,7 @@ def test_resending_unknown_invitation_returns_404(staff_api: AuthApi) -> None:
     response = staff_api.call("POST", f"{URL}{uuid.uuid4()}/resend/")
 
     assert response.status_code == HTTPStatus.NOT_FOUND
+    assert not InvitationEmailCounter.objects.exists()
     assert mail.outbox == []
 
 
@@ -306,21 +309,56 @@ def test_resend_requires_csrf_token(staff_api: AuthApi, verified_staff: User) ->
     assert mail.outbox == []
 
 
-def test_create_is_rate_limited_but_listing_is_not(staff_api: AuthApi) -> None:
-    statuses = [
-        staff_api.call("POST", URL, {"email": f"user{i}@example.com"}).status_code
-        for i in range(21)
-    ]
+def assert_limited_without_changes(api: AuthApi, resend: str, *, window_seconds: int) -> None:
+    before = list(UserInvitation.objects.order_by("pk").values())
+    mail_count = len(mail.outbox)
+    for url, data in ((URL, {"email": "INVITEE@Example.com"}), (resend, None)):
+        response = api.call("POST", url, data)
+        assert response.status_code == HTTPStatus.TOO_MANY_REQUESTS
+        assert 0 < int(response.headers["Retry-After"]) <= window_seconds
+        assert list(UserInvitation.objects.order_by("pk").values()) == before
+        assert len(mail.outbox) == mail_count
+    # Reading invitations remains available even after both rejected requests.
+    for _ in range(21):
+        assert api.call("GET", URL).status_code == HTTPStatus.OK
 
-    assert statuses == [HTTPStatus.CREATED] * 20 + [HTTPStatus.TOO_MANY_REQUESTS]
-    assert staff_api.call("GET", URL).status_code == HTTPStatus.OK
 
-
-def test_resend_is_rate_limited(staff_api: AuthApi, verified_staff: User) -> None:
-    created = create_invitation(invited_by=verified_staff, email="a@example.com")
-    resend = f"{URL}{created.invitation.pk}/resend/"
-
-    statuses = [staff_api.call("POST", resend).status_code for _ in range(21)]
-
-    assert statuses == [HTTPStatus.OK] * 20 + [HTTPStatus.TOO_MANY_REQUESTS]
+def test_creates_and_resends_share_the_sender_limit(staff_api: AuthApi) -> None:
+    # Ten creates and ten resends use the same administrator's twenty reservations.
+    for i in range(10):
+        response = staff_api.call("POST", URL, {"email": f"user{i}@example.com"})
+        assert response.status_code == HTTPStatus.CREATED
+        resend = f"{URL}{response.json()['id']}/resend/"
+        assert staff_api.call("POST", resend).status_code == HTTPStatus.OK
     assert len(mail.outbox) == 20
+
+    # A process cache reset cannot clear the shared database counters.
+    cache.clear()
+    assert_limited_without_changes(staff_api, resend, window_seconds=60)
+
+
+def test_recipient_limit_spans_administrators_and_address_case(
+    staff_api: AuthApi, verified_user: User
+) -> None:
+    response = staff_api.call("POST", URL, {"email": "Invitee@Example.com"})
+    assert response.status_code == HTTPStatus.CREATED
+    resend = f"{URL}{response.json()['id']}/resend/"
+    for _ in range(4):
+        assert staff_api.call("POST", resend).status_code == HTTPStatus.OK
+    assert len(mail.outbox) == 5
+
+    verified_user.is_staff = True
+    verified_user.save(update_fields=["is_staff"])
+    factor = enable_totp(verified_user)
+    second_admin = AuthApi()
+    assert (
+        second_admin.login_with_totp(verified_user.email, factor.secret).status_code
+        == HTTPStatus.OK
+    )
+    cache.clear()
+    # Both a differently cased create and a resend of the stored address hit the same limit.
+    assert_limited_without_changes(second_admin, resend, window_seconds=3600)
+    # The refusal did not exhaust the second administrator's own limit.
+    assert second_admin.call("POST", URL, {"email": "other@example.com"}).status_code == (
+        HTTPStatus.CREATED
+    )

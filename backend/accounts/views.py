@@ -6,10 +6,9 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import Throttled, ValidationError
 from rest_framework.request import Request
 from rest_framework.response import Response
-from rest_framework.throttling import BaseThrottle
 from rest_framework.views import APIView
 
 from accounts.models import User, UserInvitation
@@ -30,6 +29,7 @@ from accounts.services.deletion import (
     delete_account,
 )
 from accounts.services.export import build_user_export
+from accounts.services.invitation_limits import InvitationLimitError, reserve_invitation_email
 from accounts.services.invitations import (
     CreatedInvitation,
     InvalidInvitationError,
@@ -42,7 +42,6 @@ from accounts.services.invitations import (
 from accounts.throttles import (
     AccountDeleteThrottle,
     AccountExportThrottle,
-    InvitationEmailThrottle,
 )
 
 
@@ -69,12 +68,6 @@ class InvitationListCreateView(APIView):
 
     permission_classes = [IsMfaAdmin]
 
-    def get_throttles(self) -> list[BaseThrottle]:
-        # Only creating sends mail; listing stays unthrottled.
-        if self.request.method == "POST":
-            return [InvitationEmailThrottle()]
-        return []
-
     def get(self, request: Request) -> Response:
         invitations = UserInvitation.objects.order_by("-created_at")
         return Response(InvitationSerializer(invitations, many=True).data)
@@ -83,6 +76,12 @@ class InvitationListCreateView(APIView):
         serializer = InvitationCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         assert isinstance(request.user, User)  # IsMfaAdmin guarantees an authenticated user
+        try:
+            reserve_invitation_email(
+                sender=request.user, recipient=serializer.validated_data["email"]
+            )
+        except InvitationLimitError as error:
+            raise Throttled(wait=error.retry_after) from error
         created = create_invitation(
             invited_by=request.user, email=serializer.validated_data["email"]
         )
@@ -93,10 +92,14 @@ class InvitationResendView(APIView):
     """Issue a new link for a pending or expired invitation and mail it again."""
 
     permission_classes = [IsMfaAdmin]
-    throttle_classes = [InvitationEmailThrottle]
 
     def post(self, request: Request, pk: str) -> Response:
         invitation = get_object_or_404(UserInvitation, pk=pk)
+        assert isinstance(request.user, User)  # IsMfaAdmin guarantees an authenticated user
+        try:
+            reserve_invitation_email(sender=request.user, recipient=invitation.email)
+        except InvitationLimitError as error:
+            raise Throttled(wait=error.retry_after) from error
         try:
             created = resend_invitation(invitation)
         except InvalidInvitationError:
