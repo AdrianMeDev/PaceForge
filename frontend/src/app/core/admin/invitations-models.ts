@@ -8,6 +8,8 @@ export interface Invitation {
   /** ISO 8601 timestamps. */
   created_at: string;
   expires_at: string;
+  /** When the invitation mail last went out; `null` while it never did. */
+  sent_at: string | null;
 }
 
 /**
@@ -18,10 +20,23 @@ export type Denied = { kind: 'mfa_required' } | { kind: 'forbidden' };
 
 export type ListInvitationsResult = { kind: 'ok'; invitations: Invitation[] } | Denied;
 
-/** `inviteUrl` exists only in the answer to the creating request: the server keeps just a hash. */
+/**
+ * `inviteUrl` exists only in the answer to the creating request: the server keeps just a hash.
+ * `emailSent` is `false` when the mail could not be delivered; the link still works.
+ */
 export type CreateInvitationResult =
-  | { kind: 'created'; invitation: Invitation; inviteUrl: string }
+  | { kind: 'created'; invitation: Invitation; inviteUrl: string; emailSent: boolean }
   | { kind: 'invalid'; errors: string[] }
+  | { kind: 'rate_limited' }
+  | Denied;
+
+/** Like creating, resending issues a new link, so it is returned here as well. */
+export type ResendInvitationResult =
+  | { kind: 'resent'; invitation: Invitation; inviteUrl: string; emailSent: boolean }
+  /** The invitation was already used or revoked and cannot be sent again. */
+  | { kind: 'conflict' }
+  | { kind: 'not_found' }
+  | { kind: 'rate_limited' }
   | Denied;
 
 export type RevokeInvitationResult =

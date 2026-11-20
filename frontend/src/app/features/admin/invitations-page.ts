@@ -16,6 +16,8 @@ interface IssuedLink {
 }
 
 const FALLBACK = 'Something went wrong. Please try again.';
+const RATE_LIMITED =
+  'Too many invitation emails were sent. Please wait a few minutes and try again.';
 
 const STATUS_LABELS: Record<InvitationStatus, string> = {
   pending: 'Pending',
@@ -91,6 +93,9 @@ export class InvitationsPage implements OnInit {
           break;
         case 'invalid':
           this.errors.set(result.errors);
+          break;
+        case 'rate_limited':
+          this.errors.set([RATE_LIMITED]);
           break;
         default:
           this.view.set(result.kind);

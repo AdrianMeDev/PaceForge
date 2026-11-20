@@ -7,11 +7,18 @@ import {
   Denied,
   Invitation,
   ListInvitationsResult,
+  ResendInvitationResult,
   RevokeInvitationResult,
 } from './invitations-models';
 
 const URL = `${API_BASE}/admin/invitations/`;
 const INVALID_FALLBACK = 'The request was not accepted.';
+
+/** The answer to creating or resending: the invitation plus the link and the mail result. */
+interface IssuedBody extends Invitation {
+  invite_url: string;
+  email_sent: boolean;
+}
 
 interface Reply {
   status: number;
@@ -42,11 +49,36 @@ export class InvitationsApi {
     const reply = await this.send(this.http.post(URL, { email }, { observe: 'response' }));
     switch (reply.status) {
       case 201: {
-        const { invite_url, ...invitation } = reply.body as Invitation & { invite_url: string };
-        return { kind: 'created', invitation, inviteUrl: invite_url };
+        const issued = issuedOf(reply.body as IssuedBody);
+        return { kind: 'created', ...issued };
       }
       case 400:
         return { kind: 'invalid', errors: messagesOf(reply.body) };
+      case 403:
+        return denied(reply);
+      case 429:
+        return { kind: 'rate_limited' };
+      default:
+        throw unexpected(reply);
+    }
+  }
+
+  /** Issues a new link for a pending or expired invitation and mails it again. */
+  async resend(id: string): Promise<ResendInvitationResult> {
+    const reply = await this.send(
+      this.http.post(`${URL}${encodeURIComponent(id)}/resend/`, {}, { observe: 'response' }),
+    );
+    switch (reply.status) {
+      case 200: {
+        const issued = issuedOf(reply.body as IssuedBody);
+        return { kind: 'resent', ...issued };
+      }
+      case 404:
+        return { kind: 'not_found' };
+      case 409:
+        return { kind: 'conflict' };
+      case 429:
+        return { kind: 'rate_limited' };
       case 403:
         return denied(reply);
       default:
@@ -78,12 +110,17 @@ export class InvitationsApi {
       const response = await firstValueFrom(request);
       return { status: response.status, body: response.body };
     } catch (error) {
-      if (error instanceof HttpErrorResponse && [400, 403, 404, 409].includes(error.status)) {
+      if (error instanceof HttpErrorResponse && [400, 403, 404, 409, 429].includes(error.status)) {
         return { status: error.status, body: error.error };
       }
       throw error;
     }
   }
+}
+
+/** Splits the answer to creating or resending into the invitation and the parts around it. */
+function issuedOf({ invite_url, email_sent, ...invitation }: IssuedBody) {
+  return { invitation, inviteUrl: invite_url, emailSent: email_sent };
 }
 
 function denied(reply: Reply): Denied {

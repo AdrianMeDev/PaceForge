@@ -19,6 +19,7 @@ function invitation(overrides: Partial<Invitation> = {}): Invitation {
     status: 'pending',
     created_at: '2026-11-12T21:07:49Z',
     expires_at: '2026-11-19T21:07:49Z',
+    sent_at: null,
     ...overrides,
   };
 }
@@ -90,6 +91,7 @@ describe('InvitationsPage', () => {
     kind: 'created',
     invitation: invitation({ email }),
     inviteUrl: LINK,
+    emailSent: true,
   });
 
   const rows = () => Array.from(page.querySelectorAll('tbody tr'));
@@ -279,6 +281,7 @@ describe('InvitationsPage', () => {
         kind: 'created',
         invitation: invitation({ email: 'bob@example.com' }),
         inviteUrl: 'http://localhost:4200/account/signup?invitation=OTHER',
+        emailSent: true,
       });
 
       await invite('bob@example.com');
@@ -306,6 +309,19 @@ describe('InvitationsPage', () => {
       await invite('ann@example.com');
 
       expect(alerts()).toEqual(['Something went wrong. Please try again.']);
+    });
+
+    it('asks to wait when too many invitation mails were sent and keeps the typed address', async () => {
+      await setup();
+      api.create.mockResolvedValue({ kind: 'rate_limited' });
+
+      await invite('ann@example.com');
+
+      expect(alerts()).toEqual([
+        'Too many invitation emails were sent. Please wait a few minutes and try again.',
+      ]);
+      expect(query<HTMLInputElement>(page, '#email').value).toBe('ann@example.com');
+      expect(page.querySelector('form')).not.toBeNull();
     });
 
     it('switches to the security hint when two-factor authentication is missing', async () => {
