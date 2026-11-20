@@ -241,6 +241,7 @@ class TestSettings:
         ("name", "value"),
         [
             ("BACKUP_INTERVAL_HOURS", "0"),
+            ("BACKUP_INTERVAL_HOURS", "-1"),
             ("BACKUP_INTERVAL_HOURS", "169"),
             ("BACKUP_KEEP_DAILY", "0"),
             ("BACKUP_KEEP_DAILY", "366"),
