@@ -1040,8 +1040,10 @@ sessions (a long run, a threshold session, the race …) and a reason. The model
   kept; a plan with errors is still saved as a draft, so you see what is wrong, but it cannot be
   confirmed. **This costs several times what a week does**, and up to three calls; the limit is 3
   requests a minute.
-- **Versions:** every drafting is a new version. A draft can be **confirmed** (it replaces the
-  confirmed version, which stays as **superseded**) or **discarded**. A confirmed plan is never
+- **Versions:** every drafting is a new version. A parent must be an older version of the
+  same athlete. The database also enforces this for direct and bulk writes. A draft can be
+  **confirmed** (it replaces the confirmed version, which stays as **superseded**) or
+  **discarded**. A confirmed plan is never
   changed. A plan keeps the skeleton and the sports it was made for, so it stays readable and is
   checked against them when goals, time or the week move on; it is **not updated** by that.
   New coach drafts also keep the active goals, effective FTP, best times and typical weekly
