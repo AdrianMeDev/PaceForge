@@ -632,7 +632,19 @@ class TestTheReadmeOnChangingAPlan:
 
     def test_it_says_that_a_confirmed_plan_is_never_changed_and_errors_can_be_saved(self) -> None:
         assert "a confirmed plan is never changed" in FLAT_README
-        assert "A plan with errors can be saved too; it only cannot be confirmed" in FLAT_README
+        assert (
+            "A plan with training-rule errors can be saved too; it only cannot be confirmed"
+            in FLAT_README
+        )
+        assert (
+            "Every workout must stay within the plan week, from Monday through Sunday"
+            in FLAT_README
+        )
+        assert "no partial version is stored" in FLAT_README
+        assert (
+            "An out-of-week answer is repairable but cannot be kept as a fallback or stored"
+            in " ".join(DOC.split())
+        )
 
     def test_it_says_what_a_change_does_to_the_calendar_and_the_week_review(self) -> None:
         assert "**updates its event** in your calendar" in FLAT_README

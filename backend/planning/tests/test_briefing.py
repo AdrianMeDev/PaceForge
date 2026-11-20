@@ -1382,10 +1382,13 @@ class TestTheRecentWeeks:
 class TestThePreviousWeek:
     def test_a_confirmed_plan_is_told_without_titles_and_notes(self, alice: User) -> None:
         previous = MONDAY - timedelta(days=7)
-        plan_of(alice, previous, "confirmed", [(4, "running"), (0, "cycling"), (0, "strength")])
+        plan_of(alice, previous, "draft", [(4, "running"), (0, "cycling"), (0, "strength")])
         # the position decides within a day, not the order in which the rows were made
         PlannedWorkout.objects.filter(sport="strength").update(position=0)
         PlannedWorkout.objects.filter(sport="cycling").update(position=1)
+        WeeklyPlan.objects.filter(owner=alice, week_start=previous).update(
+            status="confirmed", confirmed_at=NOW
+        )
 
         entries = build_briefing(alice, MONDAY)["previous_week_plan"]
 

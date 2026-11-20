@@ -1184,6 +1184,9 @@ links to the Connections page.
    the version that was confirmed before. On a phone the buttons stay in a bar above the tab bar.
 5. Send the confirmed week to your calendar: see [Sending to Intervals.icu](#sending-to-intervalsicu).
 
+Workouts can only be edited while their plan is a draft. Confirmed, replaced and discarded
+versions keep their workouts unchanged. Deleting a whole plan or your account still removes them.
+
 Unreadable plans report problems at trusted schema paths. Unknown fields are reported once per
 object at its parent path, without naming the unknown keys.
 
@@ -1236,7 +1239,10 @@ structure** to clear the parts and set the duration yourself. After every change
 server to run the checks, which stores nothing, and shows what they say at the workout they name;
 while it asks, no finding is shown. **Save as a new version** stores the plan as a new **draft**
 (its reason is "Changed by hand") made from the version you started from, which stays as it is: a
-confirmed plan is never changed. A plan with errors can be saved too; it only cannot be confirmed.
+confirmed plan is never changed. A plan with training-rule errors can be saved too; it only cannot
+be confirmed.
+Every workout must stay within the plan week, from Monday through Sunday. An out-of-week workout
+prevents saving and is reported at that workout; no partial version is stored.
 When you confirm and send the new version to Intervals.icu, each changed workout keeps its lineage
 and updates the same Intervals.icu event. **Discard changes** drops everything: nothing is stored
 before you save. Nothing else on the page can be started while the editor is open. Like drafting,
@@ -1275,10 +1281,13 @@ users, and the free text about your limitations only if you switched on **Send t
 coach** (then its first 150 characters). A goal's title and notes (and the limitations text, if you allow it) are free text, and a model can
 be influenced by text; whatever it answers still has to pass the strict reading and the checks before it is a draft,
 and nothing is confirmed without you. Every request goes to your provider with your key and is
-**billed to you**: a draft costs one request, or two if the coach had to correct its answer. They
-are counted in the usage overview of the AI coach (calls and tokens of the last 30 days; the
+**billed to you**: a draft costs one request, or two if the coach had to correct its answer.
+Requests are counted in the usage overview of the AI coach (calls and tokens of the last 30 days; the
 purpose "weekly plan" is stored with each record). Drafting is limited to 5 a minute per user, with
 a counter of its own.
+
+An out-of-week coach answer gets the same repair attempt but cannot be saved. If neither answer
+is usable, no draft is stored. In-week drafts with training-rule errors can still be saved for review.
 
 The Week plan page shows estimated load points next to the duration of every workout.
 A **Planned vs done load** table compares load per sport and in total for the displayed version.

@@ -36,13 +36,10 @@ def bob() -> User:
     return User.objects.create_user("bob@example.com")
 
 
-def make_workout(owner: User, position: int = 0) -> PlannedWorkout:
-    """A workout of a confirmed plan: what a review is about."""
-    plan = WeeklyPlan.objects.filter(owner=owner, week_start=MONDAY).first()
-    if plan is None:
-        plan = WeeklyPlan.objects.create(owner=owner, week_start=MONDAY)
-    # Not ``create``: a plan that is confirmed takes no more workouts through ``save``.
-    (workout,) = PlannedWorkout.objects.bulk_create(
+def make_workouts(owner: User, count: int = 1) -> list[PlannedWorkout]:
+    """Workouts of a confirmed plan: what a review is about."""
+    plan = WeeklyPlan.objects.create(owner=owner, week_start=MONDAY)
+    workouts = PlannedWorkout.objects.bulk_create(
         [
             PlannedWorkout(
                 owner=owner,
@@ -54,10 +51,16 @@ def make_workout(owner: User, position: int = 0) -> PlannedWorkout:
                 goal="endurance",
                 duration_minutes=45,
             )
+            for position in range(count)
         ]
     )
     WeeklyPlan.objects.filter(pk=plan.pk).update(status="confirmed", confirmed_at=START)
-    return workout
+    return list(workouts)
+
+
+def make_workout(owner: User) -> PlannedWorkout:
+    """A workout of a confirmed plan: what a review is about."""
+    return make_workouts(owner, 1)[0]
 
 
 def make_activity(owner: User, offset: int = 0) -> Activity:
@@ -89,7 +92,7 @@ class TestWorkoutReview:
         }
 
     def test_a_review_with_an_activity_a_status_or_neither(self, alice: User) -> None:
-        first, second, third = (make_workout(alice, position) for position in range(3))
+        first, second, third = make_workouts(alice, 3)
         activity = make_activity(alice)
 
         linked = WorkoutReview.objects.create(owner=alice, workout=first, activity=activity)
@@ -113,7 +116,7 @@ class TestWorkoutReview:
         assert "workout" in message
 
     def test_an_activity_belongs_to_one_workout(self, alice: User) -> None:
-        first, second = make_workout(alice, 0), make_workout(alice, 1)
+        first, second = make_workouts(alice, 2)
         activity = make_activity(alice)
         WorkoutReview.objects.create(owner=alice, workout=first, activity=activity)
 
@@ -124,18 +127,17 @@ class TestWorkoutReview:
         assert "reviews_one_workout_per_activity" in message
 
     def test_a_workout_has_an_activity_or_none_not_both(self, alice: User) -> None:
+        first, second = make_workouts(alice, 2)
         message = rejected_by_database(
             WorkoutReview,
             owner=alice,
-            workout=make_workout(alice),
+            workout=first,
             activity=make_activity(alice),
             no_activity=True,
         )
 
         assert "reviews_activity_or_none_not_both" in message
-        review = WorkoutReview(
-            owner=alice, workout=make_workout(alice, 1), activity=make_activity(alice, 1)
-        )
+        review = WorkoutReview(owner=alice, workout=second, activity=make_activity(alice, 1))
         review.no_activity = True
         refused(review, "no_activity")
 
@@ -149,13 +151,12 @@ class TestWorkoutReview:
 
     @pytest.mark.parametrize("status", ["open", "skipped", "DONE"])
     def test_other_statuses_are_refused(self, alice: User, status: str) -> None:
+        first, second = make_workouts(alice, 2)
         # ``open`` is only ever computed: it is not something to choose.
-        message = rejected_by_database(
-            WorkoutReview, owner=alice, workout=make_workout(alice), status=status
-        )
+        message = rejected_by_database(WorkoutReview, owner=alice, workout=first, status=status)
 
         assert "reviews_status_is_known" in message
-        refused(WorkoutReview(owner=alice, workout=make_workout(alice, 1), status=status), "status")
+        refused(WorkoutReview(owner=alice, workout=second, status=status), "status")
 
     def test_another_users_workout_or_activity_is_refused(self, alice: User, bob: User) -> None:
         refused(WorkoutReview(owner=alice, workout=make_workout(bob)), "workout")

@@ -1943,7 +1943,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** M7
 - **Size:** M, ~5 commits
 
-### M9 [ ] Audit: Weekly plan ownership and immutable revisions
+### M9 [x] Audit: Weekly plan ownership and immutable revisions
 
 - **Goal:** Enforce weekly plan ownership, revision ancestry and confirmed-history rules at the persistence boundary.
 - **Includes:** F367 (workout write bypasses), F368 (confirmed weekly plan edits), F369 (workout owner and date), F386 (revision cycles), F407 (direct-write ownership coverage).
@@ -2247,6 +2247,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 
 ## Changelog
 
+- 2026-11-20: M9 done: PostgreSQL enforces workout and export ownership, workout week boundaries and ordered revision ancestry (F369, F386, F407). Historical workouts and plan contents stay frozen through direct writes and supersession (F367, F368). Regression tests cover confirmation, atomic replacement, restore-as-draft and account deletion.
 - 2026-11-20: M8 done: equivalent push confirmations share the push limit before external calls (F378); deeply nested generate and confirm bodies return handled client errors (F379); planning and chat diagnostics report unknown fields only at trusted parent paths (F380, F197); plan text rejects all bidirectional control marks (F381); planning and chat tests use escaped Unicode fixtures and guard against literal invisible marks (F420, F214), with parser, API and provider repair regression tests.
 - 2026-11-20: M6 done: account, dashboard, integration, job and review views require authentication explicitly (F17, F287, F310, F330, F436); ownership is assigned server-side on create and update, including `OwnedModelViewSet` (F284); integration exports use an explicit metadata allowlist (F27), with authentication, two-user ownership and export disclosure regression tests.
 - 2026-11-20: audit planned

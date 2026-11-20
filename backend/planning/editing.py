@@ -20,7 +20,7 @@ from .context import build_context
 from .generation import WeekNotPlannable, plannable_weeks
 from .models import PlannedWorkout, WeeklyPlan
 from .schema import PlanFormatError, Problem, WeekPlan, order_key, parse_week_plan
-from .services import canonical, get, load, save_draft
+from .services import canonical, get, load, outside_week_problems, save_draft
 from .validation import Report, validate_week
 
 REASON = "Changed by hand"
@@ -87,6 +87,8 @@ def read_edited_plan(data: object, monday: date) -> EditedPlan:
         problems.append(
             Problem("week_start", f"The plan must be for the week that starts on {monday}.")
         )
+    else:
+        problems.extend(outside_week_problems(plan))
     if problems:
         raise PlanFormatError(tuple(problems))
     given = WeekPlan(
@@ -121,11 +123,12 @@ def revise(user: User, plan_id: UUID, data: object) -> WeeklyPlan:
 
     A workout with a ``lineage`` is the workout of that version with it, changed or moved; one
     without is new; a workout of that version that is not in ``data`` is taken out. The plan is
-    stored as it is, also with errors in it (the user sees what is wrong; it cannot be confirmed).
+    stored as it is, also with training-rule errors in it (the user sees what is wrong; it cannot
+    be confirmed).
 
     Raises ``PlanNotFound`` (no such plan of the user), ``PlanNotRevisable``, ``WeekNotPlannable``
-    and ``PlanFormatError`` (``data`` is no plan for the week, or a lineage is not one of the
-    workouts of the plan that is changed); in each case nothing is stored.
+    and ``PlanFormatError`` (``data`` is no plan for the week, a workout is outside it, or a lineage
+    is not one of the workouts of the plan that is changed); in each case nothing is stored.
     """
     parent = get(user, plan_id)
     if parent.status not in (WeeklyPlan.Status.DRAFT, WeeklyPlan.Status.CONFIRMED):

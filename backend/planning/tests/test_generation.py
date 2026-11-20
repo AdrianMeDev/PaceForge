@@ -179,6 +179,20 @@ class TestADraftFromTheFirstAnswer:
         assert PlannedWorkout.objects.filter(plan=stored).count() == 2
         assert services.load(alice, stored.pk).workouts[0].title == "Endurance ride"
 
+    @pytest.mark.parametrize("offset", [0, 6])
+    def test_week_boundary_days_can_be_saved(
+        self, alice: User, provide: Callable[..., Scripted], offset: int
+    ) -> None:
+        answer = text_of(WeekPlan(MONDAY, (ride(offset),)))
+        provide(answer, answer)  # Sunday has a capacity error, but remains saveable.
+
+        result = generate(alice, MONDAY)
+
+        assert services.load(alice, result.plan.pk).workouts[0].day == MONDAY + timedelta(
+            days=offset
+        )
+        assert len(plans(alice)) == 1
+
     def test_the_coach_is_asked_once_with_the_prompt_the_briefing_and_a_limit(
         self, alice: User, provide: Callable[..., Scripted]
     ) -> None:
@@ -379,6 +393,52 @@ class TestJsonOutput:
 
 
 class TestTheRepairRound:
+    @pytest.mark.parametrize("offset", [-1, 7])
+    def test_an_out_of_week_answer_can_be_repaired(
+        self, alice: User, provide: Callable[..., Scripted], offset: int
+    ) -> None:
+        stray = text_of(WeekPlan(MONDAY, (ride(offset),)))
+        scripted = provide(stray, good())
+
+        result = generate(alice, MONDAY)
+
+        assert result.report.valid
+        assert "workouts[0].day" in scripted.calls[1][1][2].content
+        assert "within the week" in scripted.calls[1][1][2].content
+        assert len(plans(alice)) == 1
+        assert PlannedWorkout.objects.count() == 2
+
+    @pytest.mark.parametrize("offset", [-1, 7])
+    def test_out_of_week_answers_exhaust_the_unusable_answer_path(
+        self, alice: User, provide: Callable[..., Scripted], offset: int
+    ) -> None:
+        stray = text_of(WeekPlan(MONDAY, (ride(offset),)))
+        scripted = provide(stray, stray)
+
+        with pytest.raises(PlanNotUsable) as raised:
+            generate(alice, MONDAY)
+
+        assert [p.path for p in raised.value.problems] == ["workouts[0].day"]
+        assert len(scripted.calls) == ATTEMPTS
+        assert plans(alice) == []
+        assert PlannedWorkout.objects.count() == 0
+
+    @pytest.mark.parametrize("stray_first", [False, True])
+    def test_an_out_of_week_answer_cannot_replace_an_in_week_plan_with_rule_errors(
+        self, alice: User, provide: Callable[..., Scripted], stray_first: bool
+    ) -> None:
+        stray = text_of(WeekPlan(MONDAY, (ride(7),)))
+        provide(*([stray, bad()] if stray_first else [bad(), stray]))
+
+        result = generate(alice, MONDAY)
+
+        assert not result.report.valid
+        assert [w.day for w in services.load(alice, result.plan.pk).workouts] == [
+            MONDAY,
+            MONDAY + timedelta(days=1),
+        ]
+        assert len(plans(alice)) == 1
+
     def test_an_unreadable_answer_is_told_what_was_wrong_and_may_try_again(
         self, alice: User, provide: Callable[..., Scripted]
     ) -> None:

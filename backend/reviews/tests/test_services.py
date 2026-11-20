@@ -198,39 +198,35 @@ class TestAWeek:
         assert len(mine.workouts) == 3 and mine.feedback is not None
 
     def test_it_takes_the_same_number_of_queries_however_much_data_there_is(
-        self, alice: User
+        self, alice: User, bob: User
     ) -> None:
-        plan = make_plan(alice, workouts=1)
+        make_plan(alice, workouts=1)
         make_activity(alice, "2026-11-09T07:00")
         with CaptureQueriesContext(connection) as small:
             week_review(alice, MONDAY)
 
-        # Fourteen workouts in all (two a day) and a dozen activities, five of them rated.
-        PlannedWorkout.objects.bulk_create(
-            PlannedWorkout(
-                owner=alice,
-                plan=plan,
-                day=MONDAY + timedelta(days=n % 7),
-                position=n // 7,
-                sport="cycling" if n % 2 else "running",
-                title=f"Session {n}",
-                goal="endurance",
-                duration_minutes=60,
-            )
-            for n in range(1, 14)
+        # Fourteen workouts in all (two a day) and 13 activities, five of them rated.
+        plan = make_plan(
+            bob,
+            workouts=[
+                {
+                    "sport": "cycling" if n % 2 else "running",
+                    "title": f"Session {n}",
+                }
+                for n in range(14)
+            ],
         )
+        make_activity(bob, "2026-11-09T07:00")
         for hour in range(12):
             make_activity(
-                alice, f"2026-11-1{hour % 4}T{hour:02d}:00", rpe=hour % 5 + 1 if hour < 5 else None
+                bob, f"2026-11-1{hour % 4}T{hour:02d}:00", rpe=hour % 5 + 1 if hour < 5 else None
             )
         for workout in PlannedWorkout.objects.filter(plan=plan)[:5]:
-            WorkoutReview.objects.create(owner=alice, workout=workout, no_activity=True)
-        WeekFeedback.objects.create(owner=alice, week_start=MONDAY, fatigue=2)
-        WeekComment.objects.create(
-            owner=alice, week_start=MONDAY, comment="Fine.", next_week="hold"
-        )
+            WorkoutReview.objects.create(owner=bob, workout=workout, no_activity=True)
+        WeekFeedback.objects.create(owner=bob, week_start=MONDAY, fatigue=2)
+        WeekComment.objects.create(owner=bob, week_start=MONDAY, comment="Fine.", next_week="hold")
         with CaptureQueriesContext(connection) as large:
-            review = week_review(alice, MONDAY)
+            review = week_review(bob, MONDAY)
 
         assert len(review.workouts) == 14 and len(review.activities) == 13
         assert len(small) == len(large)

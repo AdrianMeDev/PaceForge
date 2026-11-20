@@ -412,6 +412,18 @@ def sent_as_stored(plan: WeeklyPlan, user: User) -> dict[str, Any]:
 
 
 class TestStoringAChange:
+    @pytest.mark.parametrize("offset", [0, 6])
+    def test_week_boundary_days_can_be_saved(self, alice: User, offset: int) -> None:
+        old = confirmed(alice)
+        data = body(WeekPlan(THIS_WEEK, (workout(THIS_WEEK, offset, 60),)))
+
+        revised = revise(alice, old.pk, data)
+
+        assert revised.parent == old
+        assert services.load(alice, revised.pk).workouts[0].day == THIS_WEEK + timedelta(
+            days=offset
+        )
+
     def test_a_change_is_a_new_draft_made_from_the_version_it_started_from(
         self, alice: User
     ) -> None:
@@ -628,6 +640,27 @@ class TestRefusingAChange:
     def stored(self) -> int:
         return WeeklyPlan.objects.count() + PlannedWorkout.objects.count()
 
+    @pytest.mark.parametrize("offset", [-1, 7])
+    def test_out_of_week_workouts_are_reported_in_input_order_without_a_revision(
+        self, alice: User, offset: int
+    ) -> None:
+        old = confirmed(alice)
+        data = sent_as_stored(old, alice)
+        data["workouts"][2]["day"] = (THIS_WEEK + timedelta(days=offset)).isoformat()
+        count = self.stored()
+
+        for operation in (
+            lambda: check(alice, THIS_WEEK, data),
+            lambda: revise(alice, old.pk, data),
+        ):
+            with pytest.raises(PlanFormatError) as raised:
+                operation()
+
+            assert [p.path for p in raised.value.problems] == ["workouts[2].day"]
+            assert self.stored() == count
+        old.refresh_from_db()
+        assert old.status == WeeklyPlan.Status.CONFIRMED
+
     def test_a_lineage_that_is_not_one_of_the_plan_is_refused_by_its_place_in_the_body(
         self, alice: User
     ) -> None:
@@ -720,6 +753,28 @@ class TestRefusingAChange:
 
 
 class TestRestoring:
+    @pytest.mark.parametrize("status", ["superseded", "discarded"])
+    def test_restore_preserves_complete_history_and_creates_distinct_draft(
+        self, alice: User, status: str
+    ) -> None:
+        if status == "superseded":
+            old, _ = self.two_versions(alice)
+        else:
+            old = services.save_draft(alice, good_week(THIS_WEEK), note="Original note")
+            services.discard(alice, old.pk)
+        before = list(WeeklyPlan.objects.order_by("version").values())
+        rows = list(PlannedWorkout.objects.order_by("id").values())
+
+        again = restore(alice, old.pk)
+
+        assert again.pk != old.pk
+        assert (again.status, again.parent_id, again.confirmed_at) == ("draft", old.pk, None)
+        assert again.version == max(row["version"] for row in before) + 1
+        assert services.load(alice, again.pk) == services.load(alice, old.pk)
+        assert {w.pk for w in workouts_of(again)}.isdisjoint(w.pk for w in workouts_of(old))
+        assert list(WeeklyPlan.objects.exclude(pk=again.pk).order_by("version").values()) == before
+        assert list(PlannedWorkout.objects.exclude(plan=again).order_by("id").values()) == rows
+
     def two_versions(self, user: User) -> tuple[WeeklyPlan, WeeklyPlan]:
         old = confirmed(user)
         newer = services.save_draft(user, good_week(THIS_WEEK, "Second"), parent=old.pk)

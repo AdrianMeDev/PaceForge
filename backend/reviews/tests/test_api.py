@@ -13,7 +13,6 @@ from accounts.models import User
 from accounts.tests.conftest import AuthApi
 from athletes.models import AthleteProfile
 from goals import services as goal_services
-from planning.models import PlannedWorkout
 from reviews.models import WeekComment, WeekFeedback, WorkoutReview
 
 from .builders import MONDAY, NOW, make_activity, make_plan
@@ -210,36 +209,44 @@ class TestOneWeek:
         }
 
     def test_planned_and_done_load_per_sport_and_for_the_week(self, alice: User) -> None:
-        plan = make_plan(alice, workouts=4)
-        run, ride, swim, strength = plan.workouts.all()
-        PlannedWorkout.objects.filter(pk=ride.pk).update(
-            sport="cycling",
-            zone_system="power",
-            zone=2,
-            segments=[
-                {"kind": "work", "seconds": 600, "zone_system": "power", "zone": 4},
-                {"kind": "recovery", "seconds": 300, "repeat": 2},
-            ],
-        )
-        PlannedWorkout.objects.filter(pk=swim.pk).update(
-            sport="swimming", zone_system="heart_rate", zone=4, stretching_minutes=30
-        )
-        PlannedWorkout.objects.filter(pk=strength.pk).update(
-            sport="strength",
-            goal="strength",
-            duration_minutes=45,
-            exercises=[
+        plan = make_plan(
+            alice,
+            workouts=[
+                {},
                 {
-                    "name": "Squat",
-                    "region": "legs",
-                    "equipment": "bodyweight",
-                    "sets": 3,
-                    "reps": 10,
-                    "rpe": rpe,
-                }
-                for rpe in (4, 9)
+                    "sport": "cycling",
+                    "zone_system": "power",
+                    "zone": 2,
+                    "segments": [
+                        {"kind": "work", "seconds": 600, "zone_system": "power", "zone": 4},
+                        {"kind": "recovery", "seconds": 300, "repeat": 2},
+                    ],
+                },
+                {
+                    "sport": "swimming",
+                    "zone_system": "heart_rate",
+                    "zone": 4,
+                    "stretching_minutes": 30,
+                },
+                {
+                    "sport": "strength",
+                    "goal": "strength",
+                    "duration_minutes": 45,
+                    "exercises": [
+                        {
+                            "name": "Squat",
+                            "region": "legs",
+                            "equipment": "bodyweight",
+                            "sets": 3,
+                            "reps": 10,
+                            "rpe": rpe,
+                        }
+                        for rpe in (4, 9)
+                    ],
+                },
             ],
         )
+        run, ride, swim, strength = plan.workouts.all()
         intervals = make_activity(
             alice,
             "2026-11-09T07:00",
@@ -313,10 +320,7 @@ class TestOneWeek:
         assert MARKER not in response.content.decode()
 
     def test_titles_and_notes_are_shown_as_stored(self, alice: User) -> None:
-        plan = make_plan(alice, workouts=1)
-        PlannedWorkout.objects.filter(plan=plan).update(
-            title="<b>Hills</b>", notes='"quoted" & more'
-        )
+        make_plan(alice, workouts=[{"title": "<b>Hills</b>", "notes": '"quoted" & more'}])
 
         (workout,) = body(get(alice, week_url()))["workouts"]
 
@@ -379,33 +383,28 @@ class TestOneWeek:
         assert "owner" not in activity and "source_hash" not in activity and "laps" not in activity
 
     def test_it_takes_the_same_number_of_queries_however_much_data_there_is(
-        self, alice: User
+        self, alice: User, bob: User
     ) -> None:
-        api = signed_in(alice)
-        plan = make_plan(alice, workouts=1)
+        small_api = signed_in(alice)
+        make_plan(alice, workouts=1)
         make_activity(alice, "2026-11-09T07:00")
         with CaptureQueriesContext(connection) as small:
-            api.call("GET", week_url())
-        PlannedWorkout.objects.bulk_create(
-            PlannedWorkout(
-                owner=alice,
-                plan=plan,
-                day=MONDAY + timedelta(days=n % 7),
-                position=n // 7,
-                sport="cycling",
-                title="Ride",
-                goal="endurance",
-                duration_minutes=60,
-            )
-            for n in range(1, 10)
+            small_api.call("GET", week_url())
+
+        large_api = signed_in(bob)
+        make_plan(
+            bob,
+            workouts=[
+                {},
+                *[{"sport": "cycling", "title": "Ride"} for _ in range(1, 10)],
+            ],
         )
+        make_activity(bob, "2026-11-09T07:00")
         for hour in range(10):
-            make_activity(alice, f"2026-11-1{hour % 4}T{hour:02d}:30", rpe=4)
-        WeekComment.objects.create(
-            owner=alice, week_start=MONDAY, comment="Fine.", next_week="hold"
-        )
+            make_activity(bob, f"2026-11-1{hour % 4}T{hour:02d}:30", rpe=4)
+        WeekComment.objects.create(owner=bob, week_start=MONDAY, comment="Fine.", next_week="hold")
         with CaptureQueriesContext(connection) as large:
-            api.call("GET", week_url())
+            large_api.call("GET", week_url())
 
         assert len(small) == len(large)
 

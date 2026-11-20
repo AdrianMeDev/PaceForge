@@ -67,11 +67,11 @@ def _clock(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture
-def athlete(alice: User) -> User:
+def athlete(alice: User, request: pytest.FixtureRequest) -> User:
     AIProviderConfiguration.objects.create(
         owner=alice, provider="anthropic", model="claude-sonnet-5-5", api_key=KEY
     )
-    make_plan(alice, MONDAY, workouts=7)
+    make_plan(alice, MONDAY, workouts=getattr(request, "param", 7))
     return alice
 
 
@@ -265,11 +265,15 @@ class TestAChange:
         assert PlannedWorkout.objects.for_user(athlete).filter(plan=draft).count() == 6
         assert draft.confirmed_at is None
 
+    @pytest.mark.parametrize(
+        "athlete",
+        [[{"day": MONDAY + timedelta(days=n)} for n in range(7) if n != 5]],
+        indirect=True,
+    )
     def test_actions_that_change_nothing_make_no_draft(
         self, athlete: User, provide: Callable[..., Scripted]
     ) -> None:
         provide(said("Nothing to free.", [{"tool": "free_day", "day": SATURDAY}]))
-        PlannedWorkout.objects.for_user(athlete).filter(day=SATURDAY).delete()
 
         sent = send(athlete, "Free Saturday")
 
@@ -338,15 +342,16 @@ class TestAChange:
         self, athlete: User, provide: Callable[..., Scripted]
     ) -> None:
         next_monday = MONDAY + timedelta(weeks=1)
-        next_plan = make_plan(athlete, next_monday, status="confirmed", workouts=3)
+        next_plan = make_plan(
+            athlete,
+            next_monday,
+            status="confirmed",
+            workouts=[{}, {"sport": "cycling"}, {"sport": "strength", "goal": "strength"}],
+        )
         next_workouts = list(
             PlannedWorkout.objects.for_user(athlete).filter(plan=next_plan).order_by("day")
         )
         run, ride, strength = next_workouts
-        PlannedWorkout.objects.for_user(athlete).filter(pk=ride.pk).update(sport="cycling")
-        PlannedWorkout.objects.for_user(athlete).filter(pk=strength.pk).update(
-            sport="strength", goal="strength"
-        )
         this_week = WeeklyPlan.objects.for_user(athlete).get(week_start=MONDAY)
         provide(
             said(
@@ -757,23 +762,32 @@ class TestWithoutAPlan:
 
 
 class TestIllness:
+    @pytest.mark.parametrize(
+        "athlete",
+        [
+            [{} for _ in range(6)]
+            + [
+                {
+                    "goal": "threshold",
+                    "zone_system": "pace",
+                    "zone": 4,
+                    "segments": [
+                        {
+                            "kind": "work",
+                            "seconds": 3600,
+                            "repeat": 1,
+                            "zone_system": "pace",
+                            "zone": 4,
+                        }
+                    ],
+                }
+            ]
+        ],
+        indirect=True,
+    )
     def test_a_sick_message_stores_a_draft_with_easy_return_and_an_absence(
         self, athlete: User, provide: Callable[..., Scripted]
     ) -> None:
-        PlannedWorkout.objects.for_user(athlete).filter(day=SUNDAY).update(
-            goal="threshold",
-            zone_system="pace",
-            zone=4,
-            segments=[
-                {
-                    "kind": "work",
-                    "seconds": 3600,
-                    "repeat": 1,
-                    "zone_system": "pace",
-                    "zone": 4,
-                }
-            ],
-        )
         provide(
             said(
                 "Rest today, then take it easy.",

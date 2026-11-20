@@ -4,10 +4,11 @@ Every function acts on the plans of the user it is given and on nothing else: an
 does not exist as far as these functions are concerned (``PlanNotFound``). Plans are referred to
 by id, as an API will.
 
-A plan is a *draft* until it is confirmed. Drafts may be stored whatever the validation says (the
-user is shown what is wrong), but a plan with an error is never confirmed, and confirming checks
-again with the data of that moment. A confirmed plan, a superseded one and a discarded one are
-never changed: a change is a new version of the week, which says which version it replaces and why.
+A plan is a *draft* until it is confirmed. Drafts may be stored with training-rule errors (the
+user is shown what is wrong), but every workout must lie within the plan week. A plan with an
+error is never confirmed, and confirming checks again with the data of that moment. A confirmed
+plan, a superseded one and a discarded one are never changed: a change is a new version of the
+week, which says which version it replaces and why.
 """
 
 import uuid
@@ -24,7 +25,7 @@ from reviews.services import carry_over
 
 from .context import build_context
 from .models import NOTE_MAX, REASON_MAX, PlannedWorkout, WeeklyPlan
-from .schema import WeekPlan, order_key, parse_week_plan, workout_to_json
+from .schema import PlanFormatError, Problem, WeekPlan, order_key, parse_week_plan, workout_to_json
 from .validation import Report, validate_week
 
 Status = WeeklyPlan.Status
@@ -62,6 +63,18 @@ def canonical(plan: WeekPlan) -> WeekPlan:
     )
 
 
+def outside_week_problems(plan: WeekPlan) -> tuple[Problem, ...]:
+    """Storage requires every workout to lie in the plan's Monday-to-Sunday week.
+
+    Paths refer to the order given, so edited input can report the offending workout.
+    """
+    return tuple(
+        Problem(f"workouts[{index}].day", "The workout does not lie within the week of the plan.")
+        for index, workout in enumerate(plan.workouts)
+        if not 0 <= (workout.day - plan.week_start).days < 7
+    )
+
+
 def save_draft(
     user: User,
     week_plan: WeekPlan,
@@ -74,9 +87,12 @@ def save_draft(
     ``parent`` is the version it replaces (it must be of the same week); ``reason`` is a short
     plain line saying why; ``note`` is what the athlete wrote about the week when asking for it
     (see ``clean_note``). Nothing is stored if anything goes wrong. The plan is stored as it is,
-    even if the validation has things to say about it."""
+    even if training-rule validation has things to say about it. Out-of-week workouts raise
+    ``PlanFormatError`` before anything is stored."""
     reason = _clean_reason(reason)
     note = clean_note(note)
+    if problems := outside_week_problems(week_plan):
+        raise PlanFormatError(problems)
     week_plan = canonical(week_plan)  # stored and read back in the order of the day
     if parent is not None:
         replaced = get(user, parent)

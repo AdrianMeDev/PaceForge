@@ -183,12 +183,13 @@ class TestCarryingOver:
 
     def test_the_decisions_of_another_user_are_never_moved(self, alice: User, bob: User) -> None:
         mine = confirmed(alice)
-        theirs = confirmed(bob)
-        for plan, user in ((mine, alice), (theirs, bob)):
-            WorkoutReview.objects.create(owner=user, workout=workouts_of(plan)[0], status="missed")
-        # a plan of bob with the lineages of alice's: it must not take alice's decisions
+        theirs = services.save_draft(bob, good_week())
+        # Set up matching lineages while Bob's plan is still a draft.
         for mine_row, their_row in zip(workouts_of(mine), workouts_of(theirs), strict=True):
             PlannedWorkout.objects.filter(pk=their_row.pk).update(lineage=mine_row.lineage)
+        theirs = services.confirm(bob, theirs.pk)
+        for plan, user in ((mine, alice), (theirs, bob)):
+            WorkoutReview.objects.create(owner=user, workout=workouts_of(plan)[0], status="missed")
         newer = next_version(bob, theirs)
 
         assert carry_over(alice, mine, newer) == 0

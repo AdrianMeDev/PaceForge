@@ -257,12 +257,33 @@ class TestSavingADraft:
         assert PlannedWorkout.objects.filter(plan=plan).count() == 0
 
     def test_a_plan_with_things_wrong_can_still_be_stored_as_a_draft(self, alice: User) -> None:
-        stray = WeekPlan(MONDAY, (workout(MONDAY, 9, 60), workout(MONDAY, 1, 600)))
+        stray = WeekPlan(MONDAY, (workout(MONDAY, 3, 60), workout(MONDAY, 1, 600)))
 
         plan = draft(alice, stray)
 
         assert PlannedWorkout.objects.filter(plan=plan).count() == 2
         assert not validate(alice, plan.pk).valid
+
+    @pytest.mark.parametrize("offset", [0, 6])
+    def test_week_boundary_days_can_be_saved(self, alice: User, offset: int) -> None:
+        week = WeekPlan(MONDAY, (workout(MONDAY, offset, 60),))
+
+        plan = draft(alice, week)
+
+        assert load(alice, plan.pk) == week
+
+    @pytest.mark.parametrize("offset", [-1, 7])
+    def test_out_of_week_workouts_leave_no_partial_revision(self, alice: User, offset: int) -> None:
+        parent = draft(alice)
+        week = WeekPlan(MONDAY, (workout(MONDAY, 4, 60), workout(MONDAY, offset, 60)))
+
+        with pytest.raises(PlanFormatError) as raised:
+            draft(alice, week, parent=parent.pk)
+
+        assert [p.path for p in raised.value.problems] == ["workouts[1].day"]
+        assert WeeklyPlan.objects.count() == 1
+        assert PlannedWorkout.objects.count() == 4
+        assert draft(alice, parent=parent.pk).version == 2
 
     def test_versions_of_a_week_count_up(self, alice: User) -> None:
         first = draft(alice)
@@ -804,16 +825,48 @@ class TestConfirming:
         assert "day_in_absence" in [f.code for f in raised.value.report.errors]
         assert WeeklyPlan.objects.get(pk=plan.pk).status == Status.DRAFT
 
-    def test_the_next_version_replaces_the_confirmed_one(self, alice: User) -> None:
+    def test_the_next_version_replaces_the_confirmed_one(
+        self, alice: User, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         first = confirm(alice, draft(alice).pk)
+        contents = load(alice, first.pk)
+        history = WeeklyPlan.objects.filter(pk=first.pk).values().get()
+        workouts = list(first.workouts.values())
         second = draft(alice, parent=first.pk, reason="Changed")
+        later = NOW + timedelta(hours=1)
+        monkeypatch.setattr(services, "_now", lambda: later)
 
         confirm(alice, second.pk)
 
         old, new = WeeklyPlan.objects.get(pk=first.pk), WeeklyPlan.objects.get(pk=second.pk)
         assert (old.status, new.status) == (Status.SUPERSEDED, Status.CONFIRMED)
         assert old.confirmed_at == NOW  # the time of its own confirmation stays
+        assert new.confirmed_at == later
         assert WeeklyPlan.objects.filter(status=Status.CONFIRMED).count() == 1
+        assert load(alice, first.pk) == contents
+        assert list(old.workouts.values()) == workouts
+        assert WeeklyPlan.objects.filter(pk=first.pk).values().get() == {
+            **history,
+            "status": Status.SUPERSEDED,
+        }
+
+    def test_failure_after_supersession_rolls_back_both_versions(
+        self, alice: User, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        first = confirm(alice, draft(alice).pk)
+        second = draft(alice, parent=first.pk)
+        before = list(WeeklyPlan.objects.order_by("version").values())
+
+        def fail(*args: object) -> None:
+            # carry_over runs after the previous version has been superseded.
+            assert WeeklyPlan.objects.get(pk=first.pk).status == Status.SUPERSEDED
+            raise RuntimeError("Simulated carry-over failure")
+
+        monkeypatch.setattr(services, "carry_over", fail)
+        with pytest.raises(RuntimeError, match="Simulated carry-over failure"):
+            confirm(alice, second.pk)
+
+        assert list(WeeklyPlan.objects.order_by("version").values()) == before
 
     def test_a_refused_new_version_leaves_the_confirmed_one_in_force(self, alice: User) -> None:
         first = confirm(alice, draft(alice).pk)
