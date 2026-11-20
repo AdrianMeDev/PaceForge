@@ -4,6 +4,9 @@
 lives in a pipe, never on disk. The encrypted data goes to a ``0600`` temporary file next to the
 target and is moved into place with an atomic rename, so a backup is either complete or absent.
 The database password reaches ``pg_dump`` through the ``PGPASSWORD`` environment variable only.
+
+``restore_backup`` is the reverse: it streams ``decrypt_stream`` straight into ``pg_restore`` and
+refuses to touch a database that already has tables unless the operator allows it.
 """
 
 import contextlib
@@ -11,16 +14,18 @@ import os
 import re
 import subprocess
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import IO, BinaryIO, cast
+from typing import IO, Any, BinaryIO, cast
 
+import psycopg
 from django.conf import settings
 
-from core.backup_crypto import encrypt_stream, parse_backup_keys
+from core.backup_crypto import decrypt_stream, encrypt_stream, parse_backup_keys
 
 PG_DUMP = "pg_dump"
+PG_RESTORE = "pg_restore"
 BACKUP_SUFFIX = ".pgdump.enc"
 _NAME_TIME_FORMAT = "%Y%m%d-%H%M%SZ"
 _NAME_PATTERN = re.compile(r"paceforge-(\d{8}-\d{6}Z)" + re.escape(BACKUP_SUFFIX))
@@ -59,9 +64,11 @@ def backup_filename(moment: datetime) -> str:
     return f"paceforge-{moment.astimezone(UTC).strftime(_NAME_TIME_FORMAT)}{BACKUP_SUFFIX}"
 
 
-def _pg_dump_command() -> tuple[list[str], dict[str, str]]:
-    database = settings.DATABASES["default"]
-    command = [PG_DUMP, "-Fc", "--no-password"]
+def _pg_command(
+    program: str, options: list[str], database: Mapping[str, Any]
+) -> tuple[list[str], dict[str, str]]:
+    """Build a ``pg_*`` command line for ``database``; the password only goes into the env."""
+    command = [program, *options, "--no-password"]
     if database.get("HOST"):
         command += ["-h", str(database["HOST"])]
     if database.get("PORT"):
@@ -74,6 +81,10 @@ def _pg_dump_command() -> tuple[list[str], dict[str, str]]:
     if database.get("PASSWORD"):
         env["PGPASSWORD"] = str(database["PASSWORD"])
     return command, env
+
+
+def _pg_dump_command() -> tuple[list[str], dict[str, str]]:
+    return _pg_command(PG_DUMP, ["-Fc"], settings.DATABASES["default"])
 
 
 def _stderr_text(stderr: IO[bytes]) -> str:
@@ -124,6 +135,106 @@ def create_backup(output_dir: Path, keys: Sequence[str], *, now: datetime | None
             temp_path.unlink()
         raise
     return target
+
+
+def database_is_empty(database: Mapping[str, Any]) -> bool:
+    """Return whether the ``public`` schema of ``database`` has no tables."""
+    try:
+        with (
+            psycopg.connect(
+                host=database.get("HOST") or None,
+                port=database.get("PORT") or None,
+                user=database.get("USER") or None,
+                password=database.get("PASSWORD") or None,
+                dbname=str(database["NAME"]),
+                connect_timeout=10,
+            ) as connection,
+            connection.cursor() as cursor,
+        ):
+            cursor.execute("SELECT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public')")
+            row = cursor.fetchone()
+    except psycopg.Error:
+        raise BackupError("The target database cannot be reached.") from None
+    return row is None or not row[0]
+
+
+class _FirstChunkChecked(Exception):
+    """Raised by ``_FirstWrite`` once the first chunk decrypted."""
+
+
+class _FirstWrite:
+    def write(self, data: bytes) -> int:
+        raise _FirstChunkChecked
+
+
+def _check_backup(path: Path, keys: Sequence[str]) -> None:
+    """Make sure the file is a backup that one of ``keys`` opens, before anything is restored."""
+    try:
+        with path.open("rb") as source:
+            try:
+                decrypt_stream(source, cast(BinaryIO, _FirstWrite()), list(keys))
+            except _FirstChunkChecked:
+                pass
+    except FileNotFoundError:
+        raise BackupError("The backup file does not exist.") from None
+    except OSError:
+        raise BackupError("The backup file cannot be read.") from None
+
+
+def restore_backup(
+    path: Path,
+    keys: Sequence[str],
+    database: Mapping[str, Any] | None = None,
+    *,
+    allow_non_empty: bool = False,
+) -> None:
+    """Decrypt ``path`` straight into ``pg_restore`` for ``database`` (default: the configured one).
+
+    A database with tables is refused unless ``allow_non_empty`` is set; then existing objects are
+    dropped first. Everything runs in one transaction, so a failed restore changes nothing.
+    """
+    target = settings.DATABASES["default"] if database is None else database
+    _check_backup(path, keys)
+    if not allow_non_empty and not database_is_empty(target):
+        raise BackupError(
+            "The target database is not empty. Restore into an empty database or pass "
+            "--allow-non-empty to replace its contents."
+        )
+    options = ["--no-owner", "--no-privileges", "--exit-on-error", "--single-transaction"]
+    if allow_non_empty:
+        options += ["--clean", "--if-exists"]
+    command, env = _pg_command(PG_RESTORE, options, target)
+
+    with tempfile.TemporaryFile() as stderr, path.open("rb") as source:
+        try:
+            process = subprocess.Popen(  # noqa: S603 - fixed argument list, no shell
+                command, stdin=subprocess.PIPE, stderr=stderr, env=env
+            )
+        except OSError:
+            raise BackupError("pg_restore could not be started.") from None
+        assert process.stdin is not None
+        try:
+            try:
+                decrypt_stream(source, cast(BinaryIO, process.stdin), list(keys))
+                process.stdin.close()
+            except BrokenPipeError:
+                pass  # pg_restore stopped reading; its exit code and message follow below
+        except BaseException:
+            # Kill before closing the pipe: pg_restore must never see a clean end of a damaged
+            # stream, or it could commit a partial restore.
+            process.kill()
+            process.wait()
+            with contextlib.suppress(OSError):
+                process.stdin.close()
+            raise
+        with contextlib.suppress(OSError):
+            process.stdin.close()
+        if process.wait() != 0:
+            detail = _stderr_text(stderr)
+            raise BackupError(
+                f"pg_restore failed with exit code {process.returncode}"
+                + (f": {detail}" if detail else ".")
+            )
 
 
 def _backup_time(path: Path) -> datetime | None:
