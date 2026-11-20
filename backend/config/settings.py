@@ -234,6 +234,13 @@ REST_FRAMEWORK = {
     },
 }
 
+# Invitation emails, counted in the database so every worker shares the numbers:
+# per sending administrator and per recipient address.
+INVITATION_EMAIL_LIMITS = {
+    "sender": {"limit": 20, "window_seconds": 60},
+    "recipient": {"limit": 5, "window_seconds": 3600},
+}
+
 # allauth: email + password, headless API for the SPA (browser client only).
 AUTHENTICATION_BACKENDS = ["allauth.account.auth_backends.AuthenticationBackend"]
 ACCOUNT_ADAPTER = "accounts.adapters.AccountAdapter"
