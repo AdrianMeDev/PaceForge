@@ -151,7 +151,7 @@ AI key; several people can share one instance without seeing each other's data.
 - **Depends on:** –
 - **Size:** S
 
-### M15 [~] Status docs up to date
+### M15 [x] Status docs up to date
 - **Goal:** README and this roadmap describe what works today and point to each other.
 - **Includes:** rewrite the README's "What works today / Not there yet", and point the README's long-term goal to the Vision and Decisions sections of this roadmap.
 - **Note:** `PROJECT_PLAN.md` is a local, git-ignored file, so public docs must not link to it. Its stage table is updated by hand (see Manual checks).
@@ -175,6 +175,7 @@ AI key; several people can share one instance without seeing each other's data.
 - README section and `docs/` updated for every user-visible change.
 
 ## Changelog
+- 2026-11-20: M15 completed — the README status summary is rewritten (what works today through M14, the open manual checks and later items as in this roadmap, with links to it and to its Vision and Decisions sections), the README feature sections are reconciled with the code, and the README no longer refers to the git-ignored `PROJECT_PLAN.md`; docs only. The update of the local `PROJECT_PLAN.md` §15.4 stays a manual check
 - 2026-11-20: M14 completed — the Invitations page emails the signup link on create and resend (one plain-text mail per action; Mailpit in development, SMTP in production, the console when `SMTP_HOST` is empty), the link is still shown once as a fallback, failed deliveries are reported as `email_sent: false`, pending and expired invitations can be resent (new token and expiry, the old link stops working), expired invitations are marked on the page, creating and resending share 20 per minute per administrator, and the guide is in `docs/invitations.md`
 - 2026-11-20: M13 completed — per-user JSON export (`GET /api/me/export/`, no keys, passwords, activity files or other users' data) and account deletion (`POST /api/me/delete/`, with email, password and MFA code, last active administrator protected, Intervals.icu and AI providers untouched, sessions ended), both on the Security page with 5 requests per minute, and the guide in `docs/account-data.md`
 - 2026-11-20: M12 completed — encrypted database backups (`backup_db`, `run_backups` and an off-by-default `backup` service in `compose.prod.yaml`, AES-256-GCM with its own `BACKUP_ENCRYPTION_KEY`), retention by day and week, `restore_db` into an empty database with an end-to-end test, and the guide in `docs/backup-and-restore.md`
