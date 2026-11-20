@@ -5,6 +5,7 @@ import {
   CreateInvitationResult,
   Invitation,
   ListInvitationsResult,
+  ResendInvitationResult,
   RevokeInvitationResult,
 } from '../../core/admin/invitations-models';
 import { dayOf, query, required, settle, typeInto } from '../../testing/dom';
@@ -33,6 +34,7 @@ function createApiStub() {
   return {
     list: vi.fn<() => Promise<ListInvitationsResult>>(),
     create: vi.fn<(email: string) => Promise<CreateInvitationResult>>(),
+    resend: vi.fn<(id: string) => Promise<ResendInvitationResult>>(),
     revoke: vi.fn<(id: string) => Promise<RevokeInvitationResult>>(),
   };
 }
@@ -87,17 +89,17 @@ describe('InvitationsPage', () => {
     await settle(fixture);
   }
 
-  const created = (email = 'ann@example.com'): CreateInvitationResult => ({
+  const created = (email = 'ann@example.com', emailSent = true): CreateInvitationResult => ({
     kind: 'created',
     invitation: invitation({ email }),
     inviteUrl: LINK,
-    emailSent: true,
+    emailSent,
   });
 
   const rows = () => Array.from(page.querySelectorAll('tbody tr'));
   const text = () => page.textContent ?? '';
   const alerts = () =>
-    Array.from(page.querySelectorAll('[role="alert"]')).map((e) => e.textContent);
+    Array.from(page.querySelectorAll('[role="alert"]')).map((e) => e.textContent?.trim());
 
   describe('loading', () => {
     it('shows a loading note until the list arrives', () => {
@@ -348,7 +350,7 @@ describe('InvitationsPage', () => {
       expect(api.create).toHaveBeenCalledTimes(1);
       finish(created());
       await settle(fixture);
-      expect(button('Create invitation').disabled).toBe(false);
+      expect(button('Send invitation by email').disabled).toBe(false);
     });
   });
 
@@ -403,12 +405,11 @@ describe('InvitationsPage', () => {
     it('offers Revoke for pending invitations only', async () => {
       await setup(ok(PENDING, USED, REVOKED, EXPIRED));
 
-      expect(rows().map((r) => r.querySelector('button') !== null)).toEqual([
-        true,
-        false,
-        false,
-        false,
-      ]);
+      expect(
+        rows().map((r) =>
+          Array.from(r.querySelectorAll('button')).some((b) => b.textContent?.trim() === 'Revoke'),
+        ),
+      ).toEqual([true, false, false, false]);
     });
 
     it('asks before revoking, and nothing happens on cancel', async () => {
@@ -510,6 +511,180 @@ describe('InvitationsPage', () => {
       await click('Yes, revoke');
 
       expect(query<HTMLInputElement>(page, '#invite-link').value).toBe(LINK);
+    });
+  });
+
+  describe('email feedback', () => {
+    it('says the email was sent and still shows the fallback link', async () => {
+      await setup();
+      api.create.mockResolvedValue(created());
+
+      await invite('ann@example.com');
+
+      expect(query(page, '[data-result="sent"]').textContent).toContain(
+        'The invitation email was sent to ann@example.com.',
+      );
+      expect(page.querySelector('[data-result="failed"]')).toBeNull();
+      expect(query<HTMLInputElement>(page, '#invite-link').value).toBe(LINK);
+    });
+
+    it('says the delivery failed and still shows the link', async () => {
+      await setup();
+      api.create.mockResolvedValue(created('ann@example.com', false));
+
+      await invite('ann@example.com');
+
+      expect(alerts()).toEqual(['The invitation email could not be delivered to ann@example.com.']);
+      expect(page.querySelector('[data-result="sent"]')).toBeNull();
+      expect(query<HTMLInputElement>(page, '#invite-link').value).toBe(LINK);
+    });
+
+    it('shows when an invitation was last sent, and that it was not', async () => {
+      await setup(ok(invitation({ sent_at: '2026-11-13T08:30:00Z' }), USED));
+
+      expect(text()).toContain('Last sent');
+      expect(rows()[0].querySelector('.sent-at')?.textContent).toContain(
+        dayOf('2026-11-13T08:30:00Z'),
+      );
+      expect(rows()[1].querySelector('.sent-at')?.textContent).toContain('Not sent');
+    });
+  });
+
+  describe('expired invitations', () => {
+    it('points out a single expired invitation', async () => {
+      await setup(ok(PENDING, EXPIRED));
+
+      expect(query(page, '#expired-notice').textContent).toContain('1 invitation has expired');
+    });
+
+    it('counts several expired invitations', async () => {
+      await setup(ok(EXPIRED, invitation({ id: 'inv-5', status: 'expired' })));
+
+      expect(query(page, '#expired-notice').textContent).toContain('2 invitations have expired');
+    });
+
+    it('shows no notice without expired invitations', async () => {
+      await setup(ok(PENDING, USED, REVOKED));
+
+      expect(page.querySelector('#expired-notice')).toBeNull();
+    });
+  });
+
+  describe('resending', () => {
+    const resent = (
+      emailSent = true,
+      issued: Invitation = invitation({ id: 'inv-4', email: 'di@example.com' }),
+    ): ResendInvitationResult => ({
+      kind: 'resent',
+      invitation: issued,
+      inviteUrl: LINK,
+      emailSent,
+    });
+
+    it('offers Resend on pending and expired rows only', async () => {
+      await setup(ok(PENDING, USED, REVOKED, EXPIRED));
+
+      expect(
+        rows().map((r) =>
+          Array.from(r.querySelectorAll('button')).map((b) => b.textContent?.trim()),
+        ),
+      ).toEqual([['Resend', 'Revoke'], [], [], ['Resend']]);
+    });
+
+    it('resends an expired invitation, shows the new link and refreshes the list', async () => {
+      await setup(ok(EXPIRED));
+      api.resend.mockResolvedValue(resent());
+      api.list.mockResolvedValue(ok({ ...EXPIRED, status: 'pending' }));
+
+      await click('Resend');
+
+      expect(api.resend).toHaveBeenCalledExactlyOnceWith('inv-4');
+      expect(query(page, '[data-result="sent"]').textContent).toContain('di@example.com');
+      expect(query<HTMLInputElement>(page, '#invite-link').value).toBe(LINK);
+      expect(api.list).toHaveBeenCalledTimes(2);
+      expect(rows()[0].querySelector('.status')?.textContent?.trim()).toBe('Pending');
+    });
+
+    it('resends a pending invitation and reports a failed delivery', async () => {
+      await setup(ok(PENDING));
+      api.resend.mockResolvedValue(resent(false, PENDING));
+
+      await click('Resend');
+
+      expect(api.resend).toHaveBeenCalledExactlyOnceWith('inv-1');
+      expect(alerts()).toEqual(['The invitation email could not be delivered to ann@example.com.']);
+      expect(query<HTMLInputElement>(page, '#invite-link').value).toBe(LINK);
+    });
+
+    it('explains that a used or revoked invitation cannot be sent again and reloads', async () => {
+      await setup(ok(PENDING));
+      api.resend.mockResolvedValue({ kind: 'conflict' });
+      api.list.mockResolvedValue(ok({ ...PENDING, status: 'used' }));
+
+      await click('Resend');
+
+      expect(alerts()).toEqual([
+        'The invitation for ann@example.com has been used or revoked already.',
+      ]);
+      expect(rows()[0].querySelector('.status')?.textContent?.trim()).toBe('Used');
+      expect(rows()[0].querySelector('button')).toBeNull();
+    });
+
+    it('explains that an invitation is gone and reloads', async () => {
+      await setup(ok(PENDING));
+      api.resend.mockResolvedValue({ kind: 'not_found' });
+      api.list.mockResolvedValue(ok());
+
+      await click('Resend');
+
+      expect(alerts()).toEqual(['The invitation for ann@example.com no longer exists.']);
+      expect(text()).toContain('No invitations yet.');
+    });
+
+    it('asks to wait when too many mails were sent', async () => {
+      await setup(ok(PENDING));
+      api.resend.mockResolvedValue({ kind: 'rate_limited' });
+
+      await click('Resend');
+
+      expect(alerts()).toEqual([
+        'Too many invitation emails were sent. Please wait a few minutes and try again.',
+      ]);
+      expect(page.querySelector('#invite-link')).toBeNull();
+    });
+
+    it('shows a generic message when the request fails', async () => {
+      await setup(ok(PENDING));
+      api.resend.mockRejectedValue(new Error('offline'));
+
+      await click('Resend');
+
+      expect(alerts()).toEqual(['Something went wrong. Please try again.']);
+      expect(rows()).toHaveLength(1);
+    });
+
+    it('switches to the security hint when two-factor authentication is missing', async () => {
+      await setup(ok(PENDING));
+      api.resend.mockResolvedValue({ kind: 'mfa_required' });
+
+      await click('Resend');
+
+      expect(text()).toContain('turn on two-factor authentication');
+    });
+
+    it('ignores a second click while a resend is running', async () => {
+      await setup(ok(PENDING));
+      let finish: (result: ResendInvitationResult) => void = () => undefined;
+      api.resend.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+
+      button('Resend').click();
+      fixture.detectChanges();
+      button('Resend').click();
+
+      expect(button('Resend').disabled).toBe(true);
+      expect(api.resend).toHaveBeenCalledTimes(1);
+      finish({ kind: 'conflict' });
+      await settle(fixture);
     });
   });
 });

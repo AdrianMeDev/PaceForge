@@ -1,5 +1,12 @@
 import { DatePipe } from '@angular/common';
-import { Component, OnInit, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  OnInit,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { InvitationsApi } from '../../core/admin/invitations-api';
@@ -9,10 +16,15 @@ import { PageHeader } from '../../shared/page-header';
 type View = 'loading' | 'unreachable' | 'ready' | 'mfa_required' | 'forbidden';
 type Copied = 'idle' | 'copied' | 'failed';
 
-/** The link and the address it belongs to, shown once after an invitation was created. */
+/**
+ * The link and the address it belongs to, shown once after an invitation was created or sent
+ * again. `emailSent` tells whether the mail went out; `resent` tells which action it was.
+ */
 interface IssuedLink {
   email: string;
   url: string;
+  emailSent: boolean;
+  resent: boolean;
 }
 
 const FALLBACK = 'Something went wrong. Please try again.';
@@ -29,14 +41,15 @@ const STATUS_LABELS: Record<InvitationStatus, string> = {
 /**
  * Where administrators invite people. The server keeps only a hash of the token, so the link
  * exists in the answer to the creating request and nowhere else: this page shows it once and
- * forgets it when it is dismissed or the page is left. Nothing is sent by email; the
- * administrator hands the link on.
+ * forgets it when it is dismissed or the page is left. The server also sends the link by
+ * email; the link on this page is the fallback when that mail did not arrive.
  */
 @Component({
   selector: 'app-invitations-page',
   imports: [ReactiveFormsModule, RouterLink, DatePipe, PageHeader],
   templateUrl: './invitations-page.html',
   styleUrl: './invitations-page.css',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class InvitationsPage implements OnInit {
   private readonly api = inject(InvitationsApi);
@@ -53,6 +66,9 @@ export class InvitationsPage implements OnInit {
   protected readonly copied = signal<Copied>('idle');
   /** The invitation the administrator is being asked to confirm revoking. */
   protected readonly confirming = signal<string | null>(null);
+  protected readonly expiredCount = computed(
+    () => this.invitations().filter((invitation) => invitation.status === 'expired').length,
+  );
 
   ngOnInit(): Promise<void> {
     return this.load();
@@ -86,7 +102,12 @@ export class InvitationsPage implements OnInit {
       const result = await this.api.create(this.form.getRawValue().email.trim());
       switch (result.kind) {
         case 'created':
-          this.issued.set({ email: result.invitation.email, url: result.inviteUrl });
+          this.issued.set({
+            email: result.invitation.email,
+            url: result.inviteUrl,
+            emailSent: result.emailSent,
+            resent: false,
+          });
           this.copied.set('idle');
           this.form.reset();
           await this.refreshQuietly();
@@ -137,6 +158,49 @@ export class InvitationsPage implements OnInit {
 
   protected cancelRevoke(): void {
     this.confirming.set(null);
+  }
+
+  /** Issues a new link for a pending or expired invitation and mails it again. */
+  protected async resend(invitation: Invitation): Promise<void> {
+    if (this.busy()) {
+      return;
+    }
+    this.errors.set([]);
+    this.confirming.set(null);
+    this.busy.set(true);
+    try {
+      const result = await this.api.resend(invitation.id);
+      switch (result.kind) {
+        case 'resent':
+          this.issued.set({
+            email: result.invitation.email,
+            url: result.inviteUrl,
+            emailSent: result.emailSent,
+            resent: true,
+          });
+          this.copied.set('idle');
+          break;
+        case 'conflict':
+          this.errors.set([
+            `The invitation for ${invitation.email} has been used or revoked already.`,
+          ]);
+          break;
+        case 'not_found':
+          this.errors.set([`The invitation for ${invitation.email} no longer exists.`]);
+          break;
+        case 'rate_limited':
+          this.errors.set([RATE_LIMITED]);
+          return;
+        default:
+          this.view.set(result.kind);
+          return;
+      }
+      await this.refreshQuietly();
+    } catch {
+      this.errors.set([FALLBACK]);
+    } finally {
+      this.busy.set(false);
+    }
   }
 
   protected async revoke(invitation: Invitation): Promise<void> {
