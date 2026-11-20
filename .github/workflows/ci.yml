@@ -49,8 +49,21 @@ jobs:
       # pg_dump and pg_restore 17 for the backup restore test; the runner image ships an older client.
       - name: Install PostgreSQL 17 client tools
         run: |
+          # Download the key to a temporary file and trust it only if its primary fingerprint matches exactly.
+          key_file="$(mktemp)"
+          gpg_home="$(mktemp -d)"
+          trap 'rm -rf "$key_file" "$gpg_home"' EXIT
+          curl -fsSL -o "$key_file" https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          chmod 700 "$gpg_home"
+          # Primary keys only: the fpr line that follows each pub record, never a subkey.
+          primary_fingerprints="$(GNUPGHOME="$gpg_home" gpg --batch --show-keys --with-colons "$key_file" | awk -F: '$1 == "pub" { next_is_primary = 1 } $1 == "fpr" && next_is_primary { print $10; next_is_primary = 0 }')"
+          expected_fingerprint=B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8
+          if [ "$primary_fingerprints" != "$expected_fingerprint" ]; then
+            echo "::error::PGDG key fingerprint mismatch. Expected $expected_fingerprint, found: ${primary_fingerprints:-none}" >&2
+            exit 1
+          fi
           sudo install -d /usr/share/postgresql-common/pgdg
-          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          sudo install -m 0644 "$key_file" /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
           echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt noble-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends postgresql-client-17
