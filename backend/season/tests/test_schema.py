@@ -175,10 +175,10 @@ class TestWhatIsRefused:
         assert problems_of(many) == [Problem("weeks", "Must have at most 52 entries.")]
         assert len(parse_season_plan(plan(weeks=[week()] * 52)).weeks) == 52
 
-    def test_an_unknown_field_is_named(self) -> None:
-        assert paths_of(plan(colour="red")) == ["colour"]
-        assert paths_of(with_week(colour="red")) == ["weeks[0].colour"]
-        assert paths_of(with_session(colour="red")) == ["weeks[0].key_sessions[0].colour"]
+    def test_an_unknown_field_is_reported_at_its_parent(self) -> None:
+        assert paths_of(plan(colour="red", SECRETMARKER=1)) == [""]
+        assert paths_of(with_week(colour="red", SECRETMARKER=1)) == ["weeks[0]"]
+        assert paths_of(with_session(colour="red", SECRETMARKER=1)) == ["weeks[0].key_sessions[0]"]
 
     @pytest.mark.parametrize("missing", ["week_start", "minutes", "focus", "reason"])
     def test_a_required_field_of_a_week(self, missing: str) -> None:

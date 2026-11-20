@@ -667,6 +667,24 @@ class TestGenerating:
         assert MARKER not in response.content.decode()
         assert not WeeklyPlan.objects.exists()
 
+    @pytest.mark.parametrize("path", ["", "workouts[0]"])
+    def test_unknown_identifier_keys_never_leak_in_an_unusable_answer(
+        self, alice: User, provide: Callable[..., Scripted], path: str
+    ) -> None:
+        data = json.loads(good())
+        target = data["workouts"][0] if path else data
+        target.update({MARKER: 1, "ANOTHER_UNKNOWN_KEY": 2})
+        provide(json.dumps(data), json.dumps(data))
+
+        response = signed_in(alice).call("POST", generate_url())
+
+        assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+        assert body(response)["code"] == "not_usable"
+        assert body(response)["problems"] == [{"path": path, "message": "Unknown field."}]
+        assert MARKER not in response.content.decode()
+        assert "ANOTHER_UNKNOWN_KEY" not in response.content.decode()
+        assert not WeeklyPlan.objects.exists()
+
     def test_the_sixth_request_within_a_minute_is_throttled_before_the_provider(
         self, alice: User, provide: Callable[..., Scripted]
     ) -> None:
@@ -758,6 +776,22 @@ class TestChecking:
             ],
         }
         assert MARKER not in response.content.decode()
+
+    @pytest.mark.parametrize("path", ["", "workouts[0]"])
+    def test_unknown_identifier_keys_never_leak_in_an_invalid_plan(
+        self, alice: User, path: str
+    ) -> None:
+        data = edited()
+        target = data["workouts"][0] if path else data
+        target.update({MARKER: 1, "ANOTHER_UNKNOWN_KEY": 2})
+
+        response = signed_in(alice).call("POST", check_url(), data)
+
+        assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+        assert body(response)["code"] == "invalid_plan"
+        assert body(response)["problems"] == [{"path": path, "message": "Unknown field."}]
+        assert MARKER not in response.content.decode()
+        assert "ANOTHER_UNKNOWN_KEY" not in response.content.decode()
 
     def test_a_plan_for_another_week_is_unprocessable(self, alice: User) -> None:
         other = date(2027, 7, 26)
