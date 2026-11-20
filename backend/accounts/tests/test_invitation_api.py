@@ -1,13 +1,18 @@
 import smtplib
 import uuid
 from datetime import timedelta
+from email import message_from_string
+from email.policy import default
 from http import HTTPStatus
+from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 import pytest
 from django.core import mail
+from django.core.cache import cache
+from django.utils import timezone
 
-from accounts.models import User, UserInvitation
+from accounts.models import InvitationEmailCounter, User, UserInvitation
 from accounts.services.invitations import consume_invitation, create_invitation
 
 from .conftest import PASSWORD, AuthApi, enable_totp
@@ -55,10 +60,11 @@ def test_staff_creates_invitation_and_gets_a_link_once(staff_api: AuthApi) -> No
     assert body["status"] == "pending"
     link = urlparse(body["invite_url"])
     assert link.path == "/account/signup"
-    query = parse_qs(link.query)
-    assert set(query) == {"invitation", "email"}
-    assert query["email"] == ["invitee@example.com"]  # normalised like the stored address
-    token = query["invitation"][0]
+    assert link.query == ""
+    fragment = parse_qs(link.fragment)
+    assert set(fragment) == {"invitation", "email"}
+    assert fragment["email"] == ["invitee@example.com"]  # normalised like the stored address
+    token = fragment["invitation"][0]
     stored = UserInvitation.objects.get(pk=body["id"])
     assert stored.token_hash != token
     assert stored.invited_by is not None
@@ -67,7 +73,7 @@ def test_staff_creates_invitation_and_gets_a_link_once(staff_api: AuthApi) -> No
 
 def test_link_from_the_api_works_for_signup(staff_api: AuthApi) -> None:
     body = staff_api.call("POST", URL, {"email": "invitee@example.com"}).json()
-    token = parse_qs(urlparse(body["invite_url"]).query)["invitation"][0]
+    token = parse_qs(urlparse(body["invite_url"]).fragment)["invitation"][0]
 
     response = AuthApi().request(
         "POST",
@@ -79,13 +85,42 @@ def test_link_from_the_api_works_for_signup(staff_api: AuthApi) -> None:
     assert User.objects.filter(email="invitee@example.com").exists()
 
 
+@pytest.mark.parametrize("resend", [False, True])
+def test_foreign_host_cannot_change_returned_or_emailed_link(
+    staff_api: AuthApi, verified_staff: User, settings: Any, resend: bool
+) -> None:
+    settings.APP_ORIGIN = "https://pace.example.com:8443"
+    settings.ALLOWED_HOSTS = ["*"]
+    url = URL
+    data = {"email": "invitee@example.com"}
+    expected_status = HTTPStatus.CREATED
+    if resend:
+        created = create_invitation(invited_by=verified_staff, email=data["email"])
+        url = f"{URL}{created.invitation.pk}/resend/"
+        expected_status = HTTPStatus.OK
+    staff_api.client.defaults["HTTP_HOST"] = "foreign.example.com"
+
+    response = staff_api.call("POST", url, data)
+
+    assert response.status_code == expected_status
+    body = response.json()
+    assert body["invite_url"].startswith("https://pace.example.com:8443/account/signup#")
+    assert body["delivery"] == "sent"
+    assert body["email_sent"] is True
+    [message] = mail.outbox
+    assert body["invite_url"] in message.body
+    assert "foreign.example.com" not in message.body
+
+
 def test_link_keeps_special_characters_of_the_email_intact(staff_api: AuthApi) -> None:
     body = staff_api.call("POST", URL, {"email": "ann+running@example.com"}).json()
 
-    query = parse_qs(urlparse(body["invite_url"]).query)
+    link = urlparse(body["invite_url"])
+    assert link.query == ""
+    fragment = parse_qs(link.fragment)
 
     # `+` must be percent-encoded, otherwise the signup page would read a space.
-    assert query["email"] == ["ann+running@example.com"]
+    assert fragment["email"] == ["ann+running@example.com"]
     assert "%2B" in body["invite_url"]
 
 
@@ -106,6 +141,7 @@ def test_create_rejects_invalid_email(staff_api: AuthApi) -> None:
 
     assert response.status_code == HTTPStatus.BAD_REQUEST
     assert UserInvitation.objects.count() == 0
+    assert not InvitationEmailCounter.objects.exists()
 
 
 def test_create_requires_csrf_token(staff_api: AuthApi) -> None:
@@ -150,7 +186,7 @@ def test_revoking_unknown_invitation_returns_404(staff_api: AuthApi) -> None:
 
 
 def token_of(url: str) -> str:
-    return parse_qs(urlparse(url).query)["invitation"][0]
+    return parse_qs(urlparse(url).fragment)["invitation"][0]
 
 
 def signup(token: str, email: str = "invitee@example.com") -> int:
@@ -166,8 +202,10 @@ def test_create_sends_one_email_with_a_working_link(staff_api: AuthApi) -> None:
     response = staff_api.call("POST", URL, {"email": "invitee@example.com"})
 
     body = response.json()
+    assert body["delivery"] == "sent"
     assert body["email_sent"] is True
     assert body["sent_at"] is not None
+    assert UserInvitation.objects.get(pk=body["id"]).sent_at is not None
     [message] = mail.outbox
     assert message.to == ["invitee@example.com"]
     assert body["invite_url"] in message.body
@@ -187,8 +225,10 @@ def test_create_survives_an_smtp_failure(
 
     assert response.status_code == HTTPStatus.CREATED
     body = response.json()
+    assert body["delivery"] == "failed"
     assert body["email_sent"] is False
     assert body["sent_at"] is None
+    assert UserInvitation.objects.get(pk=body["id"]).sent_at is None
     assert mail.outbox == []
     # The link still works, so the admin can hand it on.
     assert signup(token_of(body["invite_url"])) == HTTPStatus.UNAUTHORIZED
@@ -199,13 +239,19 @@ def test_resend_rotates_the_link_of_a_pending_invitation(
 ) -> None:
     created = create_invitation(invited_by=verified_staff, email="invitee@example.com")
 
+    previous = timezone.now() - timedelta(days=1)
+    UserInvitation.objects.filter(pk=created.invitation.pk).update(sent_at=previous)
+
     response = staff_api.call("POST", f"{URL}{created.invitation.pk}/resend/")
 
     assert response.status_code == HTTPStatus.OK
     body = response.json()
+    assert body["delivery"] == "sent"
     assert body["email_sent"] is True
     assert body["status"] == "pending"
     assert body["sent_at"] is not None
+    assert UserInvitation.objects.get(pk=body["id"]).sent_at is not None
+    assert UserInvitation.objects.get(pk=body["id"]).sent_at != previous
     [message] = mail.outbox
     assert body["invite_url"] in message.body
     new_token = token_of(body["invite_url"])
@@ -233,17 +279,55 @@ def test_resend_reports_an_smtp_failure(
     staff_api: AuthApi, verified_staff: User, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     created = create_invitation(invited_by=verified_staff, email="invitee@example.com")
+    previous = timezone.now() - timedelta(days=1)
+    UserInvitation.objects.filter(pk=created.invitation.pk).update(sent_at=previous)
 
     def failing_send(*args, **kwargs):
-        raise OSError("connection refused")
+        raise smtplib.SMTPException("refused")
 
     monkeypatch.setattr("accounts.services.invitations.send_mail", failing_send)
 
     response = staff_api.call("POST", f"{URL}{created.invitation.pk}/resend/")
 
     assert response.status_code == HTTPStatus.OK
-    assert response.json()["email_sent"] is False
-    assert signup(token_of(response.json()["invite_url"])) == HTTPStatus.UNAUTHORIZED
+    body = response.json()
+    assert body["delivery"] == "failed"
+    assert body["email_sent"] is False
+    assert body["sent_at"] == previous.isoformat().replace("+00:00", "Z")
+    created.invitation.refresh_from_db()
+    assert created.invitation.sent_at == previous
+    assert mail.outbox == []
+    assert signup(token_of(body["invite_url"])) == HTTPStatus.UNAUTHORIZED
+
+
+@pytest.mark.parametrize("resend", [False, True])
+def test_console_delivery_is_not_sent(
+    staff_api: AuthApi,
+    verified_staff: User,
+    settings: Any,
+    capsys: pytest.CaptureFixture[str],
+    resend: bool,
+) -> None:
+    url = URL
+    previous = None
+    if resend:
+        created = create_invitation(invited_by=verified_staff, email="invitee@example.com")
+        previous = timezone.now() - timedelta(days=1)
+        UserInvitation.objects.filter(pk=created.invitation.pk).update(sent_at=previous)
+        url = f"{URL}{created.invitation.pk}/resend/"
+    settings.MAILERS = {"default": {"BACKEND": "django.core.mail.backends.console.EmailBackend"}}
+
+    response = staff_api.call("POST", url, {"email": "invitee@example.com"})
+
+    assert response.status_code == (HTTPStatus.OK if resend else HTTPStatus.CREATED)
+    body = response.json()
+    assert body["delivery"] == "console"
+    assert body["email_sent"] is False
+    assert body["sent_at"] == (previous.isoformat().replace("+00:00", "Z") if previous else None)
+    assert UserInvitation.objects.get(pk=body["id"]).sent_at == previous
+    message = message_from_string(capsys.readouterr().out, policy=default)
+    assert body["invite_url"] in message.get_content()
+    assert mail.outbox == []
 
 
 def test_resend_refuses_used_and_revoked_invitations(
@@ -266,6 +350,7 @@ def test_resending_unknown_invitation_returns_404(staff_api: AuthApi) -> None:
     response = staff_api.call("POST", f"{URL}{uuid.uuid4()}/resend/")
 
     assert response.status_code == HTTPStatus.NOT_FOUND
+    assert not InvitationEmailCounter.objects.exists()
     assert mail.outbox == []
 
 
@@ -306,21 +391,56 @@ def test_resend_requires_csrf_token(staff_api: AuthApi, verified_staff: User) ->
     assert mail.outbox == []
 
 
-def test_create_is_rate_limited_but_listing_is_not(staff_api: AuthApi) -> None:
-    statuses = [
-        staff_api.call("POST", URL, {"email": f"user{i}@example.com"}).status_code
-        for i in range(21)
-    ]
+def assert_limited_without_changes(api: AuthApi, resend: str, *, window_seconds: int) -> None:
+    before = list(UserInvitation.objects.order_by("pk").values())
+    mail_count = len(mail.outbox)
+    for url, data in ((URL, {"email": "INVITEE@Example.com"}), (resend, None)):
+        response = api.call("POST", url, data)
+        assert response.status_code == HTTPStatus.TOO_MANY_REQUESTS
+        assert 0 < int(response.headers["Retry-After"]) <= window_seconds
+        assert list(UserInvitation.objects.order_by("pk").values()) == before
+        assert len(mail.outbox) == mail_count
+    # Reading invitations remains available even after both rejected requests.
+    for _ in range(21):
+        assert api.call("GET", URL).status_code == HTTPStatus.OK
 
-    assert statuses == [HTTPStatus.CREATED] * 20 + [HTTPStatus.TOO_MANY_REQUESTS]
-    assert staff_api.call("GET", URL).status_code == HTTPStatus.OK
 
-
-def test_resend_is_rate_limited(staff_api: AuthApi, verified_staff: User) -> None:
-    created = create_invitation(invited_by=verified_staff, email="a@example.com")
-    resend = f"{URL}{created.invitation.pk}/resend/"
-
-    statuses = [staff_api.call("POST", resend).status_code for _ in range(21)]
-
-    assert statuses == [HTTPStatus.OK] * 20 + [HTTPStatus.TOO_MANY_REQUESTS]
+def test_creates_and_resends_share_the_sender_limit(staff_api: AuthApi) -> None:
+    # Ten creates and ten resends use the same administrator's twenty reservations.
+    for i in range(10):
+        response = staff_api.call("POST", URL, {"email": f"user{i}@example.com"})
+        assert response.status_code == HTTPStatus.CREATED
+        resend = f"{URL}{response.json()['id']}/resend/"
+        assert staff_api.call("POST", resend).status_code == HTTPStatus.OK
     assert len(mail.outbox) == 20
+
+    # A process cache reset cannot clear the shared database counters.
+    cache.clear()
+    assert_limited_without_changes(staff_api, resend, window_seconds=60)
+
+
+def test_recipient_limit_spans_administrators_and_address_case(
+    staff_api: AuthApi, verified_user: User
+) -> None:
+    response = staff_api.call("POST", URL, {"email": "Invitee@Example.com"})
+    assert response.status_code == HTTPStatus.CREATED
+    resend = f"{URL}{response.json()['id']}/resend/"
+    for _ in range(4):
+        assert staff_api.call("POST", resend).status_code == HTTPStatus.OK
+    assert len(mail.outbox) == 5
+
+    verified_user.is_staff = True
+    verified_user.save(update_fields=["is_staff"])
+    factor = enable_totp(verified_user)
+    second_admin = AuthApi()
+    assert (
+        second_admin.login_with_totp(verified_user.email, factor.secret).status_code
+        == HTTPStatus.OK
+    )
+    cache.clear()
+    # Both a differently cased create and a resend of the stored address hit the same limit.
+    assert_limited_without_changes(second_admin, resend, window_seconds=3600)
+    # The refusal did not exhaust the second administrator's own limit.
+    assert second_admin.call("POST", URL, {"email": "other@example.com"}).status_code == (
+        HTTPStatus.CREATED
+    )

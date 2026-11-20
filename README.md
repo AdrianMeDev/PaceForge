@@ -190,17 +190,26 @@ it is:
 
 Administrators invite people on the **Invitations** page. PaceForge emails the signup link to the
 person, so one email is sent per invitation, and also shows the link once, so you can hand it on
-yourself if the mail does not arrive. Sending, resending and expired invitations are described in
+yourself if the mail does not arrive. Create and resend share limits of 20 emails per minute per
+administrator and 5 per hour per recipient across all workers. A request over either limit returns
+`429` with `Retry-After`. Without SMTP, invitations are printed to the console and reported as
+not sent (`delivery: "console"`, `email_sent: false`). Console output and failed sends leave the
+last sent time unchanged. Sending, resending and expired invitations are described in
 [docs/invitations.md](docs/invitations.md). The rest is what a new user sees.
 
 1. **Create an invitation.** Sign in as the administrator (with two-factor authentication turned on,
    see above), choose **Invitations** in the navigation, enter `ann@example.com` and press **Send
-   invitation by email**. The page says whether the email was sent. The link is shown **once**; keep
-   it as a fallback or press **Copy link** and send it to the person. If the link is lost, press
+   invitation by email**. The page distinguishes sent mail, console output and delivery failure.
+   Without SMTP it says: "No mail server is configured; the email was only written to the server
+   log. Send the link yourself." The same notices appear after **Resend**.
+   The link is shown **once**; keep it as a fallback or press **Copy link** and send it to the
+   person. If the link is lost, press
    **Resend** on the invitation: the old link stops working. Open the link in a private window so
    you stay signed in as the administrator in the other one.
-2. **Sign up.** The email address is prefilled and read-only. Choose a password. The page says a
-   confirmation link was sent.
+2. **Sign up.** The email address is prefilled and read-only. The page accepts fragment links
+   (`/account/signup#invitation=…&email=…`) and older query links. It replaces the URL with
+   `/account/signup` after reading the link. Keep the original link if you need to reload.
+   Choose a password. The page says a confirmation link was sent.
 3. **Confirm the address.** Open Mailpit (<http://localhost:8025>), open the message and follow
    the link. The page shows the address; confirming happens only when you press **Confirm email
    address**. Opening the link alone confirms nothing.
@@ -1748,6 +1757,7 @@ Set in `.env` or in the environment. Values without a default are required.
 | `DJANGO_SECRET_KEY`            | –                                   | Signing key. Required, there is deliberately no default.                          |
 | `DATABASE_URL`                 | empty                               | Optional full URL, e.g. `postgres://paceforge:<url-encoded-password>@localhost:5432/paceforge`. If empty, the `POSTGRES_*` settings are used. |
 | `APP_DOMAIN`                   | empty                               | Public host name without scheme, port or path. Used by Caddy for HTTPS and as the default for `DJANGO_ALLOWED_HOSTS` and `DJANGO_CSRF_TRUSTED_ORIGINS` (`https://<APP_DOMAIN>`). |
+| `APP_ORIGIN`                   | `https://<APP_DOMAIN>`; `http://localhost:4200` in debug without a domain; otherwise empty | Public origin for invitation links. Use `http://` or `https://`, a host and an optional port, without a path, query or fragment. A trailing slash is removed. Deploy checks require a non-empty HTTPS origin outside debug mode. Installations using only `DJANGO_ALLOWED_HOSTS` must add `APP_DOMAIN` or `APP_ORIGIN`. |
 | `DJANGO_DEBUG`                 | `false`                             | `true` for development. With `false`, cookies are sent only over HTTPS.           |
 | `DJANGO_ALLOWED_HOSTS`         | empty (or `APP_DOMAIN`)             | Comma-separated host names; must be set (directly or via `APP_DOMAIN`) when `DJANGO_DEBUG` is `false`. |
 | `DJANGO_CSRF_TRUSTED_ORIGINS`  | empty (or `https://<APP_DOMAIN>`)   | Comma-separated origins allowed to send state-changing requests.                  |

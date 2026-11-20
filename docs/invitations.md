@@ -10,10 +10,11 @@ and the admin API.
 
 1. Sign in as an administrator with two-factor authentication turned on.
 2. Open **Invitations**, enter the email address and press **Send invitation by email**.
-3. PaceForge creates the invitation and sends **one** email to that address with the signup link.
-4. The page shows the link once, with one of two notices:
-   - *The invitation email was sent to …*: the mail went to the mail system (see
-     [Mail delivery](#mail-delivery) for what that means without SMTP).
+3. PaceForge creates the invitation and attempts to send **one** email with the signup link.
+4. The page shows the link once, with one of three notices:
+   - *The invitation email was sent to …*: the mail system accepted the message.
+   - *No mail server is configured; the email was only written to the server log. Send the link
+     yourself.*: no mail left the server. Copy the link and send it yourself.
    - *The invitation email could not be delivered to …*: the invitation still exists. Copy the link
      and send it yourself, or resend the invitation later.
 
@@ -22,18 +23,35 @@ The link is shown only once. If you lose it, press **Resend** on the row.
 The invitation is valid for `INVITATION_TTL_DAYS` days (7 by default). It works once and only for
 the address it was created for.
 
+## Signup links
+
+The signup page accepts `/account/signup#invitation=<token>&email=<encoded-address>`.
+The fragment (the part after `#`) stays in the browser when the page is requested.
+Encode both values as URL parameters, including `+` as `%2B` and `%` as `%25`.
+
+PaceForge issues fragment links. Older query links
+(`/account/signup?invitation=<token>&email=<encoded-address>`) still work.
+If both forms occur in a link, the fragment invitation takes precedence.
+
+After reading either form, the signup page replaces the current history entry with
+`/account/signup`. The token and address stay in the open form, and the address is read-only.
+Reloading that bare URL shows the invitation-only message. Open the original invitation link
+again to restart signup.
+
 ## Mail delivery
 
 Django sends the mail. The setting `SMTP_HOST` decides where it goes.
 
-| Setup | Where the mail goes | `email_sent` |
-| --- | --- | --- |
-| Development: `.env.example` points SMTP at Mailpit | Mailpit on `127.0.0.1:1025`. Read it at <http://localhost:8025>. | `true` when Mailpit accepts the mail |
-| Production with SMTP | Your SMTP server, set with `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD` and `SMTP_USE_TLS`. | `true` when the server accepts the mail |
-| No SMTP (`SMTP_HOST` empty) | The Django console: the mail is written to the output of the process. In production that is the `backend` container log. | `true`, although nothing leaves the server |
+| Setup | Where the mail goes | `delivery` | Page notice | `email_sent` | `sent_at` |
+| --- | --- | --- | --- | --- | --- |
+| Development: `.env.example` points SMTP at Mailpit | Mailpit on `127.0.0.1:1025`. Read it at <http://localhost:8025>. | `sent` when accepted | Email was sent | `true` | Updated |
+| Production with SMTP | Your SMTP server, set with `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD` and `SMTP_USE_TLS`. | `sent` when accepted | Email was sent | `true` | Updated |
+| No SMTP (`SMTP_HOST` empty) | The Django console: the mail is written to the output of the process. In production that is the `backend` container log. | `console` | Only written to the server log; send the link yourself | `false` | Unchanged |
+| Network or SMTP error | The mail could not be sent. | `failed` | Email could not be delivered | `false` | Unchanged |
 
-**Without SMTP the page still says the email was sent.** The console backend never fails, so
-the notice cannot tell that no one will read the mail. Use the link on the page in that case.
+Without SMTP, nothing leaves the server. The page reports that the email was only written to the
+server log. Copy the link on the page and send it yourself. Console output does not update **Last sent**.
+A `sent` result means the mail system accepted the message; it does not confirm inbox delivery.
 
 Mailpit runs with the development services:
 
@@ -46,7 +64,7 @@ error, a timeout or an SMTP error), PaceForge:
 
 - logs an error with the invitation id and the type of the error, never the address, the token or
   the link,
-- keeps the invitation, and returns `email_sent: false`,
+- keeps the invitation, and returns `delivery: "failed"` and `email_sent: false`,
 - leaves `sent_at` as it was, so the table shows *Not sent* for a new invitation,
 - still returns the link, so the administrator is not blocked by a short outage.
 
@@ -92,12 +110,18 @@ one instead. A used invitation cannot be revoked (`409`).
 
 ## Rate limit
 
-- Creating and resending share one limit: **20 per minute per administrator**
-  (`invitation_email` in `backend/config/settings.py`). A request over the limit answers `429`. Nothing
-  is created or sent.
-- Listing invitations is not limited.
-- The counters live in each server process. With several Gunicorn workers (`GUNICORN_WORKERS`),
-  each worker counts on its own.
+Creating and resending share both limits:
+
+- **20 per minute per administrator**, across all recipient addresses.
+- **5 per hour per recipient address**, across all administrators. Address case does not matter.
+
+The counters live in PostgreSQL and are shared by all workers. Clearing the process cache does
+not reset them. The limits are set in `INVITATION_EMAIL_LIMITS` in `backend/config/settings.py`.
+Reservations count even when mail delivery fails.
+
+A request over either limit answers `429`. The `Retry-After` header gives the number of seconds
+to wait. No invitation is created, no token is rotated and no mail is sent. Listing invitations
+is not limited.
 
 ## Security and access
 
@@ -106,13 +130,16 @@ one instead. A used invitation cannot be revoked (`409`).
 - The list shows every invitation of the instance, not only the ones you sent.
 - The token is 256 bits of randomness. PaceForge stores only its SHA-256 hash. The plaintext token
   exists in the email and in the API response, once.
-- The signup link carries the token and the address as query parameters. The signup form reads
-  them and fills in the address, which is read-only.
+- PaceForge puts the token and address in the URL fragment (`#invitation=…&email=…`), so they
+  stay in the browser and are not sent in HTTP requests or logged by proxies. The signup form
+  still accepts older query links and removes the token and address from the visible URL after
+  reading them. See [Signup links](#signup-links).
 - Whoever has the link can register with that address until the invitation is used, revoked or
   expired. Send it only to the person it is for.
-- The link is built from the address that the administrator's request came in on. Open
-  **Invitations** on the public address of the instance (`APP_DOMAIN`), or the links point to the
-  wrong host.
+- The link uses `APP_ORIGIN`. It defaults to `https://<APP_DOMAIN>`, or `http://localhost:4200`
+  in debug mode without a domain. The administrator's request host cannot change the link.
+  Production requires a non-empty HTTPS origin. If you set only `DJANGO_ALLOWED_HOSTS`, add
+  `APP_DOMAIN` or `APP_ORIGIN`.
 
 ## Admin API
 
@@ -122,17 +149,21 @@ CSRF token, like every other `POST`.
 | Request | What it does | Answers |
 | --- | --- | --- |
 | `GET /api/admin/invitations/` | Lists all invitations, newest first. | `200` |
-| `POST /api/admin/invitations/` with `{"email": "ann@example.com"}` | Creates the invitation and sends one email. | `201` with `invite_url` and `email_sent`; `400` for a bad address; `429` over the limit |
-| `POST /api/admin/invitations/<id>/resend/` | Issues a new link, expiry and email. | `200` with `invite_url` and `email_sent`; `404` unknown; `409` used or revoked; `429` |
+| `POST /api/admin/invitations/` with `{"email": "ann@example.com"}` | Creates the invitation and sends one email. | `201` with `invite_url`, `delivery` and `email_sent`; `400` for a bad address; `429` over the limit |
+| `POST /api/admin/invitations/<id>/resend/` | Issues a new link, expiry and email. | `200` with `invite_url`, `delivery` and `email_sent`; `404` unknown; `409` used or revoked; `429` |
 | `POST /api/admin/invitations/<id>/revoke/` | Revokes a pending or expired invitation. | `200`; `404` unknown; `409` used |
 
 Each invitation has these fields: `id`, `email`, `status` (`pending`, `used`, `revoked` or
 `expired`), `created_at`, `expires_at` and `sent_at`. `sent_at` is `null` until a mail was
-delivered. `invite_url` and `email_sent` come only with the create and resend answers. The list
-never contains a link.
+accepted by the mail system. Console output and failed attempts leave it unchanged, including on
+resend. `invite_url`, `delivery` and `email_sent` come only with the create and resend answers.
+`delivery` is `sent`, `console` or `failed`. `email_sent` is `true` only for `sent`. The list never
+contains a link.
 
 ## Troubleshooting
 
+- **The page says the email was only written to the server log.** Configure SMTP to send mail,
+  or copy the link and send it yourself. This notice also appears after a console-only resend.
 - **The page says the email could not be delivered.** Check the `SMTP_*` settings. The backend log
   names the invitation id and the type of the error. Then press **Resend**, or hand the link on.
 - **Nothing arrives in development.** Check that Mailpit runs (`docker compose -f compose.dev.yaml
@@ -145,8 +176,12 @@ never contains a link.
 - `backend/accounts/services/invitations.py`: creating, sending, resending and revoking, and the
   token hash.
 - `backend/accounts/views.py`: `InvitationListCreateView`, `InvitationResendView` and
-  `InvitationRevokeView`. `backend/accounts/throttles.py` holds `InvitationEmailThrottle`.
-- Tests: `backend/accounts/tests/test_invitations.py` and `test_invitation_api.py`, and in the
+  `InvitationRevokeView`. Create validates the address before reserving; resend loads the stored
+  address before reserving. Both map `InvitationLimitError` to `429` with `Retry-After`.
+- `backend/accounts/services/invitation_limits.py`: atomic sender and recipient reservations in
+  database counters. These reservations happen before creating an invitation or rotating a token.
+- Tests: `backend/accounts/tests/test_invitations.py`, `test_invitation_limits.py` and
+  `test_invitation_api.py`, and in the
   frontend `src/app/core/admin/invitations-api.spec.ts` and
   `src/app/features/admin/invitations-page.spec.ts`. The backend tests read sent mail from Django's
   test outbox, so no test contacts a real mail server.

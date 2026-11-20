@@ -5,6 +5,7 @@ There are deliberately no insecure defaults for secrets.
 """
 
 import re
+from ipaddress import IPv6Address
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -56,6 +57,46 @@ if APP_DOMAIN and not re.fullmatch(
 ):
     raise ImproperlyConfigured("APP_DOMAIN must be a host name only, without scheme, port or path")
 ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=[APP_DOMAIN] if APP_DOMAIN else [])
+
+# Invitation links always use this configured origin, never the request's Host header.
+APP_ORIGIN = env.str(
+    "APP_ORIGIN",
+    default=f"https://{APP_DOMAIN}" if APP_DOMAIN else ("http://localhost:4200" if DEBUG else ""),
+).strip()
+if APP_ORIGIN:
+    try:
+        _origin = urlsplit(APP_ORIGIN)
+        _host = _origin.hostname or ""
+        if ":" in _host:
+            IPv6Address(_host)
+            _host = f"[{_host}]"
+        elif not re.fullmatch(
+            r"(?=.{1,253}$)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?"
+            r"(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*",
+            _host,
+        ):
+            raise ValueError
+        _port = _origin.port
+        if (
+            _origin.scheme not in {"http", "https"}
+            or _origin.username is not None
+            or _origin.password is not None
+            or _origin.path not in {"", "/"}
+            or "?" in APP_ORIGIN
+            or "#" in APP_ORIGIN
+            or any(character.isspace() for character in APP_ORIGIN)
+            or any(ord(character) < 32 or ord(character) == 127 for character in APP_ORIGIN)
+            or not re.fullmatch(re.escape(_host) + r"(?::[0-9]+)?", _origin.netloc, re.I)
+            or _origin.netloc.endswith(":")
+            or _port == 0
+        ):
+            raise ValueError
+        APP_ORIGIN = f"{_origin.scheme}://{_host}" + (f":{_port}" if _port is not None else "")
+    except ValueError as error:
+        raise ImproperlyConfigured(
+            "APP_ORIGIN must be an http:// or https:// origin with a host and optional port, "
+            "without credentials, path, query or fragment"
+        ) from error
 
 INSTALLED_APPS = [
     "django.contrib.auth",
@@ -230,8 +271,14 @@ REST_FRAMEWORK = {
         "chat": "10/min",
         "account_export": "5/min",
         "account_delete": "5/min",
-        "invitation_email": "20/min",
     },
+}
+
+# Invitation emails, counted in the database so every worker shares the numbers:
+# per sending administrator and per recipient address.
+INVITATION_EMAIL_LIMITS = {
+    "sender": {"limit": 20, "window_seconds": 60},
+    "recipient": {"limit": 5, "window_seconds": 3600},
 }
 
 # allauth: email + password, headless API for the SPA (browser client only).

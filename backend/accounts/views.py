@@ -6,10 +6,9 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import Throttled, ValidationError
 from rest_framework.request import Request
 from rest_framework.response import Response
-from rest_framework.throttling import BaseThrottle
 from rest_framework.views import APIView
 
 from accounts.models import User, UserInvitation
@@ -30,8 +29,10 @@ from accounts.services.deletion import (
     delete_account,
 )
 from accounts.services.export import build_user_export
+from accounts.services.invitation_limits import InvitationLimitError, reserve_invitation_email
 from accounts.services.invitations import (
     CreatedInvitation,
+    Delivery,
     InvalidInvitationError,
     build_invitation_url,
     create_invitation,
@@ -42,25 +43,22 @@ from accounts.services.invitations import (
 from accounts.throttles import (
     AccountDeleteThrottle,
     AccountExportThrottle,
-    InvitationEmailThrottle,
 )
 
 
-def _delivery_data(request: Request, created: CreatedInvitation) -> dict[str, Any]:
+def _delivery_data(created: CreatedInvitation) -> dict[str, Any]:
     """Mail the signup link and describe the result for the admin.
 
     The link is returned too: it is the only time the plaintext token leaves the server, and the
     admin can hand it on by other means when the mail did not go out.
     """
-    base_url = request.build_absolute_uri("/")
-    email_sent = send_invitation_email(created, base_url=base_url)
-    invite_url = build_invitation_url(
-        base_url=base_url, token=created.token, email=created.invitation.email
-    )
+    delivery = send_invitation_email(created)
+    invite_url = build_invitation_url(token=created.token, email=created.invitation.email)
     return {
         **InvitationSerializer(created.invitation).data,
         "invite_url": invite_url,
-        "email_sent": email_sent,
+        "delivery": delivery,
+        "email_sent": delivery == Delivery.SENT,
     }
 
 
@@ -68,12 +66,6 @@ class InvitationListCreateView(APIView):
     """Administrators with two-factor authentication: list invitations and create new ones."""
 
     permission_classes = [IsMfaAdmin]
-
-    def get_throttles(self) -> list[BaseThrottle]:
-        # Only creating sends mail; listing stays unthrottled.
-        if self.request.method == "POST":
-            return [InvitationEmailThrottle()]
-        return []
 
     def get(self, request: Request) -> Response:
         invitations = UserInvitation.objects.order_by("-created_at")
@@ -83,20 +75,30 @@ class InvitationListCreateView(APIView):
         serializer = InvitationCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         assert isinstance(request.user, User)  # IsMfaAdmin guarantees an authenticated user
+        try:
+            reserve_invitation_email(
+                sender=request.user, recipient=serializer.validated_data["email"]
+            )
+        except InvitationLimitError as error:
+            raise Throttled(wait=error.retry_after) from error
         created = create_invitation(
             invited_by=request.user, email=serializer.validated_data["email"]
         )
-        return Response(_delivery_data(request, created), status=status.HTTP_201_CREATED)
+        return Response(_delivery_data(created), status=status.HTTP_201_CREATED)
 
 
 class InvitationResendView(APIView):
     """Issue a new link for a pending or expired invitation and mail it again."""
 
     permission_classes = [IsMfaAdmin]
-    throttle_classes = [InvitationEmailThrottle]
 
     def post(self, request: Request, pk: str) -> Response:
         invitation = get_object_or_404(UserInvitation, pk=pk)
+        assert isinstance(request.user, User)  # IsMfaAdmin guarantees an authenticated user
+        try:
+            reserve_invitation_email(sender=request.user, recipient=invitation.email)
+        except InvitationLimitError as error:
+            raise Throttled(wait=error.retry_after) from error
         try:
             created = resend_invitation(invitation)
         except InvalidInvitationError:
@@ -104,7 +106,7 @@ class InvitationResendView(APIView):
                 {"detail": "A used or revoked invitation cannot be sent again."},
                 status=status.HTTP_409_CONFLICT,
             )
-        return Response(_delivery_data(request, created))
+        return Response(_delivery_data(created))
 
 
 class InvitationRevokeView(APIView):

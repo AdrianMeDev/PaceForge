@@ -79,3 +79,17 @@ class UserInvitation(models.Model):
         if self.expires_at <= timezone.now():
             return self.Status.EXPIRED
         return self.Status.PENDING
+
+
+class InvitationEmailCounter(models.Model):
+    """Shared send counter for one scope and identity, so every worker sees the same limits.
+
+    ``key`` is the SHA-256 hex of the scope and identity; the recipient address is never stored.
+    """
+
+    key = models.CharField(max_length=64, unique=True, editable=False)
+    window_start = models.DateTimeField(default=timezone.now)
+    count = models.PositiveIntegerField(default=0)
+
+    def __str__(self) -> str:
+        return f"{self.key[:12]} ({self.count})"

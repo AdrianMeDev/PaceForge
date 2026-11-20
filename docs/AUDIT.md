@@ -1911,7 +1911,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** M1
 - **Size:** L, ~7 commits
 
-### M5 [ ] Audit: Administrator bootstrap and invitation delivery
+### M5 [x] Audit: Administrator bootstrap and invitation delivery
 
 - **Goal:** Make administrator creation race-safe and invitation delivery bounded, private and accurately reported.
 - **Includes:** F22 (bootstrap race), F13 (recipient throttling), F534 (cross-worker admin throttling), F533 (token and email in URLs), F535 (request-derived host), F536 (console delivery status).
@@ -2252,3 +2252,4 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - 2026-11-20: M2 done: CI generates fresh Django and Fernet keys per run and verifies the PGDG APT key fingerprint before trusting it; M2 test suites use synthetic provider markers, guarded by a regression test against `sk-ant-` literals
 - 2026-11-20: M3 done: `DJANGO_TRUST_PROXY_HEADERS` defaults to `false` (F255; `true` on `backend` behind Caddy); strict CSP with `script-src 'self'` and `object-src 'none'` in `deploy/Caddyfile` (F525); frontend `/srv` owned by root and read-only for the runtime user (F543); static server answers `/api` with `404` (F544); container smoke tests in `deploy/smoke_test.py` for deep links, missing API routes and direct static `/api` requests
 - 2026-11-20: M4 done: backup keys are compared as decoded bytes against every instance key (F254, F262); an empty `ENCRYPTION_KEY` ring is refused at startup (F256); the PostgreSQL tools get only the libpq environment (F261); the restore takes its password from `--password-file` (F269); `BACKUP_INTERVAL_HOURS` is validated before the first dump (F270); the backup guide explains off-host copies and the separately held key (F527)
+- 2026-11-20: M5 done: administrator bootstrap is serialized (F22); create and resend share atomic recipient and administrator limits across workers (F13, F534); fragment links and signup URL cleanup protect invitation data (F533); links use the configured public origin (F535); the API and admin page distinguish mail acceptance, console output and failure (F536), with regression tests.

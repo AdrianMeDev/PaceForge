@@ -1,6 +1,8 @@
 import hashlib
 import smtplib
 from datetime import timedelta
+from email import message_from_string
+from email.policy import default
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -9,6 +11,7 @@ from django.utils import timezone
 
 from accounts.models import User, UserInvitation
 from accounts.services.invitations import (
+    Delivery,
     InvalidInvitationError,
     build_invitation_url,
     consume_invitation,
@@ -22,7 +25,10 @@ from accounts.services.invitations import (
 
 pytestmark = pytest.mark.django_db
 
-BASE_URL = "https://pace.example.com/"
+
+@pytest.fixture(autouse=True)
+def public_origin(settings):
+    settings.APP_ORIGIN = "https://pace.example.com"
 
 
 @pytest.fixture
@@ -141,31 +147,31 @@ def test_default_lifetime_comes_from_settings(admin: User, settings) -> None:
 
 
 def test_signup_link_carries_token_and_email() -> None:
-    url = build_invitation_url(base_url=BASE_URL, token="tok", email="a@example.com")
+    url = build_invitation_url(token="tok", email="a@example.com")
 
     parts = urlparse(url)
     assert (
         f"{parts.scheme}://{parts.netloc}{parts.path}" == "https://pace.example.com/account/signup"
     )
-    assert parse_qs(parts.query) == {"invitation": ["tok"], "email": ["a@example.com"]}
+    assert parts.query == ""
+    assert parse_qs(parts.fragment) == {"invitation": ["tok"], "email": ["a@example.com"]}
 
 
-def test_signup_link_does_not_depend_on_a_trailing_slash() -> None:
-    with_slash = build_invitation_url(base_url=BASE_URL, token="tok", email="a@example.com")
-    without = build_invitation_url(
-        base_url="https://pace.example.com", token="tok", email="a@example.com"
-    )
+def test_signup_link_uses_the_configured_origin(settings) -> None:
+    settings.APP_ORIGIN = "http://localhost:4200"
 
-    assert with_slash == without
+    url = build_invitation_url(token="tok", email="a@example.com")
+
+    assert url.startswith("http://localhost:4200/account/signup#")
 
 
 def test_invitation_email_is_one_mail_with_an_unescaped_link(admin: User, settings) -> None:
     created = create_invitation(invited_by=admin, email="invitee@example.com")
 
-    assert send_invitation_email(created, base_url=BASE_URL) is True
+    assert send_invitation_email(created) == Delivery.SENT
 
     [message] = mail.outbox
-    link = build_invitation_url(base_url=BASE_URL, token=created.token, email="invitee@example.com")
+    link = build_invitation_url(token=created.token, email="invitee@example.com")
     assert message.to == ["invitee@example.com"]
     assert message.from_email == settings.DEFAULT_FROM_EMAIL
     assert message.subject == "You are invited to PaceForge"
@@ -178,38 +184,81 @@ def test_invitation_email_is_one_mail_with_an_unescaped_link(admin: User, settin
 def test_invitation_email_says_when_the_link_expires(admin: User) -> None:
     created = create_invitation(invited_by=admin, email="invitee@example.com")
 
-    send_invitation_email(created, base_url=BASE_URL)
+    send_invitation_email(created)
 
     [message] = mail.outbox
     assert "works until" in message.body
     assert "works only once" in message.body
 
 
-def test_successful_send_sets_sent_at(admin: User) -> None:
+@pytest.fixture(params=["create", "resend"])
+def delivery_invitation(admin: User, request: pytest.FixtureRequest):
     created = create_invitation(invited_by=admin, email="invitee@example.com")
-    assert created.invitation.sent_at is None
+    if request.param == "resend":
+        # A failed or console resend must preserve the previous successful send time.
+        created.invitation.sent_at = timezone.now() - timedelta(days=1)
+        created.invitation.save(update_fields=["sent_at"])
+        return resend_invitation(created.invitation)
+    return created
 
-    send_invitation_email(created, base_url=BASE_URL)
 
-    created.invitation.refresh_from_db()
+def test_successful_send_sets_sent_at(delivery_invitation) -> None:
+    created = delivery_invitation
+    previous = created.invitation.sent_at
+
+    assert send_invitation_email(created) == Delivery.SENT
+
     assert created.invitation.sent_at is not None
+    assert created.invitation.sent_at != previous
+    sent_at = created.invitation.sent_at
+    created.invitation.refresh_from_db()
+    assert created.invitation.sent_at == sent_at
+    assert len(mail.outbox) == 1
+
+
+def test_console_send_leaves_sent_at_unchanged(
+    delivery_invitation,
+    settings,
+    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    created = delivery_invitation
+    previous = created.invitation.sent_at
+    settings.MAILERS = {"default": {"BACKEND": "django.core.mail.backends.console.EmailBackend"}}
+
+    assert send_invitation_email(created) == Delivery.CONSOLE
+
+    assert created.invitation.sent_at == previous
+    created.invitation.refresh_from_db()
+    assert created.invitation.sent_at == previous
+    output = capsys.readouterr().out
+    message = message_from_string(output, policy=default)
+    assert (
+        build_invitation_url(token=created.token, email=created.invitation.email)
+        in message.get_content()
+    )
+    assert mail.outbox == []
+    assert created.token not in caplog.text
+    assert created.invitation.email not in caplog.text
 
 
 @pytest.mark.parametrize("error", [smtplib.SMTPException("refused"), OSError("connection refused")])
-def test_failed_send_returns_false_and_leaves_sent_at_empty(
-    admin: User, monkeypatch: pytest.MonkeyPatch, error: Exception
+def test_failed_send_leaves_sent_at_unchanged(
+    delivery_invitation, monkeypatch: pytest.MonkeyPatch, error: Exception
 ) -> None:
-    created = create_invitation(invited_by=admin, email="invitee@example.com")
+    created = delivery_invitation
+    previous = created.invitation.sent_at
 
     def failing_send(*args, **kwargs):
         raise error
 
     monkeypatch.setattr("accounts.services.invitations.send_mail", failing_send)
 
-    assert send_invitation_email(created, base_url=BASE_URL) is False
+    assert send_invitation_email(created) == Delivery.FAILED
 
+    assert created.invitation.sent_at == previous
     created.invitation.refresh_from_db()
-    assert created.invitation.sent_at is None
+    assert created.invitation.sent_at == previous
     assert mail.outbox == []
 
 
@@ -223,7 +272,7 @@ def test_failed_send_logs_without_the_token_or_the_address(
 
     monkeypatch.setattr("accounts.services.invitations.send_mail", failing_send)
 
-    send_invitation_email(created, base_url=BASE_URL)
+    send_invitation_email(created)
 
     assert "Could not send invitation" in caplog.text
     assert "SMTPRecipientsRefused" in caplog.text

@@ -99,7 +99,7 @@ describe('InvitationsApi', () => {
 
   describe('create', () => {
     const LINK = 'http://localhost:4200/account/signup?invitation=tok&email=a%40b.de';
-    const CREATED = { ...SENT, invite_url: LINK, email_sent: true };
+    const CREATED = { ...SENT, invite_url: LINK, delivery: 'sent', email_sent: true };
 
     it('sends the email address in the body', async () => {
       const { request } = await run(api.create('invitee@example.com'), 'POST', URL, CREATED, 201);
@@ -114,7 +114,7 @@ describe('InvitationsApi', () => {
         kind: 'created',
         invitation: SENT,
         inviteUrl: LINK,
-        emailSent: true,
+        delivery: 'sent',
       });
       expect(JSON.stringify(result.kind === 'created' ? result.invitation : {})).not.toContain(
         'tok',
@@ -122,7 +122,7 @@ describe('InvitationsApi', () => {
     });
 
     it('reports whether the invitation mail could not be delivered', async () => {
-      const body = { ...PENDING, invite_url: LINK, email_sent: false };
+      const body = { ...PENDING, invite_url: LINK, delivery: 'failed', email_sent: false };
 
       const { result } = await run(api.create('invitee@example.com'), 'POST', URL, body, 201);
 
@@ -130,9 +130,36 @@ describe('InvitationsApi', () => {
         kind: 'created',
         invitation: PENDING,
         inviteUrl: LINK,
-        emailSent: false,
+        delivery: 'failed',
       });
     });
+
+    it.each(['sent', 'console', 'failed'] as const)(
+      'maps the %s delivery outcome',
+      async (delivery) => {
+        const body = { ...PENDING, invite_url: LINK, delivery, email_sent: delivery === 'sent' };
+
+        const { result } = await run(api.create('invitee@example.com'), 'POST', URL, body, 201);
+
+        expect(result).toEqual({ kind: 'created', invitation: PENDING, inviteUrl: LINK, delivery });
+      },
+    );
+
+    it.each(['unknown', undefined, null, true, 1, {}])(
+      'treats an unknown delivery value %j as failed even with email_sent true',
+      async (delivery) => {
+        const body = { ...PENDING, invite_url: LINK, delivery, email_sent: true };
+
+        const { result } = await run(api.create('invitee@example.com'), 'POST', URL, body, 201);
+
+        expect(result).toEqual({
+          kind: 'created',
+          invitation: PENDING,
+          inviteUrl: LINK,
+          delivery: 'failed',
+        });
+      },
+    );
 
     it('reports a rate limit when too many invitation mails were sent', async () => {
       const { result } = await run(
@@ -181,7 +208,7 @@ describe('InvitationsApi', () => {
   describe('resend', () => {
     const RESEND = `${URL}${ID}/resend/`;
     const LINK = 'http://localhost:4200/account/signup?invitation=new&email=a%40b.de';
-    const RESENT = { ...SENT, invite_url: LINK, email_sent: true };
+    const RESENT = { ...SENT, invite_url: LINK, delivery: 'sent', email_sent: true };
 
     it('posts to the resend address of that invitation', async () => {
       const { request } = await run(api.resend(ID), 'POST', RESEND, RESENT, 200);
@@ -197,12 +224,12 @@ describe('InvitationsApi', () => {
         kind: 'resent',
         invitation: SENT,
         inviteUrl: LINK,
-        emailSent: true,
+        delivery: 'sent',
       });
     });
 
     it('reports a mail that could not be delivered without failing the resend', async () => {
-      const body = { ...RESENT, email_sent: false };
+      const body = { ...RESENT, delivery: 'failed', email_sent: false };
 
       const { result } = await run(api.resend(ID), 'POST', RESEND, body, 200);
 
@@ -210,9 +237,36 @@ describe('InvitationsApi', () => {
         kind: 'resent',
         invitation: SENT,
         inviteUrl: LINK,
-        emailSent: false,
+        delivery: 'failed',
       });
     });
+
+    it.each(['sent', 'console', 'failed'] as const)(
+      'maps the %s delivery outcome',
+      async (delivery) => {
+        const body = { ...PENDING, invite_url: LINK, delivery, email_sent: delivery === 'sent' };
+
+        const { result } = await run(api.resend(ID), 'POST', RESEND, body, 200);
+
+        expect(result).toEqual({ kind: 'resent', invitation: PENDING, inviteUrl: LINK, delivery });
+      },
+    );
+
+    it.each(['unknown', undefined, null, true, 1, {}])(
+      'treats an unknown delivery value %j as failed even with email_sent true',
+      async (delivery) => {
+        const body = { ...PENDING, invite_url: LINK, delivery, email_sent: true };
+
+        const { result } = await run(api.resend(ID), 'POST', RESEND, body, 200);
+
+        expect(result).toEqual({
+          kind: 'resent',
+          invitation: PENDING,
+          inviteUrl: LINK,
+          delivery: 'failed',
+        });
+      },
+    );
 
     it('reports an invitation that was used or revoked', async () => {
       const { result } = await run(

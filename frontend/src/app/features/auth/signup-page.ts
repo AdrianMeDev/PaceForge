@@ -1,8 +1,9 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, DOCUMENT, inject, OnInit, signal } from '@angular/core';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { AuthApi } from '../../core/auth/auth-api';
 import { ApiError } from '../../core/auth/auth-models';
+import { readInvitationLink } from './invitation-link';
 import { passwordsMatch } from './password-match';
 
 const INVITATION_MESSAGE =
@@ -13,7 +14,7 @@ const FALLBACK_MESSAGE = 'Something went wrong. Please try again.';
 
 /**
  * Account creation for people who follow an invitation link
- * (`/account/signup?invitation=<token>&email=<address>`). The address from the link is shown
+ * (`/account/signup#invitation=<token>&email=<address>`), or an older query link. The address is shown
  * read-only; the server still checks that the invitation belongs to it.
  */
 @Component({
@@ -21,12 +22,13 @@ const FALLBACK_MESSAGE = 'Something went wrong. Please try again.';
   imports: [ReactiveFormsModule, RouterLink],
   templateUrl: './signup-page.html',
 })
-export class SignupPage {
+export class SignupPage implements OnInit {
   private readonly api = inject(AuthApi);
-  private readonly params = inject(ActivatedRoute).snapshot.queryParamMap;
+  private readonly router = inject(Router);
+  private readonly invitation = readInvitationLink(inject(DOCUMENT).location.href);
 
-  protected readonly invitationToken = (this.params.get('invitation') ?? '').trim();
-  protected readonly lockedEmail = (this.params.get('email') ?? '').trim();
+  protected readonly invitationToken = this.invitation.invitationToken;
+  protected readonly lockedEmail = this.invitation.email;
 
   protected readonly form = inject(NonNullableFormBuilder).group(
     {
@@ -41,6 +43,10 @@ export class SignupPage {
   protected readonly errors = signal<string[]>([]);
   protected readonly passwordErrors = signal<string[]>([]);
   protected readonly created = signal<{ email: string; needsVerification: boolean } | null>(null);
+
+  ngOnInit(): void {
+    void this.router.navigateByUrl('/account/signup', { replaceUrl: true });
+  }
 
   protected async submit(): Promise<void> {
     if (this.submitting()) {

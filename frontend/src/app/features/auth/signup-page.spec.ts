@@ -1,33 +1,46 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
+import { Location } from '@angular/common';
+import { DOCUMENT } from '@angular/core';
+import { Router, provideRouter } from '@angular/router';
+import { RouterTestingHarness } from '@angular/router/testing';
 import { AuthApi } from '../../core/auth/auth-api';
 import { SignupRequest, SignupResult } from '../../core/auth/auth-models';
-import { query, settle, typeInto } from '../../testing/dom';
+import { query, required, settle, typeInto } from '../../testing/dom';
 import { SignupPage } from './signup-page';
 
 const PASSWORD = 'correct-horse-battery-9';
 
 describe('SignupPage', () => {
   let signup: ReturnType<typeof vi.fn<(request: SignupRequest) => Promise<SignupResult>>>;
-  let fixture: ComponentFixture<SignupPage>;
+  let fixture: ComponentFixture<unknown>;
   let page: HTMLElement;
 
-  async function setup(params: Record<string, string> = { invitation: 'tok-123' }): Promise<void> {
+  afterEach(() => {
+    window.history.replaceState(null, '', '/');
+  });
+
+  async function setup(url = '/account/signup#invitation=tok-123') {
     signup = vi.fn<(request: SignupRequest) => Promise<SignupResult>>();
     TestBed.configureTestingModule({
       imports: [SignupPage],
       providers: [
-        provideRouter([]),
+        provideRouter([{ path: 'account/signup', component: SignupPage }]),
         { provide: AuthApi, useValue: { signup } },
-        {
-          provide: ActivatedRoute,
-          useValue: { snapshot: { queryParamMap: convertToParamMap(params) } },
-        },
       ],
     });
-    fixture = TestBed.createComponent(SignupPage);
-    page = fixture.nativeElement as HTMLElement;
+    // The harness uses a mock location; DOCUMENT must still contain the raw browser URL.
+    required(TestBed.inject(DOCUMENT).defaultView, 'the browser window').history.replaceState(
+      null,
+      '',
+      url,
+    );
+    const replaceState = vi.spyOn(TestBed.inject(Location), 'replaceState');
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl(url);
+    fixture = harness.fixture;
+    page = required(harness.routeNativeElement, 'the signup page');
     await fixture.whenStable();
+    return replaceState;
   }
 
   async function submit(options: { email?: string; password?: string; confirm?: string } = {}) {
@@ -48,12 +61,17 @@ describe('SignupPage', () => {
   const submitButton = () => query<HTMLButtonElement>(page, 'button[type="submit"]');
 
   describe('without an invitation token', () => {
-    const withoutToken: Record<string, string>[] = [{}, { invitation: '' }, { invitation: '   ' }];
+    const withoutToken = [
+      '/account/signup',
+      '/account/signup#invitation=',
+      '/account/signup#invitation=%20%20',
+      '/account/signup?email=ann%40example.com',
+    ];
 
     it.each(withoutToken)(
       'explains that registration needs an invitation and shows no form for %j',
-      async (params) => {
-        await setup(params);
+      async (url) => {
+        await setup(url);
 
         expect(page.textContent).toContain('by invitation only');
         expect(page.querySelector('form')).toBeNull();
@@ -61,6 +79,31 @@ describe('SignupPage', () => {
       },
     );
   });
+
+  it.each(['#', '?'])(
+    'keeps %s invitation values for signup after replacing the URL',
+    async (separator) => {
+      const replaceState = await setup(
+        `/account/signup${separator}invitation=tok-123&email=ann%2Brun%25club%40example.com`,
+      );
+      signup.mockResolvedValue({ kind: 'authenticated' });
+
+      expect(replaceState).toHaveBeenCalledWith('/account/signup', '', expect.any(Object));
+      expect(TestBed.inject(Router).url).toBe('/account/signup');
+      expect(TestBed.inject(Location).path(true)).toBe('/account/signup');
+      const email = query<HTMLInputElement>(page, '#email');
+      expect(email.value).toBe('ann+run%club@example.com');
+      expect(email.readOnly).toBe(true);
+
+      await submit();
+
+      expect(signup).toHaveBeenCalledWith({
+        email: 'ann+run%club@example.com',
+        password: PASSWORD,
+        invitationToken: 'tok-123',
+      });
+    },
+  );
 
   describe('form', () => {
     it('shows labelled fields', async () => {
@@ -74,7 +117,7 @@ describe('SignupPage', () => {
     });
 
     it('prefills the email from the link and does not let it be edited', async () => {
-      await setup({ invitation: 'tok-123', email: 'ann+run@example.com' });
+      await setup('/account/signup#invitation=tok-123&email=ann%2Brun%40example.com');
 
       const email = query<HTMLInputElement>(page, '#email');
       expect(email.value).toBe('ann+run@example.com');
@@ -115,7 +158,7 @@ describe('SignupPage', () => {
 
   describe('submitting', () => {
     it('sends email, password and the invitation token and then asks to check the inbox', async () => {
-      await setup({ invitation: 'tok-123', email: 'ann@example.com' });
+      await setup('/account/signup#invitation=tok-123&email=ann%40example.com');
       signup.mockResolvedValue({
         kind: 'pending',
         flows: [{ id: 'verify_email', is_pending: true }],
