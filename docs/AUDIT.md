@@ -1927,7 +1927,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** -
 - **Size:** M, ~5 commits
 
-### M7 [~] Audit: AI provider transport and JSON decoding
+### M7 [x] Audit: AI provider transport and JSON decoding
 
 - **Goal:** Restrict outbound calls to operator-approved destinations and keep transport errors and non-finite numbers out of provider results.
 - **Includes:** F233 (stored endpoint validation), F243 (allowlist test), F234 (header errors exposing keys), F223 (numeric overflow), F239 (JSON error positions).
@@ -2254,3 +2254,4 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - 2026-11-20: M3 done: `DJANGO_TRUST_PROXY_HEADERS` defaults to `false` (F255; `true` on `backend` behind Caddy); strict CSP with `script-src 'self'` and `object-src 'none'` in `deploy/Caddyfile` (F525); frontend `/srv` owned by root and read-only for the runtime user (F543); static server answers `/api` with `404` (F544); container smoke tests in `deploy/smoke_test.py` for deep links, missing API routes and direct static `/api` requests
 - 2026-11-20: M4 done: backup keys are compared as decoded bytes against every instance key (F254, F262); an empty `ENCRYPTION_KEY` ring is refused at startup (F256); the PostgreSQL tools get only the libpq environment (F261); the restore takes its password from `--password-file` (F269); `BACKUP_INTERVAL_HOURS` is validated before the first dump (F270); the backup guide explains off-host copies and the separately held key (F527)
 - 2026-11-20: M5 done: administrator bootstrap is serialized (F22); create and resend share atomic recipient and administrator limits across workers (F13, F534); fragment links and signup URL cleanup protect invitation data (F533); links use the configured public origin (F535); the API and admin page distinguish mail acceptance, console output and failure (F536), with regression tests.
+- 2026-11-20: M7 done: stored AI provider endpoints are validated on save and checked against the call-time allowlist before outbound requests (F233, F243); invalid HTTP headers raise fixed transport errors without leaking credentials (F234); non-finite floats from numeric overflow are refused during JSON decoding (F223); malformed JSON tests assert exact numeric line and column positions without echoing input (F239).

@@ -1,4 +1,5 @@
 import json
+import re
 from typing import Any
 
 import pytest
@@ -97,11 +98,23 @@ class TestWhatIsRefused:
     def test_two_objects_are_broken_json(self) -> None:
         assert refused('{"a": 1}{"b": 2}').startswith("The answer is not valid JSON (Extra data")
 
-    def test_json_that_is_broken_says_where_in_numbers_only(self) -> None:
-        message = refused('{"a": 1,}')
+    @pytest.mark.parametrize(
+        ("text", "expected_position"),
+        [
+            ('{"a": 1,}', "line 1, column 8"),
+            (f'{{\n  "a": "{MARKER}",\n  "b": ,\n}}', "line 3, column 8"),
+        ],
+    )
+    def test_json_that_is_broken_says_where_in_numbers_only(
+        self, text: str, expected_position: str
+    ) -> None:
+        message = refused(text)
 
-        assert message.startswith("The answer is not valid JSON (")
-        assert message.endswith(").")
+        assert re.fullmatch(
+            rf"The answer is not valid JSON \([A-Za-z ]+, {expected_position}\)\.",
+            message,
+        )
+        assert MARKER not in message
 
     def test_a_number_that_is_too_big(self) -> None:
         assert refused('{"a": ' + "9" * 5000 + "}", limit=10_000) == (
