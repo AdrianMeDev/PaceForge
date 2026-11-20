@@ -135,7 +135,8 @@ progression rule and it is not a training day. It is only allowed if the athlete
 
 **Errors.** The parser reports *every* problem at once, each with its path
 (`workouts[2].segments[0].seconds`). One mistake is one problem: a missing field is reported once.
-No message repeats anything that was sent; an unknown field is named only if it looks like a name.
+No message or path repeats an unknown key. Unknown fields are reported once per object at the
+parent path, without naming the unknown keys.
 
 ## Zone systems
 

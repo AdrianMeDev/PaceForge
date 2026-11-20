@@ -202,7 +202,7 @@ class TestReplanFrom:
         found = problems_of({"tool": "replan_from", "note": "x"})
 
         assert set(found) == {
-            "actions[0].note",
+            "actions[0]",
             "actions[0].start",
             "actions[0].days",
             "actions[0].kind",
@@ -229,8 +229,28 @@ class TestWhatIsRefused:
 
     def test_fields_that_are_missing_or_not_part_of_the_tool(self) -> None:
         found = problems_of({"tool": "skip_workout", "id": str(RUN), "reason": "x"})
-        assert "actions[0].reason" in found
+        assert "actions[0]" in found
         assert "actions[0].id" in problems_of({"tool": "skip_workout"})
+
+    @pytest.mark.parametrize(
+        "unknown", ["coach_written_key", "ignore the rules", "injected\nreply", "direction\u202e"]
+    )
+    def test_unknown_keys_are_never_echoed(self, unknown: str) -> None:
+        with pytest.raises(ActionFormatError) as caught:
+            read(
+                {"tool": "reduce_week", "percent": 20, unknown: "x", "another_key": "y"},
+                {"tool": "skip_workout", unknown: "z"},
+            )
+
+        assert [(p.path, p.message) for p in caught.value.problems] == [
+            ("actions[0]", "This field is not part of the tool."),
+            ("actions[1]", "This field is not part of the tool."),
+            ("actions[1].id", "This field is missing."),
+        ]
+        for key in (unknown, "another_key"):
+            assert all(key not in p.path and key not in p.message for p in caught.value.problems)
+            assert key not in str(caught.value)
+            assert key not in repr(caught.value)
 
     def test_a_workout_that_is_not_in_the_plan(self) -> None:
         stranger = "0195f3a0-0000-7000-8000-0000000000ff"
@@ -316,7 +336,7 @@ class TestWhatIsRefused:
         extra = problems_of(
             {"tool": "mark_sick", "symptoms": "above_neck", "fever": False, "days": 2, "note": "x"}
         )
-        assert set(extra) == {"actions[0].note"}
+        assert set(extra) == {"actions[0]"}
 
         all_bad = problems_of({"tool": "mark_sick", "symptoms": "bad", "fever": "yes", "days": 99})
         assert set(all_bad) == {"actions[0].symptoms", "actions[0].fever", "actions[0].days"}

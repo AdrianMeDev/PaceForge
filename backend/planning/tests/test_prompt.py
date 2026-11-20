@@ -182,7 +182,7 @@ class TestReadingAnAnswer:
 
         (problem,) = problems_of(text)
 
-        assert problem.path == "x"  # read as far as the parser: the unknown key is the problem
+        assert problem == Problem("", "Unknown field.")  # reached the schema parser
 
 
 class TestTheWeek:
@@ -231,6 +231,8 @@ class TestTheProblemsOfThePlan:
         data["workouts"][0]["sport"] = MARKER
         data["workouts"][0]["title"] = MARKER * 50
         data["workouts"][0][f"{MARKER}!"] = MARKER
+        data[MARKER] = MARKER
+        data["workouts"][0][MARKER] = MARKER
         data["workouts"][0]["segments"] = [{"kind": MARKER, "seconds": MARKER}]
         data["rationale"] = ["x", MARKER]
         text = answer(data)

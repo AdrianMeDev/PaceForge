@@ -219,8 +219,8 @@ def _read_one(
         problems.append(Problem(f"{path}.tool", "This is not one of the tools."))
         return None
     before = len(problems)
-    for name in sorted(set(item) - _FIELDS[tool]):
-        problems.append(Problem(f"{path}.{name}", "This field is not part of the tool."))
+    if set(item) - _FIELDS[tool]:
+        problems.append(Problem(path, "This field is not part of the tool."))
     for name in sorted(_REQUIRED[tool] - set(item)):
         problems.append(Problem(f"{path}.{name}", "This field is missing."))
     if len(problems) > before:

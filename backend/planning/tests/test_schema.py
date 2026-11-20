@@ -263,7 +263,7 @@ class TestThePlanAsAWhole:
         assert problems_of(data) == [Problem(missing, "Is required.")]
 
     def test_an_unknown_field_is_refused(self) -> None:
-        assert problems_of(plan(colour="red")) == [Problem("colour", "Unknown field.")]
+        assert problems_of(plan(colour="red")) == [Problem("", "Unknown field.")]
 
     @pytest.mark.parametrize(
         "value", [5, None, ["2027-07-12"], True, "", "2027-7-12", "20270712", "12.07.2027"]
@@ -308,7 +308,28 @@ class TestThePlanAsAWhole:
 
     def test_the_rationale_may_have_line_breaks_but_no_other_controls(self) -> None:
         assert parse_week_plan(plan(rationale="a\nb")).rationale == "a\nb"
-        for bad in ["a\x00b", "a\rb", "a\tb", "a\x1bb", "a\x7fb", "a b", "a‮b"]:
+        bad_values = [
+            "a\x00b",
+            "a\rb",
+            "a\tb",
+            "a\x1bb",
+            "a\x7fb",
+            "a\u2028b",
+            "a\u2029b",
+            "a\u061cb",
+            "a\u200eb",
+            "a\u200fb",
+            "a\u202ab",
+            "a\u202bb",
+            "a\u202cb",
+            "a\u202db",
+            "a\u202eb",
+            "a\u2066b",
+            "a\u2067b",
+            "a\u2068b",
+            "a\u2069b",
+        ]
+        for bad in bad_values:
             assert paths_of(plan(rationale=bad)) == ["rationale"], repr(bad)
 
     @pytest.mark.parametrize("value", [None, {}, "x", 5, {"0": {}}])
@@ -341,9 +362,7 @@ class TestAWorkout:
         ]
 
     def test_an_unknown_field_is_refused(self) -> None:
-        assert problems_of(with_workout(colour="red")) == [
-            Problem("workouts[0].colour", "Unknown field.")
-        ]
+        assert problems_of(with_workout(colour="red")) == [Problem("workouts[0]", "Unknown field.")]
 
     @pytest.mark.parametrize("sport", ["running", "cycling", "swimming", "strength"])
     def test_every_sport_is_known(self, sport: str) -> None:
@@ -394,7 +413,28 @@ class TestAWorkout:
             Problem("workouts[0].title", "Must be text.")
         ]
 
-    @pytest.mark.parametrize("title", ["a\nb", "a\tb", "a\x00b", "a b", "a b", "a‮b", "a⁦b"])
+    @pytest.mark.parametrize(
+        "title",
+        [
+            "a\nb",
+            "a\tb",
+            "a\x00b",
+            "a\u2028b",
+            "a\u2029b",
+            "a\u061cb",
+            "a\u200eb",
+            "a\u200fb",
+            "a\u202ab",
+            "a\u202bb",
+            "a\u202cb",
+            "a\u202db",
+            "a\u202eb",
+            "a\u2066b",
+            "a\u2067b",
+            "a\u2068b",
+            "a\u2069b",
+        ],
+    )
     def test_a_title_has_no_line_breaks_or_controls(self, title: str) -> None:
         assert problems_of(with_workout(title=title)) == [
             Problem("workouts[0].title", "Must not contain control characters.")
@@ -405,7 +445,27 @@ class TestAWorkout:
         assert parse_week_plan(with_workout(notes="n" * 500)).workouts[0].notes == "n" * 500
         assert paths_of(with_workout(notes="n" * 501)) == ["workouts[0].notes"]
         assert paths_of(with_workout(notes=5)) == ["workouts[0].notes"]
-        assert paths_of(with_workout(notes="a\x00b")) == ["workouts[0].notes"]
+        bad_notes = [
+            "a\x00b",
+            "a\u2028b",
+            "a\u2029b",
+            "a\u061cb",
+            "a\u200eb",
+            "a\u200fb",
+            "a\u202ab",
+            "a\u202bb",
+            "a\u202cb",
+            "a\u202db",
+            "a\u202eb",
+            "a\u2066b",
+            "a\u2067b",
+            "a\u2068b",
+            "a\u2069b",
+        ]
+        for bad in bad_notes:
+            assert problems_of(with_workout(notes=bad)) == [
+                Problem("workouts[0].notes", "Must not contain control characters.")
+            ], repr(bad)
 
     @pytest.mark.parametrize("day", ["2027-07-13", "2027-07-12", "2027-07-18", "2027-12-31"])
     def test_a_day_is_any_date(self, day: str) -> None:
@@ -678,7 +738,7 @@ class TestTheSegments:
 
     def test_an_unknown_field_is_refused(self) -> None:
         assert problems_of(with_segment(colour="red")) == [
-            Problem("workouts[0].segments[0].colour", "Unknown field.")
+            Problem("workouts[0].segments[0]", "Unknown field.")
         ]
 
     @pytest.mark.parametrize("value", [None, [], "x", 5])
@@ -833,8 +893,8 @@ class TestTheExercises:
 
         assert problems_of(data) == [Problem(f"workouts[0].exercises[0].{missing}", "Is required.")]
 
-    def test_an_unknown_field_is_named(self) -> None:
-        assert paths_of(with_exercise(weight_kg=20)) == ["workouts[0].exercises[0].weight_kg"]
+    def test_an_unknown_field_is_reported_at_its_parent(self) -> None:
+        assert paths_of(with_exercise(weight_kg=20)) == ["workouts[0].exercises[0]"]
 
     def test_at_most_fifteen_exercises(self) -> None:
         many = plan(workouts=[workout(sport="strength", exercises=[exercise()] * 16)])
@@ -946,15 +1006,41 @@ class TestNothingOfTheInputIsRepeated:
     def test_no_message_path_or_text_holds_a_value_of_the_input(self, data: object) -> None:
         assert self.MARKER not in self.everything(data)
 
-    def test_the_name_of_an_unknown_field_is_shown_only_if_it_looks_like_a_name(self) -> None:
-        assert paths_of(plan(colour_2="red")) == ["colour_2"]
-        for key in ["a b", "x" * 41, "é", "a.b", "a[0]", "", "<script>"]:
-            assert paths_of(plan(**{key: 1})) == ["?"], repr(key)
+    @pytest.mark.parametrize(
+        "key",
+        [
+            "SECRETMARKER",
+            "colour_2",
+            "x" * 40,
+            "a b",
+            "x" * 41,
+            "é",
+            "a.b",
+            "a[0]",
+            "",
+            "<script>",
+            5,
+        ],
+    )
+    @pytest.mark.parametrize("level", ["plan", "workout", "segment", "exercise"])
+    def test_unknown_keys_are_reported_once_at_the_trusted_parent(
+        self, key: Any, level: str
+    ) -> None:
+        data = with_exercise()
+        data["workouts"][0]["segments"] = [segment()]
+        targets = {
+            "plan": (data, ""),
+            "workout": (data["workouts"][0], "workouts[0]"),
+            "segment": (data["workouts"][0]["segments"][0], "workouts[0].segments[0]"),
+            "exercise": (data["workouts"][0]["exercises"][0], "workouts[0].exercises[0]"),
+        }
+        target, path = targets[level]
+        target.update({key: 1, "ANOTHER_UNKNOWN_KEY": 2})
 
-    def test_a_key_that_is_no_text_is_not_shown_either(self) -> None:
-        data: dict[Any, Any] = {**plan(), 5: 1}
-
-        assert paths_of(data) == ["?"]
+        assert problems_of(data) == [Problem(path, "Unknown field.")]
+        if isinstance(key, str) and key:
+            assert key not in self.everything(data)
+        assert "ANOTHER_UNKNOWN_KEY" not in self.everything(data)
 
 
 class TestTheLimits:
@@ -981,6 +1067,11 @@ class TestTheLimits:
         source = Path(schema.__file__).read_text()
 
         assert source.isascii()
+
+    def test_the_test_file_has_no_literal_forbidden_characters(self) -> None:
+        source = Path(__file__).read_text(encoding="utf-8")
+
+        assert not any(char in source for char in schema._FORBIDDEN)
 
     def test_the_module_needs_no_django(self) -> None:
         source = Path(schema.__file__).read_text()
@@ -1072,7 +1163,7 @@ class TestWhateverIsSent:
         for _ in range(50_000):
             deep = [deep]
 
-        assert paths_of(plan(extra=deep)) == ["extra"]
+        assert paths_of(plan(extra=deep)) == [""]
 
     def test_random_valid_plans_survive_the_round_trip(self) -> None:
         import random

@@ -1,5 +1,6 @@
 import json
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -15,7 +16,7 @@ from chat.prompt import (
     first_message,
     repair_message,
 )
-from planning.schema import Problem
+from planning.schema import _FORBIDDEN, Problem
 
 
 def answer(**fields: Any) -> str:
@@ -159,8 +160,29 @@ class TestReadingTheAnswer:
         extract_answer(answer(reply="x" * REPLY_MAX))
         assert str(REPLY_MAX) in problems_of(answer(reply="x" * (REPLY_MAX + 1)))["reply"]
 
-    def test_the_reply_has_no_control_characters(self) -> None:
-        assert "control" in problems_of(answer(reply="a‮b"))["reply"]
+    @pytest.mark.parametrize(
+        "mark",
+        [
+            "\u061c",
+            "\u200e",
+            "\u200f",
+            "\u2028",
+            "\u2029",
+            "\u202a",
+            "\u202b",
+            "\u202c",
+            "\u202d",
+            "\u202e",
+            "\u2066",
+            "\u2067",
+            "\u2068",
+            "\u2069",
+        ],
+    )
+    def test_the_reply_has_no_control_characters(self, mark: str) -> None:
+        assert "control" in problems_of(answer(reply=f"a{mark}b"))["reply"]
+
+    def test_the_reply_may_have_lines(self) -> None:
         extract_answer(answer(reply="two\nlines"))
 
     def test_the_actions_must_be_a_list(self) -> None:
@@ -188,3 +210,10 @@ class TestTheRepairMessage:
 
         assert message.content.count("- f") == 10
         assert "(and 4 more)" in message.content
+
+
+def test_the_test_sources_have_no_literal_bidi_or_separator_characters() -> None:
+    for filename in ("test_prompt.py", "test_services.py"):
+        source = Path(__file__).with_name(filename).read_text(encoding="utf-8")
+
+        assert not any(char in source for char in _FORBIDDEN)

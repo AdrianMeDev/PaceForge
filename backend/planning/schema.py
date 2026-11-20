@@ -4,7 +4,8 @@ A week plan arrives as JSON (the coach's answer, later perhaps an API request). 
 trust: the parser accepts exactly the format below, reports *every* problem at once by its path
 (``workouts[2].segments[0].seconds``) and never repeats a value of the input in a message, so that
 an answer of the model cannot smuggle text into logs or pages through an error. Only fields that
-are a key of the format are named, and only if they look like a name.
+belong to the schema are named in paths. Unknown fields are reported once per object at its
+trusted parent path, without naming any unknown key.
 
 This module is pure: no database, no Django. The limits here are the single source for the models.
 
@@ -208,6 +209,7 @@ _NAME = re.compile(r"[A-Za-z0-9_]{1,40}")
 # on purpose: these characters are invisible in an editor.
 _FORBIDDEN = frozenset(
     "\u2028\u2029"  # line and paragraph separator
+    "\u061c\u200e\u200f"  # bidirectional marks
     "\u202a\u202b\u202c\u202d\u202e"  # embedding and override of the direction of text
     "\u2066\u2067\u2068\u2069"  # isolates
 )
@@ -454,10 +456,8 @@ class _Reader:
             return None
         for name in sorted(required - value.keys()):
             self.fail(_join(path, name), "Is required.")
-        for key in value:
-            if key not in required and key not in optional:
-                shown = key if isinstance(key, str) and _NAME.fullmatch(key) else "?"
-                self.fail(_join(path, shown), "Unknown field.")
+        if any(key not in required and key not in optional for key in value):
+            self.fail(path, "Unknown field.")
         return value
 
     def _list(self, value: object, path: str, limit: int) -> list[Any] | None:

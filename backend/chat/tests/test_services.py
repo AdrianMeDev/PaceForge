@@ -657,6 +657,26 @@ class TestAnAnswerThatCannotBeUsed:
         repair = provider.calls[1][1][-1].content
         assert "cannot be used" in repair and "Sure" not in repair
 
+    def test_unknown_action_keys_are_not_sent_in_the_repair_message(
+        self, athlete: User, provide: Callable[..., Scripted]
+    ) -> None:
+        keys = ("coach_written_key", "injected\nreply", "direction\u202e")
+        provider = provide(
+            said(actions=[{"tool": "reduce_week", "percent": 20, **dict.fromkeys(keys, "x")}]),
+            said("Fixed."),
+        )
+
+        sent = send(athlete, "Ease this week")
+
+        assert sent.coach.text == "Fixed."
+        assert len(provider.calls) == ATTEMPTS
+        repair = provider.calls[1][1][-1].content
+        assert "- actions[0]: This field is not part of the tool." in repair
+        assert repair.count("- actions[") == 1
+        for key in keys:
+            assert key not in repair
+        assert drafts(athlete) == []
+
     def test_an_action_that_is_not_allowed_is_repaired_too(
         self, athlete: User, provide: Callable[..., Scripted]
     ) -> None:
@@ -711,7 +731,7 @@ class TestWhatFailsStoresNothing:
 
         assert ChatMessage.objects.count() == 0
 
-    @pytest.mark.parametrize("text", ["", "   ", "x" * (USER_TEXT_MAX + 1), "a‮b"])
+    @pytest.mark.parametrize("text", ["", "   ", "x" * (USER_TEXT_MAX + 1), "a\u202eb"])
     def test_a_message_that_cannot_be_used(
         self, athlete: User, provide: Callable[..., Scripted], text: str
     ) -> None:

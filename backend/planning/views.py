@@ -6,6 +6,7 @@ from uuid import UUID
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Count
 from rest_framework import serializers, status
+from rest_framework.exceptions import ParseError
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.throttling import BaseThrottle
@@ -68,6 +69,14 @@ _WEEK = re.compile(r"\d{4}-\d{2}-\d{2}")
 def _user(request: Request) -> User:
     assert isinstance(request.user, User)  # IsAuthenticated is the default permission
     return request.user
+
+
+def _request_data(request: Request) -> Any:
+    """Read ``request.data``, turning a JSON decoder ``RecursionError`` into HTTP 400."""
+    try:
+        return request.data
+    except RecursionError:
+        raise ParseError("Request body is nested too deeply.") from None
 
 
 def _error(http_status: int, code: str, detail: str, **extra: Any) -> Response:
@@ -184,12 +193,17 @@ class GenerateView(APIView):
     throttle_classes = [PlanGenerateThrottle]
     http_method_names = ["post", "options"]
 
+    def handle_exception(self, exc: Exception) -> Response:
+        if isinstance(exc, RecursionError):
+            exc = ParseError("Request body is nested too deeply.")
+        return super().handle_exception(exc)
+
     def post(self, request: Request, week: str) -> Response:
         user = _user(request)
         monday = _monday(week)
         if monday is None:
             return _error(status.HTTP_404_NOT_FOUND, "week_not_plannable", NOT_PLANNABLE)
-        body = GenerateBody(data=request.data)
+        body = GenerateBody(data=_request_data(request))
         body.is_valid(raise_exception=True)
         try:
             generated = generate(user, monday, body.validated_data.get("note", ""))
@@ -320,14 +334,22 @@ class ConfirmView(APIView):
     throttle_classes = [PlanPushThrottle]
     http_method_names = ["post", "options"]
 
+    def handle_exception(self, exc: Exception) -> Response:
+        if isinstance(exc, RecursionError):
+            exc = ParseError("Request body is nested too deeply.")
+        return super().handle_exception(exc)
+
     def get_throttles(self) -> list[BaseThrottle]:
+        if self.request.method != "POST":
+            return []
         # Only confirming *and sending* makes the server call Intervals.icu.
-        wants_push = isinstance(self.request.data, dict) and self.request.data.get("push") is True
+        body = ConfirmBody(data=_request_data(self.request))
+        wants_push = body.is_valid() and bool(body.validated_data["push"])
         return super().get_throttles() if wants_push else []
 
     def post(self, request: Request, plan_id: UUID) -> Response:
         user = _user(request)
-        body = ConfirmBody(data=request.data)
+        body = ConfirmBody(data=_request_data(request))
         body.is_valid(raise_exception=True)
         try:
             plan = services.confirm(user, plan_id)

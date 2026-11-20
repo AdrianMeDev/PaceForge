@@ -181,7 +181,7 @@ class TestRefusingAnEditedPlan:
         data = body()
         data["workouts"][0]["colour"] = "red"
 
-        assert problems_of(data) == [("workouts[0].colour", "Unknown field.")]
+        assert problems_of(data) == [("workouts[0]", "Unknown field.")]
 
     def test_nothing_of_the_input_is_repeated(self) -> None:
         data = body()
@@ -189,7 +189,9 @@ class TestRefusingAnEditedPlan:
         data["workouts"][1]["title"] = MARKER + "\x00"
         data["workouts"][2]["sport"] = MARKER
         data["rationale"] = 5
-        data[MARKER + " !"] = MARKER  # a key that does not look like a name is not named
+        data[MARKER + " !"] = MARKER
+        data[MARKER] = MARKER
+        data["workouts"][0][MARKER] = MARKER
 
         assert MARKER not in repr(problems_of(data))
 

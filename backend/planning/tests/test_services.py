@@ -697,7 +697,7 @@ class TestTheLineage:
             parse_week_plan(data)
 
         assert [(p.path, p.message) for p in raised.value.problems] == [
-            ("workouts[0].lineage", "Unknown field.")
+            ("workouts[0]", "Unknown field.")
         ]
 
 

@@ -1935,7 +1935,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 - **Depends on:** -
 - **Size:** M, ~5 commits
 
-### M8 [ ] Audit: Planning requests and model-written diagnostics
+### M8 [x] Audit: Planning requests and model-written diagnostics
 
 - **Goal:** Apply the same push limit to equivalent confirmations and return safe, predictable errors for malformed plan data.
 - **Includes:** F378 (push throttle), F379 (nested request bodies), F380 (unknown keys in errors), F381 (bidirectional marks), F420 (invisible test characters), F197, F214 (chat repair paths and fixtures).
@@ -2247,6 +2247,7 @@ F714 · warning · smell · frontend/src/app/testing/dom.ts:26 – The settle he
 
 ## Changelog
 
+- 2026-11-20: M8 done: equivalent push confirmations share the push limit before external calls (F378); deeply nested generate and confirm bodies return handled client errors (F379); planning and chat diagnostics report unknown fields only at trusted parent paths (F380, F197); plan text rejects all bidirectional control marks (F381); planning and chat tests use escaped Unicode fixtures and guard against literal invisible marks (F420, F214), with parser, API and provider repair regression tests.
 - 2026-11-20: M6 done: account, dashboard, integration, job and review views require authentication explicitly (F17, F287, F310, F330, F436); ownership is assigned server-side on create and update, including `OwnedModelViewSet` (F284); integration exports use an explicit metadata allowlist (F27), with authentication, two-user ownership and export disclosure regression tests.
 - 2026-11-20: audit planned
 - 2026-11-20: M1 done: discrete `POSTGRES_*` settings, no hardcoded database passwords, docs for existing and new volumes

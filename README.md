@@ -1184,6 +1184,9 @@ links to the Connections page.
    the version that was confirmed before. On a phone the buttons stay in a bar above the tab bar.
 5. Send the confirmed week to your calendar: see [Sending to Intervals.icu](#sending-to-intervalsicu).
 
+Unreadable plans report problems at trusted schema paths. Unknown fields are reported once per
+object at its parent path, without naming the unknown keys.
+
 **The season plan.** If you have a **confirmed** [season plan](#filling-the-season-with-your-coach)
 and the week lies in it, the page shows a box above the versions: the phase (and whether it is a
 recovery week), the minutes of each sport, the focus, the key sessions and the coach's reason for

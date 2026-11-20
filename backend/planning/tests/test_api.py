@@ -8,7 +8,11 @@ from uuid import UUID, uuid4
 
 import pytest
 from django.db import connection
+from django.http import QueryDict
 from django.test.utils import CaptureQueriesContext
+from rest_framework.parsers import FormParser, JSONParser
+from rest_framework.request import Request
+from rest_framework.test import APIRequestFactory
 
 from accounts.models import User
 from accounts.tests.conftest import AuthApi
@@ -44,6 +48,8 @@ from planning.schema import (
     ZoneSystem,
     to_json,
 )
+from planning.throttles import PlanPushThrottle
+from planning.views import ConfirmView
 
 from .conftest import make_user, signed_in
 from .fake_calendar import Calendar
@@ -474,6 +480,45 @@ class TestGenerating:
             assert response.status_code == HTTPStatus.BAD_REQUEST
             assert MARKER not in response.content.decode()
 
+    def test_deeply_nested_body_is_bad_request_and_asks_nothing(
+        self, alice: User, provide: Callable[..., Scripted]
+    ) -> None:
+        scripted = provide(good())
+        api = signed_in(alice)
+        deep = "[" * 1500 + f'"{MARKER}"' + "]" * 1500
+
+        response = api.client.post(
+            generate_url(),
+            data=deep,
+            content_type="application/json",
+            headers={"X-CSRFToken": api._csrf_token()},
+        )
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert MARKER not in response.content.decode()
+        assert scripted.calls == []
+        assert not WeeklyPlan.objects.exists()
+
+    def test_decoder_recursion_error_is_bad_request_and_asks_nothing(
+        self,
+        alice: User,
+        provide: Callable[..., Scripted],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        scripted = provide(good())
+
+        def _boom(*_args: Any, **_kwargs: Any) -> Any:
+            raise RecursionError(MARKER)
+
+        monkeypatch.setattr(JSONParser, "parse", _boom)
+
+        response = signed_in(alice).call("POST", generate_url(), {"note": MARKER})
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert MARKER not in response.content.decode()
+        assert scripted.calls == []
+        assert not WeeklyPlan.objects.exists()
+
     def test_rule_errors_are_part_of_the_answer_not_a_failure(
         self, alice: User, provide: Callable[..., Scripted]
     ) -> None:
@@ -622,6 +667,24 @@ class TestGenerating:
         assert MARKER not in response.content.decode()
         assert not WeeklyPlan.objects.exists()
 
+    @pytest.mark.parametrize("path", ["", "workouts[0]"])
+    def test_unknown_identifier_keys_never_leak_in_an_unusable_answer(
+        self, alice: User, provide: Callable[..., Scripted], path: str
+    ) -> None:
+        data = json.loads(good())
+        target = data["workouts"][0] if path else data
+        target.update({MARKER: 1, "ANOTHER_UNKNOWN_KEY": 2})
+        provide(json.dumps(data), json.dumps(data))
+
+        response = signed_in(alice).call("POST", generate_url())
+
+        assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+        assert body(response)["code"] == "not_usable"
+        assert body(response)["problems"] == [{"path": path, "message": "Unknown field."}]
+        assert MARKER not in response.content.decode()
+        assert "ANOTHER_UNKNOWN_KEY" not in response.content.decode()
+        assert not WeeklyPlan.objects.exists()
+
     def test_the_sixth_request_within_a_minute_is_throttled_before_the_provider(
         self, alice: User, provide: Callable[..., Scripted]
     ) -> None:
@@ -713,6 +776,22 @@ class TestChecking:
             ],
         }
         assert MARKER not in response.content.decode()
+
+    @pytest.mark.parametrize("path", ["", "workouts[0]"])
+    def test_unknown_identifier_keys_never_leak_in_an_invalid_plan(
+        self, alice: User, path: str
+    ) -> None:
+        data = edited()
+        target = data["workouts"][0] if path else data
+        target.update({MARKER: 1, "ANOTHER_UNKNOWN_KEY": 2})
+
+        response = signed_in(alice).call("POST", check_url(), data)
+
+        assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+        assert body(response)["code"] == "invalid_plan"
+        assert body(response)["problems"] == [{"path": path, "message": "Unknown field."}]
+        assert MARKER not in response.content.decode()
+        assert "ANOTHER_UNKNOWN_KEY" not in response.content.decode()
 
     def test_a_plan_for_another_week_is_unprocessable(self, alice: User) -> None:
         other = date(2027, 7, 26)
@@ -1877,6 +1956,117 @@ class TestConfirmingAndSending:
         response = signed_in(alice).call("POST", plan_url(plan.pk, "confirm/"), wish)
 
         assert response.status_code == HTTPStatus.BAD_REQUEST
+        plan.refresh_from_db()
+        assert plan.status == Status.DRAFT
+        assert calendar.calls == []
+
+    @pytest.mark.parametrize(
+        "wish",
+        [{"push": True}, {"push": "true"}, {"push": 1}, {"push": "1"}],
+    )
+    def test_every_push_representation_shares_the_push_throttle_with_push(
+        self, alice: User, calendar: Calendar, wish: dict[str, Any]
+    ) -> None:
+        connect_intervals(alice)
+        confirmed = draft(alice)
+        target = draft(alice)
+        api = signed_in(alice)
+
+        first = api.call("POST", plan_url(confirmed.pk, "confirm/"), wish)
+        assert first.status_code == HTTPStatus.OK
+        for _ in range(9):
+            assert api.call("POST", plan_url(confirmed.pk, "push/")).status_code == HTTPStatus.OK
+
+        calendar.calls.clear()
+        throttled = api.call("POST", plan_url(target.pk, "confirm/"), wish)
+
+        assert throttled.status_code == HTTPStatus.TOO_MANY_REQUESTS
+        assert calendar.calls == []
+        target.refresh_from_db()
+        assert target.status == Status.DRAFT
+
+    def test_querydict_push_payload_triggers_push_throttle(self, alice: User) -> None:
+        django_request = APIRequestFactory().post(
+            plan_url(UNKNOWN_ID, "confirm/"),
+            data=QueryDict("push=true").urlencode(),
+            content_type="application/x-www-form-urlencoded",
+        )
+        django_request.user = alice
+        view = ConfirmView()
+        view.request = Request(django_request, parsers=[FormParser()])
+
+        throttles = view.get_throttles()
+
+        assert isinstance(view.request.data, QueryDict)
+        assert len(throttles) == 1
+        assert isinstance(throttles[0], PlanPushThrottle)
+
+    def test_non_push_and_invalid_confirm_bodies_do_not_consume_push_limit(
+        self, alice: User, calendar: Calendar
+    ) -> None:
+        connect_intervals(alice)
+        api = signed_in(alice)
+
+        for non_push in (None, {}, {"push": False}, {"push": "false"}, {"push": 0}):
+            response = api.call("POST", plan_url(draft(alice).pk, "confirm/"), non_push)
+            assert response.status_code == HTTPStatus.OK
+
+        invalid_bodies: tuple[dict[str, Any], ...] = ({"push": "maybe"}, {"push": 5}, {"push": []})
+        for invalid in invalid_bodies:
+            response = api.call("POST", plan_url(draft(alice).pk, "confirm/"), invalid)
+            assert response.status_code == HTTPStatus.BAD_REQUEST
+
+        assert calendar.calls == []
+        confirmed = sent(alice)
+        for _ in range(10):
+            assert api.call("POST", plan_url(confirmed.pk, "push/")).status_code == HTTPStatus.OK
+
+        after_limit = api.call("POST", plan_url(draft(alice).pk, "confirm/"), {"push": False})
+        assert after_limit.status_code == HTTPStatus.OK
+        assert (
+            api.call("POST", plan_url(confirmed.pk, "push/")).status_code
+            == HTTPStatus.TOO_MANY_REQUESTS
+        )
+
+    def test_deeply_nested_body_is_bad_request_and_changes_nothing(
+        self, alice: User, calendar: Calendar
+    ) -> None:
+        connect_intervals(alice)
+        plan = draft(alice)
+        api = signed_in(alice)
+        deep = "[" * 1500 + f'"{MARKER}"' + "]" * 1500
+
+        response = api.client.post(
+            plan_url(plan.pk, "confirm/"),
+            data=deep,
+            content_type="application/json",
+            headers={"X-CSRFToken": api._csrf_token()},
+        )
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert MARKER not in response.content.decode()
+        plan.refresh_from_db()
+        assert plan.status == Status.DRAFT
+        assert calendar.calls == []
+
+    def test_decoder_recursion_error_is_bad_request_and_changes_nothing(
+        self,
+        alice: User,
+        calendar: Calendar,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        connect_intervals(alice)
+        plan = draft(alice)
+
+        def _boom(*_args: Any, **_kwargs: Any) -> Any:
+            raise RecursionError(MARKER)
+
+        monkeypatch.setattr(JSONParser, "parse", _boom)
+
+        response = signed_in(alice).call("POST", plan_url(plan.pk, "confirm/"), {"push": True})
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert MARKER not in response.content.decode()
         plan.refresh_from_db()
         assert plan.status == Status.DRAFT
         assert calendar.calls == []
