@@ -308,7 +308,28 @@ class TestThePlanAsAWhole:
 
     def test_the_rationale_may_have_line_breaks_but_no_other_controls(self) -> None:
         assert parse_week_plan(plan(rationale="a\nb")).rationale == "a\nb"
-        for bad in ["a\x00b", "a\rb", "a\tb", "a\x1bb", "a\x7fb", "a b", "a‮b"]:
+        bad_values = [
+            "a\x00b",
+            "a\rb",
+            "a\tb",
+            "a\x1bb",
+            "a\x7fb",
+            "a\u2028b",
+            "a\u2029b",
+            "a\u061cb",
+            "a\u200eb",
+            "a\u200fb",
+            "a\u202ab",
+            "a\u202bb",
+            "a\u202cb",
+            "a\u202db",
+            "a\u202eb",
+            "a\u2066b",
+            "a\u2067b",
+            "a\u2068b",
+            "a\u2069b",
+        ]
+        for bad in bad_values:
             assert paths_of(plan(rationale=bad)) == ["rationale"], repr(bad)
 
     @pytest.mark.parametrize("value", [None, {}, "x", 5, {"0": {}}])
@@ -392,7 +413,28 @@ class TestAWorkout:
             Problem("workouts[0].title", "Must be text.")
         ]
 
-    @pytest.mark.parametrize("title", ["a\nb", "a\tb", "a\x00b", "a b", "a b", "a‮b", "a⁦b"])
+    @pytest.mark.parametrize(
+        "title",
+        [
+            "a\nb",
+            "a\tb",
+            "a\x00b",
+            "a\u2028b",
+            "a\u2029b",
+            "a\u061cb",
+            "a\u200eb",
+            "a\u200fb",
+            "a\u202ab",
+            "a\u202bb",
+            "a\u202cb",
+            "a\u202db",
+            "a\u202eb",
+            "a\u2066b",
+            "a\u2067b",
+            "a\u2068b",
+            "a\u2069b",
+        ],
+    )
     def test_a_title_has_no_line_breaks_or_controls(self, title: str) -> None:
         assert problems_of(with_workout(title=title)) == [
             Problem("workouts[0].title", "Must not contain control characters.")
@@ -403,7 +445,27 @@ class TestAWorkout:
         assert parse_week_plan(with_workout(notes="n" * 500)).workouts[0].notes == "n" * 500
         assert paths_of(with_workout(notes="n" * 501)) == ["workouts[0].notes"]
         assert paths_of(with_workout(notes=5)) == ["workouts[0].notes"]
-        assert paths_of(with_workout(notes="a\x00b")) == ["workouts[0].notes"]
+        bad_notes = [
+            "a\x00b",
+            "a\u2028b",
+            "a\u2029b",
+            "a\u061cb",
+            "a\u200eb",
+            "a\u200fb",
+            "a\u202ab",
+            "a\u202bb",
+            "a\u202cb",
+            "a\u202db",
+            "a\u202eb",
+            "a\u2066b",
+            "a\u2067b",
+            "a\u2068b",
+            "a\u2069b",
+        ]
+        for bad in bad_notes:
+            assert problems_of(with_workout(notes=bad)) == [
+                Problem("workouts[0].notes", "Must not contain control characters.")
+            ], repr(bad)
 
     @pytest.mark.parametrize("day", ["2027-07-13", "2027-07-12", "2027-07-18", "2027-12-31"])
     def test_a_day_is_any_date(self, day: str) -> None:
@@ -1005,6 +1067,11 @@ class TestTheLimits:
         source = Path(schema.__file__).read_text()
 
         assert source.isascii()
+
+    def test_the_test_file_has_no_literal_forbidden_characters(self) -> None:
+        source = Path(__file__).read_text(encoding="utf-8")
+
+        assert not any(char in source for char in schema._FORBIDDEN)
 
     def test_the_module_needs_no_django(self) -> None:
         source = Path(schema.__file__).read_text()

@@ -209,6 +209,7 @@ _NAME = re.compile(r"[A-Za-z0-9_]{1,40}")
 # on purpose: these characters are invisible in an editor.
 _FORBIDDEN = frozenset(
     "\u2028\u2029"  # line and paragraph separator
+    "\u061c\u200e\u200f"  # bidirectional marks
     "\u202a\u202b\u202c\u202d\u202e"  # embedding and override of the direction of text
     "\u2066\u2067\u2068\u2069"  # isolates
 )
