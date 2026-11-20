@@ -12,6 +12,7 @@ import environ
 from django.core.exceptions import ImproperlyConfigured
 
 from coach.endpoints import parse_base_urls
+from config.database import database_from_env
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -111,7 +112,7 @@ ROOT_URLCONF = "config.urls"
 WSGI_APPLICATION = "config.wsgi.application"
 ASGI_APPLICATION = "config.asgi.application"
 
-DATABASES = {"default": env.db("DATABASE_URL")}
+DATABASES = {"default": database_from_env(env)}
 
 AUTH_USER_MODEL = "accounts.User"
 

@@ -91,4 +91,12 @@ def check_deployment(app_configs: Any, **kwargs: Any) -> list[CheckMessage]:
                 )
             )
             break
+    if not settings.DATABASES["default"].get("PASSWORD"):
+        errors.append(
+            Error(
+                "The database password is empty. Set POSTGRES_PASSWORD or put a password "
+                "into DATABASE_URL.",
+                id="core.E008",
+            )
+        )
     return errors
