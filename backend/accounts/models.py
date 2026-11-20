@@ -62,6 +62,8 @@ class UserInvitation(models.Model):
     )
     created_at = models.DateTimeField(default=timezone.now)
     expires_at = models.DateTimeField()
+    # Last time the invitation email was delivered; None until the first successful send.
+    sent_at = models.DateTimeField(null=True, blank=True)
     used_at = models.DateTimeField(null=True, blank=True)
     revoked_at = models.DateTimeField(null=True, blank=True)
 

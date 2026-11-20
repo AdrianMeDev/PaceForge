@@ -1,0 +1,12 @@
+{% autoescape off %}Hello,
+
+you have been invited to PaceForge, a self-hosted AI endurance coach.
+
+To create your account, open the link below:
+
+{{ signup_url }}
+
+The link works until {{ expires_at|date:"Y-m-d H:i T" }}. It works only once. If it has expired, ask the administrator who invited you for a new one.
+
+If you did not expect this invitation, you can ignore this email.
+{% endautoescape %}

@@ -144,7 +144,7 @@ AI key; several people can share one instance without seeing each other's data.
 - **Depends on:** –
 - **Size:** M
 
-### M14 [ ] Invitations by email
+### M14 [~] Invitations by email
 - **Goal:** The admin page sends the invitation link by email.
 - **Includes:** send and resend from the admin page, mail template, expired invitations shown, docs.
 - **Done when:** creating an invitation sends one email (Mailpit in development); tests green.

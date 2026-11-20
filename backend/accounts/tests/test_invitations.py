@@ -1,19 +1,28 @@
 import hashlib
+import smtplib
 from datetime import timedelta
+from urllib.parse import parse_qs, urlparse
 
 import pytest
+from django.core import mail
 from django.utils import timezone
 
 from accounts.models import User, UserInvitation
 from accounts.services.invitations import (
     InvalidInvitationError,
+    build_invitation_url,
     consume_invitation,
     create_invitation,
     get_valid_invitation,
+    hash_token,
+    resend_invitation,
     revoke_invitation,
+    send_invitation_email,
 )
 
 pytestmark = pytest.mark.django_db
+
+BASE_URL = "https://pace.example.com/"
 
 
 @pytest.fixture
@@ -129,3 +138,151 @@ def test_default_lifetime_comes_from_settings(admin: User, settings) -> None:
 
     remaining = created.invitation.expires_at - timezone.now()
     assert timedelta(days=2, hours=23) < remaining <= timedelta(days=3)
+
+
+def test_signup_link_carries_token_and_email() -> None:
+    url = build_invitation_url(base_url=BASE_URL, token="tok", email="a@example.com")
+
+    parts = urlparse(url)
+    assert (
+        f"{parts.scheme}://{parts.netloc}{parts.path}" == "https://pace.example.com/account/signup"
+    )
+    assert parse_qs(parts.query) == {"invitation": ["tok"], "email": ["a@example.com"]}
+
+
+def test_signup_link_does_not_depend_on_a_trailing_slash() -> None:
+    with_slash = build_invitation_url(base_url=BASE_URL, token="tok", email="a@example.com")
+    without = build_invitation_url(
+        base_url="https://pace.example.com", token="tok", email="a@example.com"
+    )
+
+    assert with_slash == without
+
+
+def test_invitation_email_is_one_mail_with_an_unescaped_link(admin: User, settings) -> None:
+    created = create_invitation(invited_by=admin, email="invitee@example.com")
+
+    assert send_invitation_email(created, base_url=BASE_URL) is True
+
+    [message] = mail.outbox
+    link = build_invitation_url(base_url=BASE_URL, token=created.token, email="invitee@example.com")
+    assert message.to == ["invitee@example.com"]
+    assert message.from_email == settings.DEFAULT_FROM_EMAIL
+    assert message.subject == "You are invited to PaceForge"
+    assert "&" in link
+    assert link in message.body
+    assert "&amp;" not in message.body
+    assert "invitee@example.com" not in message.subject
+
+
+def test_invitation_email_says_when_the_link_expires(admin: User) -> None:
+    created = create_invitation(invited_by=admin, email="invitee@example.com")
+
+    send_invitation_email(created, base_url=BASE_URL)
+
+    [message] = mail.outbox
+    assert "works until" in message.body
+    assert "works only once" in message.body
+
+
+def test_successful_send_sets_sent_at(admin: User) -> None:
+    created = create_invitation(invited_by=admin, email="invitee@example.com")
+    assert created.invitation.sent_at is None
+
+    send_invitation_email(created, base_url=BASE_URL)
+
+    created.invitation.refresh_from_db()
+    assert created.invitation.sent_at is not None
+
+
+@pytest.mark.parametrize("error", [smtplib.SMTPException("refused"), OSError("connection refused")])
+def test_failed_send_returns_false_and_leaves_sent_at_empty(
+    admin: User, monkeypatch: pytest.MonkeyPatch, error: Exception
+) -> None:
+    created = create_invitation(invited_by=admin, email="invitee@example.com")
+
+    def failing_send(*args, **kwargs):
+        raise error
+
+    monkeypatch.setattr("accounts.services.invitations.send_mail", failing_send)
+
+    assert send_invitation_email(created, base_url=BASE_URL) is False
+
+    created.invitation.refresh_from_db()
+    assert created.invitation.sent_at is None
+    assert mail.outbox == []
+
+
+def test_failed_send_logs_without_the_token_or_the_address(
+    admin: User, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    created = create_invitation(invited_by=admin, email="invitee@example.com")
+
+    def failing_send(*args, **kwargs):
+        raise smtplib.SMTPRecipientsRefused({"invitee@example.com": (550, b"no such user")})
+
+    monkeypatch.setattr("accounts.services.invitations.send_mail", failing_send)
+
+    send_invitation_email(created, base_url=BASE_URL)
+
+    assert "Could not send invitation" in caplog.text
+    assert "SMTPRecipientsRefused" in caplog.text
+    assert created.token not in caplog.text
+    assert "invitee@example.com" not in caplog.text
+
+
+def test_resend_replaces_the_token_of_a_pending_invitation(admin: User) -> None:
+    created = create_invitation(invited_by=admin, email="invitee@example.com")
+    old_hash = created.invitation.token_hash
+
+    resent = resend_invitation(created.invitation)
+
+    assert resent.token != created.token
+    assert resent.invitation.token_hash == hash_token(resent.token)
+    assert resent.invitation.token_hash != old_hash
+    assert resent.invitation.status == UserInvitation.Status.PENDING
+    with pytest.raises(InvalidInvitationError):
+        get_valid_invitation(created.token)
+    assert get_valid_invitation(resent.token) == resent.invitation
+
+
+def test_resend_extends_the_expiry_of_a_pending_invitation(admin: User) -> None:
+    created = create_invitation(invited_by=admin, email="invitee@example.com")
+    UserInvitation.objects.update(expires_at=timezone.now() + timedelta(hours=1))
+
+    resent = resend_invitation(created.invitation)
+
+    assert resent.invitation.expires_at - timezone.now() > timedelta(days=6)
+
+
+def test_resend_revives_an_expired_invitation(admin: User) -> None:
+    created = create_invitation(invited_by=admin, email="invitee@example.com")
+    UserInvitation.objects.update(expires_at=timezone.now() - timedelta(seconds=1))
+
+    resent = resend_invitation(created.invitation)
+
+    assert resent.invitation.status == UserInvitation.Status.PENDING
+    assert get_valid_invitation(resent.token) == resent.invitation
+
+
+def test_resend_refuses_a_used_invitation(admin: User, invitee: User) -> None:
+    created = create_invitation(invited_by=admin, email=invitee.email)
+    consume_invitation(created.token, user=invitee)
+
+    with pytest.raises(InvalidInvitationError):
+        resend_invitation(created.invitation)
+
+    stored = UserInvitation.objects.get(pk=created.invitation.pk)
+    assert stored.token_hash == hash_token(created.token)
+
+
+def test_resend_refuses_a_revoked_invitation(admin: User) -> None:
+    created = create_invitation(invited_by=admin, email="invitee@example.com")
+    revoke_invitation(created.invitation)
+
+    with pytest.raises(InvalidInvitationError):
+        resend_invitation(created.invitation)
+
+    stored = UserInvitation.objects.get(pk=created.invitation.pk)
+    assert stored.token_hash == hash_token(created.token)
+    assert stored.revoked_at is not None
