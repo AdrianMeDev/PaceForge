@@ -1,6 +1,8 @@
 import hashlib
 import smtplib
 from datetime import timedelta
+from email import message_from_string
+from email.policy import default
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -9,6 +11,7 @@ from django.utils import timezone
 
 from accounts.models import User, UserInvitation
 from accounts.services.invitations import (
+    Delivery,
     InvalidInvitationError,
     build_invitation_url,
     consume_invitation,
@@ -165,7 +168,7 @@ def test_signup_link_uses_the_configured_origin(settings) -> None:
 def test_invitation_email_is_one_mail_with_an_unescaped_link(admin: User, settings) -> None:
     created = create_invitation(invited_by=admin, email="invitee@example.com")
 
-    assert send_invitation_email(created) is True
+    assert send_invitation_email(created) == Delivery.SENT
 
     [message] = mail.outbox
     link = build_invitation_url(token=created.token, email="invitee@example.com")
@@ -188,31 +191,74 @@ def test_invitation_email_says_when_the_link_expires(admin: User) -> None:
     assert "works only once" in message.body
 
 
-def test_successful_send_sets_sent_at(admin: User) -> None:
+@pytest.fixture(params=["create", "resend"])
+def delivery_invitation(admin: User, request: pytest.FixtureRequest):
     created = create_invitation(invited_by=admin, email="invitee@example.com")
-    assert created.invitation.sent_at is None
+    if request.param == "resend":
+        # A failed or console resend must preserve the previous successful send time.
+        created.invitation.sent_at = timezone.now() - timedelta(days=1)
+        created.invitation.save(update_fields=["sent_at"])
+        return resend_invitation(created.invitation)
+    return created
 
-    send_invitation_email(created)
 
-    created.invitation.refresh_from_db()
+def test_successful_send_sets_sent_at(delivery_invitation) -> None:
+    created = delivery_invitation
+    previous = created.invitation.sent_at
+
+    assert send_invitation_email(created) == Delivery.SENT
+
     assert created.invitation.sent_at is not None
+    assert created.invitation.sent_at != previous
+    sent_at = created.invitation.sent_at
+    created.invitation.refresh_from_db()
+    assert created.invitation.sent_at == sent_at
+    assert len(mail.outbox) == 1
+
+
+def test_console_send_leaves_sent_at_unchanged(
+    delivery_invitation,
+    settings,
+    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    created = delivery_invitation
+    previous = created.invitation.sent_at
+    settings.MAILERS = {"default": {"BACKEND": "django.core.mail.backends.console.EmailBackend"}}
+
+    assert send_invitation_email(created) == Delivery.CONSOLE
+
+    assert created.invitation.sent_at == previous
+    created.invitation.refresh_from_db()
+    assert created.invitation.sent_at == previous
+    output = capsys.readouterr().out
+    message = message_from_string(output, policy=default)
+    assert (
+        build_invitation_url(token=created.token, email=created.invitation.email)
+        in message.get_content()
+    )
+    assert mail.outbox == []
+    assert created.token not in caplog.text
+    assert created.invitation.email not in caplog.text
 
 
 @pytest.mark.parametrize("error", [smtplib.SMTPException("refused"), OSError("connection refused")])
-def test_failed_send_returns_false_and_leaves_sent_at_empty(
-    admin: User, monkeypatch: pytest.MonkeyPatch, error: Exception
+def test_failed_send_leaves_sent_at_unchanged(
+    delivery_invitation, monkeypatch: pytest.MonkeyPatch, error: Exception
 ) -> None:
-    created = create_invitation(invited_by=admin, email="invitee@example.com")
+    created = delivery_invitation
+    previous = created.invitation.sent_at
 
     def failing_send(*args, **kwargs):
         raise error
 
     monkeypatch.setattr("accounts.services.invitations.send_mail", failing_send)
 
-    assert send_invitation_email(created) is False
+    assert send_invitation_email(created) == Delivery.FAILED
 
+    assert created.invitation.sent_at == previous
     created.invitation.refresh_from_db()
-    assert created.invitation.sent_at is None
+    assert created.invitation.sent_at == previous
     assert mail.outbox == []
 
 

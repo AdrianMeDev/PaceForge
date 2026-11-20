@@ -32,6 +32,7 @@ from accounts.services.export import build_user_export
 from accounts.services.invitation_limits import InvitationLimitError, reserve_invitation_email
 from accounts.services.invitations import (
     CreatedInvitation,
+    Delivery,
     InvalidInvitationError,
     build_invitation_url,
     create_invitation,
@@ -51,12 +52,13 @@ def _delivery_data(created: CreatedInvitation) -> dict[str, Any]:
     The link is returned too: it is the only time the plaintext token leaves the server, and the
     admin can hand it on by other means when the mail did not go out.
     """
-    email_sent = send_invitation_email(created)
+    delivery = send_invitation_email(created)
     invite_url = build_invitation_url(token=created.token, email=created.invitation.email)
     return {
         **InvitationSerializer(created.invitation).data,
         "invite_url": invite_url,
-        "email_sent": email_sent,
+        "delivery": delivery,
+        "email_sent": delivery == Delivery.SENT,
     }
 
 

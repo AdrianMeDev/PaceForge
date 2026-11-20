@@ -1,6 +1,8 @@
 import smtplib
 import uuid
 from datetime import timedelta
+from email import message_from_string
+from email.policy import default
 from http import HTTPStatus
 from typing import Any
 from urllib.parse import parse_qs, urlparse
@@ -8,6 +10,7 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 from django.core import mail
 from django.core.cache import cache
+from django.utils import timezone
 
 from accounts.models import InvitationEmailCounter, User, UserInvitation
 from accounts.services.invitations import consume_invitation, create_invitation
@@ -102,6 +105,7 @@ def test_foreign_host_cannot_change_returned_or_emailed_link(
     assert response.status_code == expected_status
     body = response.json()
     assert body["invite_url"].startswith("https://pace.example.com:8443/account/signup#")
+    assert body["delivery"] == "sent"
     assert body["email_sent"] is True
     [message] = mail.outbox
     assert body["invite_url"] in message.body
@@ -198,8 +202,10 @@ def test_create_sends_one_email_with_a_working_link(staff_api: AuthApi) -> None:
     response = staff_api.call("POST", URL, {"email": "invitee@example.com"})
 
     body = response.json()
+    assert body["delivery"] == "sent"
     assert body["email_sent"] is True
     assert body["sent_at"] is not None
+    assert UserInvitation.objects.get(pk=body["id"]).sent_at is not None
     [message] = mail.outbox
     assert message.to == ["invitee@example.com"]
     assert body["invite_url"] in message.body
@@ -219,8 +225,10 @@ def test_create_survives_an_smtp_failure(
 
     assert response.status_code == HTTPStatus.CREATED
     body = response.json()
+    assert body["delivery"] == "failed"
     assert body["email_sent"] is False
     assert body["sent_at"] is None
+    assert UserInvitation.objects.get(pk=body["id"]).sent_at is None
     assert mail.outbox == []
     # The link still works, so the admin can hand it on.
     assert signup(token_of(body["invite_url"])) == HTTPStatus.UNAUTHORIZED
@@ -231,13 +239,19 @@ def test_resend_rotates_the_link_of_a_pending_invitation(
 ) -> None:
     created = create_invitation(invited_by=verified_staff, email="invitee@example.com")
 
+    previous = timezone.now() - timedelta(days=1)
+    UserInvitation.objects.filter(pk=created.invitation.pk).update(sent_at=previous)
+
     response = staff_api.call("POST", f"{URL}{created.invitation.pk}/resend/")
 
     assert response.status_code == HTTPStatus.OK
     body = response.json()
+    assert body["delivery"] == "sent"
     assert body["email_sent"] is True
     assert body["status"] == "pending"
     assert body["sent_at"] is not None
+    assert UserInvitation.objects.get(pk=body["id"]).sent_at is not None
+    assert UserInvitation.objects.get(pk=body["id"]).sent_at != previous
     [message] = mail.outbox
     assert body["invite_url"] in message.body
     new_token = token_of(body["invite_url"])
@@ -265,17 +279,55 @@ def test_resend_reports_an_smtp_failure(
     staff_api: AuthApi, verified_staff: User, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     created = create_invitation(invited_by=verified_staff, email="invitee@example.com")
+    previous = timezone.now() - timedelta(days=1)
+    UserInvitation.objects.filter(pk=created.invitation.pk).update(sent_at=previous)
 
     def failing_send(*args, **kwargs):
-        raise OSError("connection refused")
+        raise smtplib.SMTPException("refused")
 
     monkeypatch.setattr("accounts.services.invitations.send_mail", failing_send)
 
     response = staff_api.call("POST", f"{URL}{created.invitation.pk}/resend/")
 
     assert response.status_code == HTTPStatus.OK
-    assert response.json()["email_sent"] is False
-    assert signup(token_of(response.json()["invite_url"])) == HTTPStatus.UNAUTHORIZED
+    body = response.json()
+    assert body["delivery"] == "failed"
+    assert body["email_sent"] is False
+    assert body["sent_at"] == previous.isoformat().replace("+00:00", "Z")
+    created.invitation.refresh_from_db()
+    assert created.invitation.sent_at == previous
+    assert mail.outbox == []
+    assert signup(token_of(body["invite_url"])) == HTTPStatus.UNAUTHORIZED
+
+
+@pytest.mark.parametrize("resend", [False, True])
+def test_console_delivery_is_not_sent(
+    staff_api: AuthApi,
+    verified_staff: User,
+    settings: Any,
+    capsys: pytest.CaptureFixture[str],
+    resend: bool,
+) -> None:
+    url = URL
+    previous = None
+    if resend:
+        created = create_invitation(invited_by=verified_staff, email="invitee@example.com")
+        previous = timezone.now() - timedelta(days=1)
+        UserInvitation.objects.filter(pk=created.invitation.pk).update(sent_at=previous)
+        url = f"{URL}{created.invitation.pk}/resend/"
+    settings.MAILERS = {"default": {"BACKEND": "django.core.mail.backends.console.EmailBackend"}}
+
+    response = staff_api.call("POST", url, {"email": "invitee@example.com"})
+
+    assert response.status_code == (HTTPStatus.OK if resend else HTTPStatus.CREATED)
+    body = response.json()
+    assert body["delivery"] == "console"
+    assert body["email_sent"] is False
+    assert body["sent_at"] == (previous.isoformat().replace("+00:00", "Z") if previous else None)
+    assert UserInvitation.objects.get(pk=body["id"]).sent_at == previous
+    message = message_from_string(capsys.readouterr().out, policy=default)
+    assert body["invite_url"] in message.get_content()
+    assert mail.outbox == []
 
 
 def test_resend_refuses_used_and_revoked_invitations(

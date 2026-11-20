@@ -41,14 +41,16 @@ again to restart signup.
 
 Django sends the mail. The setting `SMTP_HOST` decides where it goes.
 
-| Setup | Where the mail goes | `email_sent` |
-| --- | --- | --- |
-| Development: `.env.example` points SMTP at Mailpit | Mailpit on `127.0.0.1:1025`. Read it at <http://localhost:8025>. | `true` when Mailpit accepts the mail |
-| Production with SMTP | Your SMTP server, set with `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD` and `SMTP_USE_TLS`. | `true` when the server accepts the mail |
-| No SMTP (`SMTP_HOST` empty) | The Django console: the mail is written to the output of the process. In production that is the `backend` container log. | `true`, although nothing leaves the server |
+| Setup | Where the mail goes | `delivery` | `email_sent` | `sent_at` |
+| --- | --- | --- | --- | --- |
+| Development: `.env.example` points SMTP at Mailpit | Mailpit on `127.0.0.1:1025`. Read it at <http://localhost:8025>. | `sent` when accepted | `true` | Updated |
+| Production with SMTP | Your SMTP server, set with `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD` and `SMTP_USE_TLS`. | `sent` when accepted | `true` | Updated |
+| No SMTP (`SMTP_HOST` empty) | The Django console: the mail is written to the output of the process. In production that is the `backend` container log. | `console` | `false` | Unchanged |
+| Network or SMTP error | The mail could not be sent. | `failed` | `false` | Unchanged |
 
-**Without SMTP the page still says the email was sent.** The console backend never fails, so
-the notice cannot tell that no one will read the mail. Use the link on the page in that case.
+Without SMTP, nothing leaves the server. The page reports that the email could not be delivered.
+Copy the link on the page and send it yourself. Console output does not update **Last sent**.
+A `sent` result means the mail system accepted the message; it does not confirm inbox delivery.
 
 Mailpit runs with the development services:
 
@@ -61,7 +63,7 @@ error, a timeout or an SMTP error), PaceForge:
 
 - logs an error with the invitation id and the type of the error, never the address, the token or
   the link,
-- keeps the invitation, and returns `email_sent: false`,
+- keeps the invitation, and returns `delivery: "failed"` and `email_sent: false`,
 - leaves `sent_at` as it was, so the table shows *Not sent* for a new invitation,
 - still returns the link, so the administrator is not blocked by a short outage.
 
@@ -146,14 +148,16 @@ CSRF token, like every other `POST`.
 | Request | What it does | Answers |
 | --- | --- | --- |
 | `GET /api/admin/invitations/` | Lists all invitations, newest first. | `200` |
-| `POST /api/admin/invitations/` with `{"email": "ann@example.com"}` | Creates the invitation and sends one email. | `201` with `invite_url` and `email_sent`; `400` for a bad address; `429` over the limit |
-| `POST /api/admin/invitations/<id>/resend/` | Issues a new link, expiry and email. | `200` with `invite_url` and `email_sent`; `404` unknown; `409` used or revoked; `429` |
+| `POST /api/admin/invitations/` with `{"email": "ann@example.com"}` | Creates the invitation and sends one email. | `201` with `invite_url`, `delivery` and `email_sent`; `400` for a bad address; `429` over the limit |
+| `POST /api/admin/invitations/<id>/resend/` | Issues a new link, expiry and email. | `200` with `invite_url`, `delivery` and `email_sent`; `404` unknown; `409` used or revoked; `429` |
 | `POST /api/admin/invitations/<id>/revoke/` | Revokes a pending or expired invitation. | `200`; `404` unknown; `409` used |
 
 Each invitation has these fields: `id`, `email`, `status` (`pending`, `used`, `revoked` or
 `expired`), `created_at`, `expires_at` and `sent_at`. `sent_at` is `null` until a mail was
-delivered. `invite_url` and `email_sent` come only with the create and resend answers. The list
-never contains a link.
+accepted by the mail system. Console output and failed attempts leave it unchanged, including on
+resend. `invite_url`, `delivery` and `email_sent` come only with the create and resend answers.
+`delivery` is `sent`, `console` or `failed`. `email_sent` is `true` only for `sent`. The list never
+contains a link.
 
 ## Troubleshooting
 

@@ -7,8 +7,9 @@ from datetime import timedelta
 from urllib.parse import urlencode
 
 from django.conf import settings
-from django.core.mail import send_mail
-from django.db import transaction
+from django.core.mail import mailers, send_mail
+from django.core.mail.backends.console import EmailBackend as ConsoleEmailBackend
+from django.db import models, transaction
 from django.template.loader import render_to_string
 from django.utils import timezone
 
@@ -16,6 +17,12 @@ from accounts.managers import clean_email
 from accounts.models import User, UserInvitation
 
 logger = logging.getLogger(__name__)
+
+
+class Delivery(models.TextChoices):
+    SENT = "sent"
+    CONSOLE = "console"
+    FAILED = "failed"
 
 
 class InvalidInvitationError(Exception):
@@ -110,8 +117,8 @@ def build_invitation_url(*, token: str, email: str) -> str:
     return f"{settings.APP_ORIGIN}{signup_path}#{fragment}"
 
 
-def send_invitation_email(created: CreatedInvitation) -> bool:
-    """Mail the signup link to the invitee. Returns False if the mail could not be delivered.
+def send_invitation_email(created: CreatedInvitation) -> Delivery:
+    """Mail the signup link and report whether it was sent, printed to console or failed.
 
     The mail carries the plaintext token, so nothing here logs the link, the token or the address.
     """
@@ -123,11 +130,18 @@ def send_invitation_email(created: CreatedInvitation) -> bool:
     subject = render_to_string("accounts/email/invitation_subject.txt", context).strip()
     body = render_to_string("accounts/email/invitation_message.txt", context)
     try:
-        send_mail(subject, body, settings.DEFAULT_FROM_EMAIL, [invitation.email])
+        connection = mailers.default
+        sent = send_mail(
+            subject, body, settings.DEFAULT_FROM_EMAIL, [invitation.email], using="default"
+        )
     except (OSError, smtplib.SMTPException) as exc:
         # The class name is enough to diagnose; the exception text may echo the address.
         logger.error("Could not send invitation %s: %s", invitation.pk, type(exc).__name__)
-        return False
+        return Delivery.FAILED
+    if not sent:
+        return Delivery.FAILED
+    if isinstance(connection, ConsoleEmailBackend):
+        return Delivery.CONSOLE
     invitation.sent_at = timezone.now()
     UserInvitation.objects.filter(pk=invitation.pk).update(sent_at=invitation.sent_at)
-    return True
+    return Delivery.SENT

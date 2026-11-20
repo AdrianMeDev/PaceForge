@@ -192,7 +192,9 @@ Administrators invite people on the **Invitations** page. PaceForge emails the s
 person, so one email is sent per invitation, and also shows the link once, so you can hand it on
 yourself if the mail does not arrive. Create and resend share limits of 20 emails per minute per
 administrator and 5 per hour per recipient across all workers. A request over either limit returns
-`429` with `Retry-After`. Sending, resending and expired invitations are described in
+`429` with `Retry-After`. Without SMTP, invitations are printed to the console and reported as
+not sent (`delivery: "console"`, `email_sent: false`). Console output and failed sends leave the
+last sent time unchanged. Sending, resending and expired invitations are described in
 [docs/invitations.md](docs/invitations.md). The rest is what a new user sees.
 
 1. **Create an invitation.** Sign in as the administrator (with two-factor authentication turned on,
