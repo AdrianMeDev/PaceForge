@@ -1,7 +1,6 @@
 import json
-from urllib.parse import urlencode
+from typing import Any
 
-from django.conf import settings
 from django.contrib.auth import logout
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
@@ -10,6 +9,7 @@ from rest_framework import status
 from rest_framework.exceptions import ValidationError
 from rest_framework.request import Request
 from rest_framework.response import Response
+from rest_framework.throttling import BaseThrottle
 from rest_framework.views import APIView
 
 from accounts.models import User, UserInvitation
@@ -31,17 +31,49 @@ from accounts.services.deletion import (
 )
 from accounts.services.export import build_user_export
 from accounts.services.invitations import (
+    CreatedInvitation,
     InvalidInvitationError,
+    build_invitation_url,
     create_invitation,
+    resend_invitation,
     revoke_invitation,
+    send_invitation_email,
 )
-from accounts.throttles import AccountDeleteThrottle, AccountExportThrottle
+from accounts.throttles import (
+    AccountDeleteThrottle,
+    AccountExportThrottle,
+    InvitationEmailThrottle,
+)
+
+
+def _delivery_data(request: Request, created: CreatedInvitation) -> dict[str, Any]:
+    """Mail the signup link and describe the result for the admin.
+
+    The link is returned too: it is the only time the plaintext token leaves the server, and the
+    admin can hand it on by other means when the mail did not go out.
+    """
+    base_url = request.build_absolute_uri("/")
+    email_sent = send_invitation_email(created, base_url=base_url)
+    invite_url = build_invitation_url(
+        base_url=base_url, token=created.token, email=created.invitation.email
+    )
+    return {
+        **InvitationSerializer(created.invitation).data,
+        "invite_url": invite_url,
+        "email_sent": email_sent,
+    }
 
 
 class InvitationListCreateView(APIView):
     """Administrators with two-factor authentication: list invitations and create new ones."""
 
     permission_classes = [IsMfaAdmin]
+
+    def get_throttles(self) -> list[BaseThrottle]:
+        # Only creating sends mail; listing stays unthrottled.
+        if self.request.method == "POST":
+            return [InvitationEmailThrottle()]
+        return []
 
     def get(self, request: Request) -> Response:
         invitations = UserInvitation.objects.order_by("-created_at")
@@ -54,13 +86,25 @@ class InvitationListCreateView(APIView):
         created = create_invitation(
             invited_by=request.user, email=serializer.validated_data["email"]
         )
-        signup_path = settings.HEADLESS_FRONTEND_URLS["account_signup"]
-        # The email is no secret (the admin typed it); it lets the signup page prefill the field.
-        query = urlencode({"invitation": created.token, "email": created.invitation.email})
-        invite_url = request.build_absolute_uri(f"{signup_path}?{query}")
-        # The only time the plaintext token leaves the server: the admin hands the link on.
-        data = {**InvitationSerializer(created.invitation).data, "invite_url": invite_url}
-        return Response(data, status=status.HTTP_201_CREATED)
+        return Response(_delivery_data(request, created), status=status.HTTP_201_CREATED)
+
+
+class InvitationResendView(APIView):
+    """Issue a new link for a pending or expired invitation and mail it again."""
+
+    permission_classes = [IsMfaAdmin]
+    throttle_classes = [InvitationEmailThrottle]
+
+    def post(self, request: Request, pk: str) -> Response:
+        invitation = get_object_or_404(UserInvitation, pk=pk)
+        try:
+            created = resend_invitation(invitation)
+        except InvalidInvitationError:
+            return Response(
+                {"detail": "A used or revoked invitation cannot be sent again."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        return Response(_delivery_data(request, created))
 
 
 class InvitationRevokeView(APIView):
