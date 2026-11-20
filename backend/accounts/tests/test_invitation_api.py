@@ -57,10 +57,11 @@ def test_staff_creates_invitation_and_gets_a_link_once(staff_api: AuthApi) -> No
     assert body["status"] == "pending"
     link = urlparse(body["invite_url"])
     assert link.path == "/account/signup"
-    query = parse_qs(link.query)
-    assert set(query) == {"invitation", "email"}
-    assert query["email"] == ["invitee@example.com"]  # normalised like the stored address
-    token = query["invitation"][0]
+    assert link.query == ""
+    fragment = parse_qs(link.fragment)
+    assert set(fragment) == {"invitation", "email"}
+    assert fragment["email"] == ["invitee@example.com"]  # normalised like the stored address
+    token = fragment["invitation"][0]
     stored = UserInvitation.objects.get(pk=body["id"])
     assert stored.token_hash != token
     assert stored.invited_by is not None
@@ -69,7 +70,7 @@ def test_staff_creates_invitation_and_gets_a_link_once(staff_api: AuthApi) -> No
 
 def test_link_from_the_api_works_for_signup(staff_api: AuthApi) -> None:
     body = staff_api.call("POST", URL, {"email": "invitee@example.com"}).json()
-    token = parse_qs(urlparse(body["invite_url"]).query)["invitation"][0]
+    token = parse_qs(urlparse(body["invite_url"]).fragment)["invitation"][0]
 
     response = AuthApi().request(
         "POST",
@@ -100,7 +101,7 @@ def test_foreign_host_cannot_change_returned_or_emailed_link(
 
     assert response.status_code == expected_status
     body = response.json()
-    assert body["invite_url"].startswith("https://pace.example.com:8443/account/signup?")
+    assert body["invite_url"].startswith("https://pace.example.com:8443/account/signup#")
     assert body["email_sent"] is True
     [message] = mail.outbox
     assert body["invite_url"] in message.body
@@ -110,10 +111,12 @@ def test_foreign_host_cannot_change_returned_or_emailed_link(
 def test_link_keeps_special_characters_of_the_email_intact(staff_api: AuthApi) -> None:
     body = staff_api.call("POST", URL, {"email": "ann+running@example.com"}).json()
 
-    query = parse_qs(urlparse(body["invite_url"]).query)
+    link = urlparse(body["invite_url"])
+    assert link.query == ""
+    fragment = parse_qs(link.fragment)
 
     # `+` must be percent-encoded, otherwise the signup page would read a space.
-    assert query["email"] == ["ann+running@example.com"]
+    assert fragment["email"] == ["ann+running@example.com"]
     assert "%2B" in body["invite_url"]
 
 
@@ -179,7 +182,7 @@ def test_revoking_unknown_invitation_returns_404(staff_api: AuthApi) -> None:
 
 
 def token_of(url: str) -> str:
-    return parse_qs(urlparse(url).query)["invitation"][0]
+    return parse_qs(urlparse(url).fragment)["invitation"][0]
 
 
 def signup(token: str, email: str = "invitee@example.com") -> int:

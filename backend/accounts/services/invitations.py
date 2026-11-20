@@ -105,9 +105,9 @@ def resend_invitation(
 
 def build_invitation_url(*, token: str, email: str) -> str:
     """Signup link for ``token`` on the configured public origin."""
-    query = urlencode({"invitation": token, "email": email})
+    fragment = urlencode({"invitation": token, "email": email})
     signup_path = settings.HEADLESS_FRONTEND_URLS["account_signup"]
-    return f"{settings.APP_ORIGIN}{signup_path}?{query}"
+    return f"{settings.APP_ORIGIN}{signup_path}#{fragment}"
 
 
 def send_invitation_email(created: CreatedInvitation) -> bool:

@@ -150,7 +150,8 @@ def test_signup_link_carries_token_and_email() -> None:
     assert (
         f"{parts.scheme}://{parts.netloc}{parts.path}" == "https://pace.example.com/account/signup"
     )
-    assert parse_qs(parts.query) == {"invitation": ["tok"], "email": ["a@example.com"]}
+    assert parts.query == ""
+    assert parse_qs(parts.fragment) == {"invitation": ["tok"], "email": ["a@example.com"]}
 
 
 def test_signup_link_uses_the_configured_origin(settings) -> None:
@@ -158,7 +159,7 @@ def test_signup_link_uses_the_configured_origin(settings) -> None:
 
     url = build_invitation_url(token="tok", email="a@example.com")
 
-    assert url.startswith("http://localhost:4200/account/signup?")
+    assert url.startswith("http://localhost:4200/account/signup#")
 
 
 def test_invitation_email_is_one_mail_with_an_unescaped_link(admin: User, settings) -> None:

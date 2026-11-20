@@ -28,9 +28,8 @@ The signup page accepts `/account/signup#invitation=<token>&email=<encoded-addre
 The fragment (the part after `#`) stays in the browser when the page is requested.
 Encode both values as URL parameters, including `+` as `%2B` and `%` as `%25`.
 
-During the transition, the backend still issues the older query form,
-`/account/signup?invitation=<token>&email=<encoded-address>`. Those links still work.
-Fragment support is deployed first, before the backend starts issuing fragment links.
+PaceForge issues fragment links. Older query links
+(`/account/signup?invitation=<token>&email=<encoded-address>`) still work.
 If both forms occur in a link, the fragment invitation takes precedence.
 
 After reading either form, the signup page replaces the current history entry with
@@ -128,8 +127,10 @@ is not limited.
 - The list shows every invitation of the instance, not only the ones you sent.
 - The token is 256 bits of randomness. PaceForge stores only its SHA-256 hash. The plaintext token
   exists in the email and in the API response, once.
-- The signup form accepts fragment links and older query links. It removes the token and address
-  from the visible URL after reading them. See [Signup links](#signup-links) for the transition.
+- PaceForge puts the token and address in the URL fragment (`#invitation=…&email=…`), so they
+  stay in the browser and are not sent in HTTP requests or logged by proxies. The signup form
+  still accepts older query links and removes the token and address from the visible URL after
+  reading them. See [Signup links](#signup-links).
 - Whoever has the link can register with that address until the invitation is used, revoked or
   expired. Send it only to the person it is for.
 - The link uses `APP_ORIGIN`. It defaults to `https://<APP_DOMAIN>`, or `http://localhost:4200`
